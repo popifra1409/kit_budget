@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class NomenclatureBudgetaire extends Model
 {
@@ -78,6 +79,31 @@ class NomenclatureBudgetaire extends Model
     public function modificateur(): BelongsTo
     {
         return $this->belongsTo(User::class, 'modifie_par');
+    }
+
+    /**
+     * Relation : Tâches liées à cette nomenclature
+     */
+    public function taches(): HasMany
+    {
+        return $this->hasMany(Tache::class, 'nomenclature_id');
+    }
+
+    /**
+     * Obtenir les informations du cadre logique pour cette nomenclature
+     */
+    public function getCadreLogique()
+    {
+        $tache = $this->taches()->with([
+            'activite.action.programme.objectifsPrincipaux',
+            'activite.action.objectifsSpecifiques'
+        ])->first();
+
+        if (!$tache) {
+            return null;
+        }
+
+        return $tache->getCheminComplet();
     }
 
     /**

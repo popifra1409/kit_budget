@@ -36,7 +36,7 @@ class NomenclatureBudgetaireResource extends Resource
                             ->label('Code')
                             ->required()
                             ->maxLength(20)
-                            ->placeholder('Ex: 601300'),
+                            ->placeholder('Ex: 601300, 722200, 112000'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')
@@ -45,14 +45,12 @@ class NomenclatureBudgetaireResource extends Resource
                             ->columnSpanFull()
                             ->placeholder('Ex: Carburants et lubrifiants'),
 
-                        Forms\Components\Select::make('classe')
+                        Forms\Components\TextInput::make('classe')
                             ->label('Classe')
-                            ->options([
-                                '6' => 'Classe 6 - Dépenses (Charges)',
-                                '7' => 'Classe 7 - Recettes (Produits)',
-                            ])
                             ->required()
-                            ->reactive(),
+                            ->maxLength(2)
+                            ->placeholder('1, 2, 3, 4, 5, 6, 7, 8, 9')
+                            ->helperText('Première classe du plan comptable'),
 
                         Forms\Components\Select::make('type')
                             ->label('Type')
@@ -60,7 +58,8 @@ class NomenclatureBudgetaireResource extends Resource
                                 'depense' => 'Dépense',
                                 'recette' => 'Recette',
                             ])
-                            ->required(),
+                            ->required()
+                            ->helperText('Type budgétaire'),
 
                         Forms\Components\Select::make('niveau')
                             ->label('Niveau hiérarchique')
@@ -77,7 +76,18 @@ class NomenclatureBudgetaireResource extends Resource
                             ->relationship('parent', 'libelle')
                             ->searchable()
                             ->preload()
-                            ->placeholder('Aucun parent (niveau classe)'),
+                            ->placeholder('Aucun parent (niveau classe)')
+                            ->getSearchResultsUsing(function (string $search) {
+                                return NomenclatureBudgetaire::where('libelle', 'like', "%{$search}%")
+                                    ->orWhere('code', 'like', "%{$search}%")
+                                    ->limit(50)
+                                    ->pluck('libelle', 'id');
+                            })
+                            ->getOptionLabelUsing(
+                                fn($value): ?string =>
+                                NomenclatureBudgetaire::find($value)?->code . ' - ' .
+                                    NomenclatureBudgetaire::find($value)?->libelle
+                            ),
                     ])
                     ->columns(2),
 
@@ -107,7 +117,8 @@ class NomenclatureBudgetaireResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
-                    ->collapsible(),
+                    ->collapsible()
+                    ->collapsed(),
 
                 Forms\Components\Section::make('Métadonnées')
                     ->schema([
@@ -121,7 +132,8 @@ class NomenclatureBudgetaireResource extends Resource
                             ->default(true),
                     ])
                     ->columns(2)
-                    ->collapsible(),
+                    ->collapsible()
+                    ->collapsed(),
             ]);
     }
 
@@ -132,20 +144,24 @@ class NomenclatureBudgetaireResource extends Resource
                 Tables\Columns\TextColumn::make('code')
                     ->label('Code')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')
                     ->searchable()
                     ->sortable()
-                    ->limit(50),
+                    ->limit(50)
+                    ->wrap(),
 
-                Tables\Columns\BadgeColumn::make('classe')
+                Tables\Columns\TextColumn::make('classe')
                     ->label('Classe')
-                    ->colors([
-                        'danger' => '6',
-                        'success' => '7',
-                    ]),
+                    ->badge()
+                    ->color(fn(string $state): string => match ($state) {
+                        '6' => 'danger',
+                        '7' => 'success',
+                        default => 'gray',
+                    }),
 
                 Tables\Columns\BadgeColumn::make('type')
                     ->label('Type')
@@ -156,18 +172,35 @@ class NomenclatureBudgetaireResource extends Resource
 
                 Tables\Columns\TextColumn::make('niveau')
                     ->label('Niveau')
-                    ->badge(),
+                    ->badge()
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'classe' => 'Classe',
+                        'compte' => 'Compte',
+                        'sous_compte' => 'Sous-compte',
+                        'ligne' => 'Ligne',
+                        default => $state,
+                    }),
+
+                Tables\Columns\TextColumn::make('parent.code')
+                    ->label('Parent')
+                    ->placeholder('-')
+                    ->formatStateUsing(
+                        fn($record) =>
+                        $record->parent ? $record->parent->code . ' - ' . \Str::limit($record->parent->libelle, 20) : '-'
+                    ),
 
                 Tables\Columns\TextColumn::make('date_debut_validite')
-                    ->label('Début validité')
+                    ->label('Début')
                     ->date('d/m/Y')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('date_fin_validite')
-                    ->label('Fin validité')
+                    ->label('Fin')
                     ->date('d/m/Y')
                     ->placeholder('En cours')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('actif')
                     ->label('Actif')
@@ -177,8 +210,15 @@ class NomenclatureBudgetaireResource extends Resource
                 Tables\Filters\SelectFilter::make('classe')
                     ->label('Classe')
                     ->options([
+                        '1' => 'Classe 1',
+                        '2' => 'Classe 2',
+                        '3' => 'Classe 3',
+                        '4' => 'Classe 4',
+                        '5' => 'Classe 5',
                         '6' => 'Classe 6 - Dépenses',
                         '7' => 'Classe 7 - Recettes',
+                        '8' => 'Classe 8',
+                        '9' => 'Classe 9',
                     ]),
 
                 Tables\Filters\SelectFilter::make('type')
@@ -219,6 +259,7 @@ class NomenclatureBudgetaireResource extends Resource
     {
         return [
             'index' => Pages\ListNomenclatureBudgetaires::route('/'),
+            'hierarchie' => Pages\HierarchieNomenclatureBudgetaire::route('/hierarchie'),
             'create' => Pages\CreateNomenclatureBudgetaire::route('/create'),
             'edit' => Pages\EditNomenclatureBudgetaire::route('/{record}/edit'),
             'import' => Pages\ImportNomenclatureBudgetaire::route('/import'),
