@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\NomenclatureBudgetaireResource\Pages;
+use App\Filament\Resources\NomenclatureBudgetaireResource\RelationManagers;
 use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -255,6 +256,13 @@ class NomenclatureBudgetaireResource extends Resource
                 ]),
             ])
             ->defaultSort('code', 'asc');
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\TachesRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

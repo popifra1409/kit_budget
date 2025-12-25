@@ -69,23 +69,14 @@ class GenerationCadreLogique extends Page
     {
         $data = $this->form->getState();
 
-        $programmeId = $data['programme_id'] ?? null;
-        $annee = $data['annee'];
-        $format = $data['format'];
+        $params = [
+            'programme_id' => $data['programme_id'] ?? null,
+            'annee' => $data['annee'],
+            'format' => $data['format'],
+        ];
 
-        try {
-            if ($format === 'excel') {
-                return $this->genererExcel($programmeId, $annee);
-            } else {
-                return $this->genererPdf($programmeId, $annee);
-            }
-        } catch (\Exception $e) {
-            Notification::make()
-                ->title('Erreur lors de la génération')
-                ->danger()
-                ->body($e->getMessage())
-                ->send();
-        }
+        // Rediriger vers la route de téléchargement
+        return redirect()->route('cadre-logique.telecharger', $params);
     }
 
     protected function genererExcel($programmeId, $annee)
@@ -99,22 +90,14 @@ class GenerationCadreLogique extends Page
         }
         $filename .= '.xlsx';
 
-        Notification::make()
-            ->title('Génération en cours...')
-            ->success()
-            ->send();
-
         return \Maatwebsite\Excel\Facades\Excel::download($export, $filename);
     }
 
     protected function genererPdf($programmeId, $annee)
     {
-        // TODO: Implémenter la génération PDF
-        Notification::make()
-            ->title('Génération PDF')
-            ->success()
-            ->body('Fonctionnalité en cours de développement')
-            ->send();
+        $export = new \App\Exports\CadreLogiquePdf($programmeId, $annee);
+
+        return $export->download();
     }
 
     protected function getFormActions(): array
