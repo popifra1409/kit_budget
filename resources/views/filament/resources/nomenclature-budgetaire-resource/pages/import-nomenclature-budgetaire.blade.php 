@@ -1,9 +1,0 @@
-<x-filament-panels::page>
-    <form wire:submit="import">
-        {{ $this->form }}
-        
-        <div class="mt-6">
-            {{ $this->getFormActions() }}
-        </div>
-    </form>
-</x-filament-panels::page>

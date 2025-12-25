@@ -31,7 +31,7 @@ class HierarchieNomenclatureBudgetaire extends Page implements HasTable
                 NomenclatureBudgetaire::query()
                     ->whereNull('parent_id') // Seulement les racines
                     ->where('type', $this->typeFiltre)
-                    ->whereNull('date_fin_validite')
+                    ->where('actif', true)
                     ->orderBy('code')
             )
             ->columns([

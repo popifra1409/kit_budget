@@ -13,7 +13,14 @@ class ListProgrammes extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\Action::make('generer_cadre_logique')
+                ->label('Générer Cadre Logique')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('success')
+                ->url(route('filament.admin.resources.programmes.generer-cadre-logique')),
+
+            Actions\CreateAction::make()
+                ->label('Nouveau programme'),
         ];
     }
 }

@@ -172,6 +172,7 @@ class ProgrammeResource extends Resource
             'index' => Pages\ListProgrammes::route('/'),
             'create' => Pages\CreateProgramme::route('/create'),
             'edit' => Pages\EditProgramme::route('/{record}/edit'),
+            'generer-cadre-logique' => Pages\GenerationCadreLogique::route('/generer-cadre-logique'),
         ];
     }
 }

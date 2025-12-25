@@ -26,7 +26,7 @@ class ImportNomenclatureBudgetaire extends Page
     public function mount(): void
     {
         $this->form->fill([
-            'date_debut_validite' => now()->startOfYear(),
+            'exercice' => now()->year,
         ]);
     }
 
@@ -57,11 +57,14 @@ class ImportNomenclatureBudgetaire extends Page
                             ->required()
                             ->helperText('Sélectionnez la feuille du fichier Excel à importer'),
 
-                        Forms\Components\DatePicker::make('date_debut_validite')
-                            ->label('Date de début de validité')
+                        Forms\Components\TextInput::make('exercice')
+                            ->label('Exercice budgétaire')
                             ->required()
-                            ->default(now()->startOfYear())
-                            ->helperText('Date à partir de laquelle cette nomenclature sera valide'),
+                            ->numeric()
+                            ->default(now()->year)
+                            ->minValue(2020)
+                            ->maxValue(2050)
+                            ->helperText('Année budgétaire pour cette nomenclature'),
                     ])
                     ->columns(2),
 
@@ -105,8 +108,8 @@ class ImportNomenclatureBudgetaire extends Page
                 return;
             }
 
-            $dateDebut = Carbon::parse($data['date_debut_validite']);
-            $import = new NomenclatureImport($dateDebut);
+            $exercice = $data['exercice'];
+            $import = new NomenclatureImport($exercice);
 
             Excel::import($import, $filePath);
 
@@ -126,10 +129,10 @@ class ImportNomenclatureBudgetaire extends Page
         }
     }
 
-    protected function getFormActions(): array
+    protected function getActions(): array
     {
         return [
-            Forms\Components\Actions\Action::make('import')
+            \Filament\Actions\Action::make('import')
                 ->label('Importer')
                 ->action('import')
                 ->color('primary')

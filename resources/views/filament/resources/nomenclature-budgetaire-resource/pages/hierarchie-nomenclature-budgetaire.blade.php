@@ -17,7 +17,7 @@
             @php
                 $racines = App\Models\NomenclatureBudgetaire::whereNull('parent_id')
                     ->where('type', $typeFiltre)
-                    ->whereNull('date_fin_validite')
+                    ->where('actif', true)
                     ->orderBy('code')
                     ->get();
             @endphp

@@ -22,8 +22,8 @@ class NomenclatureBudgetaire extends Model
         'type',
         'niveau',
         'parent_id',
-        'date_debut_validite',
-        'date_fin_validite',
+        'date_mise_en_vigueur',
+        'exercice',
         'code_precedent',
         'version_precedente_id',
         'version',
@@ -34,11 +34,11 @@ class NomenclatureBudgetaire extends Model
     ];
 
     protected $casts = [
-        'date_debut_validite' => 'date',
-        'date_fin_validite' => 'date',
+        'date_mise_en_vigueur' => 'date',
         'actif' => 'boolean',
         'version' => 'integer',
         'ordre' => 'integer',
+        'exercice' => 'integer',
     ];
 
     /**
@@ -111,20 +111,15 @@ class NomenclatureBudgetaire extends Model
      */
     public function scopeActives($query)
     {
-        return $query->whereNull('date_fin_validite')
-            ->where('actif', true);
+        return $query->where('actif', true);
     }
 
     /**
-     * Scope : Nomenclatures valides à une date donnée
+     * Scope : Nomenclatures pour un exercice donné
      */
-    public function scopeValidesA($query, $date)
+    public function scopeExercice($query, $exercice)
     {
-        return $query->where('date_debut_validite', '<=', $date)
-            ->where(function ($q) use ($date) {
-                $q->whereNull('date_fin_validite')
-                    ->orWhere('date_fin_validite', '>=', $date);
-            });
+        return $query->where('exercice', $exercice);
     }
 
     /**
@@ -141,14 +136,6 @@ class NomenclatureBudgetaire extends Model
     public function scopeClasse($query, $classe)
     {
         return $query->where('classe', $classe);
-    }
-
-    /**
-     * Vérifier si cette nomenclature est en cours de validité
-     */
-    public function estEnCours(): bool
-    {
-        return is_null($this->date_fin_validite);
     }
 
     /**

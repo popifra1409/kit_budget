@@ -73,34 +73,37 @@ class NomenclatureBudgetaireResource extends Resource
 
                         Forms\Components\Select::make('parent_id')
                             ->label('Parent')
-                            ->relationship('parent', 'libelle')
                             ->searchable()
                             ->preload()
                             ->placeholder('Aucun parent (niveau classe)')
                             ->getSearchResultsUsing(function (string $search) {
-                                return NomenclatureBudgetaire::where('libelle', 'like', "%{$search}%")
+                                return \App\Models\NomenclatureBudgetaire::where('libelle', 'like', "%{$search}%")
                                     ->orWhere('code', 'like', "%{$search}%")
                                     ->limit(50)
-                                    ->pluck('libelle', 'id');
+                                    ->get()
+                                    ->mapWithKeys(fn($item) => [$item->id => "{$item->code} - {$item->libelle}"]);
                             })
                             ->getOptionLabelUsing(
                                 fn($value): ?string =>
-                                NomenclatureBudgetaire::find($value)?->code . ' - ' .
-                                    NomenclatureBudgetaire::find($value)?->libelle
+                                \App\Models\NomenclatureBudgetaire::find($value)?->code . ' - ' .
+                                    \App\Models\NomenclatureBudgetaire::find($value)?->libelle
                             ),
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Période de validité')
+                Forms\Components\Section::make('Exercice et Mise en vigueur')
                     ->schema([
-                        Forms\Components\DatePicker::make('date_debut_validite')
-                            ->label('Date de début de validité')
-                            ->required()
+                        Forms\Components\DatePicker::make('date_mise_en_vigueur')
+                            ->label('Date de mise en vigueur')
                             ->default(now()->startOfYear()),
 
-                        Forms\Components\DatePicker::make('date_fin_validite')
-                            ->label('Date de fin de validité')
-                            ->placeholder('En cours (laisser vide)'),
+                        Forms\Components\TextInput::make('exercice')
+                            ->label('Exercice budgétaire')
+                            ->numeric()
+                            ->default(now()->year)
+                            ->minValue(2020)
+                            ->maxValue(2050)
+                            ->helperText('Année budgétaire (ex: 2026)'),
                     ])
                     ->columns(2),
 
@@ -189,16 +192,15 @@ class NomenclatureBudgetaireResource extends Resource
                         $record->parent ? $record->parent->code . ' - ' . \Str::limit($record->parent->libelle, 20) : '-'
                     ),
 
-                Tables\Columns\TextColumn::make('date_debut_validite')
-                    ->label('Début')
-                    ->date('d/m/Y')
+                Tables\Columns\TextColumn::make('exercice')
+                    ->label('Exercice')
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->badge()
+                    ->color('info'),
 
-                Tables\Columns\TextColumn::make('date_fin_validite')
-                    ->label('Fin')
+                Tables\Columns\TextColumn::make('date_mise_en_vigueur')
+                    ->label('Mise en vigueur')
                     ->date('d/m/Y')
-                    ->placeholder('En cours')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
