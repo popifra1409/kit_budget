@@ -24,7 +24,10 @@ class LigneBonCommande extends Model
         'montant_ht',
         'taux_tva',
         'montant_tva',
+        'montant_ir',
+        'taux_ir',
         'montant_ttc',
+        'net_a_payer',
         'quantite_livree',
         'quantite_restante',
         'observations',
@@ -36,7 +39,10 @@ class LigneBonCommande extends Model
         'montant_ht' => 'decimal:2',
         'taux_tva' => 'decimal:2',
         'montant_tva' => 'decimal:2',
+        'montant_ir' => 'decimal:2',
+        'taux_ir' => 'decimal:2',
         'montant_ttc' => 'decimal:2',
+        'net_a_payer' => 'decimal:2',
         'quantite_livree' => 'decimal:3',
         'quantite_restante' => 'decimal:3',
         'numero_ligne' => 'integer',
@@ -49,7 +55,13 @@ class LigneBonCommande extends Model
     {
         parent::boot();
 
-        static::saving(function ($ligne) {
+        // Calculer lors de la création
+        static::creating(function ($ligne) {
+            $ligne->calculerMontants();
+        });
+
+        // Calculer lors de la mise à jour
+        static::updating(function ($ligne) {
             $ligne->calculerMontants();
         });
 
@@ -91,17 +103,58 @@ class LigneBonCommande extends Model
      */
     public function calculerMontants(): void
     {
+        // S'assurer que les valeurs sont des nombres
+        $this->quantite = floatval($this->quantite ?? 0);
+        $this->prix_unitaire_ht = floatval($this->prix_unitaire_ht ?? 0);
+        $this->taux_tva = floatval($this->taux_tva ?? 19.25);
+        $this->quantite_livree = floatval($this->quantite_livree ?? 0);
+
         // Montant HT = Quantité × Prix Unitaire HT
-        $this->montant_ht = $this->quantite * $this->prix_unitaire_ht;
+        $this->montant_ht = round($this->quantite * $this->prix_unitaire_ht, 2);
 
         // Montant TVA = Montant HT × (Taux TVA / 100)
-        $this->montant_tva = $this->montant_ht * ($this->taux_tva / 100);
+        $this->montant_tva = round($this->montant_ht * ($this->taux_tva / 100), 2);
 
         // Montant TTC = Montant HT + Montant TVA
-        $this->montant_ttc = $this->montant_ht + $this->montant_tva;
+        $this->montant_ttc = round($this->montant_ht + $this->montant_tva, 2);
+
+        // Calculer l'IR selon le barème (si taux_ir n'est pas défini ou est strictement null)
+        // Important: si taux_ir = 0, c'est une exonération manuelle, on garde 0
+        if ($this->taux_ir === null || $this->taux_ir === '') {
+            $this->taux_ir = $this->calculerTauxIR();
+        } else {
+            // Conserver le taux saisi (peut être 0 pour exonération)
+            $this->taux_ir = floatval($this->taux_ir);
+        }
+
+        $this->montant_ir = round($this->montant_ht * ($this->taux_ir / 100), 2);
+
+        // Net à payer = TTC - IR
+        $this->net_a_payer = round($this->montant_ttc - $this->montant_ir, 2);
 
         // Quantité restante = Quantité - Quantité livrée
         $this->quantite_restante = $this->quantite - $this->quantite_livree;
+    }
+
+    /**
+     * Calculer le taux IR selon le barème camerounais
+     * Par défaut : barème services (à adapter selon le type)
+     */
+    protected function calculerTauxIR(): float
+    {
+        // Barème IR Services (défaut)
+        if ($this->montant_ht < 500000) {
+            return 5.5;
+        } elseif ($this->montant_ht < 3000000) {
+            return 11.0;
+        } else {
+            return 15.0;
+        }
+
+        // Note : Pour fournitures/travaux, utiliser :
+        // < 1M : 2.2%
+        // 1M-5M : 5.5%
+        // > 5M : 11%
     }
 
     /**

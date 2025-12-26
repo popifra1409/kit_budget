@@ -188,6 +188,9 @@ class BonCommande extends Model
     /**
      * Engager le budget
      */
+    /**
+     * Engager le budget
+     */
     public function engagerBudget(): void
     {
         if ($this->statut !== 'valide') {
@@ -203,13 +206,68 @@ class BonCommande extends Model
             throw new \Exception("Le BC doit avoir au moins une ligne");
         }
 
+        // Forcer le recalcul et sauvegarder les lignes
+        $lignesCalculees = collect();
+        foreach ($this->lignes()->get() as $ligne) {
+            // IMPORTANT : Définir taux_tva AVANT tout calcul
+            // Car le hook `saving` va aussi appeler calculerMontants()
+            if ($ligne->taux_tva === null || $ligne->taux_tva === '') {
+                $ligne->setAttribute('taux_tva', 19.25);
+            }
+
+            // Forcer le recalcul des montants
+            $ligne->calculerMontants();
+
+            // Vérifier que les montants sont bien calculés
+            if ($ligne->net_a_payer <= 0 && $ligne->montant_ht > 0) {
+                // Debug: afficher les valeurs avant save
+                \Log::error("Ligne avant save", [
+                    'designation' => $ligne->designation,
+                    'montant_ht' => $ligne->montant_ht,
+                    'taux_tva' => $ligne->taux_tva,
+                    'montant_tva' => $ligne->montant_tva,
+                    'montant_ttc' => $ligne->montant_ttc,
+                    'taux_ir' => $ligne->taux_ir,
+                    'montant_ir' => $ligne->montant_ir,
+                    'net_a_payer' => $ligne->net_a_payer,
+                ]);
+            }
+
+            // Sauvegarder AVEC les événements
+            // Le hook `saving` va recalculer avec taux_tva = 19.25
+            $ligne->save();
+
+            // Recharger pour vérifier les valeurs en BD
+            $ligne->refresh();
+
+            // Garder en mémoire
+            $lignesCalculees->push($ligne);
+        }
+
+        // Recharger le BC pour avoir les montants totaux à jour
+        $this->refresh();
+
         \DB::beginTransaction();
         try {
             // Net à payer = TTC - IR
             $netAPayer = $this->montant_ttc - $this->montant_ir;
 
+            // Vérification finale du montant total
+            if ($netAPayer <= 0) {
+                throw new \Exception(
+                    "❌ MONTANT INVALIDE\n\n" .
+                        "Le montant net à payer du BC est invalide.\n\n" .
+                        "Montant HT: " . number_format($this->montant_ht, 0, ',', ' ') . " FCFA\n" .
+                        "TVA: " . number_format($this->montant_tva, 0, ',', ' ') . " FCFA\n" .
+                        "TTC: " . number_format($this->montant_ttc, 0, ',', ' ') . " FCFA\n" .
+                        "IR: " . number_format($this->montant_ir, 0, ',', ' ') . " FCFA\n" .
+                        "Net: " . number_format($netAPayer, 0, ',', ' ') . " FCFA\n\n" .
+                        "Vérifiez les montants des lignes du BC."
+                );
+            }
+
             // Récupérer la première nomenclature (principale)
-            $premiereLigne = $this->lignes()->first();
+            $premiereLigne = $lignesCalculees->first();
             $nomenclaturePrincipaleId = $premiereLigne ? $premiereLigne->nomenclature_id : null;
 
             if (!$nomenclaturePrincipaleId) {
@@ -233,10 +291,30 @@ class BonCommande extends Model
                 'statut' => 'provisoire',
             ]);
 
-            // Engager chaque ligne budgétaire et créer les lignes d'engagement
+            // Utiliser les lignes calculées en mémoire (PAS de rechargement BD)
             $lignesParNomenclature = [];
-            foreach ($this->lignes as $ligne) {
+            foreach ($lignesCalculees as $ligne) {
                 $nomenclatureId = $ligne->nomenclature_id;
+
+                // Vérifier que le montant est valide
+                if ($ligne->net_a_payer <= 0) {
+                    throw new \Exception(
+                        "❌ MONTANT INVALIDE\n\n" .
+                            "Ligne: {$ligne->designation}\n\n" .
+                            "📊 DÉTAILS:\n" .
+                            "• Quantité: {$ligne->quantite}\n" .
+                            "• Prix unitaire HT: " . number_format($ligne->prix_unitaire_ht, 0, ',', ' ') . " FCFA\n" .
+                            "• Montant HT: " . number_format($ligne->montant_ht, 0, ',', ' ') . " FCFA\n" .
+                            "• Taux TVA: {$ligne->taux_tva}%\n" .
+                            "• Montant TVA: " . number_format($ligne->montant_tva, 0, ',', ' ') . " FCFA\n" .
+                            "• TTC: " . number_format($ligne->montant_ttc, 0, ',', ' ') . " FCFA\n" .
+                            "• Taux IR: {$ligne->taux_ir}%\n" .
+                            "• Montant IR: " . number_format($ligne->montant_ir, 0, ',', ' ') . " FCFA\n" .
+                            "• Net à payer: " . number_format($ligne->net_a_payer, 0, ',', ' ') . " FCFA\n\n" .
+                            "✅ SOLUTION:\n" .
+                            "Vérifiez que tous les montants sont corrects dans le formulaire."
+                    );
+                }
 
                 // Regrouper par nomenclature
                 if (!isset($lignesParNomenclature[$nomenclatureId])) {
@@ -259,9 +337,23 @@ class BonCommande extends Model
 
                 // Vérifier le crédit disponible
                 if (!$ligneBudgetaire->peutEngager($data['montant'])) {
+                    $nomenclature = $ligneBudgetaire->nomenclature;
+                    $manque = $data['montant'] - $ligneBudgetaire->disponible_engagement;
+
                     throw new \Exception(
-                        "Crédit insuffisant sur la ligne {$ligneBudgetaire->nomenclature->code}. " .
-                            "Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA"
+                        "❌ CRÉDIT INSUFFISANT\n\n" .
+                            "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
+                            "📊 DÉTAILS:\n" .
+                            "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
+                            "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
+                            "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
+                            "💰 ENGAGEMENT DEMANDÉ:\n" .
+                            "• Montant à engager: " . number_format($data['montant'], 0, ',', ' ') . " FCFA\n" .
+                            "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
+                            "✅ SOLUTIONS:\n" .
+                            "1. Réduire le montant de la commande\n" .
+                            "2. Demander un virement budgétaire vers cette ligne\n" .
+                            "3. Utiliser une autre nomenclature budgétaire"
                     );
                 }
 
@@ -282,7 +374,6 @@ class BonCommande extends Model
             $this->engage = true;
             $this->montant_engage = $netAPayer;
             $this->date_engagement = now();
-            $this->statut = 'engage';
             $this->save();
 
             \DB::commit();

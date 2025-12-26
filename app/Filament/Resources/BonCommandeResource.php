@@ -215,23 +215,53 @@ class BonCommandeResource extends Resource
                                     ->default(19.25)
                                     ->suffix('%')
                                     ->minValue(0)
-                                    ->maxValue(100),
+                                    ->maxValue(100)
+                                    ->live(onBlur: true),
 
-                                Forms\Components\Placeholder::make('montant_ttc_preview')
-                                    ->label('Montant TTC estimé')
+                                Forms\Components\TextInput::make('taux_ir')
+                                    ->label('Taux IR (%)')
+                                    ->numeric()
+                                    ->suffix('%')
+                                    ->minValue(0)
+                                    ->maxValue(100)
+                                    ->live(onBlur: true)
+                                    ->helperText('Laissez vide pour calcul automatique selon barème'),
+
+                                Forms\Components\Placeholder::make('montant_preview')
+                                    ->label('Montants estimés')
                                     ->content(function (callable $get) {
                                         $qte = (float) ($get('quantite') ?? 0);
                                         $pu = (float) ($get('prix_unitaire_ht') ?? 0);
                                         $tva = (float) ($get('taux_tva') ?? 19.25);
+                                        $tauxIr = (float) ($get('taux_ir') ?? 0);
 
                                         $ht = $qte * $pu;
                                         $montantTva = $ht * ($tva / 100);
                                         $ttc = $ht + $montantTva;
 
-                                        return number_format($ttc, 0, ',', ' ') . ' FCFA';
-                                    }),
+                                        // Calculer IR
+                                        if ($tauxIr > 0) {
+                                            $ir = $ht * ($tauxIr / 100);
+                                        } else {
+                                            // Barème automatique
+                                            if ($ht < 500000) {
+                                                $ir = $ht * 0.055;
+                                            } elseif ($ht < 3000000) {
+                                                $ir = $ht * 0.11;
+                                            } else {
+                                                $ir = $ht * 0.15;
+                                            }
+                                        }
+
+                                        $net = $ttc - $ir;
+
+                                        return "TTC: " . number_format($ttc, 0, ',', ' ') . " FCFA\n" .
+                                            "IR: " . number_format($ir, 0, ',', ' ') . " FCFA\n" .
+                                            "Net à payer: " . number_format($net, 0, ',', ' ') . " FCFA";
+                                    })
+                                    ->columnSpan(2),
                             ])
-                            ->columns(4)
+                            ->columns(6)
                             ->collapsible()
                             ->itemLabel(
                                 fn(array $state): ?string =>

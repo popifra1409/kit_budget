@@ -218,9 +218,25 @@ class DecisionAdministrative extends Model
                 ->firstOrFail();
 
             if (!$ligneBudgetaire->peutEngager($this->montant_net)) {
+                $nomenclature = $ligneBudgetaire->nomenclature;
+                $manque = $this->montant_net - $ligneBudgetaire->disponible_engagement;
+
                 throw new \Exception(
-                    "Crédit insuffisant. Disponible: " .
-                        number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA"
+                    "❌ CRÉDIT INSUFFISANT\n\n" .
+                        "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
+                        "📊 DÉTAILS:\n" .
+                        "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
+                        "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
+                        "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
+                        "💰 ENGAGEMENT DEMANDÉ:\n" .
+                        "• Type: {$this->type_decision}\n" .
+                        "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
+                        "• Montant net à engager: " . number_format($this->montant_net, 0, ',', ' ') . " FCFA\n" .
+                        "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
+                        "✅ SOLUTIONS:\n" .
+                        "1. Réduire le montant de la décision\n" .
+                        "2. Demander un virement budgétaire vers cette ligne\n" .
+                        "3. Utiliser une autre nomenclature budgétaire"
                 );
             }
 
