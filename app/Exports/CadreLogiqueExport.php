@@ -70,7 +70,7 @@ class CadreLogiqueExport implements FromCollection, WithHeadings, WithStyles, Wi
                 'nomenclature_libelle' => $tache->nomenclature->libelle ?? '',
                 'delai' => $tache->delai ?? '',
                 'guichet' => $tache->guichet ?? '',
-                'service_responsable' => $tache->service_responsable ?? '',
+                'service_responsable' => $tache->service?->nom ?? '',
                 'ae' => $tache->ae,
                 'cp' => $tache->cp,
                 'resultat_attendu' => $tache->resultat_attendu ?? '',

@@ -103,10 +103,26 @@ class TacheResource extends Resource
                             ->maxLength(255)
                             ->placeholder('Ex: Guichet Pharmacie'),
 
-                        Forms\Components\TextInput::make('service_responsable')
+                        Forms\Components\Select::make('service_id')
                             ->label('Service responsable')
-                            ->maxLength(255)
-                            ->placeholder('Ex: Direction des Achats'),
+                            ->relationship('service', 'nom')
+                            ->searchable()
+                            ->preload()
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('code')
+                                    ->label('Code')
+                                    ->required()
+                                    ->unique('services', 'code')
+                                    ->maxLength(50),
+                                Forms\Components\TextInput::make('nom')
+                                    ->label('Nom')
+                                    ->required()
+                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('responsable')
+                                    ->label('Responsable')
+                                    ->maxLength(255),
+                            ])
+                            ->helperText('Service responsable de la tâche'),
                     ])
                     ->columns(3),
 
@@ -203,6 +219,13 @@ class TacheResource extends Resource
                     ->searchable()
                     ->badge()
                     ->color('warning'),
+
+                Tables\Columns\TextColumn::make('service.nom')
+                    ->label('Service')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('-')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('ae')
                     ->label('AE')

@@ -51,8 +51,7 @@
                 <span class="font-semibold">Guichet:</span> {{ $tache->guichet ?? 'Non défini' }}
             </div>
             <div class="col-span-2">
-                <span class="font-semibold">Service responsable:</span>
-                {{ $tache->service_responsable ?? 'Non défini' }}
+                <span class="font-semibold">Service responsable:</span> {{ $tache->service?->nom ?? 'Non défini' }}
             </div>
         </div>
     </div>

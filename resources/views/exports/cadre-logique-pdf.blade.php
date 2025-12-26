@@ -141,7 +141,7 @@
                     <td>{{ Str::limit($tache->nomenclature->libelle ?? '', 80) }}</td>
                     <td>{{ $tache->delai ?? '-' }}</td>
                     <td>{{ $tache->guichet ?? '-' }}</td>
-                    <td>{{ $tache->service_responsable ?? '-' }}</td>
+                    <td>{{ $tache->service?->nom ?? '-' }}</td>
                     <td class="text-right">{{ number_format($tache->ae, 0, ',', ' ') }}</td>
                     <td class="text-right">{{ number_format($tache->cp, 0, ',', ' ') }}</td>
                     <td>{{ Str::limit($tache->resultat_attendu ?? '-', 100) }}</td>

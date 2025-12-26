@@ -21,7 +21,7 @@ class Tache extends Model
         'description',
         'delai',
         'guichet',
-        'service_responsable',
+        'service_id',
         'ae',
         'cp',
         'resultat_attendu',
@@ -51,6 +51,14 @@ class Tache extends Model
     public function nomenclature(): BelongsTo
     {
         return $this->belongsTo(NomenclatureBudgetaire::class);
+    }
+
+    /**
+     * Relation : Service responsable
+     */
+    public function service(): BelongsTo
+    {
+        return $this->belongsTo(Service::class, 'service_id');
     }
 
     /**
