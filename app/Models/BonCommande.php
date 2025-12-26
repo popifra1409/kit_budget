@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BonCommande extends Model
@@ -26,6 +27,8 @@ class BonCommande extends Model
         'observations',
         'montant_ht',
         'montant_tva',
+        'montant_ir',
+        'taux_ir',
         'montant_ttc',
         'statut',
         'valide_par',
@@ -43,6 +46,8 @@ class BonCommande extends Model
         'date_engagement' => 'datetime',
         'montant_ht' => 'decimal:2',
         'montant_tva' => 'decimal:2',
+        'montant_ir' => 'decimal:2',
+        'taux_ir' => 'decimal:2',
         'montant_ttc' => 'decimal:2',
         'montant_engage' => 'decimal:2',
         'engage' => 'boolean',
@@ -108,6 +113,14 @@ class BonCommande extends Model
     }
 
     /**
+     * Relation : Engagement (polymorphique)
+     */
+    public function engagement(): MorphOne
+    {
+        return $this->morphOne(Engagement::class, 'engageable');
+    }
+
+    /**
      * Scope : Par statut
      */
     public function scopeStatut($query, $statut)
@@ -151,7 +164,13 @@ class BonCommande extends Model
         if ($this->exists) {
             $this->montant_ht = $this->lignes()->sum('montant_ht');
             $this->montant_tva = $this->lignes()->sum('montant_tva');
+            $this->montant_ir = $this->lignes()->sum('montant_ir');
             $this->montant_ttc = $this->lignes()->sum('montant_ttc');
+
+            // Calculer le taux IR moyen si applicable
+            if ($this->montant_ht > 0) {
+                $this->taux_ir = ($this->montant_ir / $this->montant_ht) * 100;
+            }
         }
     }
 
@@ -186,27 +205,82 @@ class BonCommande extends Model
 
         \DB::beginTransaction();
         try {
-            // Engager chaque ligne budgétaire
+            // Net à payer = TTC - IR
+            $netAPayer = $this->montant_ttc - $this->montant_ir;
+
+            // Récupérer la première nomenclature (principale)
+            $premiereLigne = $this->lignes()->first();
+            $nomenclaturePrincipaleId = $premiereLigne ? $premiereLigne->nomenclature_id : null;
+
+            if (!$nomenclaturePrincipaleId) {
+                throw new \Exception("Impossible de déterminer la nomenclature principale");
+            }
+
+            // Créer l'engagement
+            $engagement = Engagement::create([
+                'budget_id' => $this->budget_id,
+                'type_engagement' => 'BC',
+                'nomenclature_principale_id' => $nomenclaturePrincipaleId,
+                'reference_document' => $this->numero,
+                'engageable_type' => self::class,
+                'engageable_id' => $this->id,
+                'beneficiaire_type' => Fournisseur::class,
+                'beneficiaire_id' => $this->fournisseur_id,
+                'date_engagement' => now(),
+                'exercice' => now()->year,
+                'objet' => $this->objet,
+                'montant_engage' => $netAPayer,
+                'statut' => 'provisoire',
+            ]);
+
+            // Engager chaque ligne budgétaire et créer les lignes d'engagement
+            $lignesParNomenclature = [];
             foreach ($this->lignes as $ligne) {
+                $nomenclatureId = $ligne->nomenclature_id;
+
+                // Regrouper par nomenclature
+                if (!isset($lignesParNomenclature[$nomenclatureId])) {
+                    $lignesParNomenclature[$nomenclatureId] = [
+                        'montant' => 0,
+                        'libelles' => []
+                    ];
+                }
+
+                $lignesParNomenclature[$nomenclatureId]['montant'] += $ligne->net_a_payer;
+                $lignesParNomenclature[$nomenclatureId]['libelles'][] = $ligne->designation;
+            }
+
+            // Créer les lignes d'engagement et engager le budget
+            $numeroLigne = 1;
+            foreach ($lignesParNomenclature as $nomenclatureId => $data) {
                 $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                    ->where('nomenclature_id', $ligne->nomenclature_id)
+                    ->where('nomenclature_id', $nomenclatureId)
                     ->firstOrFail();
 
                 // Vérifier le crédit disponible
-                if (!$ligneBudgetaire->peutEngager($ligne->montant_ttc)) {
+                if (!$ligneBudgetaire->peutEngager($data['montant'])) {
                     throw new \Exception(
-                        "Crédit insuffisant sur la ligne {$ligne->nomenclature->code}. " .
+                        "Crédit insuffisant sur la ligne {$ligneBudgetaire->nomenclature->code}. " .
                             "Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA"
                     );
                 }
 
+                // Créer la ligne d'engagement
+                LigneEngagement::create([
+                    'engagement_id' => $engagement->id,
+                    'nomenclature_id' => $nomenclatureId,
+                    'numero_ligne' => $numeroLigne++,
+                    'libelle' => implode(', ', $data['libelles']),
+                    'montant' => $data['montant'],
+                ]);
+
                 // Engager
-                $ligneBudgetaire->enregistrerEngagement($ligne->montant_ttc);
+                $ligneBudgetaire->enregistrerEngagement($data['montant']);
             }
 
             // Marquer le BC comme engagé
             $this->engage = true;
-            $this->montant_engage = $this->montant_ttc;
+            $this->montant_engage = $netAPayer;
             $this->date_engagement = now();
             $this->statut = 'engage';
             $this->save();
@@ -229,13 +303,11 @@ class BonCommande extends Model
 
         \DB::beginTransaction();
         try {
-            // Désengager chaque ligne budgétaire
-            foreach ($this->lignes as $ligne) {
-                $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                    ->where('nomenclature_id', $ligne->nomenclature_id)
-                    ->firstOrFail();
+            // Récupérer l'engagement et l'annuler
+            $engagement = $this->engagement;
 
-                $ligneBudgetaire->annulerEngagement($ligne->montant_ttc);
+            if ($engagement) {
+                $engagement->annuler();
             }
 
             // Marquer le BC comme désengagé
