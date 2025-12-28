@@ -6,6 +6,7 @@ use App\Filament\Resources\BordereauEngagementResource\Pages;
 use App\Filament\Resources\BordereauEngagementResource\RelationManagers;
 use App\Models\BordereauEngagement;
 use App\Models\Budget;
+use App\Models\Engagement;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -69,6 +70,41 @@ class BordereauEngagementResource extends Resource
                             ->rows(2)
                             ->columnSpanFull(),
                     ]),
+
+                // ✅ NOUVELLE SECTION : Sélection des engagements
+                Forms\Components\Section::make('Engagements à inclure')
+                    ->description('Sélectionnez les engagements à attacher à ce bordereau')
+                    ->schema([
+                        Forms\Components\Select::make('engagements')
+                            ->label('Engagements')
+                            ->relationship(
+                                name: 'engagements',
+                                titleAttribute: 'numero',
+                                modifyQueryUsing: fn($query) => $query
+                                    ->where('statut', 'definitif')
+                                    ->whereDoesntHave('bordereaux', function ($q) {
+                                        $q->where('statut', 'valide');
+                                    })
+                                    ->orderBy('date_engagement', 'desc')
+                            )
+                            ->multiple()
+                            ->preload()  // ← CRUCIAL : Charge toutes les options
+                            ->searchable(['numero', 'objet', 'reference_document'])
+                            ->getOptionLabelFromRecordUsing(
+                                fn($record) =>
+                                sprintf(
+                                    '%s - %s (%s FCFA) - %s',
+                                    $record->numero,
+                                    \Str::limit($record->objet, 50),
+                                    number_format($record->montant_engage, 0, ',', ' '),
+                                    $record->date_engagement->format('d/m/Y')
+                                )
+                            )
+                            ->helperText('Seuls les engagements définitifs non encore validés dans un bordereau sont affichés')
+                            ->columnSpanFull()
+                            ->hiddenOn('edit'),  // Masquer en édition (utiliser le RelationManager)
+                    ])
+                    ->hiddenOn('edit'),  // Masquer toute la section en édition
 
                 Forms\Components\Section::make('Informations automatiques')
                     ->schema([

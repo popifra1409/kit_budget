@@ -56,9 +56,10 @@ class EngagementsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('numero')
             ->columns([
+                // ✅ FIX: Désactiver le tri sur la colonne pivot
                 Tables\Columns\TextColumn::make('pivot.numero_ligne')
                     ->label('#')
-                    ->sortable(),
+                    ->sortable(false),  // ← Correction PostgreSQL
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° Engagement')
@@ -238,6 +239,7 @@ class EngagementsRelationManager extends RelationManager
                         ->visible(fn() => $this->getOwnerRecord()->estModifiable()),
                 ]),
             ])
-            ->defaultSort('pivot.numero_ligne', 'asc');
+            // ✅ FIX: Trier par colonne normale au lieu de colonne pivot
+            ->defaultSort('numero', 'desc');  // ← Correction PostgreSQL
     }
 }

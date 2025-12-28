@@ -52,6 +52,9 @@ class ParametresStructureResource extends Resource
                             ->image()
                             ->directory('logos')
                             ->disk('public')
+                            ->visibility('public')
+                            ->maxSize(2048)
+                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml'])
                             ->imageEditor()
                             ->imageEditorAspectRatios([
                                 null,
@@ -60,7 +63,8 @@ class ParametresStructureResource extends Resource
                                 '1:1',
                             ])
                             ->maxSize(2048)
-                            ->helperText('Format accepté: PNG, JPG, JPEG. Taille max: 2MB'),
+                            ->helperText('Format accepté : PNG, JPG, SVG. Taille maximale : 2MB. Dimensions recommandées : 200x200px ou 400x100px')
+                            ->columnSpanFull(),
 
                         Forms\Components\Toggle::make('actif')
                             ->label('Structure Active')

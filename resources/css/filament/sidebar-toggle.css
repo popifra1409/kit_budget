@@ -1,0 +1,133 @@
+/* ===================================
+   SIDEBAR TOGGLE - Réduire/Élargir
+   FILAMENT V3 - Version Topbar
+   =================================== */
+
+/* Bouton dans le topbar */
+.sidebar-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 0.375rem;
+    background: transparent;
+    color: rgb(var(--gray-400));
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.sidebar-toggle-btn:hover {
+    background: rgb(var(--gray-50));
+    color: rgb(var(--primary-600));
+}
+
+.dark .sidebar-toggle-btn:hover {
+    background: rgb(var(--gray-800));
+    color: rgb(var(--primary-400));
+}
+
+.sidebar-toggle-btn svg {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.3s ease;
+}
+
+/* Rotation de l'icône quand collapsed */
+[data-sidebar-collapsed="true"] .sidebar-toggle-btn svg {
+    transform: rotate(180deg);
+}
+
+/* Transitions fluides */
+.fi-sidebar,
+.fi-sidebar-close-overlay,
+.fi-main {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* État sidebar réduite */
+[data-sidebar-collapsed="true"] .fi-sidebar {
+    width: 4.5rem !important;
+    min-width: 4.5rem !important;
+}
+
+/* Masquer le texte des items */
+[data-sidebar-collapsed="true"] .fi-sidebar-item-label,
+[data-sidebar-collapsed="true"] .fi-sidebar-group-label,
+[data-sidebar-collapsed="true"] .fi-tenant-menu-trigger span,
+[data-sidebar-collapsed="true"] .fi-user-menu-trigger .fi-user-name {
+    display: none !important;
+}
+
+/* Masquer le logo texte */
+[data-sidebar-collapsed="true"] .fi-sidebar-header .fi-logo span {
+    display: none !important;
+}
+
+/* Centrer les éléments */
+[data-sidebar-collapsed="true"] .fi-sidebar-item,
+[data-sidebar-collapsed="true"] .fi-sidebar-item-button {
+    justify-content: center !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+}
+
+[data-sidebar-collapsed="true"] .fi-sidebar-group-items {
+    padding-left: 0 !important;
+}
+
+/* Centrer le logo */
+[data-sidebar-collapsed="true"] .fi-sidebar-header {
+    justify-content: center !important;
+}
+
+/* Ajuster le contenu principal */
+[data-sidebar-collapsed="true"]~.fi-main,
+[data-sidebar-collapsed="true"]~* .fi-main {
+    margin-left: 4.5rem !important;
+}
+
+/* Masquer les badges/chevrons */
+[data-sidebar-collapsed="true"] .fi-sidebar-item-badge,
+[data-sidebar-collapsed="true"] .fi-sidebar-group-button .fi-btn-icon {
+    display: none !important;
+}
+
+/* Tooltips au survol (sidebar réduite) */
+[data-sidebar-collapsed="true"] .fi-sidebar-item {
+    position: relative;
+}
+
+[data-sidebar-collapsed="true"] .fi-sidebar-item:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 0.5rem);
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgb(var(--gray-900));
+    color: white;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    z-index: 50;
+    pointer-events: none;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.dark [data-sidebar-collapsed="true"] .fi-sidebar-item:hover::after {
+    background: rgb(var(--gray-700));
+}
+
+/* Responsive : masquer sur mobile/tablette */
+@media (max-width: 1024px) {
+    .sidebar-toggle-btn {
+        display: none !important;
+    }
+}
+
+/* Animation de l'overlay */
+[data-sidebar-collapsed="true"] .fi-sidebar-close-overlay {
+    display: none !important;
+}

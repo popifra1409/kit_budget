@@ -1,0 +1,48 @@
+/* ===================================
+   SIDEBAR TOGGLE - Hide/Show (Display/Masquer)
+   =================================== */
+
+/* Transition fluide pour la sidebar */
+.fi-sidebar {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Quand la sidebar est masquée */
+body[data-sidebar-hidden="true"] .fi-sidebar {
+    transform: translateX(-100%);
+}
+
+/* Ajuster le contenu principal quand sidebar masquée */
+body[data-sidebar-hidden="true"] .fi-main {
+    margin-left: 0 !important;
+}
+
+/* Overlay pour fermer en cliquant à l'extérieur (mobile) */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 39;
+    transition: opacity 0.3s ease;
+}
+
+body[data-sidebar-hidden="false"] .sidebar-overlay {
+    display: block;
+}
+
+/* Responsive : masquer sur mobile par défaut */
+@media (max-width: 1024px) {
+    body[data-sidebar-hidden="true"] .fi-main {
+        margin-left: 0 !important;
+    }
+}
+
+/* Animation de l'icône toggle */
+.sidebar-toggle-icon {
+    transition: transform 0.3s ease;
+}
+
+body[data-sidebar-hidden="true"] .sidebar-toggle-icon {
+    transform: rotate(180deg);
+}

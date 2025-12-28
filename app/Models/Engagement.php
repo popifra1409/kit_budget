@@ -124,6 +124,14 @@ class Engagement extends Model
     }
 
     /**
+     * Alias pour bordereaux() - Compatibilité avec bordereauEngagements()
+     */
+    public function bordereauEngagements(): BelongsToMany
+    {
+        return $this->bordereaux();
+    }
+
+    /**
      * Scope : Par exercice
      */
     public function scopeExercice($query, $exercice)

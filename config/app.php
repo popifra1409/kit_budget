@@ -81,7 +81,7 @@ return [
     'locale' => 'fr',
     'fallback_locale' => 'fr',
     'faker_locale' => 'fr_FR',
-    
+
     /*
     |--------------------------------------------------------------------------
     | Encryption Key
