@@ -32,6 +32,85 @@ class BonCommandeResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    /**
+     * Permissions - Bons de commande avec validation
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]) : false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Valider un bon de commande
+     */
+    public static function canValider($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Annuler un bon de commande
+     */
+    public static function canAnnuler($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general'
+        ]) : false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form

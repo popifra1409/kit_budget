@@ -29,6 +29,84 @@ class VirementBudgetaireResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    /**
+     * Permissions - Virements budgétaires
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            // 'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            // 'controleur_financier',
+            // 'agence_comptable'
+        ]) : false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            // 'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            // 'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            // 'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            // 'controleur_financier',
+            // 'agence_comptable'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Exécuter un virement
+     */
+    public static function canExecuter($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            // 'directeur_general'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Annuler un virement
+     */
+    public static function canAnnuler($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            // 'directeur_general'
+        ]) : false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form

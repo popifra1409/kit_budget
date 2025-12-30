@@ -27,6 +27,77 @@ class BudgetResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    /**
+     * Permissions - Budget avec adoption et activation
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]) : false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            // 'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            // 'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Adopter un budget (Directeur Général)
+     */
+    public static function canAdopter($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'directeur_general'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Activer un budget (Super Admin)
+     */
+    public static function canActiver($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form

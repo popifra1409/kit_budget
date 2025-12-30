@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Spatie\Permission\Models\Role;
 
 class BordereauEngagement extends Model
 {
@@ -23,6 +24,10 @@ class BordereauEngagement extends Model
         'exercice',
         'emis_par',
         'instance_destinataire',
+        'detenu_par_id',
+        'date_derniere_action',
+        'jours_attente',
+        'priorite',
         'objet',
         'montant_total',
         'nombre_engagements',
@@ -113,6 +118,14 @@ class BordereauEngagement extends Model
     public function rejeteur(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejete_par');
+    }
+
+    /**
+     * Relation : Détenu par (utilisateur actuel qui traite le bordereau)
+     */
+    public function detenuPar(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'detenu_par_id');
     }
 
     /**
@@ -242,9 +255,9 @@ class BordereauEngagement extends Model
     }
 
     /**
-     * Transmettre le bordereau
+     * Transmettre le bordereau à un utilisateur spécifique
      */
-    public function transmettre(User $user, string $instanceDestinataire): void
+    public function transmettre(User $user, User $destinataire, ?string $observations = null): void
     {
         if ($this->statut !== 'brouillon') {
             throw new \Exception("Seul un bordereau brouillon peut être transmis");
@@ -258,7 +271,21 @@ class BordereauEngagement extends Model
         try {
             $this->statut = 'transmis';
             $this->date_transmission = now();
-            $this->instance_destinataire = $instanceDestinataire;
+            $this->detenu_par_id = $destinataire->id;  // ← Utilisateur au lieu de texte
+            $this->date_reception = now();
+            $this->date_derniere_action = now();
+
+            // Garder aussi le texte pour compatibilité
+            $roleName = $destinataire->roles->first()?->name ?? 'Utilisateur';
+            $roleLabel = match ($roleName) {
+                'chef_service_budget' => 'Chef Service Budget',
+                'sous_directeur_budget' => 'Sous-Directeur Budget',
+                'controleur_financier' => 'Contrôleur Financier',
+                'agence_comptable' => 'Agence Comptable',
+                default => $roleName
+            };
+            $this->instance_destinataire = "{$destinataire->name} ({$roleLabel})";
+
             $this->save();
 
             // Enregistrer le mouvement
@@ -266,8 +293,8 @@ class BordereauEngagement extends Model
                 'transmis',
                 $user,
                 "Agent DAF",
-                $instanceDestinataire,
-                "Bordereau transmis à {$instanceDestinataire}"
+                $destinataire->name,
+                $observations ?? "Bordereau transmis à {$destinataire->name}"
             );
 
             \DB::commit();
@@ -277,13 +304,15 @@ class BordereauEngagement extends Model
         }
     }
 
-    /**
-     * Réceptionner le bordereau
-     */
     public function receptionner(User $user): void
     {
         if ($this->statut !== 'transmis') {
             throw new \Exception("Seul un bordereau transmis peut être réceptionné");
+        }
+
+        // Vérifier que c'est bien le destinataire
+        if ($this->detenu_par_id !== $user->id) {
+            throw new \Exception("Vous n'êtes pas le destinataire de ce bordereau");
         }
 
         \DB::beginTransaction();
@@ -291,6 +320,7 @@ class BordereauEngagement extends Model
             $this->statut = 'en_cours';
             $this->receptionne_par = $user->id;
             $this->date_reception = now();
+            $this->date_derniere_action = now();
             $this->save();
 
             // Enregistrer le mouvement
@@ -326,6 +356,7 @@ class BordereauEngagement extends Model
             $this->statut = 'valide';
             $this->valide_par = $user->id;
             $this->date_validation = now();
+            $this->date_derniere_action = now();
             $this->save();
 
             // Passer tous les engagements en définitif
@@ -383,6 +414,7 @@ class BordereauEngagement extends Model
             $this->motif_rejet = $motif;
             $this->rejete_par = $user->id;
             $this->date_rejet = now();
+            $this->date_derniere_action = now();
             $this->save();
 
             // Enregistrer le mouvement
@@ -483,5 +515,33 @@ class BordereauEngagement extends Model
     public function estModifiable(): bool
     {
         return $this->statut === 'brouillon';
+    }
+
+    /**
+     * Calculer et mettre à jour les jours d'attente
+     */
+    public function calculerJoursAttente(): void
+    {
+        if ($this->date_reception) {
+            $this->jours_attente = now()->diffInDays($this->date_reception);
+            $this->save();
+        }
+    }
+
+    /**
+     * Scope : Bordereaux détenus par un utilisateur
+     */
+    public function scopeDetenuPar($query, $userId)
+    {
+        return $query->where('detenu_par_id', $userId);
+    }
+
+    /**
+     * Scope : Bordereaux en retard (> 5 jours)
+     */
+    public function scopeEnRetard($query)
+    {
+        return $query->where('jours_attente', '>', 5)
+            ->whereIn('statut', ['transmis', 'en_cours']);
     }
 }

@@ -31,6 +31,82 @@ class EngagementResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+
+    /**
+     * Permissions - Engagements avec validation CF
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]) : false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget'
+        ]) : false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Valider un engagement (Contrôleur Financier)
+     */
+    public static function canValider($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'controleur_financier'
+        ]) : false;
+    }
+
+    /**
+     * Action spéciale : Annuler un engagement
+     */
+    public static function canAnnuler($record): bool
+    {
+        return auth()->check() ? auth()->user()->hasAnyRole([
+            'super_admin',
+            'directeur_general',
+            'controleur_financier'
+        ]) : false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
