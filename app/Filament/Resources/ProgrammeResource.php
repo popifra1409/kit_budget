@@ -82,6 +82,56 @@ class ProgrammeResource extends Resource
     {
         return $form
             ->schema([
+                Forms\Components\Section::make('Hiérarchie')
+                    ->description('Définir si c\'est un programme principal ou un sous-programme')
+                    ->schema([
+                        Forms\Components\Select::make('niveau')
+                            ->label('Niveau')
+                            ->options([
+                                'programme' => 'Programme principal',
+                                'sous_programme' => 'Sous-programme',
+                            ])
+                            ->required()
+                            ->default('programme')
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                // Si programme principal, pas de parent
+                                if ($state === 'programme') {
+                                    $set('parent_id', null);
+                                }
+                            })
+                            ->helperText('Un sous-programme doit être rattaché à un programme principal'),
+
+                        Forms\Components\Select::make('parent_id')
+                            ->label('Programme parent')
+                            ->searchable()
+                            ->preload()
+                            ->placeholder('Aucun (Programme principal)')
+                            ->disabled(fn(callable $get) => $get('niveau') === 'programme')
+                            ->required(fn(callable $get) => $get('niveau') === 'sous_programme')
+                            ->helperText('Sélectionner le programme principal pour ce sous-programme')
+                            ->getSearchResultsUsing(function (string $search) {
+                                return \App\Models\Programme::where('niveau', 'programme')
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('libelle', 'like', "%{$search}%")
+                                            ->orWhere('code', 'like', "%{$search}%");
+                                    })
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(fn($item) => [
+                                        $item->id => "{$item->code} - {$item->libelle}"
+                                    ]);
+                            })
+                            ->getOptionLabelUsing(
+                                fn($value): ?string =>
+                                \App\Models\Programme::find($value)?->code . ' - ' .
+                                    \App\Models\Programme::find($value)?->libelle
+                            ),
+                    ])
+                    ->columns(2)
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null && $record->niveau === 'programme'),
+
                 Forms\Components\Section::make('Informations du Programme')
                     ->schema([
                         Forms\Components\TextInput::make('code')
@@ -89,7 +139,7 @@ class ProgrammeResource extends Resource
                             ->required()
                             ->unique(ignoreRecord: true)
                             ->maxLength(50)
-                            ->placeholder('Ex: P413'),
+                            ->placeholder('Ex: P413 ou P413-01'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')
@@ -154,50 +204,70 @@ class ProgrammeResource extends Resource
                     ->label('Code')
                     ->searchable()
                     ->sortable()
-                    ->weight('bold'),
+                    ->copyable(),
 
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')
                     ->searchable()
                     ->sortable()
-                    ->wrap()
-                    ->limit(50),
+                    ->weight('bold')
+                    ->wrap(),
+
+                Tables\Columns\BadgeColumn::make('niveau')
+                    ->label('Niveau')
+                    ->colors([
+                        'primary' => 'programme',
+                        'success' => 'sous_programme',
+                    ])
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'programme' => 'Programme',
+                        'sous_programme' => 'Sous-programme',
+                        default => ucfirst($state),
+                    })
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('parent.code')
+                    ->label('Programme parent')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()
+                    ->placeholder('—')
+                    ->formatStateUsing(
+                        fn($record) =>
+                        $record->parent
+                            ? "{$record->parent->code} - " . \Str::limit($record->parent->libelle, 30)
+                            : '—'
+                    ),
 
                 Tables\Columns\TextColumn::make('annee')
                     ->label('Année')
-                    ->sortable()
-                    ->badge()
-                    ->color('info'),
-
-                Tables\Columns\TextColumn::make('actions_count')
-                    ->label('Actions')
-                    ->counts('actions')
-                    ->badge()
-                    ->color('success'),
-
-                Tables\Columns\TextColumn::make('budget_total')
-                    ->label('Budget Total (AE)')
-                    ->formatStateUsing(fn($record) => number_format($record->getBudgetTotal(), 0, ',', ' ') . ' FCFA')
-                    ->color('warning'),
+                    ->sortable(),
 
                 Tables\Columns\IconColumn::make('actif')
                     ->label('Actif')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('niveau')
+                    ->label('Niveau')
+                    ->options([
+                        'programme' => 'Programme principal',
+                        'sous_programme' => 'Sous-programme',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('parent_id')
+                    ->label('Programme parent')
+                    ->relationship('parent', 'libelle')
+                    ->searchable()
+                    ->preload(),
+
                 Tables\Filters\SelectFilter::make('annee')
                     ->label('Année')
-                    ->options(function () {
-                        $currentYear = now()->year;
-                        return collect(range($currentYear - 2, $currentYear + 3))
-                            ->mapWithKeys(fn($year) => [$year => $year]);
-                    }),
+                    ->options(fn() => range(2020, 2050)),
 
                 Tables\Filters\TernaryFilter::make('actif')
-                    ->label('Actif')
-                    ->placeholder('Tous')
-                    ->trueLabel('Actifs')
-                    ->falseLabel('Inactifs'),
+                    ->label('Actif'),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -208,7 +278,7 @@ class ProgrammeResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('code', 'asc');
+            ->defaultSort('code');
     }
 
     public static function getRelations(): array

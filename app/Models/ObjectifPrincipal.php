@@ -23,7 +23,7 @@ class ObjectifPrincipal extends Model
     ];
 
     /**
-     * Relation : Programme parent
+     * Relation : Programme (peut être un programme ou sous-programme)
      */
     public function programme(): BelongsTo
     {

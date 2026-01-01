@@ -126,21 +126,23 @@ class NomenclatureBudgetaireResource extends Resource
                         Forms\Components\Select::make('niveau')
                             ->label('Niveau hiérarchique')
                             ->options([
-                                'chapitre' => 'Chapitre',
+                                'chapitre' => 'Chapitre (ex: 60, 62)',
+                                'article' => 'Article (ex: 620, 600)',
+                                'paragraphe' => 'Paragraphe (ex: 620000)',
                                 'classe' => 'Classe',
                                 'compte' => 'Compte',
                                 'sous_compte' => 'Sous-compte',
                                 'ligne' => 'Ligne',
                             ])
                             ->required()
-                            ->live() // Pour réagir aux changements
+                            ->live()
                             ->afterStateUpdated(function ($state, callable $set) {
                                 // Si on sélectionne "chapitre", pas de parent
                                 if ($state === 'chapitre') {
                                     $set('parent_id', null);
                                 }
                             })
-                            ->helperText('Chapitre > Classe > Compte > Sous-compte > Ligne'),
+                            ->helperText('Hiérarchie : Chapitre > Article > Paragraphe | OU | Classe > Compte > Sous-compte > Ligne'),
 
                         Forms\Components\Select::make('parent_id')
                             ->label('Parent')
@@ -152,10 +154,12 @@ class NomenclatureBudgetaireResource extends Resource
 
                                 // Filtrer les parents possibles selon le niveau
                                 $parentNiveaux = [
+                                    'article' => ['chapitre'],
+                                    'paragraphe' => ['article'],
                                     'classe' => ['chapitre'],
                                     'compte' => ['chapitre', 'classe'],
                                     'sous_compte' => ['classe', 'compte'],
-                                    'ligne' => ['compte', 'sous_compte'],
+                                    'ligne' => ['compte', 'sous_compte', 'paragraphe'],
                                 ];
 
                                 $query = \App\Models\NomenclatureBudgetaire::where(function ($q) use ($search) {
@@ -271,18 +275,21 @@ class NomenclatureBudgetaireResource extends Resource
                     ->label('Niveau')
                     ->colors([
                         'danger' => 'chapitre',
-                        'warning' => 'classe',
+                        'warning' => 'article',
+                        'info' => 'paragraphe',
                         'success' => 'compte',
                         'primary' => 'sous_compte',
                         'secondary' => 'ligne',
                     ])
                     ->formatStateUsing(fn(string $state): string => match ($state) {
                         'chapitre' => 'Chapitre',
+                        'article' => 'Article',
+                        'paragraphe' => 'Paragraphe',
                         'classe' => 'Classe',
                         'compte' => 'Compte',
                         'sous_compte' => 'Sous-compte',
                         'ligne' => 'Ligne',
-                        default => $state,
+                        default => ucfirst($state),
                     }),
 
                 Tables\Columns\TextColumn::make('parent.code')

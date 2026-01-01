@@ -231,7 +231,7 @@ class EtatConfigSeeder extends Seeder
                 ],
                 // Via Engagement → BonCommande → Lignes → Nomenclature (Chapitre/Article/Paragraphe)
                 'chapitre' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.code',
+                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.parent.parent.code',
                     'type' => 'text',
                 ],
                 'article' => [
@@ -239,7 +239,7 @@ class EtatConfigSeeder extends Seeder
                     'type' => 'text',
                 ],
                 'paragraphe' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.libelle',
+                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.code',
                     'type' => 'text',
                 ],
                 // Via Engagement → BonCommande → Lignes → Nomenclature → Tache → Activite → Action → Programme
