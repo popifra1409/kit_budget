@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class NomenclatureBudgetaire extends Model
 {
@@ -87,6 +88,14 @@ class NomenclatureBudgetaire extends Model
     public function taches(): HasMany
     {
         return $this->hasMany(Tache::class, 'nomenclature_id');
+    }
+
+    /**
+     * Relation : Tâche principale liée à cette nomenclature
+     */
+    public function tache(): HasOne
+    {
+        return $this->hasOne(Tache::class, 'nomenclature_id');
     }
 
     /**

@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Filament\Tables\Actions\Action;
 
 class BonCommandeResource extends Resource
 {
@@ -516,6 +517,26 @@ class BonCommandeResource extends Resource
                             ->warning()
                             ->send();
                     }),
+            ])
+            ->actions([
+                Action::make('telecharger_bon_commande')
+                    ->label('Télécharger')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->url(fn($record) => route('pdf.telecharger', [
+                        'etat' => 'bon_commande',
+                        'id' => $record->id
+                    ])),
+
+                Action::make('afficher_bon_commande')
+                    ->label('Aperçu')
+                    ->icon('heroicon-o-eye')
+                    ->color('info')
+                    ->url(fn($record) => route('pdf.afficher', [
+                        'etat' => 'bon_commande',
+                        'id' => $record->id
+                    ]))
+                    ->openUrlInNewTab(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

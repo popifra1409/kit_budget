@@ -13,6 +13,9 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use App\Services\PdfGenerator\PdfGenerator;
+use Filament\Tables\Actions\Action;
+use Filament\Tables\Actions\ActionGroup;
 
 class BordereauEngagementResource extends Resource
 {
@@ -661,6 +664,54 @@ class BordereauEngagementResource extends Resource
                                 ->send();
                         }
                     }),
+            ])
+
+            ->actions([
+                ActionGroup::make([
+                    // Vos actions existantes...
+
+                    Action::make('telecharger_certificat')
+                        ->label('Certificat d\'engagement')
+                        ->icon('heroicon-o-document-text')
+                        ->color('success')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'certificat_engagement',
+                            'id' => $record->id
+                        ])),
+
+                    Action::make('afficher_certificat')
+                        ->label('Aperçu Certificat')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'certificat_engagement',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+
+                    Action::make('telecharger_autorisation')
+                        ->label('Autorisation d\'engagement')
+                        ->icon('heroicon-o-document-check')
+                        ->color('warning')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'autorisation_engagement',
+                            'id' => $record->id
+                        ])),
+
+                    Action::make('afficher_autorisation')
+                        ->label('Aperçu Autorisation')
+                        ->icon('heroicon-o-eye')
+                        ->color('gray')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'autorisation_engagement',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+                ])
+                    ->label('États PDF')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('primary')
+                    ->button(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

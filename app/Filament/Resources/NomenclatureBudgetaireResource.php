@@ -126,30 +126,62 @@ class NomenclatureBudgetaireResource extends Resource
                         Forms\Components\Select::make('niveau')
                             ->label('Niveau hiérarchique')
                             ->options([
+                                'chapitre' => 'Chapitre',
                                 'classe' => 'Classe',
                                 'compte' => 'Compte',
                                 'sous_compte' => 'Sous-compte',
                                 'ligne' => 'Ligne',
                             ])
-                            ->required(),
+                            ->required()
+                            ->live() // Pour réagir aux changements
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                // Si on sélectionne "chapitre", pas de parent
+                                if ($state === 'chapitre') {
+                                    $set('parent_id', null);
+                                }
+                            })
+                            ->helperText('Chapitre > Classe > Compte > Sous-compte > Ligne'),
 
                         Forms\Components\Select::make('parent_id')
                             ->label('Parent')
                             ->searchable()
                             ->preload()
-                            ->placeholder('Aucun parent (niveau classe)')
-                            ->getSearchResultsUsing(function (string $search) {
-                                return \App\Models\NomenclatureBudgetaire::where('libelle', 'like', "%{$search}%")
-                                    ->orWhere('code', 'like', "%{$search}%")
-                                    ->limit(50)
+                            ->placeholder('Aucun parent (niveau chapitre)')
+                            ->getSearchResultsUsing(function (string $search, callable $get) {
+                                $niveau = $get('niveau');
+
+                                // Filtrer les parents possibles selon le niveau
+                                $parentNiveaux = [
+                                    'classe' => ['chapitre'],
+                                    'compte' => ['chapitre', 'classe'],
+                                    'sous_compte' => ['classe', 'compte'],
+                                    'ligne' => ['compte', 'sous_compte'],
+                                ];
+
+                                $query = \App\Models\NomenclatureBudgetaire::where(function ($q) use ($search) {
+                                    $q->where('libelle', 'like', "%{$search}%")
+                                        ->orWhere('code', 'like', "%{$search}%");
+                                });
+
+                                // Filtrer par niveaux parents autorisés
+                                if (isset($parentNiveaux[$niveau])) {
+                                    $query->whereIn('niveau', $parentNiveaux[$niveau]);
+                                }
+
+                                return $query->limit(50)
                                     ->get()
-                                    ->mapWithKeys(fn($item) => [$item->id => "{$item->code} - {$item->libelle}"]);
+                                    ->mapWithKeys(fn($item) => [
+                                        $item->id => "{$item->code} - {$item->libelle} ({$item->niveau})"
+                                    ]);
                             })
                             ->getOptionLabelUsing(
                                 fn($value): ?string =>
                                 \App\Models\NomenclatureBudgetaire::find($value)?->code . ' - ' .
-                                    \App\Models\NomenclatureBudgetaire::find($value)?->libelle
-                            ),
+                                    \App\Models\NomenclatureBudgetaire::find($value)?->libelle . ' (' .
+                                    \App\Models\NomenclatureBudgetaire::find($value)?->niveau . ')'
+                            )
+                            ->disabled(fn(callable $get) => $get('niveau') === 'chapitre')
+                            ->helperText('Sélectionner le parent dans la hiérarchie'),
                     ])
                     ->columns(2),
 
@@ -235,10 +267,17 @@ class NomenclatureBudgetaireResource extends Resource
                         'success' => 'recette',
                     ]),
 
-                Tables\Columns\TextColumn::make('niveau')
+                Tables\Columns\BadgeColumn::make('niveau')
                     ->label('Niveau')
-                    ->badge()
+                    ->colors([
+                        'danger' => 'chapitre',
+                        'warning' => 'classe',
+                        'success' => 'compte',
+                        'primary' => 'sous_compte',
+                        'secondary' => 'ligne',
+                    ])
                     ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'chapitre' => 'Chapitre',
                         'classe' => 'Classe',
                         'compte' => 'Compte',
                         'sous_compte' => 'Sous-compte',
