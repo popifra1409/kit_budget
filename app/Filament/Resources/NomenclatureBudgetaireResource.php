@@ -98,30 +98,51 @@ class NomenclatureBudgetaireResource extends Resource
                             ->label('Code')
                             ->required()
                             ->maxLength(20)
-                            ->placeholder('Ex: 601300, 722200, 112000'),
+                            ->placeholder('Ex: 62, 620, 620000'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')
                             ->required()
                             ->maxLength(255)
                             ->columnSpanFull()
-                            ->placeholder('Ex: Carburants et lubrifiants'),
+                            ->placeholder('Ex: CHARGES DE PERSONNEL, SALAIRES DE BASE'),
 
-                        Forms\Components\TextInput::make('classe')
-                            ->label('Classe')
-                            ->required()
-                            ->maxLength(2)
-                            ->placeholder('1, 2, 3, 4, 5, 6, 7, 8, 9')
-                            ->helperText('Première classe du plan comptable'),
-
-                        Forms\Components\Select::make('type')
-                            ->label('Type')
+                        Forms\Components\Select::make('classe')
+                            ->label('Classe comptable OHADA')
                             ->options([
-                                'depense' => 'Dépense',
-                                'recette' => 'Recette',
+                                '1' => 'Classe 1 - Comptes de capitaux',
+                                '2' => 'Classe 2 - Comptes d\'actif immobilisé',
+                                '3' => 'Classe 3 - Comptes de stocks',
+                                '4' => 'Classe 4 - Comptes de tiers',
+                                '5' => 'Classe 5 - Comptes de trésorerie',
+                                '6' => 'Classe 6 - Comptes de charges (DÉPENSES)',
+                                '7' => 'Classe 7 - Comptes de produits (RECETTES)',
+                                '8' => 'Classe 8 - Comptes spéciaux',
+                                '9' => 'Classe 9 - Comptes analytiques',
                             ])
                             ->required()
-                            ->helperText('Type budgétaire'),
+                            ->searchable()
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                // Auto-définir le type selon la classe
+                                if ($state === '6') {
+                                    $set('type', 'depense');
+                                } elseif ($state === '7') {
+                                    $set('type', 'recette');
+                                }
+                            })
+                            ->helperText('Classe 6 = Dépenses | Classe 7 = Recettes'),
+
+                        Forms\Components\Select::make('type')
+                            ->label('Type budgétaire')
+                            ->options([
+                                'depense' => 'Dépense (Classe 6)',
+                                'recette' => 'Recette (Classe 7)',
+                            ])
+                            ->required()
+                            ->disabled(fn(callable $get) => in_array($get('classe'), ['6', '7']))
+                            ->dehydrated() // Important : pour sauvegarder même si disabled
+                            ->helperText('Auto-défini pour Classe 6 et 7'),
 
                         Forms\Components\Select::make('niveau')
                             ->label('Niveau hiérarchique')
@@ -135,6 +156,7 @@ class NomenclatureBudgetaireResource extends Resource
                                 'ligne' => 'Ligne',
                             ])
                             ->required()
+                            ->searchable()
                             ->live()
                             ->afterStateUpdated(function ($state, callable $set) {
                                 // Si on sélectionne "chapitre", pas de parent
@@ -142,7 +164,7 @@ class NomenclatureBudgetaireResource extends Resource
                                     $set('parent_id', null);
                                 }
                             })
-                            ->helperText('Hiérarchie : Chapitre > Article > Paragraphe | OU | Classe > Compte > Sous-compte > Ligne'),
+                            ->helperText('Hiérarchie budgétaire : Chapitre > Article > Paragraphe'),
 
                         Forms\Components\Select::make('parent_id')
                             ->label('Parent')
@@ -154,8 +176,8 @@ class NomenclatureBudgetaireResource extends Resource
 
                                 // Filtrer les parents possibles selon le niveau
                                 $parentNiveaux = [
-                                    'article' => ['chapitre'],
-                                    'paragraphe' => ['article'],
+                                    'article' => ['chapitre'], // Article peut seulement avoir Chapitre comme parent
+                                    'paragraphe' => ['article', 'chapitre'], // ← MODIFIÉ : Paragraphe peut avoir Article OU Chapitre
                                     'classe' => ['chapitre'],
                                     'compte' => ['chapitre', 'classe'],
                                     'sous_compte' => ['classe', 'compte'],
@@ -185,7 +207,15 @@ class NomenclatureBudgetaireResource extends Resource
                                     \App\Models\NomenclatureBudgetaire::find($value)?->niveau . ')'
                             )
                             ->disabled(fn(callable $get) => $get('niveau') === 'chapitre')
-                            ->helperText('Sélectionner le parent dans la hiérarchie'),
+                            ->helperText(function (callable $get) {
+                                $niveau = $get('niveau');
+                                return match ($niveau) {
+                                    'chapitre' => 'Chapitre n\'a pas de parent',
+                                    'article' => 'Sélectionner un Chapitre',
+                                    'paragraphe' => 'Sélectionner un Article (si existe) ou directement un Chapitre',
+                                    default => 'Sélectionner le parent dans la hiérarchie',
+                                };
+                            }),
                     ])
                     ->columns(2),
 
@@ -193,11 +223,13 @@ class NomenclatureBudgetaireResource extends Resource
                     ->schema([
                         Forms\Components\DatePicker::make('date_mise_en_vigueur')
                             ->label('Date de mise en vigueur')
-                            ->default(now()->startOfYear()),
+                            ->default(now()->startOfYear())
+                            ->required(),
 
                         Forms\Components\TextInput::make('exercice')
                             ->label('Exercice budgétaire')
                             ->numeric()
+                            ->required()
                             ->default(now()->year)
                             ->minValue(2020)
                             ->maxValue(2050)
@@ -206,16 +238,34 @@ class NomenclatureBudgetaireResource extends Resource
                     ->columns(2),
 
                 Forms\Components\Section::make('Historisation')
+                    ->description('Traçabilité des modifications')
                     ->schema([
                         Forms\Components\TextInput::make('code_precedent')
                             ->label('Code précédent')
                             ->maxLength(20)
                             ->placeholder('Si le code a changé'),
 
+                        Forms\Components\Select::make('version_precedente_id')
+                            ->label('Version précédente')
+                            ->relationship('versionPrecedente', 'code')
+                            ->searchable()
+                            ->preload()
+                            ->placeholder('Aucune version précédente')
+                            ->getSearchResultsUsing(function (string $search) {
+                                return \App\Models\NomenclatureBudgetaire::where('code', 'like', "%{$search}%")
+                                    ->orWhere('libelle', 'like', "%{$search}%")
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(fn($item) => [
+                                        $item->id => "{$item->code} - {$item->libelle} (v{$item->version})"
+                                    ]);
+                            }),
+
                         Forms\Components\Textarea::make('motif_modification')
                             ->label('Motif de modification')
                             ->rows(3)
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->placeholder('Raison de la modification ou de la nouvelle version'),
                     ])
                     ->columns(2)
                     ->collapsible()
@@ -223,16 +273,26 @@ class NomenclatureBudgetaireResource extends Resource
 
                 Forms\Components\Section::make('Métadonnées')
                     ->schema([
+                        Forms\Components\TextInput::make('version')
+                            ->label('Version')
+                            ->numeric()
+                            ->default(1)
+                            ->minValue(1)
+                            ->helperText('Numéro de version de cette nomenclature'),
+
                         Forms\Components\TextInput::make('ordre')
                             ->label('Ordre d\'affichage')
                             ->numeric()
-                            ->default(0),
+                            ->default(0)
+                            ->helperText('Ordre dans les listes'),
 
                         Forms\Components\Toggle::make('actif')
                             ->label('Actif')
-                            ->default(true),
+                            ->default(true)
+                            ->inline(false)
+                            ->helperText('Nomenclature active et utilisable'),
                     ])
-                    ->columns(2)
+                    ->columns(3)
                     ->collapsible()
                     ->collapsed(),
             ]);

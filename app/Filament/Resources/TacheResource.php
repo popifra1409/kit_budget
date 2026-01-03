@@ -82,6 +82,56 @@ class TacheResource extends Resource
     {
         return $form
             ->schema([
+                Forms\Components\Section::make('Hiérarchie')
+                    ->description('Définir si c\'est une tâche principale ou une sous-tâche')
+                    ->schema([
+                        Forms\Components\Select::make('niveau')
+                            ->label('Niveau')
+                            ->options([
+                                'tache' => 'Tâche principale',
+                                'sous_tache' => 'Sous-tâche',
+                            ])
+                            ->required()
+                            ->default('tache')
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                // Si tâche principale, pas de parent
+                                if ($state === 'tache') {
+                                    $set('parent_id', null);
+                                }
+                            })
+                            ->helperText('Une sous-tâche doit être rattachée à une tâche principale'),
+
+                        Forms\Components\Select::make('parent_id')
+                            ->label('Tâche parent')
+                            ->searchable()
+                            ->preload()
+                            ->placeholder('Aucune (Tâche principale)')
+                            ->disabled(fn(callable $get) => $get('niveau') === 'tache')
+                            ->required(fn(callable $get) => $get('niveau') === 'sous_tache')
+                            ->helperText('Sélectionner la tâche principale pour cette sous-tâche')
+                            ->getSearchResultsUsing(function (string $search) {
+                                return \App\Models\Tache::where('niveau', 'tache')
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('libelle', 'like', "%{$search}%")
+                                            ->orWhere('code', 'like', "%{$search}%");
+                                    })
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(fn($item) => [
+                                        $item->id => "{$item->code} - {$item->libelle}"
+                                    ]);
+                            })
+                            ->getOptionLabelUsing(
+                                fn($value): ?string =>
+                                \App\Models\Tache::find($value)?->code . ' - ' .
+                                    \App\Models\Tache::find($value)?->libelle
+                            ),
+                    ])
+                    ->columns(2)
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null && $record->niveau === 'tache'),
+
                 Forms\Components\Section::make('Liaison')
                     ->schema([
                         Forms\Components\Select::make('activite_id')
@@ -96,8 +146,9 @@ class TacheResource extends Resource
                             ),
 
                         Forms\Components\Select::make('nomenclature_id')
-                            ->label('Nomenclature Budgétaire (Dépenses uniquement)')
-                            ->required()
+                            ->label('Nomenclature Budgétaire')
+                            ->required(fn(callable $get) => $get('niveau') === 'sous_tache')
+                            ->disabled(fn(callable $get) => $get('niveau') === 'tache')
                             ->searchable()
                             ->preload()
                             ->getSearchResultsUsing(function (string $search) {
@@ -117,7 +168,7 @@ class TacheResource extends Resource
                                 \App\Models\NomenclatureBudgetaire::find($value)?->code . ' - ' .
                                     \App\Models\NomenclatureBudgetaire::find($value)?->libelle
                             )
-                            ->helperText('Seulement les lignes budgétaires de type dépense'),
+                            ->helperText('Obligatoire pour les sous-tâches uniquement (dépenses)'),
                     ])
                     ->columns(2),
 
@@ -127,7 +178,7 @@ class TacheResource extends Resource
                             ->label('Code')
                             ->required()
                             ->maxLength(50)
-                            ->placeholder('Ex: T1'),
+                            ->placeholder('Ex: T1 ou T1-01'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')
@@ -179,26 +230,85 @@ class TacheResource extends Resource
                     ->columns(3),
 
                 Forms\Components\Section::make('Budget')
+                    ->description(
+                        fn(callable $get) =>
+                        $get('niveau') === 'tache'
+                            ? 'Les montants sont calculés automatiquement à partir des sous-tâches'
+                            : 'Saisir les montants pour cette sous-tâche'
+                    )
                     ->schema([
+                        Forms\Components\Placeholder::make('info_budget_tache')
+                            ->label('')
+                            ->content('ℹ️ Pour une tâche principale, AE et CP sont calculés automatiquement comme la somme des sous-tâches')
+                            ->visible(fn(callable $get) => $get('niveau') === 'tache'),
+
                         Forms\Components\TextInput::make('ae')
                             ->label('AE (Autorisation d\'Engagement)')
-                            ->required()
+                            ->required(fn(callable $get) => $get('niveau') === 'sous_tache')
+                            ->disabled(fn(callable $get) => $get('niveau') === 'tache')
+                            ->dehydrated(fn(callable $get) => $get('niveau') === 'sous_tache') // Ne sauvegarder que pour sous-tâches
                             ->numeric()
                             ->default(0)
                             ->prefix('FCFA')
-                            ->placeholder('0')
-                            ->helperText('Montant de l\'autorisation d\'engagement'),
+                            ->placeholder(
+                                fn(callable $get) =>
+                                $get('niveau') === 'tache' ? 'Calculé automatiquement' : '0'
+                            )
+                            ->helperText(
+                                fn(callable $get) =>
+                                $get('niveau') === 'tache'
+                                    ? 'Somme des AE des sous-tâches'
+                                    : 'Montant de l\'autorisation d\'engagement'
+                            )
+                            ->afterStateHydrated(function ($component, $state, $record) {
+                                // Afficher le total calculé pour les tâches principales
+                                if ($record && $record->estTachePrincipale()) {
+                                    $component->state($record->getTotalAe());
+                                }
+                            }),
 
                         Forms\Components\TextInput::make('cp')
                             ->label('CP (Crédit de Paiement)')
-                            ->required()
+                            ->required(fn(callable $get) => $get('niveau') === 'sous_tache')
+                            ->disabled(fn(callable $get) => $get('niveau') === 'tache')
+                            ->dehydrated(fn(callable $get) => $get('niveau') === 'sous_tache') // Ne sauvegarder que pour sous-tâches
                             ->numeric()
                             ->default(0)
                             ->prefix('FCFA')
-                            ->placeholder('0')
-                            ->helperText('Montant du crédit de paiement'),
+                            ->placeholder(
+                                fn(callable $get) =>
+                                $get('niveau') === 'tache' ? 'Calculé automatiquement' : '0'
+                            )
+                            ->helperText(
+                                fn(callable $get) =>
+                                $get('niveau') === 'tache'
+                                    ? 'Somme des CP des sous-tâches'
+                                    : 'Montant du crédit de paiement'
+                            )
+                            ->afterStateHydrated(function ($component, $state, $record) {
+                                // Afficher le total calculé pour les tâches principales
+                                if ($record && $record->estTachePrincipale()) {
+                                    $component->state($record->getTotalCp());
+                                }
+                            }),
                     ])
                     ->columns(2),
+
+                Forms\Components\Section::make('Budget calculé')
+                    ->schema([
+                        Forms\Components\ViewField::make('budget_calculé')
+                            ->view('filament.components.budget-calcule')
+                            ->viewData(fn($record) => [
+                                'ae' => $record?->getTotalAe() ?? 0,
+                                'cp' => $record?->getTotalCp() ?? 0,
+                                'count' => $record?->sousTaches->count() ?? 0,
+                            ]),
+                    ])
+                    ->visible(
+                        fn(callable $get, $record) =>
+                        $get('niveau') === 'tache' && $record && $record->sousTaches->count() > 0
+                    )
+                    ->collapsible(),
 
                 Forms\Components\Section::make('Résultats et Indicateurs')
                     ->schema([
@@ -235,6 +345,28 @@ class TacheResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\BadgeColumn::make('niveau')
+                    ->label('Niveau')
+                    ->colors([
+                        'primary' => 'tache',
+                        'success' => 'sous_tache',
+                    ])
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'tache' => 'Tâche',
+                        'sous_tache' => 'Sous-tâche',
+                        default => ucfirst($state),
+                    })
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('parent.code')
+                    ->label('Parent')
+                    ->searchable()
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->toggleable()
+                    ->tooltip(fn($record) => $record->parent ? $record->parent->libelle : null),
+
                 Tables\Columns\TextColumn::make('activite.action.programme.code')
                     ->label('Prog.')
                     ->searchable()
@@ -258,7 +390,8 @@ class TacheResource extends Resource
                     ->label('Code')
                     ->searchable()
                     ->sortable()
-                    ->weight('bold'),
+                    ->weight('bold')
+                    ->copyable(),
 
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')
@@ -270,7 +403,14 @@ class TacheResource extends Resource
                     ->label('Nomenclature')
                     ->searchable()
                     ->badge()
-                    ->color('warning'),
+                    ->color('warning')
+                    ->placeholder('—')
+                    ->tooltip(
+                        fn($record) =>
+                        $record->nomenclature
+                            ? $record->nomenclature->libelle
+                            : ($record->niveau === 'tache' ? 'Non applicable (tâche principale)' : null)
+                    ),
 
                 Tables\Columns\TextColumn::make('service.nom')
                     ->label('Service')
@@ -281,19 +421,77 @@ class TacheResource extends Resource
 
                 Tables\Columns\TextColumn::make('ae')
                     ->label('AE')
-                    ->money('XAF')
-                    ->sortable(),
+                    ->formatStateUsing(
+                        fn($record) =>
+                        number_format($record->getTotalAe(), 0, ',', ' ') . ' FCFA'
+                    )
+                    ->sortable()
+                    ->summarize([
+                        Tables\Columns\Summarizers\Sum::make()
+                            ->label('Total AE')
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format($state, 0, ',', ' ') . ' FCFA'
+                            ),
+                    ])
+                    ->tooltip(
+                        fn($record) =>
+                        $record->estTachePrincipale()
+                            ? 'Calculé : somme des ' . $record->sousTaches->count() . ' sous-tâche(s)'
+                            : 'Montant saisi'
+                    ),
 
                 Tables\Columns\TextColumn::make('cp')
                     ->label('CP')
-                    ->money('XAF')
-                    ->sortable(),
+                    ->formatStateUsing(
+                        fn($record) =>
+                        number_format($record->getTotalCp(), 0, ',', ' ') . ' FCFA'
+                    )
+                    ->sortable()
+                    ->summarize([
+                        Tables\Columns\Summarizers\Sum::make()
+                            ->label('Total CP')
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format($state, 0, ',', ' ') . ' FCFA'
+                            ),
+                    ])
+                    ->tooltip(
+                        fn($record) =>
+                        $record->estTachePrincipale()
+                            ? 'Calculé : somme des ' . $record->sousTaches->count() . ' sous-tâche(s)'
+                            : 'Montant saisi'
+                    ),
+                Tables\Columns\TextColumn::make('sousTaches_count')
+                    ->label('Sous-tâches')
+                    ->counts('sousTaches')
+                    ->badge()
+                    ->color('success')
+                    ->visible(fn($record) => $record && $record->niveau === 'tache') // ← Ajout de $record &&
+                    ->toggleable(),
 
                 Tables\Columns\IconColumn::make('actif')
                     ->label('Actif')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('niveau')
+                    ->label('Niveau')
+                    ->options([
+                        'tache' => 'Tâche principale',
+                        'sous_tache' => 'Sous-tâche',
+                    ])
+                    ->placeholder('Tous les niveaux'),
+
+                Tables\Filters\SelectFilter::make('parent_id')
+                    ->label('Tâche parent')
+                    ->relationship('parent', 'libelle')
+                    ->searchable()
+                    ->preload()
+                    ->placeholder('Toutes les tâches parentes')
+                    ->getOptionLabelFromRecordUsing(fn($record) => "{$record->code} - {$record->libelle}"),
+
                 Tables\Filters\SelectFilter::make('activite_id')
                     ->label('Activité')
                     ->relationship('activite', 'libelle')
@@ -315,13 +513,31 @@ class TacheResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\Action::make('voir_sous_taches')
+                    ->label('Sous-tâches')
+                    ->icon('heroicon-o-list-bullet')
+                    ->color('info')
+                    ->visible(fn($record) => $record->niveau === 'tache')
+                    ->url(fn($record) => static::getUrl('index', ['tableFilters' => ['parent_id' => ['value' => $record->id]]]))
+                    ->tooltip('Voir les sous-tâches'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('code', 'asc');
+            ->defaultSort('code', 'asc')
+            ->groups([
+                Tables\Grouping\Group::make('niveau')
+                    ->label('Niveau')
+                    ->collapsible(),
+                Tables\Grouping\Group::make('parent.libelle')
+                    ->label('Tâche parent')
+                    ->collapsible(),
+                Tables\Grouping\Group::make('activite.action.programme.libelle')
+                    ->label('Programme')
+                    ->collapsible(),
+            ]);
     }
 
     public static function getRelations(): array

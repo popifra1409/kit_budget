@@ -83,19 +83,19 @@ class NomenclatureBudgetaire extends Model
     }
 
     /**
-     * Relation : Tâches liées à cette nomenclature
+     * Relation : Tâche principale liée (sous-tâche uniquement)
+     */
+    public function tache(): HasOne
+    {
+        return $this->hasOne(Tache::class, 'nomenclature_id')->where('niveau', 'sous_tache');
+    }
+
+    /**
+     * Relation : Toutes les tâches liées à cette nomenclature
      */
     public function taches(): HasMany
     {
         return $this->hasMany(Tache::class, 'nomenclature_id');
-    }
-
-    /**
-     * Relation : Tâche principale liée à cette nomenclature
-     */
-    public function tache(): HasOne
-    {
-        return $this->hasOne(Tache::class, 'nomenclature_id');
     }
 
     /**
@@ -161,5 +161,33 @@ class NomenclatureBudgetaire extends Model
         }
 
         return implode(' > ', $chemin);
+    }
+
+    /**
+     * Boot - Valider la hiérarchie
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($nomenclature) {
+            // Valider la cohérence parent/niveau
+            if ($nomenclature->parent_id) {
+                $parent = NomenclatureBudgetaire::find($nomenclature->parent_id);
+
+                if ($nomenclature->niveau === 'article' && $parent->niveau !== 'chapitre') {
+                    throw new \Exception("Un Article doit avoir un Chapitre comme parent");
+                }
+
+                if ($nomenclature->niveau === 'paragraphe' && !in_array($parent->niveau, ['article', 'chapitre'])) {
+                    throw new \Exception("Un Paragraphe doit avoir un Article ou un Chapitre comme parent");
+                }
+            }
+
+            // Chapitre ne peut pas avoir de parent
+            if ($nomenclature->niveau === 'chapitre' && $nomenclature->parent_id) {
+                throw new \Exception("Un Chapitre ne peut pas avoir de parent");
+            }
+        });
     }
 }
