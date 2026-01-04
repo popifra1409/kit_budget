@@ -7,14 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use App\Traits\HasExercice;
 
 class DecisionAdministrative extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasExercice;
 
     protected $table = 'decisions_administratives';
 
     protected $fillable = [
+        'exercice_id',
         'numero',
         'budget_id',
         'personnel_id',

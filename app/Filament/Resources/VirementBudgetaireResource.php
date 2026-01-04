@@ -12,6 +12,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use App\Filament\Forms\Components\ExerciceSelect;
+use App\Models\Exercice;
 
 class VirementBudgetaireResource extends Resource
 {
@@ -56,16 +58,51 @@ class VirementBudgetaireResource extends Resource
 
     public static function canEdit($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        if (!$user->hasAnyRole(['chef_service_budget'])) {
+            return false;
+        }
+
+        return $record->estModifiable();
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (!$user->hasRole('super_admin')) {
+            return false;
+        }
+
+        return $record->estModifiable();
+    }
+
+    public static function canEditRecord($record): bool
+    {
+        $canEdit = static::canEdit($record);
+
+        if (!$canEdit && $record->estLectureSeule()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Édition impossible')
+                ->warning()
+                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
+                ->send();
+        }
+
+        return $canEdit;
     }
 
     public static function canView($record): bool
@@ -111,6 +148,14 @@ class VirementBudgetaireResource extends Resource
     {
         return $form
             ->schema([
+                Forms\Components\Section::make('Exercice')
+                    ->description('Exercice budgétaire de rattachement')
+                    ->schema([
+                        ExerciceSelect::make(),
+                    ])
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null),
+
                 Forms\Components\Section::make('Budget et Lignes')
                     ->schema([
                         Forms\Components\Select::make('budget_id')
@@ -217,10 +262,36 @@ class VirementBudgetaireResource extends Resource
             ]);
     }
 
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()->with('exercice');
+    }
+
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
+                Tables\Columns\BadgeColumn::make('exercice.annee')
+                    ->label('Exercice')
+                    ->sortable()
+                    ->colors([
+                        'success' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                        'warning' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                        'danger' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                        'gray' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                    ])
+                    ->tooltip(
+                        fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice
+                            ? $record->exercice->libelle
+                            : null
+                    )
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('numero')
                     ->label('Numéro')
                     ->searchable()
@@ -295,6 +366,14 @@ class VirementBudgetaireResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('exercice_id')
+                    ->label('Exercice')
+                    ->relationship('exercice', 'annee')
+                    ->searchable()
+                    ->preload()
+                    ->placeholder('Tous les exercices')
+                    ->default(fn() => Exercice::getActif()?->id),
+
                 Tables\Filters\SelectFilter::make('budget_id')
                     ->label('Budget')
                     ->relationship('budget', 'libelle')

@@ -9,6 +9,8 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use App\Filament\Forms\Components\ExerciceSelect;
+use App\Models\Exercice;
 
 class ProgrammeResource extends Resource
 {
@@ -51,18 +53,83 @@ class ProgrammeResource extends Resource
         ]) : false;
     }
 
+    /**
+     * Vérifier si l'utilisateur peut éditer ce programme
+     * Conditions : Rôle autorisé + Exercice modifiable
+     */
     public static function canEdit($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        // Super admin OK
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Vérifier le rôle
+        if (!$user->hasAnyRole(['chef_service_budget'])) {
+            return false;
+        }
+
+        // Vérifier l'exercice
+        if (!$record->estModifiable()) {
+            // Optionnel : notifier l'utilisateur
+            if (request()->routeIs('filament.*')) {
+                \Filament\Notifications\Notification::make()
+                    ->title('Exercice verrouillé')
+                    ->warning()
+                    ->body("L'exercice {$record->exercice->annee} est {$record->exercice->getBadgeStatut()}. Modifications impossibles.")
+                    ->send();
+            }
+            return false;
+        }
+
+        return true;
     }
 
+    /**
+     * Vérifier si l'utilisateur peut supprimer ce programme
+     * Conditions : Super admin uniquement + Exercice modifiable
+     */
     public static function canDelete($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        // 1. Vérifier que l'utilisateur est connecté
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        // 2. Seul super admin peut supprimer
+        if (!$user->hasRole('super_admin')) {
+            return false;
+        }
+
+        // 3. Même super admin ne peut pas supprimer sur exercice archivé
+        // (sauf si on veut autoriser, dans ce cas retourner true directement)
+        return $record->estModifiable();
+    }
+
+    /**
+     * Message personnalisé quand édition impossible
+     */
+    public static function canEditRecord($record): bool
+    {
+        $canEdit = static::canEdit($record);
+
+        if (!$canEdit && $record->estLectureSeule()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Édition impossible')
+                ->warning()
+                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
+                ->send();
+        }
+
+        return $canEdit;
     }
 
     public static function canView($record): bool
@@ -82,6 +149,15 @@ class ProgrammeResource extends Resource
     {
         return $form
             ->schema([
+                // ===== NOUVELLE SECTION EXERCICE =====
+                Forms\Components\Section::make('Exercice')
+                    ->description('Exercice budgétaire de rattachement')
+                    ->schema([
+                        ExerciceSelect::make(),
+                    ])
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null),
+
                 Forms\Components\Section::make('Hiérarchie')
                     ->description('Définir si c\'est un programme principal ou un sous-programme')
                     ->schema([
@@ -196,10 +272,37 @@ class ProgrammeResource extends Resource
             ]);
     }
 
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()->with('exercice');
+    }
+
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
+                // ===== NOUVELLE COLONNE EXERCICE =====
+                Tables\Columns\BadgeColumn::make('exercice.annee')
+                    ->label('Exercice')
+                    ->sortable()
+                    ->colors([
+                        'success' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                        'warning' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                        'danger' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                        'gray' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                    ])
+                    ->tooltip(
+                        fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice
+                            ? $record->exercice->libelle
+                            : null
+                    )
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('code')
                     ->label('Code')
                     ->searchable()
@@ -249,6 +352,15 @@ class ProgrammeResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                // ===== NOUVEAU FILTRE EXERCICE =====
+                Tables\Filters\SelectFilter::make('exercice_id')
+                    ->label('Exercice')
+                    ->relationship('exercice', 'annee')
+                    ->searchable()
+                    ->preload()
+                    ->placeholder('Tous les exercices')
+                    ->default(fn() => Exercice::getActif()?->id),
+
                 Tables\Filters\SelectFilter::make('niveau')
                     ->label('Niveau')
                     ->options([

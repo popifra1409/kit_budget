@@ -38,16 +38,18 @@ class StatistiquesBudgetaires
 
         // Calculer les virements (total ajustements)
         $virements = $budget->lignesBudgetaires()
-            ->sum(DB::raw('montant_vote - montant_initial'));
+            ->sum(DB::raw('virements_entrants - virements_sortants'));
 
         // Totaux
-        $budgetInitial = $budget->lignesBudgetaires()->sum('montant_initial');
-        $budgetActualise = $budget->lignesBudgetaires()->sum('montant_vote');
+        $budgetInitial = $budget->lignesBudgetaires()->sum('budget_initial');
+        $budgetActualise = $budget->lignesBudgetaires()->sum('budget_rectifie');
         $engage = $budget->lignesBudgetaires()->sum('engage');
         $disponible = $budgetActualise - $engage;
+        $ordonne = $budget->lignesBudgetaires()->sum('ordonne');
 
+        // Taux d'exécution
         $tauxExecution = $budgetActualise > 0
-            ? round(($engage / $budgetActualise) * 100, 2)
+            ? ($engage / $budgetActualise) * 100
             : 0;
 
         return [

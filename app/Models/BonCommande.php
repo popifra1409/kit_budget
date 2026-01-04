@@ -8,14 +8,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\HasExercice;
 
 class BonCommande extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasExercice;
 
     protected $table = 'bons_commande';
 
     protected $fillable = [
+        'exercice_id',
         'numero',
         'budget_id',
         'fournisseur_id',

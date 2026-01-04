@@ -9,14 +9,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Spatie\Permission\Models\Role;
+use App\Traits\HasExercice;
 
 class BordereauEngagement extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasExercice;
 
     protected $table = 'bordereaux_engagement';
 
     protected $fillable = [
+        'exercice_id',
         'numero',
         'budget_id',
         'date_emission',

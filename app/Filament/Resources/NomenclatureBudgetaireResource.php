@@ -10,6 +10,8 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use App\Filament\Forms\Components\ExerciceSelect;
+use App\Models\Exercice;
 
 class NomenclatureBudgetaireResource extends Resource
 {
@@ -53,15 +55,40 @@ class NomenclatureBudgetaireResource extends Resource
 
     public static function canEdit($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        // Super admin peut toujours éditer
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Chef service budget : seulement si exercice modifiable
+        if ($user->hasRole('chef_service_budget')) {
+            return $record->estModifiable();
+        }
+
+        return false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        // Seul super admin peut supprimer
+        if (!$user->hasRole('super_admin')) {
+            return false;
+        }
+
+        // Même super admin : seulement si exercice modifiable
+        return $record->estModifiable();
     }
 
     public static function canView($record): bool
@@ -86,6 +113,11 @@ class NomenclatureBudgetaireResource extends Resource
             'super_admin',
             'chef_service_budget'
         ]) : false;
+    }
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()->with('exercice');
     }
 
     public static function form(Form $form): Form
@@ -219,7 +251,15 @@ class NomenclatureBudgetaireResource extends Resource
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Exercice et Mise en vigueur')
+                Forms\Components\Section::make('Exercice')
+                    ->description('Exercice budgétaire de rattachement')
+                    ->schema([
+                        ExerciceSelect::make(),
+                    ])
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null),
+
+                Forms\Components\Section::make('Mise en vigueur')
                     ->schema([
                         Forms\Components\DatePicker::make('date_mise_en_vigueur')
                             ->label('Date de mise en vigueur')
@@ -227,15 +267,16 @@ class NomenclatureBudgetaireResource extends Resource
                             ->required(),
 
                         Forms\Components\TextInput::make('exercice')
-                            ->label('Exercice budgétaire')
+                            ->label('Exercice (année)')
                             ->numeric()
-                            ->required()
-                            ->default(now()->year)
-                            ->minValue(2020)
-                            ->maxValue(2050)
-                            ->helperText('Année budgétaire (ex: 2026)'),
+                            ->disabled()  // ← Désactivé car géré par exercice_id
+                            ->dehydrated(false)  // ← Ne pas sauvegarder
+                            ->default(fn() => Exercice::getActif()?->annee)
+                            ->helperText('Auto-rempli depuis l\'exercice sélectionné'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->collapsible()
+                    ->collapsed(),
 
                 Forms\Components\Section::make('Historisation')
                     ->description('Traçabilité des modifications')
@@ -302,6 +343,27 @@ class NomenclatureBudgetaireResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\BadgeColumn::make('exercice.annee')
+                    ->label('Exercice')
+                    ->sortable()
+                    ->colors([
+                        'success' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                        'warning' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                        'danger' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                        'gray' => fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                    ])
+                    ->tooltip(
+                        fn($record) =>
+                        $record->exercice instanceof \App\Models\Exercice
+                            ? $record->exercice->libelle
+                            : null
+                    )
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('code')
                     ->label('Code')
                     ->searchable()
@@ -360,11 +422,11 @@ class NomenclatureBudgetaireResource extends Resource
                         $record->parent ? $record->parent->code . ' - ' . \Str::limit($record->parent->libelle, 20) : '-'
                     ),
 
-                Tables\Columns\TextColumn::make('exercice')
-                    ->label('Exercice')
-                    ->sortable()
-                    ->badge()
-                    ->color('info'),
+                // Tables\Columns\TextColumn::make('exercice')
+                //     ->label('Exercice')
+                //     ->sortable()
+                //     ->badge()
+                //     ->color('info'),
 
                 Tables\Columns\TextColumn::make('date_mise_en_vigueur')
                     ->label('Mise en vigueur')
@@ -377,6 +439,14 @@ class NomenclatureBudgetaireResource extends Resource
                     ->boolean(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('exercice_id')
+                    ->label('Exercice')
+                    ->relationship('exercice', 'annee')
+                    ->searchable()
+                    ->preload()
+                    ->placeholder('Tous les exercices')
+                    ->default(fn() => Exercice::getActif()?->id),
+
                 Tables\Filters\SelectFilter::make('classe')
                     ->label('Classe')
                     ->options([
