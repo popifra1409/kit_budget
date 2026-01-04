@@ -10,6 +10,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use App\Services\ReconductionExerciceService;
 
 class ExerciceResource extends Resource
 {
@@ -332,6 +333,146 @@ class ExerciceResource extends Resource
                                     ->title('Erreur')
                                     ->danger()
                                     ->body($e->getMessage())
+                                    ->send();
+                            }
+                        }),
+                    // Action : Reconduire vers un nouvel exercice
+                    Tables\Actions\Action::make('reconduire')
+                        ->label('Reconduire')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('info')
+                        ->visible(fn($record) => $record->estCloture() || $record->estActif())
+                        ->form([
+                            Forms\Components\Section::make('Exercice cible')
+                                ->description('Vers quel exercice reconduire ?')
+                                ->schema([
+                                    Forms\Components\Select::make('exercice_cible_id')
+                                        ->label('Exercice de destination')
+                                        ->options(function ($record) {
+                                            return \App\Models\Exercice::where('statut', 'brouillon')
+                                                ->where('id', '!=', $record->id)
+                                                ->where('annee', '>', $record->annee)
+                                                ->pluck('libelle', 'id');
+                                        })
+                                        ->required()
+                                        ->searchable()
+                                        ->helperText('Sélectionnez un exercice en brouillon'),
+                                ]),
+
+                            Forms\Components\Section::make('Options de reconduction')
+                                ->schema([
+                                    Forms\Components\Toggle::make('reconduire_nomenclature')
+                                        ->label('Reconduire la nomenclature budgétaire')
+                                        ->default(false)
+                                        ->inline(false)
+                                        ->helperText('Dupliquer également la nomenclature vers le nouvel exercice'),
+
+                                    Forms\Components\Toggle::make('ajuster_montants')
+                                        ->label('Ajuster les montants budgétaires')
+                                        ->default(false)
+                                        ->inline(false)
+                                        ->live()
+                                        ->helperText('Appliquer un pourcentage d\'ajustement (inflation, etc.)'),
+
+                                    Forms\Components\TextInput::make('pourcentage_ajustement')
+                                        ->label('Pourcentage d\'ajustement (%)')
+                                        ->numeric()
+                                        ->default(0)
+                                        ->suffix('%')
+                                        ->visible(fn(callable $get) => $get('ajuster_montants'))
+                                        ->helperText('Exemple : 5 pour +5%, -3 pour -3%')
+                                        ->minValue(-100)
+                                        ->maxValue(100),
+                                ])
+                                ->columns(2),
+
+                            Forms\Components\Section::make('Aperçu')
+                                ->description('Ce qui sera reconduit')
+                                ->schema([
+                                    Forms\Components\Placeholder::make('apercu_programmes')
+                                        ->label('Programmes')
+                                        ->content(function ($record) {
+                                            $count = \App\Models\Programme::where('exercice_id', $record->id)->count();
+                                            return "{$count} programme(s) et sous-programmes";
+                                        }),
+
+                                    Forms\Components\Placeholder::make('apercu_actions')
+                                        ->label('Actions')
+                                        ->content(function ($record) {
+                                            $count = \App\Models\Action::where('exercice_id', $record->id)->count();
+                                            return "{$count} action(s)";
+                                        }),
+
+                                    Forms\Components\Placeholder::make('apercu_activites')
+                                        ->label('Activités')
+                                        ->content(function ($record) {
+                                            $count = \App\Models\Activite::where('exercice_id', $record->id)->count();
+                                            return "{$count} activité(s)";
+                                        }),
+
+                                    Forms\Components\Placeholder::make('apercu_taches')
+                                        ->label('Tâches')
+                                        ->content(function ($record) {
+                                            $count = \App\Models\Tache::where('exercice_id', $record->id)->count();
+                                            return "{$count} tâche(s) et sous-tâches";
+                                        }),
+                                ])
+                                ->columns(2),
+                        ])
+                        ->modalHeading('Reconduire cet exercice')
+                        ->modalSubmitActionLabel('Reconduire maintenant')
+                        ->modalWidth('3xl')
+                        ->action(function ($record, array $data) {
+                            try {
+                                $exerciceCible = \App\Models\Exercice::find($data['exercice_cible_id']);
+
+                                if (!$exerciceCible) {
+                                    throw new \Exception('Exercice cible introuvable');
+                                }
+
+                                // Appeler le service de reconduction
+                                $service = app(\App\Services\ReconductionExerciceService::class);
+
+                                $resultat = $service->reconduire($record, $exerciceCible, [
+                                    'reconduire_programmes' => true,
+                                    'reconduire_nomenclature' => $data['reconduire_nomenclature'] ?? false,
+                                    'ajuster_montants' => $data['ajuster_montants'] ?? false,
+                                    'pourcentage_ajustement' => $data['pourcentage_ajustement'] ?? 0,
+                                ]);
+
+                                if ($resultat['success']) {
+                                    $stats = $resultat['stats'];
+
+                                    Notification::make()
+                                        ->title('Reconduction réussie !')
+                                        ->success()
+                                        ->body(sprintf(
+                                            "Exercice %s → %s\n\n" .
+                                                "📊 Éléments reconduits :\n" .
+                                                "• %d programme(s)\n" .
+                                                "• %d action(s)\n" .
+                                                "• %d activité(s)\n" .
+                                                "• %d tâche(s)\n" .
+                                                "%s",
+                                            $record->annee,
+                                            $exerciceCible->annee,
+                                            $stats['programmes'],
+                                            $stats['actions'],
+                                            $stats['activites'],
+                                            $stats['taches'],
+                                            $stats['nomenclatures'] > 0 ? "• {$stats['nomenclatures']} nomenclature(s)\n" : ""
+                                        ))
+                                        ->duration(10000)
+                                        ->send();
+                                } else {
+                                    throw new \Exception($resultat['error']);
+                                }
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('Erreur lors de la reconduction')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
                                     ->send();
                             }
                         }),
