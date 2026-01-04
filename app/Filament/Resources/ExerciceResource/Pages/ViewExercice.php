@@ -31,14 +31,98 @@ class ViewExercice extends ViewRecord
 
             // Action : Clôturer
             Actions\Action::make('cloturer')
-                ->label('Clôturer')
+                ->label('Clôturer cet exercice')
                 ->icon('heroicon-o-lock-closed')
                 ->color('warning')
                 ->visible(fn() => $this->record->estActif())
                 ->requiresConfirmation()
+                ->modalHeading('Clôturer l\'exercice ' . $this->record->annee)
+                ->modalDescription(function () {
+                    $service = app(\App\Services\ValidationExerciceService::class);
+                    $validation = $service->validerCloture($this->record);
+
+                    $description = "";
+
+                    // Erreurs
+                    if (!empty($validation['erreurs'])) {
+                        $description .= "### ❌ Erreurs bloquantes\n\n";
+                        foreach ($validation['erreurs'] as $erreur) {
+                            $description .= "- {$erreur}\n";
+                        }
+                        $description .= "\n";
+                    }
+
+                    // Avertissements
+                    if (!empty($validation['avertissements'])) {
+                        $description .= "### ⚠️ Avertissements\n\n";
+                        foreach ($validation['avertissements'] as $avert) {
+                            $description .= "- {$avert}\n";
+                        }
+                        $description .= "\n";
+                    }
+
+                    // Informations
+                    $description .= "### 📊 Informations\n\n";
+                    foreach ($validation['infos'] as $info) {
+                        $description .= "- {$info}\n";
+                    }
+                    $description .= "\n";
+
+                    // Statistiques budgétaires
+                    if (isset($validation['stats'])) {
+                        $stats = $validation['stats'];
+                        $description .= "### 💰 Budget\n\n";
+                        $description .= "- **Total** : " . number_format($stats['budget_total'], 0, ',', ' ') . " FCFA\n";
+                        $description .= "- **Engagé** : " . number_format($stats['engage_total'], 0, ',', ' ') . " FCFA\n";
+                        $description .= "- **Disponible** : " . number_format($stats['disponible'], 0, ',', ' ') . " FCFA\n";
+                        $description .= "- **Taux d'exécution** : " . number_format($stats['taux_execution'], 2) . "%\n\n";
+                    }
+
+                    if ($validation['valid']) {
+                        $description .= "---\n\n";
+                        $description .= "✅ **L'exercice peut être clôturé.**\n\n";
+                        $description .= "⚠️ **ATTENTION** : Une fois clôturé, l'exercice ne pourra plus être modifié (sauf par un super admin).";
+                    } else {
+                        $description .= "---\n\n";
+                        $description .= "❌ **L'exercice ne peut PAS être clôturé. Corrigez les erreurs ci-dessus.**";
+                    }
+
+                    return new \Illuminate\Support\HtmlString(
+                        \Illuminate\Support\Str::markdown($description)
+                    );
+                })
+                ->modalSubmitActionLabel('Clôturer définitivement')
+                ->modalCancelActionLabel('Annuler')
+                ->modalWidth('3xl')
+                ->disabled(function () {
+                    $service = app(\App\Services\ValidationExerciceService::class);
+                    $validation = $service->validerCloture($this->record);
+                    return !$validation['valid'];
+                })
                 ->action(function () {
-                    $this->record->cloturer(auth()->user());
-                    $this->redirect(static::getResource()::getUrl('view', ['record' => $this->record]));
+                    try {
+                        // Mettre à jour les statistiques
+                        $this->record->mettreAJourStatistiques();
+
+                        // Clôturer
+                        $this->record->cloturer(auth()->user());
+
+                        \Filament\Notifications\Notification::make()
+                            ->title('Exercice clôturé avec succès')
+                            ->success()
+                            ->body("L'exercice {$this->record->annee} a été clôturé. Il ne peut plus être modifié.")
+                            ->duration(5000)
+                            ->send();
+
+                        // Rediriger vers la liste
+                        $this->redirect(static::getResource()::getUrl('index'));
+                    } catch (\Exception $e) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('Erreur lors de la clôture')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->send();
+                    }
                 }),
 
             // Action : Archiver

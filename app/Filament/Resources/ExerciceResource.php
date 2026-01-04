@@ -261,16 +261,71 @@ class ExerciceResource extends Resource
                         ->color('warning')
                         ->visible(fn($record) => $record->estActif())
                         ->requiresConfirmation()
-                        ->modalHeading('Clôturer cet exercice ?')
-                        ->modalDescription('Une fois clôturé, l\'exercice ne pourra plus être modifié (sauf admin).')
+                        ->modalHeading('Clôturer cet exercice')
+                        ->modalDescription(function ($record) {
+                            $service = app(\App\Services\ValidationExerciceService::class);
+                            $validation = $service->validerCloture($record);
+
+                            $description = "**Exercice {$record->annee}**\n\n";
+
+                            // Erreurs
+                            if (!empty($validation['erreurs'])) {
+                                $description .= "### ❌ Erreurs bloquantes\n\n";
+                                foreach ($validation['erreurs'] as $erreur) {
+                                    $description .= "- {$erreur}\n";
+                                }
+                                $description .= "\n";
+                            }
+
+                            // Avertissements
+                            if (!empty($validation['avertissements'])) {
+                                $description .= "### ⚠️ Avertissements\n\n";
+                                foreach ($validation['avertissements'] as $avert) {
+                                    $description .= "- {$avert}\n";
+                                }
+                                $description .= "\n";
+                            }
+
+                            // Statistiques
+                            if (isset($validation['stats'])) {
+                                $stats = $validation['stats'];
+                                $description .= "### 📊 Statistiques budgétaires\n\n";
+                                $description .= "- **Budget total** : " . number_format($stats['budget_total'], 0, ',', ' ') . " FCFA\n";
+                                $description .= "- **Engagé** : " . number_format($stats['engage_total'], 0, ',', ' ') . " FCFA\n";
+                                $description .= "- **Disponible** : " . number_format($stats['disponible'], 0, ',', ' ') . " FCFA\n";
+                                $description .= "- **Taux d'exécution** : " . number_format($stats['taux_execution'], 2) . "%\n\n";
+                            }
+
+                            if ($validation['valid']) {
+                                $description .= "✅ **L'exercice peut être clôturé.**\n\n";
+                                $description .= "⚠️ Une fois clôturé, l'exercice ne pourra plus être modifié (sauf par un super admin).";
+                            } else {
+                                $description .= "❌ **Corrigez les erreurs avant de clôturer.**";
+                            }
+
+                            return new \Illuminate\Support\HtmlString(
+                                \Illuminate\Support\Str::markdown($description)
+                            );
+                        })
+                        ->modalSubmitActionLabel('Clôturer définitivement')
+                        ->modalCancelActionLabel('Annuler')
+                        ->disabled(function ($record) {
+                            $service = app(\App\Services\ValidationExerciceService::class);
+                            $validation = $service->validerCloture($record);
+                            return !$validation['valid'];
+                        })
                         ->action(function ($record) {
                             try {
+                                // Mettre à jour les statistiques
+                                $record->mettreAJourStatistiques();
+
+                                // Clôturer
                                 $record->cloturer(auth()->user());
 
                                 Notification::make()
                                     ->title('Exercice clôturé')
-                                    ->warning()
-                                    ->body("L'exercice {$record->annee} a été clôturé")
+                                    ->success()
+                                    ->body("L'exercice {$record->annee} a été clôturé avec succès.")
                                     ->send();
                             } catch (\Exception $e) {
                                 Notification::make()
