@@ -10,10 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Traits\HasExercice;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class NomenclatureBudgetaire extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
 
     protected $table = 'nomenclature_budgetaire';
 
@@ -191,5 +193,14 @@ class NomenclatureBudgetaire extends Model
                 throw new \Exception("Un Chapitre ne peut pas avoir de parent");
             }
         });
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
 }

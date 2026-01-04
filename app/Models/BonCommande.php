@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class BonCommande extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
 
     protected $table = 'bons_commande';
 
@@ -449,5 +451,14 @@ class BonCommande extends Model
 
         $totalLivree = $this->lignes()->sum('quantite_livree');
         return ($totalLivree / $totalQuantite) * 100;
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
 }

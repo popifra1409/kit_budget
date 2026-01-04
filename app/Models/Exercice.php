@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Exercice extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, LogsActivity;
 
     protected $table = 'exercices';
 
@@ -211,9 +213,6 @@ class Exercice extends Model
     // MÉTHODES D'ACTION
     // ========================================
 
-    /**
-     * Activer l'exercice
-     */
     public function activer(User $user): void
     {
         if ($this->statut !== 'brouillon') {
@@ -227,12 +226,16 @@ class Exercice extends Model
             $this->statut = 'actif';
             $this->actif = true;
             $this->save();
+
+            // Log l'action
+            activity()
+                ->performedOn($this)
+                ->causedBy($user)
+                ->withProperties(['ancien_statut' => 'brouillon', 'nouveau_statut' => 'actif'])
+                ->log("Exercice {$this->annee} activé");
         });
     }
 
-    /**
-     * Clôturer l'exercice
-     */
     public function cloturer(User $user): void
     {
         if ($this->statut !== 'actif') {
@@ -245,12 +248,20 @@ class Exercice extends Model
             $this->date_cloture = now();
             $this->cloture_par = $user->id;
             $this->save();
+
+            // Log l'action
+            activity()
+                ->performedOn($this)
+                ->causedBy($user)
+                ->withProperties([
+                    'ancien_statut' => 'actif',
+                    'nouveau_statut' => 'cloture',
+                    'statistiques' => $this->statistiques
+                ])
+                ->log("Exercice {$this->annee} clôturé");
         });
     }
 
-    /**
-     * Archiver l'exercice
-     */
     public function archiver(User $user): void
     {
         if ($this->statut !== 'cloture') {
@@ -262,12 +273,16 @@ class Exercice extends Model
             $this->date_archive = now();
             $this->archive_par = $user->id;
             $this->save();
+
+            // Log l'action
+            activity()
+                ->performedOn($this)
+                ->causedBy($user)
+                ->withProperties(['ancien_statut' => 'cloture', 'nouveau_statut' => 'archive'])
+                ->log("Exercice {$this->annee} archivé");
         });
     }
 
-    /**
-     * Rouvrir l'exercice (admin seulement)
-     */
     public function rouvrir(User $user): void
     {
         if (!in_array($this->statut, ['cloture', 'archive'])) {
@@ -275,6 +290,8 @@ class Exercice extends Model
         }
 
         \DB::transaction(function () use ($user) {
+            $ancienStatut = $this->statut;
+
             $this->statut = 'actif';
             $this->actif = true;
             $this->date_cloture = null;
@@ -282,6 +299,17 @@ class Exercice extends Model
             $this->cloture_par = null;
             $this->archive_par = null;
             $this->save();
+
+            // Log l'action
+            activity()
+                ->performedOn($this)
+                ->causedBy($user)
+                ->withProperties([
+                    'ancien_statut' => $ancienStatut,
+                    'nouveau_statut' => 'actif',
+                    'action_admin' => true
+                ])
+                ->log("Exercice {$this->annee} rouvert par admin");
         });
     }
 
@@ -362,5 +390,14 @@ class Exercice extends Model
     {
         $this->statistiques = $this->calculerStatistiques();
         $this->saveQuietly();
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['annee', 'libelle', 'statut', 'actif', 'date_debut', 'date_fin'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Exercice {$eventName}");
     }
 }

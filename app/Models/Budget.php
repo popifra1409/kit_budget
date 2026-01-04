@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Budget extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
 
     protected $fillable = [
         'exercice_id',
@@ -147,5 +149,14 @@ class Budget extends Model
             return 0;
         }
         return ($this->getTotalEngage() / $budgetRectifie) * 100;
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
 }

@@ -8,18 +8,20 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Tache extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
 
     protected $table = 'taches';
 
     protected $fillable = [
         'exercice_id',
         'activite_id',
-        'parent_id',         
-        'niveau',            
+        'parent_id',
+        'niveau',
         'nomenclature_id',
         'code',
         'libelle',
@@ -258,5 +260,14 @@ class Tache extends Model
     public function getCpFormatteAttribute(): string
     {
         return number_format($this->getTotalCp(), 0, ',', ' ') . ' FCFA';
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
 }
