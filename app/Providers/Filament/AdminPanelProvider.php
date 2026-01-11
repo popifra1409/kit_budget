@@ -21,13 +21,16 @@ use App\Models\ParametresStructure;
 use Filament\Navigation\NavigationGroup;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Facades\Schema;
 
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        // Récupérer les paramètres de la structure
-        $structure = ParametresStructure::getParametres();
+        // ===================================
+        // RÉCUPÉRATION SÉCURISÉE DES PARAMÈTRES
+        // ===================================
+        $structure = $this->getParametresSecurise();
 
         return $panel
             ->default()
@@ -126,5 +129,49 @@ class AdminPanelProvider extends PanelProvider
                 </div>
             ')
             );
+    }
+
+    /**
+     * Récupérer les paramètres de structure de manière SÉCURISÉE
+     * Retourne un objet par défaut si la table n'existe pas encore
+     */
+    private function getParametresSecurise(): object
+    {
+        // Mode installation : retourner des valeurs par défaut
+        if (env('INSTALLATION_MODE', false)) {
+            return $this->getParametresDefaut();
+        }
+
+        // Vérifier que la table existe
+        if (!Schema::hasTable('parametres_structure')) {
+            return $this->getParametresDefaut();
+        }
+
+        // Tenter de charger les paramètres
+        try {
+            $structure = ParametresStructure::getParametres();
+
+            if ($structure) {
+                return $structure;
+            }
+
+            return $this->getParametresDefaut();
+        } catch (\Exception $e) {
+            // Log l'erreur mais ne bloque pas l'application
+            \Log::warning('Impossible de charger parametres_structure: ' . $e->getMessage());
+            return $this->getParametresDefaut();
+        }
+    }
+
+    /**
+     * Retourner des paramètres par défaut
+     */
+    private function getParametresDefaut(): object
+    {
+        return (object) [
+            'nom_structure' => 'Gestion Budget',
+            'sigle' => 'GB',
+            'logo_url' => null,
+        ];
     }
 }
