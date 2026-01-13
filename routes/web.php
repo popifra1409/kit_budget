@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
 use App\Http\Controllers\CadreLogiqueController;
 use App\Http\Controllers\MemoireDepenseController;
 use App\Services\PdfGenerator\PdfGenerator;
