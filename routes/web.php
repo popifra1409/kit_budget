@@ -10,8 +10,28 @@ use App\Http\Controllers\PdfTestController;
 use App\Http\Controllers\PdfDownloadController;
 
 Route::get('/', function () {
-    return view('welcome');
+    return view('/admin');
 });
+
+// Route POST pour le login (contournement)
+// Route POST pour le login Filament (contournement)
+Route::post('/admin/login', function (Request $request) {
+    // Valider les credentials
+    $credentials = $request->validate([
+        'email' => 'required|email',
+        'password' => 'required',
+    ]);
+
+    // Tenter l'authentification
+    if (auth()->attempt($credentials, $request->boolean('remember'))) {
+        $request->session()->regenerate();
+        return redirect()->intended('/admin');
+    }
+
+    return back()->withErrors([
+        'email' => 'Les identifiants fournis sont incorrects.',
+    ])->onlyInput('email');
+})->middleware(['web'])->name('filament.admin.auth.login.fallback');
 
 Route::get('/cadre-logique/telecharger', [CadreLogiqueController::class, 'telecharger'])
     ->name('cadre-logique.telecharger')
@@ -39,7 +59,7 @@ Route::get('/pdf/telecharger/{etat}/{id}', function ($etat, $id, PdfGenerator $g
 Route::middleware('auth')->group(function () {
     Route::get('/pdf/telecharger/{etat}/{id}', [PdfDownloadController::class, 'telecharger'])
         ->name('pdf.telecharger');
-    
+
     Route::get('/pdf/afficher/{etat}/{id}', [PdfDownloadController::class, 'afficher'])
         ->name('pdf.afficher');
 });
