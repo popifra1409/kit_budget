@@ -139,42 +139,81 @@ class NomenclatureBudgetaireResource extends Resource
                             ->columnSpanFull()
                             ->placeholder('Ex: CHARGES DE PERSONNEL, SALAIRES DE BASE'),
 
+                        // ===================================
+                        // CLASSE avec nouvelle logique flexible
+                        // ===================================
                         Forms\Components\Select::make('classe')
                             ->label('Classe comptable OHADA')
                             ->options([
-                                '1' => 'Classe 1 - Comptes de capitaux',
+                                '1' => 'Classe 1 - Comptes de capitaux (Flexible)',
                                 '2' => 'Classe 2 - Comptes d\'actif immobilisé',
                                 '3' => 'Classe 3 - Comptes de stocks',
                                 '4' => 'Classe 4 - Comptes de tiers',
                                 '5' => 'Classe 5 - Comptes de trésorerie',
-                                '6' => 'Classe 6 - Comptes de charges (DÉPENSES)',
-                                '7' => 'Classe 7 - Comptes de produits (RECETTES)',
+                                '6' => 'Classe 6 - Comptes de charges (DÉPENSES uniquement)',
+                                '7' => 'Classe 7 - Comptes de produits (RECETTES uniquement)',
                                 '8' => 'Classe 8 - Comptes spéciaux',
                                 '9' => 'Classe 9 - Comptes analytiques',
                             ])
                             ->required()
                             ->searchable()
                             ->live()
-                            ->afterStateUpdated(function ($state, callable $set) {
-                                // Auto-définir le type selon la classe
+                            ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                // Auto-définir le type UNIQUEMENT pour les classes strictes
                                 if ($state === '6') {
                                     $set('type', 'depense');
                                 } elseif ($state === '7') {
                                     $set('type', 'recette');
                                 }
+                                // Pour les autres classes (1, 2, 3, 4, 5, 8, 9) : 
+                                // laisser l'utilisateur choisir OU garder la valeur existante
                             })
-                            ->helperText('Classe 6 = Dépenses | Classe 7 = Recettes'),
+                            ->helperText(function (callable $get) {
+                                $classe = $get('classe');
+                                return match ($classe) {
+                                    '6' => '⚠️ Classe 6 = Dépenses UNIQUEMENT',
+                                    '7' => '⚠️ Classe 7 = Recettes UNIQUEMENT',
+                                    '1' => '💡 Classe 1 = Type flexible (Recette ou Dépense selon le contexte)',
+                                    default => '💡 Sélectionnez le type budgétaire approprié',
+                                };
+                            }),
 
+                        // ===================================
+                        // TYPE avec validation conditionnelle
+                        // ===================================
                         Forms\Components\Select::make('type')
                             ->label('Type budgétaire')
-                            ->options([
-                                'depense' => 'Dépense (Classe 6)',
-                                'recette' => 'Recette (Classe 7)',
-                            ])
+                            ->options(function (callable $get) {
+                                $classe = $get('classe');
+
+                                // Classe 6 : UNIQUEMENT dépense
+                                if ($classe === '6') {
+                                    return ['depense' => 'Dépense (imposé pour Classe 6)'];
+                                }
+
+                                // Classe 7 : UNIQUEMENT recette
+                                if ($classe === '7') {
+                                    return ['recette' => 'Recette (imposé pour Classe 7)'];
+                                }
+
+                                // Autres classes : les deux options disponibles
+                                return [
+                                    'depense' => 'Dépense',
+                                    'recette' => 'Recette',
+                                ];
+                            })
                             ->required()
                             ->disabled(fn(callable $get) => in_array($get('classe'), ['6', '7']))
                             ->dehydrated() // Important : pour sauvegarder même si disabled
-                            ->helperText('Auto-défini pour Classe 6 et 7'),
+                            ->helperText(function (callable $get) {
+                                $classe = $get('classe');
+                                return match ($classe) {
+                                    '6' => '✓ Type défini automatiquement : Dépense',
+                                    '7' => '✓ Type défini automatiquement : Recette',
+                                    '1' => 'Ex: FONDS DE RESERVE peut être Recette ou Dépense selon le cas',
+                                    default => 'Choisissez le type approprié pour cette nomenclature',
+                                };
+                            }),
 
                         Forms\Components\Select::make('niveau')
                             ->label('Niveau hiérarchique')
@@ -250,6 +289,49 @@ class NomenclatureBudgetaireResource extends Resource
                             }),
                     ])
                     ->columns(2),
+                Forms\Components\Section::make('💡 Règles de cohérence Classe/Type')
+                    ->description('Comprendre les règles de correspondance')
+                    ->schema([
+                        Forms\Components\Placeholder::make('regles_classe_type')
+                            ->label('')
+                            ->content(new \Illuminate\Support\HtmlString('
+                <div class="text-sm space-y-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <div class="flex items-start space-x-2">
+                        <span class="text-red-500 font-bold">•</span>
+                        <div>
+                            <span class="font-semibold text-red-600 dark:text-red-400">Classe 6</span>
+                            <span class="text-gray-700 dark:text-gray-300"> = Type <strong>Dépense</strong> uniquement (obligatoire)</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start space-x-2">
+                        <span class="text-green-500 font-bold">•</span>
+                        <div>
+                            <span class="font-semibold text-green-600 dark:text-green-400">Classe 7</span>
+                            <span class="text-gray-700 dark:text-gray-300"> = Type <strong>Recette</strong> uniquement (obligatoire)</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start space-x-2">
+                        <span class="text-blue-500 font-bold">•</span>
+                        <div>
+                            <span class="font-semibold text-blue-600 dark:text-blue-400">Classe 1, 2, 3, 4, 5, 8, 9</span>
+                            <span class="text-gray-700 dark:text-gray-300"> = Type <strong>Flexible</strong> (Dépense ou Recette selon le contexte)</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-xs text-gray-600 dark:text-gray-400">
+                            <strong>Exemple :</strong> Classe 1 "FONDS DE RESERVE AU FONCTIONNEMENT" peut être une Recette 
+                            (encaissement) ou une Dépense (décaissement) selon le sens de l\'opération.
+                        </p>
+                    </div>
+                </div>
+            '))
+                            ->columnSpanFull(),
+                    ])
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null), // Replié en édition, ouvert en création
 
                 Forms\Components\Section::make('Exercice')
                     ->description('Exercice budgétaire de rattachement')
@@ -381,9 +463,20 @@ class NomenclatureBudgetaireResource extends Resource
                     ->label('Classe')
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
-                        '6' => 'danger',
-                        '7' => 'success',
+                        '6' => 'danger',   // Rouge pour dépenses
+                        '7' => 'success',  // Vert pour recettes
+                        '1' => 'info',     // Bleu pour flexible
                         default => 'gray',
+                    })
+                    ->icon(fn(string $state): ?string => match ($state) {
+                        '1' => 'heroicon-o-arrows-right-left', // Icône échange pour flexible
+                        default => null,
+                    })
+                    ->tooltip(fn($record): string => match ($record->classe) {
+                        '6' => 'Dépenses uniquement',
+                        '7' => 'Recettes uniquement',
+                        '1' => 'Type flexible (Recette ou Dépense)',
+                        default => 'Classe ' . $record->classe,
                     }),
 
                 Tables\Columns\BadgeColumn::make('type')
@@ -439,6 +532,25 @@ class NomenclatureBudgetaireResource extends Resource
                     ->boolean(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('classe_type')
+                    ->label('Classe + Type')
+                    ->options([
+                        '6_depense' => 'Classe 6 - Dépenses',
+                        '7_recette' => 'Classe 7 - Recettes',
+                        '1_recette' => 'Classe 1 - Recettes (flexible)',
+                        '1_depense' => 'Classe 1 - Dépenses (flexible)',
+                        'flexible' => 'Toutes classes flexibles (1-5, 8-9)',
+                    ])
+                    ->query(function ($query, $state) {
+                        return match ($state['value'] ?? null) {
+                            '6_depense' => $query->where('classe', '6')->where('type', 'depense'),
+                            '7_recette' => $query->where('classe', '7')->where('type', 'recette'),
+                            '1_recette' => $query->where('classe', '1')->where('type', 'recette'),
+                            '1_depense' => $query->where('classe', '1')->where('type', 'depense'),
+                            'flexible' => $query->whereIn('classe', ['1', '2', '3', '4', '5', '8', '9']),
+                            default => $query,
+                        };
+                    }),
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')

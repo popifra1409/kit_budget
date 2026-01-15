@@ -10,7 +10,9 @@ class EtatConfigSeeder extends Seeder
     public function run(): void
     {
         $etats = [
-            // 1. Certificat d'Engagement
+            // ===================================
+            // 1. CERTIFICAT D'ENGAGEMENT
+            // ===================================
             [
                 'code' => 'certificat_engagement',
                 'nom' => 'CERTIFICAT D\'ENGAGEMENT',
@@ -48,7 +50,6 @@ class EtatConfigSeeder extends Seeder
                         'source' => 'exercice',
                         'type' => 'text',
                     ],
-                    // Via Engagement → BonCommande → Lignes → Nomenclature (Chapitre/Article/Paragraphe)
                     'chapitre' => [
                         'source' => 'engagements.0.engageable.lignes.0.nomenclature.code',
                         'type' => 'text',
@@ -61,7 +62,6 @@ class EtatConfigSeeder extends Seeder
                         'source' => 'engagements.0.engageable.lignes.0.nomenclature.libelle',
                         'type' => 'text',
                     ],
-                    // Via Engagement → BonCommande → Lignes → Nomenclature → Tache → Activite → Action → Programme
                     'programme' => [
                         'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.programme.libelle',
                         'type' => 'text',
@@ -102,7 +102,9 @@ class EtatConfigSeeder extends Seeder
                 ],
             ],
 
-            // 2. Bon de Commande Administratif
+            // ===================================
+            // 2. BON DE COMMANDE ADMINISTRATIF
+            // ===================================
             [
                 'code' => 'bon_commande',
                 'nom' => 'BON DE COMMANDE ADMINISTRATIF',
@@ -189,90 +191,102 @@ class EtatConfigSeeder extends Seeder
                     'afficher' => false,
                 ],
             ],
-        ];
 
-        // 3. Autorisation d'Engagement
-        [
-            'code' => 'autorisation_engagement',
-            'nom' => 'AUTORISATION D\'ENGAGEMENT',
-            'template' => 'pdf.templates.autorisation-engagement',
-            'description' => 'Autorisation d\'engagement budgétaire',
-            'categorie' => 'Budgétaire',
-            'ordre' => 3,
-            'champs_variables' => [
-                'montant' => [
-                    'source' => 'montant_total',
-                    'type' => 'money',
+            // ===================================
+            // 3. AUTORISATION D'ENGAGEMENT
+            // ===================================
+            [  // ← CORRECTION : Ajouté à l'intérieur du tableau $etats
+                'code' => 'autorisation_engagement',
+                'nom' => 'AUTORISATION D\'ENGAGEMENT',
+                'template' => 'pdf.templates.autorisation-engagement',
+                'description' => 'Autorisation d\'engagement budgétaire',
+                'categorie' => 'Budgétaire',
+                'ordre' => 3,
+                'champs_variables' => [
+                    'montant' => [
+                        'source' => 'montant_total',
+                        'type' => 'money',
+                    ],
+                    'reference' => [
+                        'source' => 'numero',
+                        'type' => 'text',
+                    ],
+                    'date_signature' => [
+                        'source' => 'date_emission',
+                        'type' => 'date',
+                        'format' => 'd/m/Y',
+                    ],
+                    'signataire' => [
+                        'source' => 'validateur.name',
+                        'type' => 'text',
+                    ],
+                    'objet' => [
+                        'source' => 'objet',
+                        'type' => 'text',
+                    ],
+                    'beneficiaire' => [
+                        'source' => 'instance_destinataire',
+                        'type' => 'text',
+                    ],
+                    'exercice' => [
+                        'source' => 'exercice',
+                        'type' => 'text',
+                    ],
+                    'chapitre' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.parent.parent.code',
+                        'type' => 'text',
+                    ],
+                    'article' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.parent.code',
+                        'type' => 'text',
+                    ],
+                    'paragraphe' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.code',
+                        'type' => 'text',
+                    ],
+                    'programme' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.programme.libelle',
+                        'type' => 'text',
+                    ],
+                    'objectif' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.objectif.libelle',
+                        'type' => 'text',
+                        'default' => '',
+                    ],
+                    'action' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.libelle',
+                        'type' => 'text',
+                    ],
+                    'activite' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.libelle',
+                        'type' => 'text',
+                    ],
+                    'tache' => [
+                        'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.libelle',
+                        'type' => 'text',
+                    ],
                 ],
-                'reference' => [
-                    'source' => 'numero',
-                    'type' => 'text',
+                'calculs' => [
+                    'montant_lettres' => [
+                        'fonction' => 'nombre_en_lettres',
+                        'params' => ['_raw.montant_total'],
+                    ],
                 ],
-                'date_signature' => [
-                    'source' => 'date_emission',
-                    'type' => 'date',
-                    'format' => 'd/m/Y',
-                ],
-                'signataire' => [
-                    'source' => 'validateur.name',
-                    'type' => 'text',
-                ],
-                'objet' => [
-                    'source' => 'objet',
-                    'type' => 'text',
-                ],
-                'beneficiaire' => [
-                    'source' => 'instance_destinataire',
-                    'type' => 'text',
-                ],
-                'exercice' => [
-                    'source' => 'exercice',
-                    'type' => 'text',
-                ],
-                // Via Engagement → BonCommande → Lignes → Nomenclature (Chapitre/Article/Paragraphe)
-                'chapitre' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.parent.parent.code',
-                    'type' => 'text',
-                ],
-                'article' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.parent.code',
-                    'type' => 'text',
-                ],
-                'paragraphe' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.code',
-                    'type' => 'text',
-                ],
-                // Via Engagement → BonCommande → Lignes → Nomenclature → Tache → Activite → Action → Programme
-                'programme' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.programme.libelle',
-                    'type' => 'text',
-                ],
-                'objectif' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.objectif.libelle',
-                    'type' => 'text',
-                    'default' => '',
-                ],
-                'action' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.action.libelle',
-                    'type' => 'text',
-                ],
-                'activite' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.activite.libelle',
-                    'type' => 'text',
-                ],
-                'tache' => [
-                    'source' => 'engagements.0.engageable.lignes.0.nomenclature.tache.libelle',
-                    'type' => 'text',
+                'signature_config' => [
+                    'afficher' => true,
+                    'signatures' => [
+                        [
+                            'titre' => 'VISA DE L\'ORDONNATEUR',
+                            'position' => 'center',
+                            'largeur' => 100,
+                        ],
+                    ],
                 ],
             ],
-            'calculs' => [
-                'montant_lettres' => [
-                    'fonction' => 'nombre_en_lettres',
-                    'params' => ['_raw.montant_total'],
-                ],
-            ],
-        ];
 
+        ]; // ← FIN du tableau $etats
+
+        // Créer ou mettre à jour les états
         foreach ($etats as $etat) {
             EtatConfig::updateOrCreate(
                 ['code' => $etat['code']],
@@ -280,6 +294,6 @@ class EtatConfigSeeder extends Seeder
             );
         }
 
-        $this->command->info('✅ ' . count($etats) . ' configurations d\'états créées avec succès.');
+        $this->command->info('✅ ' . count($etats) . ' configurations d\'états créées/mises à jour avec succès.');
     }
 }
