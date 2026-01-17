@@ -189,7 +189,12 @@ class ActiviteResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()
+            ->with([
+                'exercice',
+                'action.programme',
+                'taches.sousTaches'
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -200,21 +205,11 @@ class ActiviteResource extends Resource
                     ->label('Exercice')
                     ->sortable()
                     ->colors([
-                        'success' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                        'warning' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                        'danger' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                        'gray' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                        'success' => fn($record) => $record->exercice?->estActif(),
+                        'warning' => fn($record) => $record->exercice?->estCloture(),
+                        'danger' => fn($record) => $record->exercice?->estArchive(),
+                        'gray' => fn($record) => $record->exercice?->estBrouillon(),
                     ])
-                    ->tooltip(
-                        fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice
-                            ? $record->exercice->libelle
-                            : null
-                    )
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('action.programme.code')
@@ -246,14 +241,52 @@ class ActiviteResource extends Resource
 
                 Tables\Columns\TextColumn::make('taches_count')
                     ->label('Tâches')
-                    ->counts('taches')
+                    ->state(function ($record) {
+                        $taches = $record->taches->where('niveau', 'tache')->count();
+                        $sousTaches = $record->taches->where('niveau', 'sous_tache')->count();
+                        return $taches . ($sousTaches > 0 ? " ({$sousTaches})" : '');
+                    })
                     ->badge()
-                    ->color('success'),
+                    ->color('success')
+                    ->tooltip(
+                        fn($record) =>
+                        $record->taches->where('niveau', 'tache')->count() . ' tâche(s), ' .
+                            $record->taches->where('niveau', 'sous_tache')->count() . ' sous-tâche(s)'
+                    ),
 
-                Tables\Columns\TextColumn::make('budget_total')
+                Tables\Columns\TextColumn::make('budget_ae')
                     ->label('Budget (AE)')
-                    ->formatStateUsing(fn($record) => number_format($record->getBudgetTotal(), 0, ',', ' ') . ' FCFA')
-                    ->color('warning'),
+                    ->state(function ($record) {
+                        // Calcul direct sur la collection déjà chargée
+                        return $record->taches
+                            ->where('niveau', 'tache')
+                            ->sum(fn($tache) => $tache->sousTaches->sum('ae'));
+                    })
+                    ->formatStateUsing(
+                        fn($state) =>
+                        $state > 0
+                            ? number_format($state, 0, ',', ' ') . ' FCFA'
+                            : '—'
+                    )
+                    ->color(fn($state) => $state > 0 ? 'success' : 'gray')
+                    ->sortable(false),
+
+                Tables\Columns\TextColumn::make('budget_cp')
+                    ->label('Budget (CP)')
+                    ->state(function ($record) {
+                        return $record->taches
+                            ->where('niveau', 'tache')
+                            ->sum(fn($tache) => $tache->sousTaches->sum('cp'));
+                    })
+                    ->formatStateUsing(
+                        fn($state) =>
+                        $state > 0
+                            ? number_format($state, 0, ',', ' ') . ' FCFA'
+                            : '—'
+                    )
+                    ->color(fn($state) => $state > 0 ? 'warning' : 'gray')
+                    ->sortable(false)
+                    ->toggleable(),
 
                 Tables\Columns\IconColumn::make('actif')
                     ->label('Actif')

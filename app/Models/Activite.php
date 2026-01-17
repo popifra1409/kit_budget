@@ -49,11 +49,62 @@ class Activite extends Model
     }
 
     /**
-     * Obtenir le budget total de l'activité
+     * Obtenir le budget total (AE) de l'activité
+     * = Somme des AE de toutes les tâches (qui incluent leurs sous-tâches)
      */
     public function getBudgetTotal(): float
     {
-        return $this->taches->sum('ae');
+        return $this->taches()
+            ->where('niveau', 'tache') // Uniquement les tâches principales
+            ->get()
+            ->sum(function ($tache) {
+                return $tache->getTotalAe();
+            });
+    }
+
+    /**
+     * Obtenir le budget CP total de l'activité
+     */
+    public function getBudgetCpTotal(): float
+    {
+        return $this->taches()
+            ->where('niveau', 'tache') // Uniquement les tâches principales
+            ->get()
+            ->sum(function ($tache) {
+                return $tache->getTotalCp();
+            });
+    }
+
+    /**
+     * Obtenir le nombre de tâches (principales uniquement)
+     */
+    public function getNombreTaches(): int
+    {
+        return $this->taches()->where('niveau', 'tache')->count();
+    }
+
+    /**
+     * Obtenir le nombre total de sous-tâches
+     */
+    public function getNombreSousTaches(): int
+    {
+        return $this->taches()->where('niveau', 'sous_tache')->count();
+    }
+
+    /**
+     * Vérifier si modifiable (selon exercice)
+     */
+    public function estModifiable(): bool
+    {
+        return $this->exercice && $this->exercice->estModifiable();
+    }
+
+    /**
+     * Vérifier si en lecture seule
+     */
+    public function estLectureSeule(): bool
+    {
+        return $this->exercice && !$this->exercice->estModifiable();
     }
 
     public function getActivitylogOptions(): LogOptions
