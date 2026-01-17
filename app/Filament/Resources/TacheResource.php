@@ -358,21 +358,69 @@ class TacheResource extends Resource
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Budget calculé')
+                Forms\Components\Section::make('💰 Budget calculé automatiquement')
+                    ->description('Somme des montants de toutes les sous-tâches')
                     ->schema([
-                        Forms\Components\ViewField::make('budget_calculé')
-                            ->view('filament.components.budget-calcule')
-                            ->viewData(fn($record) => [
-                                'ae' => $record?->getTotalAe() ?? 0,
-                                'cp' => $record?->getTotalCp() ?? 0,
-                                'count' => $record?->sousTaches->count() ?? 0,
-                            ]),
+                        Forms\Components\Placeholder::make('resume_budget')
+                            ->label('')
+                            ->content(function ($record) {
+                                if (!$record || !$record->sousTaches->count()) {
+                                    return new \Illuminate\Support\HtmlString('
+                        <div class="text-center text-gray-500 dark:text-gray-400 py-4">
+                            Aucune sous-tâche. Ajoutez des sous-tâches pour voir les totaux.
+                        </div>
+                    ');
+                                }
+
+                                $count = $record->sousTaches->count();
+                                $ae = number_format($record->getTotalAe(), 0, ',', ' ');
+                                $cp = number_format($record->getTotalCp(), 0, ',', ' ');
+
+                                return new \Illuminate\Support\HtmlString("
+                    <div class='grid grid-cols-1 md:grid-cols-3 gap-4'>
+                        <!-- Sous-tâches -->
+                        <div class='rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 text-center'>
+                            <div class='text-sm font-medium text-blue-600 dark:text-blue-400 mb-2'>
+                                📋 Sous-tâches
+                            </div>
+                            <div class='text-3xl font-bold text-blue-700 dark:text-blue-300'>
+                                {$count}
+                            </div>
+                        </div>
+
+                        <!-- Total AE -->
+                        <div class='rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4 text-center'>
+                            <div class='text-sm font-medium text-green-600 dark:text-green-400 mb-2'>
+                                💵 Total AE
+                            </div>
+                            <div class='text-2xl font-bold text-green-700 dark:text-green-300'>
+                                {$ae} <span class='text-sm'>FCFA</span>
+                            </div>
+                        </div>
+
+                        <!-- Total CP -->
+                        <div class='rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-4 text-center'>
+                            <div class='text-sm font-medium text-orange-600 dark:text-orange-400 mb-2'>
+                                💰 Total CP
+                            </div>
+                            <div class='text-2xl font-bold text-orange-700 dark:text-orange-300'>
+                                {$cp} <span class='text-sm'>FCFA</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='mt-4 text-xs text-center text-gray-600 dark:text-gray-400'>
+                        💡 Ces montants sont calculés automatiquement à partir des {$count} sous-tâche(s)
+                    </div>
+                ");
+                            }),
                     ])
                     ->visible(
                         fn(callable $get, $record) =>
                         $get('niveau') === 'tache' && $record && $record->sousTaches->count() > 0
                     )
-                    ->collapsible(),
+                    ->collapsible()
+                    ->collapsed(false),
 
                 Forms\Components\Section::make('Résultats et Indicateurs')
                     ->schema([
@@ -517,12 +565,24 @@ class TacheResource extends Resource
                     )
                     ->sortable()
                     ->summarize([
-                        Tables\Columns\Summarizers\Sum::make()
+                        Tables\Columns\Summarizers\Summarizer::make()
                             ->label('Total AE')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format($state, 0, ',', ' ') . ' FCFA'
-                            ),
+                            ->using(function ($query) {
+                                // Récupérer les IDs des tâches principales depuis la query
+                                $tacheIds = (clone $query)
+                                    ->where('niveau', 'tache')
+                                    ->pluck('id');
+
+                                // Charger les modèles complets avec Eloquent
+                                $taches = \App\Models\Tache::whereIn('id', $tacheIds)->get();
+
+                                // Calculer le total
+                                $total = $taches->sum(function ($tache) {
+                                    return $tache->getTotalAe();
+                                });
+
+                                return number_format($total, 0, ',', ' ') . ' FCFA';
+                            }),
                     ])
                     ->tooltip(
                         fn($record) =>
@@ -539,12 +599,24 @@ class TacheResource extends Resource
                     )
                     ->sortable()
                     ->summarize([
-                        Tables\Columns\Summarizers\Sum::make()
+                        Tables\Columns\Summarizers\Summarizer::make()
                             ->label('Total CP')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format($state, 0, ',', ' ') . ' FCFA'
-                            ),
+                            ->using(function ($query) {
+                                // Récupérer les IDs des tâches principales depuis la query
+                                $tacheIds = (clone $query)
+                                    ->where('niveau', 'tache')
+                                    ->pluck('id');
+
+                                // Charger les modèles complets avec Eloquent
+                                $taches = \App\Models\Tache::whereIn('id', $tacheIds)->get();
+
+                                // Calculer le total
+                                $total = $taches->sum(function ($tache) {
+                                    return $tache->getTotalCp();
+                                });
+
+                                return number_format($total, 0, ',', ' ') . ' FCFA';
+                            }),
                     ])
                     ->tooltip(
                         fn($record) =>
