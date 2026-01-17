@@ -57,7 +57,8 @@ class Action extends Model
     }
 
     /**
-     * Obtenir le budget total de l'action
+     * Obtenir le budget total de l'action (ancienne méthode - conservée pour compatibilité)
+     * @deprecated Utilisez getTotalAe() à la place
      */
     public function getBudgetTotal(): float
     {
@@ -70,6 +71,80 @@ class Action extends Model
         }
 
         return $total;
+    }
+
+    /**
+     * Calculer le total AE de toutes les activités de cette action
+     * 
+     * Cette méthode fait la somme des AE de toutes les activités,
+     * qui elles-mêmes font la somme de leurs tâches principales,
+     * qui elles-mêmes font la somme de leurs sous-tâches.
+     * 
+     * Hiérarchie : Action > Activités > Tâches > Sous-tâches
+     * 
+     * @return float Total des autorisations d'engagement
+     */
+    public function getTotalAe(): float
+    {
+        // Si les activités ne sont pas chargées, utiliser une requête
+        if (!$this->relationLoaded('activites')) {
+            return (float) $this->activites()
+                ->get()
+                ->sum(function ($activite) {
+                    return $activite->getTotalAe();
+                });
+        }
+
+        // Si les activités sont déjà chargées, utiliser la collection
+        return (float) $this->activites->sum(function ($activite) {
+            return $activite->getTotalAe();
+        });
+    }
+
+    /**
+     * Calculer le total CP de toutes les activités de cette action
+     * 
+     * @return float Total des crédits de paiement
+     */
+    public function getTotalCp(): float
+    {
+        // Si les activités ne sont pas chargées, utiliser une requête
+        if (!$this->relationLoaded('activites')) {
+            return (float) $this->activites()
+                ->get()
+                ->sum(function ($activite) {
+                    return $activite->getTotalCp();
+                });
+        }
+
+        // Si les activités sont déjà chargées, utiliser la collection
+        return (float) $this->activites->sum(function ($activite) {
+            return $activite->getTotalCp();
+        });
+    }
+
+    /**
+     * Accesseur pour total_ae
+     * 
+     * Permet d'utiliser $action->total_ae dans les vues et Filament
+     * 
+     * @return float
+     */
+    public function getTotalAeAttribute(): float
+    {
+        return $this->getTotalAe();
+    }
+
+    /**
+     * Accesseur pour total_cp
+     * 
+     * Permet d'utiliser $action->total_cp dans les vues et Filament
+     * 
+     * @return float
+     */
+    public function getTotalCpAttribute(): float
+    {
+        return $this->getTotalCp();
     }
 
     public function getActivitylogOptions(): LogOptions

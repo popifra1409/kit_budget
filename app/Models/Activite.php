@@ -76,6 +76,60 @@ class Activite extends Model
     }
 
     /**
+     * Calculer le total AE de toutes les tâches principales
+     * (Utilise getBudgetTotal() existant)
+     */
+    public function getTotalAe(): float
+    {
+        // Si les tâches sont déjà chargées, utiliser la collection
+        if ($this->relationLoaded('taches')) {
+            return (float) $this->taches
+                ->where('niveau', 'tache')
+                ->sum(function ($tache) {
+                    return $tache->getTotalAe();
+                });
+        }
+
+        // Sinon, utiliser la méthode existante qui fait une requête
+        return $this->getBudgetTotal();
+    }
+
+    /**
+     * Calculer le total CP de toutes les tâches principales
+     * (Utilise getBudgetCpTotal() existant)
+     */
+    public function getTotalCp(): float
+    {
+        // Si les tâches sont déjà chargées, utiliser la collection
+        if ($this->relationLoaded('taches')) {
+            return (float) $this->taches
+                ->where('niveau', 'tache')
+                ->sum(function ($tache) {
+                    return $tache->getTotalCp();
+                });
+        }
+
+        // Sinon, utiliser la méthode existante qui fait une requête
+        return $this->getBudgetCpTotal();
+    }
+
+    /**
+     * Accesseur pour total_ae
+     */
+    public function getTotalAeAttribute(): float
+    {
+        return $this->getTotalAe();
+    }
+
+    /**
+     * Accesseur pour total_cp
+     */
+    public function getTotalCpAttribute(): float
+    {
+        return $this->getTotalCp();
+    }
+
+    /**
      * Obtenir le nombre de tâches (principales uniquement)
      */
     public function getNombreTaches(): int

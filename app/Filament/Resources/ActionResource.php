@@ -219,7 +219,14 @@ class ActionResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()
+            ->with([
+                'exercice',
+                'activites.taches' => function ($query) {
+                    // Charger uniquement les tâches principales (pas les sous-tâches)
+                    $query->where('niveau', 'tache')->with('sousTaches');
+                }
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -273,10 +280,27 @@ class ActionResource extends Resource
                     ->badge()
                     ->color('success'),
 
-                Tables\Columns\TextColumn::make('budget_total')
-                    ->label('Budget (AE)')
-                    ->formatStateUsing(fn($record) => number_format($record->getBudgetTotal(), 0, ',', ' ') . ' FCFA')
-                    ->color('warning'),
+                Tables\Columns\TextColumn::make('total_ae')
+                    ->label('Total AE')
+                    ->formatStateUsing(function ($record) {
+                        $total = $record->getTotalAe();
+                        return number_format($total, 0, ',', ' ') . ' FCFA';
+                    })
+                    ->color('warning')
+                    ->tooltip('Autorisations d\'Engagement - Somme de toutes les activités')
+                    ->toggleable()
+                    ->sortable(false),
+
+                Tables\Columns\TextColumn::make('total_cp')
+                    ->label('Total CP')
+                    ->formatStateUsing(function ($record) {
+                        $total = $record->getTotalCp();
+                        return number_format($total, 0, ',', ' ') . ' FCFA';
+                    })
+                    ->color('info')
+                    ->tooltip('Crédits de Paiement - Somme de toutes les activités')
+                    ->toggleable()
+                    ->sortable(false),
 
                 Tables\Columns\IconColumn::make('actif')
                     ->label('Actif')
