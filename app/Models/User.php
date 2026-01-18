@@ -6,8 +6,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;  // ← Import Spatie
+use Filament\Models\Contracts\FilamentUser; // ← Import FilamentUser
 
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     use HasFactory, Notifiable, HasRoles;  // ← Ajouter HasRoles
 
@@ -43,6 +44,31 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function canAccessPanel(\Filament\Panel $panel): bool
+    {
+        // Logique d'accès - choisissez une option :
+
+        // Option 1: Autoriser tous les utilisateurs
+        // return true;
+
+        // Option 2: Autoriser par email (recommandé pour commencer)
+        // return in_array($this->email, [
+        //     'admin@example.com',
+        //     'votre_email@domaine.com'
+        // ]);
+
+        // Option 3: Autoriser par rôle (avec Spatie Permissions)
+        return $this->hasAnyRole([
+            'super_admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'sous_directeur_budget',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable'
+        ]);
     }
 
     /**
