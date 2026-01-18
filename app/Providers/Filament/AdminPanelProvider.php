@@ -37,8 +37,14 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+
+            // 🎨 PALETTE DE COULEURS PERSONNALISÉE
             ->colors([
-                'primary' => Color::Blue,
+                'primary' => Color::hex('#0ea5e9'),
+                'success' => Color::hex('#059669'),
+                'danger' => Color::hex('#dc2626'),
+                'warning' => Color::hex('#f59e0b'),
+                'info' => Color::hex('#64748b'),
             ])
 
             // ===================================
