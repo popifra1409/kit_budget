@@ -12,9 +12,33 @@ use App\Http\Controllers\PdfDownloadController;
 |--------------------------------------------------------------------------
 */
 
+Route::get('/test-debug', function () {
+    try {
+        // Test 1 : Vue sans slash
+        $view1 = view('admin');
+
+        // Test 2 : Vue avec slash (devrait échouer)
+        try {
+            $view2 = view('/admin');
+            return "Les deux vues fonctionnent - problème ailleurs";
+        } catch (\Exception $e) {
+            return "view('/admin') échoue comme attendu: " . $e->getMessage();
+        }
+    } catch (\Exception $e) {
+        return "view('admin') échoue aussi: " . $e->getMessage();
+    }
+});
+
 // Redirection de la racine vers le panneau admin Filament
 Route::get('/', function () {
-    return redirect('/admin');
+    try {
+        return redirect('/admin');
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
 });
 
 /*
