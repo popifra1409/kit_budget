@@ -60,6 +60,16 @@ class AdminPanelProvider extends PanelProvider
             // ===================================
             ->sidebarCollapsibleOnDesktop()
 
+            ->navigationGroups([
+                'Commandes & Engagement',
+                'Documents',
+                'Gestion Budgétaire',
+                'Cadre Logique',
+                'Configuration Budget',
+                'Configuration',
+                'Audit',
+                'Administration',
+            ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
