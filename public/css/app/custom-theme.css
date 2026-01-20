@@ -1,0 +1,96 @@
+/**
+ * Couleurs de fond personnalisées
+ * Gestion Budgétaire - Palette Professionnelle
+ */
+
+/* MODE LIGHT - Fond gris-bleu clair */
+:root {
+    --bg-page-light: #f1f5f9;
+}
+
+.fi-body,
+.fi-panel {
+    background-color: var(--bg-page-light) !important;
+}
+
+/* Fond des cartes/sections (blanc pour contraste) */
+.fi-section,
+.fi-card,
+.fi-ta-content,
+.fi-fo-section,
+.fi-wi-stats-overview-stat {
+    background-color: #ffffff !important;
+}
+
+/* MODE DARK - Fond bleu-gris anthracite */
+.dark {
+    --bg-page-dark: #1e293b;
+    --bg-card-dark: #0f172a;
+}
+
+.dark .fi-body,
+.dark .fi-panel {
+    background-color: var(--bg-page-dark) !important;
+}
+
+/* Fond des cartes en mode dark */
+.dark .fi-section,
+.dark .fi-card,
+.dark .fi-ta-content,
+.dark .fi-fo-section,
+.dark .fi-wi-stats-overview-stat {
+    background-color: var(--bg-card-dark) !important;
+    border-color: #334155 !important;
+}
+
+/* Bordures subtiles */
+.fi-section,
+.fi-card {
+    border: 1px solid #e2e8f0;
+}
+
+.dark .fi-section,
+.dark .fi-card {
+    border-color: #334155;
+}
+
+/* Ombres légères */
+.fi-section,
+.fi-card {
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.dark .fi-section,
+.dark .fi-card {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Tables - fond alterné */
+.fi-ta-row:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+.dark .fi-ta-row:nth-child(even) {
+    background-color: #0f172a;
+}
+
+/* Sidebar background */
+.fi-sidebar {
+    background-color: #ffffff;
+}
+
+.dark .fi-sidebar {
+    background-color: #0f172a;
+    border-right-color: #334155;
+}
+
+/* Header */
+.fi-topbar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.dark .fi-topbar {
+    background-color: #0f172a;
+    border-bottom-color: #334155;
+}
