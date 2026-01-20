@@ -15,7 +15,7 @@ class WelcomeController extends Controller
     {
         // Si l'utilisateur est déjà connecté, le rediriger vers le dashboard
         if (auth()->check()) {
-            return redirect()->route('filament.admin.pages.dashboard');
+            return redirect('/admin');
         }
 
         // Sinon, afficher la page de bienvenue
