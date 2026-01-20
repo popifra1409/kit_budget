@@ -26,10 +26,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * AdminPanelProvider final avec données du fournisseur depuis la base de données
- * 
- * Ce provider récupère automatiquement:
- * - Les infos du fournisseur depuis parametres_fournisseur
- * - Les infos de la structure cliente depuis parametres_structure
+ * VERSION CORRIGÉE - Sans erreur formatTelephoneHref()
  */
 class AdminPanelProvider extends PanelProvider
 {
@@ -263,10 +260,10 @@ class AdminPanelProvider extends PanelProvider
                                 </a>
                             </p>
                             ' . ($contactFooter['telephone_support'] ? '<p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                Tél: <a href="' . e($fournisseur->formatTelephoneHref($contactFooter['telephone_support'])) . '" class="hover:text-blue-600 dark:hover:text-blue-400 transition">' . e($contactFooter['telephone_support']) . '</a>
+                                Tél: <a href="tel:' . e($this->formatTelephone($contactFooter['telephone_support'])) . '" class="hover:text-blue-600 dark:hover:text-blue-400 transition">' . e($contactFooter['telephone_support']) . '</a>
                             </p>' : '') . '
                             ' . ($contactFooter['telephone_urgence'] ? '<p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                Urgence 24/7: <a href="' . e($fournisseur->formatTelephoneHref($contactFooter['telephone_urgence'])) . '" class="hover:text-red-600 dark:hover:text-red-400 transition font-semibold">' . e($contactFooter['telephone_urgence']) . '</a>
+                                Urgence 24/7: <a href="tel:' . e($this->formatTelephone($contactFooter['telephone_urgence'])) . '" class="hover:text-red-600 dark:hover:text-red-400 transition font-semibold">' . e($contactFooter['telephone_urgence']) . '</a>
                             </p>' : '') . '
                             <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
                                 ' . ($docLinks['documentation'] ? '<a href="' . e($docLinks['documentation']) . '" target="_blank" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Documentation</a>' : 'Documentation') . ' • 
@@ -307,6 +304,20 @@ class AdminPanelProvider extends PanelProvider
                 </div>
             </footer>
         ');
+    }
+
+    /**
+     * Formater un numéro de téléphone pour un lien tel:
+     * Supprime les espaces, parenthèses, tirets, etc.
+     */
+    private function formatTelephone(?string $telephone): string
+    {
+        if (!$telephone) {
+            return '';
+        }
+
+        // Supprimer tout sauf les chiffres et le +
+        return preg_replace('/[^0-9+]/', '', $telephone);
     }
 
     /**
