@@ -5,6 +5,7 @@ use App\Http\Controllers\CadreLogiqueController;
 use App\Http\Controllers\MemoireDepenseController;
 use App\Http\Controllers\PdfTestController;
 use App\Http\Controllers\PdfDownloadController;
+use App\Http\Controllers\WelcomeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -12,17 +13,15 @@ use App\Http\Controllers\PdfDownloadController;
 |--------------------------------------------------------------------------
 */
 
-// Redirection de la racine vers le panneau admin Filament
-Route::get('/', function () {
-    try {
-        return redirect('/admin');
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ], 500);
-    }
-});
+/*
+|--------------------------------------------------------------------------
+| Page de Bienvenue (Racine du Site)
+|--------------------------------------------------------------------------
+| Affiche une page de démarrage élégante avec logo et informations
+| avant de rediriger vers la page de connexion
+*/
+
+Route::get('/', [WelcomeController::class, 'index'])->name('welcome');
 
 /*
 |--------------------------------------------------------------------------

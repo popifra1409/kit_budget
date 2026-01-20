@@ -43,6 +43,23 @@ ssl_port=8443  # Port HTTPS
 [mysql]
 port=3307
 
+# Éditer C:\Windows\System32\drivers\etc\hosts (Admin)
+# Ajouter :
+127.0.0.1    kit_budget.local
+
+# Configuration des ports
+1. Configurer Nginx
+Notepad C:\laragon\etc\nginx\nginx.conf
+Changer : listen 80; → listen 8082;
+
+2. Configurer MySQL
+Notepad C:\laragon\bin\mysql\mysql-8.x.x\my.ini
+Changer : port=3306 → port=3307
+
+# 3. Configurer Laragon
+Notepad C:\laragon\laragon.ini
+Vérifier les ports 8082 et 3307
+
 # Configurer les ports dans le .env de Laravel
 Dans votre fichier C:\laragon\www\kit_budget\.env :
 
@@ -69,6 +86,29 @@ C:\laragon\www\kit_budget
 
 OU via PowerShell (administrateur) :
 Copy-Item "C:\xampp\htdocs\kit_budget" "C:\laragon\www\kit_budget" -Recurse
+
+# Installation des dépendances
+
+## Terminal Laragon (clic droit sur l'icône → Terminal)
+cd C:\laragon\www\kit_budget
+## Installation PHP
+composer install --no-dev --optimize-autoloader
+## Installation Node.js (si nécessaire)
+npm install --production
+npm run build
+
+## Configuration Laravel
+php artisan key:generate
+php artisan storage:link
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# Configuration des permissions
+# Exécuter en Admin PowerShell
+icacls "C:\laragon\www\kit_budget\storage" /grant "Everyone:(OI)(CI)F" /T
+icacls "C:\laragon\www\kit_budget\bootstrap\cache" /grant "Everyone:(OI)(CI)F" /T
+icacls "C:\laragon\www\kit_budget" /grant "Everyone:(OI)(CI)R" /T
 
 ## Configurer le nom de domaine local
 Ouvrez le fichier hosts Windows en tant qu'administrateur :
