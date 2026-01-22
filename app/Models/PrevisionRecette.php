@@ -52,7 +52,7 @@ class PrevisionRecette extends Model
      */
     public function lignesPrevisions(): HasMany
     {
-        return $this->hasMany(LignePrevisionRecette::class);
+        return $this->hasMany(LignePrevisionRecette::class, 'prevision_recette_id');
     }
 
     /**

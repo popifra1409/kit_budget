@@ -48,7 +48,7 @@ class LignePrevisionRecette extends Model
      */
     public function previsionRecette(): BelongsTo
     {
-        return $this->belongsTo(PrevisionRecette::class);
+        return $this->belongsTo(PrevisionRecette::class, 'prevision_recette_id');
     }
 
     /**
@@ -214,26 +214,44 @@ class LignePrevisionRecette extends Model
     {
         return $query->where('nomenclature_id', $nomenclatureId);
     }
+    //     public function previsionRecette()
+    // {
+    //     return $this->belongsTo(PrevisionRecette::class);
+    // }
 
     // ====================================
     // BOOT & OBSERVERS
-    // ====================================
+    // ===================================
 
     protected static function boot()
     {
         parent::boot();
 
-        // Initialiser montant_rectifie = montant_prevu_initial si non défini
         static::creating(function ($ligne) {
+
+            if ($ligne->nomenclature_id && !$ligne->code_nomenclature) {
+                $nomenclature = \App\Models\NomenclatureBudgetaire::find($ligne->nomenclature_id);
+
+                if ($nomenclature) {
+                    $ligne->code_nomenclature = $nomenclature->code;
+                    $ligne->libelle_nomenclature = $nomenclature->libelle;
+                }
+                if (!$nomenclature) {
+                    throw new \RuntimeException('Nomenclature budgétaire introuvable');
+                }
+            }
+
             if ($ligne->montant_rectifie == 0) {
                 $ligne->montant_rectifie = $ligne->montant_prevu_initial;
             }
         });
 
-        // Recalculer après sauvegarde
-        static::saved(function ($ligne) {
-            $ligne->calculerEcart();
-            $ligne->calculerTauxRecouvrement();
+        static::saving(function ($ligne) {
+            $ligne->ecart = $ligne->montant_recouvre - $ligne->montant_rectifie;
+
+            $ligne->taux_recouvrement = $ligne->montant_rectifie == 0
+                ? 0
+                : ($ligne->montant_recouvre / $ligne->montant_rectifie) * 100;
         });
     }
 }

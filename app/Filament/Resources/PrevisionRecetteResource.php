@@ -122,14 +122,6 @@ class PrevisionRecetteResource extends Resource
                             ->columnSpanFull()
                             ->placeholder('Ex: Prévisions de Recettes 2026'),
 
-                        Forms\Components\TextInput::make('exercice')
-                            ->label('Exercice budgétaire')
-                            ->required()
-                            ->numeric()
-                            ->default(now()->year)
-                            ->minValue(2020)
-                            ->maxValue(2050),
-
                         Forms\Components\DatePicker::make('date_adoption')
                             ->label('Date d\'adoption')
                             ->helperText('Date de vote/adoption de la prévision'),
@@ -169,7 +161,11 @@ class PrevisionRecetteResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()
+            ->with('exercice')
+            ->withCount('lignesPrevisions')
+            ->withSum('lignesPrevisions as total_prevu', 'montant_rectifie')
+            ->withSum('lignesPrevisions as total_recouvre', 'montant_recouvre');
     }
 
     public static function table(Table $table): Table
@@ -226,27 +222,34 @@ class PrevisionRecetteResource extends Resource
                         default => $state,
                     }),
 
-                Tables\Columns\TextColumn::make('lignes_count')
+                Tables\Columns\TextColumn::make('lignes_previsions_count')
                     ->label('Lignes')
-                    ->counts('lignesPrevisions')
+                    ->alignCenter()
                     ->badge()
                     ->color('primary'),
 
                 Tables\Columns\TextColumn::make('total_prevu')
                     ->label('Total Prévu')
-                    ->formatStateUsing(fn($record) => number_format($record->getTotalPrevuRectifie(), 0, ',', ' ') . ' FCFA')
+                    ->state(fn(PrevisionRecette $record) => $record->getTotalPrevuRectifie())
+                    ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
                     ->color('info'),
 
                 Tables\Columns\TextColumn::make('total_recouvre')
                     ->label('Total Recouvré')
-                    ->formatStateUsing(fn($record) => number_format($record->getTotalRecouvre(), 0, ',', ' ') . ' FCFA')
+                    ->state(fn(PrevisionRecette $record) => $record->getTotalRecouvre())
+                    ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
                     ->color('success'),
+
 
                 Tables\Columns\TextColumn::make('taux_recouvrement')
                     ->label('Taux')
-                    ->formatStateUsing(fn($record) => number_format($record->getTauxRecouvrement(), 1) . '%')
+                    ->state(fn(PrevisionRecette $record) => round($record->getTauxRecouvrement(), 1))
+                    ->formatStateUsing(fn($state) => $state . ' %')
                     ->badge()
-                    ->color(fn($record) => $record->getTauxRecouvrement() >= 90 ? 'success' : ($record->getTauxRecouvrement() >= 70 ? 'warning' : 'danger')),
+                    ->color(
+                        fn($state) =>
+                        $state >= 90 ? 'success' : ($state >= 70 ? 'warning' : 'danger')
+                    ),
 
                 Tables\Columns\TextColumn::make('date_adoption')
                     ->label('Date adoption')

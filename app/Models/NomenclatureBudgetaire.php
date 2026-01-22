@@ -167,6 +167,11 @@ class NomenclatureBudgetaire extends Model
         return implode(' > ', $chemin);
     }
 
+    public function lignePrevisionRecettes()
+    {
+        return $this->hasMany(LignePrevisionRecette::class, 'nomenclature_id');
+    }
+
     /**
      * Boot - Valider la hiérarchie
      */
