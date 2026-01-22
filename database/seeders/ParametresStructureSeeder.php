@@ -20,7 +20,7 @@ class ParametresStructureSeeder extends Seeder
         ParametresStructure::create([
             // Informations principales
             'nom_structure' => 'HOPITAL GENERAL DE YAOUNDE',
-            'sigle' => 'CHUY',
+            'sigle' => 'HGY',
             'logo' => null, // À uploader via l'interface
 
             // Coordonnées
