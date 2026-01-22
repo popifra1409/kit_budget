@@ -12,6 +12,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use Illuminate\Database\Eloquent\Builder;
 
 class PrevisionRecetteResource extends Resource
 {

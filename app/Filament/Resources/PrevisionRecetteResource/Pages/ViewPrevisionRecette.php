@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Support\Enums\FontWeight;
+use Illuminate\Database\Eloquent\Builder;
 
 class ViewPrevisionRecette extends ViewRecord
 {
@@ -65,6 +66,11 @@ class ViewPrevisionRecette extends ViewRecord
                 ->visible(fn($record) => auth()->user()->hasAnyRole(['super_admin', 'chef_service_budget']))
                 ->successNotificationTitle('Révision créée'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with('exercice');
     }
 
     public function infolist(Infolist $infolist): Infolist
@@ -149,10 +155,7 @@ class ViewPrevisionRecette extends ViewRecord
                                 Infolists\Components\TextEntry::make('exercice.annee')
                                     ->label('Exercice')
                                     ->badge()
-                                    ->color(
-                                        fn($record) =>
-                                        $record->exercice?->estActif() ? 'success' : ($record->exercice?->estCloture() ? 'warning' : 'gray')
-                                    ),
+                                    ->color(fn($record) => $record->exercice_couleur),
 
                                 Infolists\Components\TextEntry::make('statut')
                                     ->label('Statut')

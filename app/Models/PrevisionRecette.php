@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
+use Illuminate\Database\Eloquent\Builder;
 
 class PrevisionRecette extends Model
 {
@@ -352,6 +353,19 @@ class PrevisionRecette extends Model
     public function scopeEnExecution($query)
     {
         return $query->where('statut', 'execution');
+    }
+
+    /**
+     * Scope pour charger les relations courantes
+     */
+    public function scopeWithRelations(Builder $query): Builder
+    {
+        return $query->with([
+            'exercice',
+            'lignesPrevisions',
+            'createdBy',
+            'updatedBy',
+        ]);
     }
 
     // ====================================
