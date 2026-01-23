@@ -51,6 +51,7 @@ class LignesPrevisionsRelationManager extends RelationManager
                     ->rules([
                         fn($record) => Rule::unique('lignes_previsions_recettes', 'nomenclature_id')
                             ->where('prevision_recette_id', $this->getOwnerRecord()->id)
+                            ->whereNull('deleted_at')
                             ->ignore($record?->id),
                     ])
                     ->reactive()

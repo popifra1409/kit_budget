@@ -47,37 +47,25 @@ class PrevisionRecetteMensuelle extends Model
     // RELATIONS
     // ====================================
 
-    /**
-     * Ligne de prévision annuelle parente
-     */
     public function lignePrevisionRecette(): BelongsTo
     {
         return $this->belongsTo(LignePrevisionRecette::class);
     }
 
-    /**
-     * Exercice
-     */
     public function exercice(): BelongsTo
     {
         return $this->belongsTo(Exercice::class);
     }
 
-    /**
-     * Recettes réelles du mois
-     */
     public function recettesReelles(): HasMany
     {
-        return $this->hasMany(RecetteReelle::class);
+        return $this->hasMany(RecetteReelle::class, 'prevision_recette_mensuelle_id');
     }
 
     // ====================================
     // ACCESSEURS
     // ====================================
 
-    /**
-     * Nom du mois en français
-     */
     public function getNomMoisAttribute(): string
     {
         $mois = [
@@ -98,33 +86,21 @@ class PrevisionRecetteMensuelle extends Model
         return $mois[$this->mois] ?? '';
     }
 
-    /**
-     * Période complète (ex: Janvier 2026)
-     */
     public function getPeriodeAttribute(): string
     {
         return $this->nom_mois . ' ' . $this->annee;
     }
 
-    /**
-     * Montant restant à recouvrer
-     */
     public function getMontantRestantAttribute(): float
     {
         return max(0, $this->montant_prevu - $this->montant_recouvre);
     }
 
-    /**
-     * Est en surperformance
-     */
     public function getEstSurperformanceAttribute(): bool
     {
         return $this->montant_recouvre > $this->montant_prevu;
     }
 
-    /**
-     * Est en sous-performance
-     */
     public function getEstSousperformanceAttribute(): bool
     {
         return $this->montant_recouvre < $this->montant_prevu;
@@ -134,9 +110,6 @@ class PrevisionRecetteMensuelle extends Model
     // CALCULS
     // ====================================
 
-    /**
-     * Calculer et mettre à jour le montant recouvré du mois
-     */
     public function calculerMontantRecouvre(): float
     {
         $total = $this->recettesReelles()
@@ -144,13 +117,9 @@ class PrevisionRecetteMensuelle extends Model
             ->sum('montant');
 
         $this->update(['montant_recouvre' => $total]);
-
         return $total;
     }
 
-    /**
-     * Calculer l'écart du mois
-     */
     public function calculerEcart(): float
     {
         $ecart = $this->montant_recouvre - $this->montant_prevu;
@@ -158,27 +127,15 @@ class PrevisionRecetteMensuelle extends Model
         return $ecart;
     }
 
-    /**
-     * Calculer le taux de réalisation du mois
-     */
     public function calculerTauxRealisation(): float
     {
-        if ($this->montant_prevu == 0) {
-            $taux = 0;
-        } else {
-            $taux = ($this->montant_recouvre / $this->montant_prevu) * 100;
-        }
-
+        $taux = $this->montant_prevu > 0 ? ($this->montant_recouvre / $this->montant_prevu) * 100 : 0;
         $this->update(['taux_realisation' => $taux]);
         return $taux;
     }
 
-    /**
-     * Calculer les montants cumulés depuis janvier
-     */
     public function calculerCumules(): void
     {
-        // Récupérer toutes les prévisions mensuelles de la même ligne jusqu'à ce mois
         $previsions = static::where('ligne_prevision_recette_id', $this->ligne_prevision_recette_id)
             ->where('annee', $this->annee)
             ->where('mois', '<=', $this->mois)
@@ -187,7 +144,6 @@ class PrevisionRecetteMensuelle extends Model
 
         $cumulePrevu = $previsions->sum('montant_prevu');
         $cumuleRecouvre = $previsions->sum('montant_recouvre');
-
         $tauxCumule = $cumulePrevu > 0 ? ($cumuleRecouvre / $cumulePrevu) * 100 : 0;
 
         $this->update([
@@ -197,9 +153,6 @@ class PrevisionRecetteMensuelle extends Model
         ]);
     }
 
-    /**
-     * Recalculer tous les indicateurs
-     */
     public function recalculer(): void
     {
         $this->calculerMontantRecouvre();
@@ -208,9 +161,6 @@ class PrevisionRecetteMensuelle extends Model
         $this->calculerCumules();
     }
 
-    /**
-     * Recalculer tous les mois suivants (en cascade)
-     */
     public function recalculerMoisSuivants(): void
     {
         $moisSuivants = static::where('ligne_prevision_recette_id', $this->ligne_prevision_recette_id)
@@ -233,8 +183,9 @@ class PrevisionRecetteMensuelle extends Model
      */
     public static function creerPrevisionsAnnuelles(LignePrevisionRecette $ligne): void
     {
-        $montantMensuel = $ligne->montant_rectifie / 12;
         $exercice = $ligne->previsionRecette->exercice;
+
+        $montantMensuel = $ligne->montant_rectifie / 12;
 
         for ($mois = 1; $mois <= 12; $mois++) {
             static::updateOrCreate(
@@ -252,15 +203,11 @@ class PrevisionRecetteMensuelle extends Model
         }
     }
 
-    /**
-     * Redistribuer le montant annuel sur 12 mois
-     */
     public static function redistribuerMontant(LignePrevisionRecette $ligne, float $montantAnnuel): void
     {
         $montantMensuel = $montantAnnuel / 12;
-
         static::where('ligne_prevision_recette_id', $ligne->id)
-            ->where('annee', $ligne->previsionRecette->exercice->annee)
+            ->where('annee', $ligne->previsionRecette()->first()->exercice()->first()->annee)
             ->update(['montant_prevu' => $montantMensuel]);
     }
 
@@ -268,49 +215,31 @@ class PrevisionRecetteMensuelle extends Model
     // SCOPES
     // ====================================
 
-    /**
-     * Scope: Par mois
-     */
     public function scopeMois($query, int $mois)
     {
         return $query->where('mois', $mois);
     }
 
-    /**
-     * Scope: Par année
-     */
     public function scopeAnnee($query, int $annee)
     {
         return $query->where('annee', $annee);
     }
 
-    /**
-     * Scope: Par période
-     */
     public function scopePeriode($query, int $mois, int $annee)
     {
         return $query->where('mois', $mois)->where('annee', $annee);
     }
 
-    /**
-     * Scope: Actives
-     */
     public function scopeActives($query)
     {
         return $query->where('actif', true);
     }
 
-    /**
-     * Scope: Avec surperformance
-     */
     public function scopeSurperformance($query)
     {
         return $query->whereColumn('montant_recouvre', '>', 'montant_prevu');
     }
 
-    /**
-     * Scope: Avec sous-performance
-     */
     public function scopeSousperformance($query)
     {
         return $query->whereColumn('montant_recouvre', '<', 'montant_prevu');
@@ -324,7 +253,6 @@ class PrevisionRecetteMensuelle extends Model
     {
         parent::boot();
 
-        // Après sauvegarde, recalculer
         static::saved(function ($prevision) {
             $prevision->calculerEcart();
             $prevision->calculerTauxRealisation();
