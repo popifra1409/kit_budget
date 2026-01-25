@@ -24,6 +24,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
 use App\Filament\Pages\Auth\Login;
+use Filament\Navigation\MenuItem;
 
 /**
  * AdminPanelProvider final avec données du fournisseur depuis la base de données
@@ -88,6 +89,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->widgets([
                 Widgets\AccountWidget::class,
+                \App\Filament\Widgets\CacheManagementWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

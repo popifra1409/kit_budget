@@ -11,6 +11,8 @@ use Filament\Support\Facades\FilamentView;
 use Illuminate\Support\Facades\Blade;
 use App\Models\LignePrevisionRecette;
 use App\Observers\LignePrevisionRecetteObserver;
+use App\Http\Responses\CustomLogoutResponse;
+use Filament\Http\Responses\Auth\Contracts\LogoutResponse;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -19,7 +21,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Personnaliser la réponse de déconnexion
+        $this->app->bind(
+            LogoutResponse::class,
+            CustomLogoutResponse::class
+        );
     }
 
     /**

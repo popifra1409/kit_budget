@@ -7,6 +7,7 @@ use App\Http\Controllers\PdfTestController;
 use App\Http\Controllers\PdfDownloadController;
 use App\Http\Controllers\WelcomeController;
 use App\Http\Controllers\CompteDesactiveController;
+use App\Http\Controllers\SecureLogoutController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +27,12 @@ Route::get('/', [WelcomeController::class, 'index'])->name('welcome');
 Route::get('/compte-desactive', [CompteDesactiveController::class, 'index'])
     ->name('compte.desactive');
 
+/*
+| Déconnexion sécurisée
+*/
+Route::post('/secure-logout', [SecureLogoutController::class, 'logout'])
+    ->name('secure.logout')
+    ->middleware('auth');
 /*
 |--------------------------------------------------------------------------
 | Routes authentifiées (nécessitent connexion)
