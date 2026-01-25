@@ -36,108 +36,77 @@ class EngagementResource extends Resource
 
 
     /**
-     * Permissions - Engagements avec validation CF
+     * Permissions – Engagements budgétaires
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Super admin peut toujours éditer (même exercices clos)
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // 3. Vérifier le rôle requis
-        if (!$user->hasAnyRole(['operateur_budget', 'chef_service_budget'])) {
-            return false;
-        }
-
-        // 4. Vérifier que l'exercice est modifiable
-        return $record->estModifiable();
-    }
-
-    public static function canDelete($record): bool
-    {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        return $record->estModifiable();
-    }
-
-    public static function canEditRecord($record): bool
-    {
-        $canEdit = static::canEdit($record);
-
-        if (!$canEdit && $record->estLectureSeule()) {
-            \Filament\Notifications\Notification::make()
-                ->title('Édition impossible')
-                ->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
-                ->send();
-        }
-
-        return $canEdit;
+        return auth()->check()
+            && auth()->user()->can('view_any_engagement');
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
+        return auth()->check()
+            && auth()->user()->can('view_engagement');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('create_engagement');
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (!$user->can('update_engagement')) {
+            return false;
+        }
+
+        if (!$record->estModifiable()) {
+            if ($record->estLectureSeule()) {
+                \Filament\Notifications\Notification::make()
+                    ->title('Modification impossible')
+                    ->warning()
+                    ->body(
+                        "L'exercice {$record->exercice->annee} est {$record->exercice->statut}.
+                    Modification interdite."
+                    )
+                    ->send();
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('delete_engagement')) {
+            return false;
+        }
+
+        return $record->estModifiable();
     }
 
     /**
-     * Action spéciale : Valider un engagement (Contrôleur Financier)
+     * Action spéciale : Valider un engagement
+     * (Contrôle financier)
      */
     public static function canValider($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'controleur_financier'
-        ]) : false;
+        return auth()->check()
+            && auth()->user()->can('valider_engagement');
     }
 
     /**
@@ -145,12 +114,10 @@ class EngagementResource extends Resource
      */
     public static function canAnnuler($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'directeur_general',
-            'controleur_financier'
-        ]) : false;
+        return auth()->check()
+            && auth()->user()->can('annuler_engagement');
     }
+
 
     public static function form(Form $form): Form
     {

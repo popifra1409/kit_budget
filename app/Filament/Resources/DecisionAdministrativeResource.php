@@ -33,111 +33,76 @@ class DecisionAdministrativeResource extends Resource
     protected static ?int $navigationSort = 3;
 
     /**
-     * Permissions - Décisions administratives
+     * Permissions – Décisions administratives
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general'
-        ]) : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Super admin peut toujours éditer (même exercices clos)
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // 3. Vérifier le rôle requis
-        if (!$user->hasAnyRole(['operateur_budget', 'chef_service_budget', 'sous_directeur_budget', 'directeur_general'])) {
-            return false;
-        }
-
-        // 4. Vérifier que l'exercice est modifiable
-        return $record->estModifiable();
-    }
-
-
-    public static function canDelete($record): bool
-    {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        return $record->estModifiable();
-    }
-
-    public static function canEditRecord($record): bool
-    {
-        $canEdit = static::canEdit($record);
-
-        if (!$canEdit && $record->estLectureSeule()) {
-            \Filament\Notifications\Notification::make()
-                ->title('Édition impossible')
-                ->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
-                ->send();
-        }
-
-        return $canEdit;
+        return auth()->check()
+            && auth()->user()->can('view_any_decision_administrative');
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
+        return auth()->check()
+            && auth()->user()->can('view_decision_administrative');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('create_decision_administrative');
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (!$user->can('update_decision_administrative')) {
+            return false;
+        }
+
+        if (!$record->estModifiable()) {
+            if ($record->estLectureSeule()) {
+                \Filament\Notifications\Notification::make()
+                    ->title('Modification impossible')
+                    ->warning()
+                    ->body(
+                        "L'exercice {$record->exercice->annee} est {$record->exercice->statut}.
+                    Modification interdite."
+                    )
+                    ->send();
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('delete_decision_administrative')) {
+            return false;
+        }
+
+        return $record->estModifiable();
     }
 
     /**
-     * Action spéciale : Valider une décision (Directeur Général)
+     * Action spéciale : Valider une décision
      */
     public static function canValider($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'controleur_financier',
-            'directeur_general',
-        ]) : false;
+        return auth()->check()
+            && auth()->user()->can('valider_decision_administrative');
     }
 
     /**
@@ -145,12 +110,10 @@ class DecisionAdministrativeResource extends Resource
      */
     public static function canAnnuler($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'directeur_general'
-        ]) : false;
+        return auth()->check()
+            && auth()->user()->can('annuler_decision_administrative');
     }
-
+    
     public static function form(Form $form): Form
     {
         return $form

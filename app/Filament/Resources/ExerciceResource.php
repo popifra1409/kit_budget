@@ -28,6 +28,95 @@ class ExerciceResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    /**
+     * Permissions – Exercice budgétaire
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_any_exercice');
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_exercice');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('create_exercice');
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('update_exercice')) {
+            return false;
+        }
+
+        // Règle métier : exercice modifiable
+        if (!$record->estModifiable()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Modification impossible')
+                ->warning()
+                ->body("L'exercice {$record->annee} est {$record->statut}.")
+                ->send();
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('delete_exercice')) {
+            return false;
+        }
+
+        return $record->estModifiable();
+    }
+
+    /**
+     * Action spéciale : Ouvrir un exercice
+     */
+    public static function canOuvrir($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('ouvrir_exercice')
+            && $record->statut === 'brouillon';
+    }
+
+    /**
+     * Action spéciale : Clôturer un exercice
+     */
+    public static function canCloturer($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('cloturer_exercice')
+            && $record->statut === 'ouvert';
+    }
+
+    /**
+     * Action spéciale : Archiver un exercice
+     */
+    public static function canArchiver($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('archiver_exercice')
+            && $record->statut === 'cloture';
+    }
+
+
     public static function form(Form $form): Form
     {
         return $form

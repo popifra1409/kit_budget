@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PrevisionRecetteResource\Pages;
 use App\Filament\Resources\PrevisionRecetteResource\RelationManagers;
 use App\Models\PrevisionRecette;
+use App\Exports\PrevisionRecetteExport;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use Illuminate\Database\Eloquent\Builder;
+use Maatwebsite\Excel\Facades\Excel;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PrevisionRecetteResource extends Resource
 {
@@ -286,13 +289,66 @@ class PrevisionRecetteResource extends Resource
                     ->falseLabel('Inactifs'),
             ])
             ->actions([
+                Tables\Actions\Action::make('exportExcel')
+                    ->label('Excel')
+                    ->icon('heroicon-o-table-cells')
+                    ->color('success')
+                    ->action(function (PrevisionRecette $record) {
+                        return Excel::download(
+                            new PrevisionRecetteExport($record),
+                            'prevision_recette_' . $record->code . '_' . now()->format('Ymd_His') . '.xlsx'
+                        );
+                    }),
+
+                Tables\Actions\Action::make('exportPdf')
+                    ->label('PDF')
+                    ->icon('heroicon-o-document-text')
+                    ->color('danger')
+                    ->action(function (PrevisionRecette $record) {
+                        $lignes = $record->lignesPrevisions()
+                            ->with('nomenclature')
+                            ->orderBy('ordre')
+                            ->get();
+
+                        $pdf = Pdf::loadView('exports.prevision-recette-pdf', [
+                            'prevision' => $record,
+                            'lignes' => $lignes,
+                        ]);
+
+                        $pdf->setPaper('a4', 'landscape');
+
+                        return response()->streamDownload(
+                            fn() => print($pdf->output()),
+                            'prevision_recette_' . $record->code . '_' . now()->format('Ymd_His') . '.pdf'
+                        );
+                    }),
+
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+
+                    Tables\Actions\BulkAction::make('exportExcelBulk')
+                        ->label('Exporter en Excel')
+                        ->icon('heroicon-o-table-cells')
+                        ->color('success')
+                        ->action(function ($records) {
+                            // Export multiple prévisions (optionnel)
+                            // Peut être développé selon les besoins
+                        }),
                 ]),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('exportAllExcel')
+                    ->label('Exporter tout en Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->action(function () {
+                        // Export de toutes les prévisions filtrées
+                        // À développer selon les besoins
+                    }),
             ])
             ->defaultSort('exercice', 'desc');
     }

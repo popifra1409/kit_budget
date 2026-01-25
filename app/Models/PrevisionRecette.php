@@ -42,9 +42,9 @@ class PrevisionRecette extends Model
     /**
      * Exercice budgétaire
      */
-    public function exercice(): BelongsTo
+    public function exerciceBudgetaire(): BelongsTo
     {
-        return $this->belongsTo(Exercice::class);
+        return $this->belongsTo(Exercice::class, 'exercice_id');
     }
 
     /**
@@ -75,45 +75,39 @@ class PrevisionRecette extends Model
      */
     public function getTotalPrevuInitial(): float
     {
-        return $this->lignesPrevisions()->sum('montant_prevu_initial');
+        return $this->lignesPrevisions()
+            ->where('actif', true)
+            ->sum('montant_prevu_initial');
     }
 
-    /**
-     * Total des prévisions rectifiées
-     */
     public function getTotalPrevuRectifie(): float
     {
-        return $this->lignesPrevisions()->sum('montant_rectifie');
+        return $this->lignesPrevisions()
+            ->where('actif', true)
+            ->sum('montant_rectifie');
     }
 
-    /**
-     * Total effectivement recouvré
-     */
     public function getTotalRecouvre(): float
     {
-        return $this->lignesPrevisions()->sum('montant_recouvre');
+        return $this->lignesPrevisions()
+            ->where('actif', true)
+            ->sum('montant_recouvre');
     }
 
-    /**
-     * Écart global (recouvré - prévu rectifié)
-     */
-    public function getEcartGlobal(): float
+    public function getEcartTotal(): float
     {
         return $this->getTotalRecouvre() - $this->getTotalPrevuRectifie();
     }
 
-    /**
-     * Taux de recouvrement global
-     */
     public function getTauxRecouvrement(): float
     {
-        $prevu = $this->getTotalPrevuRectifie();
+        $totalPrevu = $this->getTotalPrevuRectifie();
 
-        if ($prevu == 0) {
+        if ($totalPrevu == 0) {
             return 0;
         }
 
-        return ($this->getTotalRecouvre() / $prevu) * 100;
+        return ($this->getTotalRecouvre() / $totalPrevu) * 100;
     }
 
     // ====================================
@@ -318,9 +312,9 @@ class PrevisionRecette extends Model
     /**
      * Scope: Par exercice
      */
-    public function scopeExercice($query, $exercice)
+    public function scopeParExercice($query, $exerciceId)
     {
-        return $query->where('exercice', $exercice);
+        return $query->where('exercice_id', $exerciceId);
     }
 
     /**

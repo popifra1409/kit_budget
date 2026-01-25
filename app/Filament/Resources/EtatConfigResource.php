@@ -26,6 +26,95 @@ class EtatConfigResource extends Resource
 
     protected static ?int $navigationSort = 99;
 
+    /**
+     * Permissions – Configuration des états
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_any_etat_config');
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_etat_config');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('create_etat_config');
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (!$user->can('update_etat_config')) {
+            return false;
+        }
+
+        // Si l'état est verrouillé ou système
+        if (method_exists($record, 'estModifiable') && !$record->estModifiable()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Modification impossible')
+                ->warning()
+                ->body("Cet état est verrouillé et ne peut pas être modifié.")
+                ->send();
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('delete_etat_config')) {
+            return false;
+        }
+
+        if (method_exists($record, 'estSupprimable') && !$record->estSupprimable()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Suppression impossible')
+                ->warning()
+                ->body("Cet état est utilisé par le système.")
+                ->send();
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Action spéciale : Activer un état
+     */
+    public static function canActiver($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('activer_etat_config');
+    }
+
+    /**
+     * Action spéciale : Désactiver un état
+     */
+    public static function canDesactiver($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('desactiver_etat_config');
+    }
+
+
     public static function form(Form $form): Form
     {
         return $form

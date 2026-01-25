@@ -16,6 +16,7 @@ use Filament\Tables\Actions\Action;
 use App\Exports\DisponibilitesBudgetExport;
 use Maatwebsite\Excel\Facades\Excel;
 use PDF;
+use Filament\Notifications\Notification;
 
 class BudgetResource extends Resource
 {
@@ -28,108 +29,94 @@ class BudgetResource extends Resource
     protected static ?int $navigationSort = 1;
 
     /**
-     * Permissions - Budget avec adoption et activation
+     * ================================
+     * Permissions - Budget
+     * ================================
      */
+
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_budget') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_budget') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('create_budget') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
         $user = auth()->user();
 
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        if (!$user->hasAnyRole(['chef_service_budget'])) {
+        if (!$user?->can('update_budget')) {
             return false;
         }
 
-        return $record->estModifiable();
+        // Règle métier : budget modifiable
+        if (!$record->estModifiable()) {
+            Notification::make()
+                ->title('Budget verrouillé')
+                ->warning()
+                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")
+                ->send();
+
+            return false;
+        }
+
+        return true;
     }
 
     public static function canDelete($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        return $record->estModifiable();
+        return auth()->user()?->can('delete_budget')
+            && $record->estModifiable();
     }
 
+    /**
+     * Message personnalisé si édition impossible
+     */
     public static function canEditRecord($record): bool
     {
         $canEdit = static::canEdit($record);
 
         if (!$canEdit && $record->estLectureSeule()) {
-            \Filament\Notifications\Notification::make()
+            Notification::make()
                 ->title('Édition impossible')
                 ->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
+                ->body("Le budget {$record->exercice->annee} est en lecture seule.")
                 ->send();
         }
 
         return $canEdit;
     }
 
-    public static function canView($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
-    }
+    /**
+     * ================================
+     * Actions spéciales
+     * ================================
+     */
 
     /**
-     * Action spéciale : Adopter un budget (Directeur Général)
+     * Adopter un budget
      */
     public static function canAdopter($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'directeur_general'
-        ]) : false;
+        return auth()->user()?->can('adopter_budget')
+            && $record->statut === 'propose';
     }
 
     /**
-     * Action spéciale : Activer un budget (Super Admin)
+     * Activer un budget
      */
     public static function canActiver($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('activer_budget')
+            && $record->statut === 'adopte';
     }
 
     public static function form(Form $form): Form
