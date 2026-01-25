@@ -94,7 +94,7 @@ class PrevisionRecette extends Model
             ->sum('montant_recouvre');
     }
 
-    public function getEcartTotal(): float
+    public function getEcartGlobal(): float
     {
         return $this->getTotalRecouvre() - $this->getTotalPrevuRectifie();
     }
