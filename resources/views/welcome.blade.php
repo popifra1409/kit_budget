@@ -285,7 +285,7 @@
                     &copy; {{ date('Y') }} Système de Gestion Budgétaire. Tous droits réservés.
                 </p>
                 <p class="mt-2">
-                    Développé avec ❤️ par Votre Équipe
+                    Développé avec ❤️ par l'Equipe de GEC-INFORMATIQUE
                 </p>
             </div>
 

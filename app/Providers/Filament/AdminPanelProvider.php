@@ -23,6 +23,7 @@ use Filament\Navigation\NavigationGroup;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
+use App\Filament\Pages\Auth\Login;
 
 /**
  * AdminPanelProvider final avec données du fournisseur depuis la base de données
@@ -42,7 +43,8 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            // ->login()
+            ->login(Login::class)
 
             // 🎨 PALETTE DE COULEURS PERSONNALISÉE
             ->colors([

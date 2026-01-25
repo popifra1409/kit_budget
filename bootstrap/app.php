@@ -12,7 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            \App\Http\Middleware\CheckUserActive::class, 
+            \App\Http\Middleware\CheckUserActive::class,
+            \App\Http\Middleware\SessionSecurityMiddleware::class,
+            \App\Http\Middleware\AutoLogoutAfterInactivity::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
