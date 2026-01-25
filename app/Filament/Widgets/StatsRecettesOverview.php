@@ -7,6 +7,7 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use App\Models\PrevisionRecette;
 use App\Models\RecetteReelle;
 use App\Models\Exercice;
+use App\Filament\Resources\RecetteReelleResource;
 
 class StatsRecettesOverview extends BaseWidget
 {
@@ -80,7 +81,7 @@ class StatsRecettesOverview extends BaseWidget
                 ->description($recettesEnAttente . ' en attente de validation')
                 ->descriptionIcon('heroicon-o-clock')
                 ->color('info')
-                ->url(route('filament.admin.resources.recettes-reelles.index', [
+                ->url(RecetteReelleResource::getUrl('index', [
                     'tableFilters' => ['mois' => ['value' => $moisActuel]]
                 ])),
         ];

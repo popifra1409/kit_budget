@@ -11,6 +11,8 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use Filament\Notifications\Notification;
+
 
 class ActiviteResource extends Resource
 {
@@ -29,53 +31,38 @@ class ActiviteResource extends Resource
     protected static ?int $navigationSort = 3;
 
     /**
-     * Permissions - Gestion quotidienne par OB/CS
+     * ================================
+     * Permissions - ActiviteResource
+     * ================================
      */
+
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_activite') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_activite') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('create_activite') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
         $user = auth()->user();
 
-        // Super admin OK
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Vérifier le rôle
-        if (!$user->hasAnyRole(['chef_service_budget'])) {
+        if (!$user?->can('update_activite')) {
             return false;
         }
 
-        // Vérifier l'exercice
+        // Règle métier : exercice modifiable
         if (!$record->estModifiable()) {
-            // Optionnel : notifier l'utilisateur
             if (request()->routeIs('filament.*')) {
-                \Filament\Notifications\Notification::make()
+                Notification::make()
                     ->title('Exercice verrouillé')
                     ->warning()
                     ->body("L'exercice {$record->exercice->annee} est {$record->exercice->getBadgeStatut()}. Modifications impossibles.")
@@ -89,29 +76,24 @@ class ActiviteResource extends Resource
 
     public static function canDelete($record): bool
     {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
         $user = auth()->user();
 
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
+        if (!$user?->can('delete_activite')) {
             return false;
         }
 
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        // (sauf si on veut autoriser, dans ce cas retourner true directement)
         return $record->estModifiable();
     }
 
+    /**
+     * Message personnalisé quand édition impossible
+     */
     public static function canEditRecord($record): bool
     {
         $canEdit = static::canEdit($record);
 
         if (!$canEdit && $record->estLectureSeule()) {
-            \Filament\Notifications\Notification::make()
+            Notification::make()
                 ->title('Édition impossible')
                 ->warning()
                 ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
@@ -119,19 +101,6 @@ class ActiviteResource extends Resource
         }
 
         return $canEdit;
-    }
-
-    public static function canView($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
     }
 
     public static function form(Form $form): Form

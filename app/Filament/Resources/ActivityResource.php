@@ -28,30 +28,29 @@ class ActivityResource extends Resource
     protected static ?int $navigationSort = 1;
 
     /**
-     * Permissions - Réservé aux admins
+     * ================================
+     * Permissions – Logs (admin only)
+     * ================================
      */
+
     public static function canViewAny(): bool
     {
-        return auth()->check() && auth()->user()->hasAnyRole([
-            'super_admin',
-            'directeur_general',
-            'sous_directeur_budget',
-        ]);
+        return auth()->user()?->can('view_any_activity') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return false; // Les logs sont créés automatiquement
+        return false; // Logs créés automatiquement
     }
 
     public static function canEdit($record): bool
     {
-        return false; // Les logs ne peuvent pas être modifiés
+        return false; // Logs non modifiables
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->check() && auth()->user()->hasRole('super_admin');
+        return auth()->user()?->can('delete_activity') ?? false;
     }
 
     public static function form(Form $form): Form

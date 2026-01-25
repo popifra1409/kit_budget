@@ -30,90 +30,54 @@ class NomenclatureBudgetaireResource extends Resource
     protected static ?int $navigationSort = 1;
 
     /**
-     * Permissions - Référentiel géré par SA/CS
+     * ================================
+     * PERMISSIONS (Spatie aligned)
+     * ================================
      */
+
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours éditer
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Chef service budget : seulement si exercice modifiable
-        if ($user->hasRole('chef_service_budget')) {
-            return $record->estModifiable();
-        }
-
-        return false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        // Même super admin : seulement si exercice modifiable
-        return $record->estModifiable();
+        return auth()->user()?->can('view_any_nomenclature_budgetaire') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_nomenclature_budgetaire') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_nomenclature_budgetaire') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->user()?->can('update_nomenclature_budgetaire')) {
+            return false;
+        }
+
+        // Règle métier conservée
+        return $record->estModifiable();
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->user()?->can('delete_nomenclature_budgetaire')) {
+            return false;
+        }
+
+        // Règle métier conservée
+        return $record->estModifiable();
     }
 
     /**
-     * Action spéciale : Activer/désactiver
+     * Action métier personnalisée
      */
     public static function canActiver($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('update_nomenclature_budgetaire') ?? false;
     }
+
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {

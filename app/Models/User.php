@@ -5,12 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Spatie\Permission\Traits\HasRoles;  // ← Import Spatie
-use Filament\Models\Contracts\FilamentUser; // ← Import FilamentUser
+use Spatie\Permission\Traits\HasRoles;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 
 class User extends Authenticatable implements FilamentUser
 {
-    use HasFactory, Notifiable, HasRoles;  // ← Ajouter HasRoles
+    use HasFactory, Notifiable, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -21,6 +22,8 @@ class User extends Authenticatable implements FilamentUser
         'name',
         'email',
         'password',
+        'actif',
+        'service_id',
     ];
 
     /**
@@ -43,110 +46,313 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'actif' => 'boolean',
         ];
     }
 
-    public function canAccessPanel(\Filament\Panel $panel): bool
+    /**
+     * Déterminer si l'utilisateur peut accéder au panel Filament
+     * 
+     * @param Panel $panel
+     * @return bool
+     */
+    public function canAccessPanel(Panel $panel): bool
     {
-        // Logique d'accès - choisissez une option :
+        // Vérifier d'abord si l'utilisateur est actif
+        if (!$this->actif) {
+            session(['compte_inactif' => true]);
+            return false;
+        }
 
-        // Option 1: Autoriser tous les utilisateurs
-        // return true;
-
-        // Option 2: Autoriser par email (recommandé pour commencer)
-        // return in_array($this->email, [
-        //     'admin@example.com',
-        //     'votre_email@domaine.com'
-        // ]);
-
-        // Option 3: Autoriser par rôle (avec Spatie Permissions)
+        // Vérifier que l'utilisateur a un rôle approprié
         return $this->hasAnyRole([
             'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
+            'admin',
             'directeur_general',
+            'daaf',
+            'sous_directeur_budget',
+            'chef_service_budget',
+            'operateur_budget',
             'controleur_financier',
-            'agence_comptable'
+            'agence_comptable',
         ]);
     }
 
     /**
-     * Relations vers les bordereaux
+     * Observer pour garantir que super_admin reste toujours actif
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Avant de sauvegarder
+        static::saving(function ($user) {
+            // PROTECTION ABSOLUE : Si l'utilisateur est super_admin, forcer actif = true
+            if ($user->hasRole('super_admin')) {
+                $user->actif = true;
+            }
+        });
+
+        // Avant de mettre à jour
+        static::updating(function ($user) {
+            // PROTECTION ABSOLUE : Si l'utilisateur est super_admin, forcer actif = true
+            if ($user->hasRole('super_admin')) {
+                $user->actif = true;
+            }
+        });
+    }
+
+    // ========================================
+    // SCOPES
+    // ========================================
+
+    /**
+     * Scope pour filtrer les utilisateurs actifs
+     */
+    public function scopeActif($query)
+    {
+        return $query->where('actif', true);
+    }
+
+    /**
+     * Scope pour filtrer les utilisateurs inactifs
+     */
+    public function scopeInactif($query)
+    {
+        return $query->where('actif', false);
+    }
+
+    // ========================================
+    // MÉTHODES UTILITAIRES
+    // ========================================
+
+    /**
+     * Vérifier si l'utilisateur est actif
+     */
+    public function isActif(): bool
+    {
+        return $this->actif === true;
+    }
+
+    /**
+     * Activer l'utilisateur
+     */
+    public function activer(): void
+    {
+        $this->update(['actif' => true]);
+    }
+
+    /**
+     * Désactiver l'utilisateur (sauf si super_admin)
+     */
+    public function desactiver(): void
+    {
+        // PROTECTION : Ne jamais désactiver un super_admin
+        if ($this->hasRole('super_admin')) {
+            throw new \Exception('Un compte Super Admin ne peut pas être désactivé.');
+        }
+
+        $this->update(['actif' => false]);
+    }
+
+    // ========================================
+    // RELATIONS BORDEREAUX ENGAGEMENT
+    // COLONNES RÉELLES : emis_par, detenu_par_id, valide_par, rejete_par
+    // ========================================
+
+    /**
+     * Bordereaux créés/émis par cet utilisateur
+     * Utilisé dans ViewUser (bordereauxEmis_count)
+     * Colonne : emis_par
      */
     public function bordereauxEmis()
     {
         return $this->hasMany(\App\Models\BordereauEngagement::class, 'emis_par');
     }
 
+    /**
+     * Bordereaux validés par cet utilisateur
+     * Utilisé dans ViewUser (bordereauxValides_count)
+     * Colonne : valide_par
+     */
+    public function bordereauxValides()
+    {
+        return $this->hasMany(\App\Models\BordereauEngagement::class, 'valide_par')
+            ->where('statut', 'valide');
+    }
+
+    /**
+     * Bordereaux rejetés par cet utilisateur
+     * Utilisé dans ViewUser (bordereauxRejetes_count)
+     * Colonne : rejete_par
+     */
+    public function bordereauxRejetes()
+    {
+        return $this->hasMany(\App\Models\BordereauEngagement::class, 'rejete_par')
+            ->whereIn('statut', ['rejete_total', 'rejete_partiel']);
+    }
+
+    /**
+     * Bordereaux en cours (détenus) par cet utilisateur pour validation
+     * Utilisé dans ViewUser (bordereauxDetenus_count)
+     * Colonne : detenu_par_id
+     */
+    public function bordereauxDetenus()
+    {
+        return $this->hasMany(\App\Models\BordereauEngagement::class, 'detenu_par_id')
+            ->whereIn('statut', ['transmis', 'en_cours']);
+    }
+
+    /**
+     * Bordereaux réceptionnés par cet utilisateur
+     * Colonne : receptionne_par
+     */
     public function bordereauxReceptionnes()
     {
         return $this->hasMany(\App\Models\BordereauEngagement::class, 'receptionne_par');
     }
 
-    public function bordereauxValides()
+    /**
+     * Alias pour bordereauxDetenus (bordereaux en attente de validation)
+     */
+    public function bordereauxEnAttente()
     {
-        return $this->hasMany(\App\Models\BordereauEngagement::class, 'valide_par');
+        return $this->bordereauxDetenus();
     }
 
-    public function bordereauxRejetes()
-    {
-        return $this->hasMany(\App\Models\BordereauEngagement::class, 'rejete_par');
-    }
-
-    public function bordereauxDetenus()
+    /**
+     * Tous les bordereaux dont cet utilisateur est le détenteur actuel
+     */
+    public function bordereauxAValider()
     {
         return $this->hasMany(\App\Models\BordereauEngagement::class, 'detenu_par_id');
     }
 
+    // ========================================
+    // AUTRES RELATIONS
+    // ========================================
+
     /**
-     * Obtenir le nom du rôle principal
+     * Service auquel appartient l'utilisateur
      */
-    public function getRolePrincipalAttribute(): ?string
+    public function service()
     {
-        return $this->roles->first()?->name;
+        return $this->belongsTo(\App\Models\Service::class);
     }
 
     /**
-     * Obtenir le libellé du rôle principal
+     * Engagements créés par l'utilisateur
      */
-    public function getRolePrincipalLabelAttribute(): ?string
+    public function engagements()
     {
-        $role = $this->roles->first()?->name;
-
-        return match ($role) {
-            'super_admin' => 'Super Admin',
-            'operateur_budget' => 'Opérateur Budget',
-            'chef_service_budget' => 'Chef Service Budget',
-            'sous_directeur_budget' => 'Sous-Directeur Budget',
-            'directeur_general' => 'Directeur Général',
-            'controleur_financier' => 'Contrôleur Financier',
-            'agence_comptable' => 'Agence Comptable',
-            default => $role
-        };
+        return $this->hasMany(\App\Models\Engagement::class, 'createur_id');
     }
 
     /**
-     * Scope : Utilisateurs avec un rôle spécifique
+     * Recettes réelles créées par l'utilisateur
      */
-    public function scopeAvecRole($query, $role)
+    public function recettesReelles()
     {
-        return $query->role($role);
+        return $this->hasMany(\App\Models\RecetteReelle::class, 'createur_id');
     }
 
     /**
-     * Scope : Utilisateurs validateurs (peuvent valider des bordereaux)
+     * Dépenses réelles créées par l'utilisateur
      */
-    public function scopeValidateurs($query)
+    public function depensesReelles()
     {
-        return $query->whereHas('roles', function ($q) {
-            $q->whereIn('name', [
-                'chef_service_budget',
-                'sous_directeur_budget',
-                'directeur_general',
-                'controleur_financier',
-                'agence_comptable'
-            ]);
-        });
+        return $this->hasMany(\App\Models\DepenseReelle::class, 'createur_id');
+    }
+
+    // ========================================
+    // MÉTHODES HELPER POUR BORDEREAUX
+    // ========================================
+
+    /**
+     * Nombre de bordereaux en attente de validation
+     */
+    public function getNombreBordereausEnAttenteAttribute(): int
+    {
+        return $this->bordereauxDetenus()->count();
+    }
+
+    /**
+     * Nombre de bordereaux validés
+     */
+    public function getNombreBordereausValidesAttribute(): int
+    {
+        return $this->bordereauxValides()->count();
+    }
+
+    /**
+     * Nombre de bordereaux rejetés
+     */
+    public function getNombreBordereausRejetesAttribute(): int
+    {
+        return $this->bordereauxRejetes()->count();
+    }
+
+    /**
+     * Nombre de bordereaux émis
+     */
+    public function getNombreBordereausEmisAttribute(): int
+    {
+        return $this->bordereauxEmis()->count();
+    }
+
+    /**
+     * Peut valider un bordereau ?
+     */
+    public function peutValiderBordereau(\App\Models\BordereauEngagement $bordereau): bool
+    {
+        // Le détenteur actuel doit être cet utilisateur
+        if ($bordereau->detenu_par_id !== $this->id) {
+            return false;
+        }
+
+        // Le bordereau doit être transmis ou en cours
+        if (!in_array($bordereau->statut, ['transmis', 'en_cours'])) {
+            return false;
+        }
+
+        // Vérifier les permissions selon le rôle
+        return $this->hasAnyRole([
+            'super_admin',
+            'admin',
+            'chef_service_budget',
+            'daaf',
+            'directeur_general',
+            'controleur_financier',
+            'agence_comptable',
+        ]);
+    }
+
+    /**
+     * Peut créer un bordereau ?
+     */
+    public function peutCreerBordereau(): bool
+    {
+        return $this->hasAnyRole([
+            'super_admin',
+            'admin',
+            'operateur_budget',
+            'chef_service_budget',
+        ]);
+    }
+
+    /**
+     * Peut voir tous les bordereaux ?
+     */
+    public function peutVoirTousBordereaux(): bool
+    {
+        return $this->hasAnyRole([
+            'super_admin',
+            'admin',
+            'directeur_general',
+            'daaf',
+            'sous_directeur_budget',
+            'controleur_financier',
+            'agence_comptable',
+        ]);
     }
 }

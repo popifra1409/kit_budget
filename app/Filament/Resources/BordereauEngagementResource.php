@@ -46,62 +46,51 @@ class BordereauEngagementResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_bordereau') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_bordereau') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget'
-        ]) : false;
+        return auth()->user()?->can('create_bordereau') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        if (!auth()->check()) {
+        $user = auth()->user();
+
+        if (!$user?->can('update_bordereau')) {
             return false;
         }
 
-        $user = auth()->user();
+        // règle métier
+        if (!$record->estModifiable()) {
+            Notification::make()
+                ->title('Bordereau verrouillé')
+                ->warning()
+                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")
+                ->send();
 
-        // Super admin peut tout modifier
-        if ($user->hasRole('super_admin')) {
-            return true;
+            return false;
         }
 
-        // Opérateur peut modifier seulement les bordereaux en brouillon
-        if ($user->hasRole('operateur_budget')) {
-            return $record->statut === 'brouillon' && $record->emis_par === $user->id;
+        // si pas super admin → seulement ses brouillons
+        if (!$user->can('override_bordereau')) {
+            return $record->statut === 'brouillon'
+                && $record->emis_par === $user->id;
         }
 
-        return false;
+        return true;
     }
 
     public static function canDelete($record): bool
     {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        return $record->estModifiable();
+        return auth()->user()?->can('delete_bordereau') &&
+            $record->estModifiable();
     }
 
     public static function canEditRecord($record): bool
@@ -109,270 +98,14 @@ class BordereauEngagementResource extends Resource
         $canEdit = static::canEdit($record);
 
         if (!$canEdit && $record->estLectureSeule()) {
-            \Filament\Notifications\Notification::make()
+            Notification::make()
                 ->title('Édition impossible')
                 ->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
+                ->body("Exercice {$record->exercice->annee} en lecture seule.")
                 ->send();
         }
 
         return $canEdit;
-    }
-
-    public static function canView($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut tout voir
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Opérateur peut voir ses propres bordereaux
-        if ($user->hasRole('operateur_budget')) {
-            return $record->emis_par === $user->id;
-        }
-
-        // Chef service peut voir les bordereaux de son service + ceux qu'il détient
-        if ($user->hasRole('chef_service_budget')) {
-            return $record->emis_par === $user->id ||
-                $record->detenu_par_id === $user->id;
-        }
-
-        // Autres rôles peuvent voir les bordereaux qu'ils détiennent ou ont traités
-        return $record->detenu_par_id === $user->id ||
-            $record->valide_par === $user->id ||
-            $record->rejete_par === $user->id;
-    }
-
-    // ========================================
-    // Actions Workflow
-    // ========================================
-
-    /**
-     * Action : Transmettre un bordereau
-     */
-    public static function canTransmettre($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours transmettre
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Opérateur peut transmettre ses bordereaux en brouillon
-        if ($user->hasRole('operateur_budget')) {
-            return $record->statut === 'brouillon' && $record->emis_par === $user->id;
-        }
-
-        // Chef service et sous-directeur peuvent transmettre les bordereaux qu'ils détiennent
-        if ($user->hasAnyRole(['chef_service_budget', 'sous_directeur_budget'])) {
-            return $record->detenu_par_id === $user->id &&
-                !in_array($record->statut, ['valide', 'rejete', 'annule', 'cloture']);
-        }
-
-        return false;
-    }
-
-    /**
-     * Action : Réceptionner un bordereau
-     */
-    public static function canReceptionner($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours réceptionner
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Un utilisateur peut réceptionner un bordereau qui lui est destiné
-        // et qui n'a pas encore été réceptionné par lui
-        return $record->detenu_par_id === $user->id &&
-            $record->statut === 'en_cours';
-    }
-
-    /**
-     * Action : Valider un bordereau
-     */
-    public static function canValider($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours valider
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Doit détenir le bordereau
-        if ($record->detenu_par_id !== $user->id) {
-            return false;
-        }
-
-        // Le bordereau doit être en cours
-        if ($record->statut !== 'en_cours') {
-            return false;
-        }
-
-        // Vérifier les rôles autorisés à valider
-        return $user->hasAnyRole([
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]);
-    }
-
-    /**
-     * Action : Rejeter un bordereau
-     */
-    public static function canRejeter($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours rejeter
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Doit détenir le bordereau
-        if ($record->detenu_par_id !== $user->id) {
-            return false;
-        }
-
-        // Le bordereau doit être en cours
-        if ($record->statut !== 'en_cours') {
-            return false;
-        }
-
-        // Vérifier les rôles autorisés à rejeter
-        return $user->hasAnyRole([
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier'
-        ]);
-    }
-
-    /**
-     * Action : Rejeter en masse (rejeter tout)
-     */
-    public static function canRejeterTout($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Seuls le super admin et le directeur général peuvent rejeter en masse
-        return $user->hasAnyRole([
-            'super_admin',
-            'directeur_general'
-        ]);
-    }
-
-    /**
-     * Action : Annuler un bordereau
-     */
-    public static function canAnnuler($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Seuls le super admin et le directeur général peuvent annuler
-        if (!$user->hasAnyRole(['super_admin', 'directeur_general'])) {
-            return false;
-        }
-
-        // On ne peut pas annuler un bordereau déjà annulé ou clôturé
-        return !in_array($record->statut, ['annule', 'cloture']);
-    }
-
-    /**
-     * Action : Clôturer un bordereau
-     */
-    public static function canCloturer($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours clôturer
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Seule l'agence comptable peut clôturer
-        if (!$user->hasRole('agence_comptable')) {
-            return false;
-        }
-
-        // Le bordereau doit être validé et détenu par l'AC
-        return $record->statut === 'valide' &&
-            $record->detenu_par_id === $user->id;
-    }
-
-    /**
-     * Action : Retourner un bordereau (optionnel)
-     */
-    public static function canRetourner($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours retourner
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Doit détenir le bordereau
-        if ($record->detenu_par_id !== $user->id) {
-            return false;
-        }
-
-        // Le bordereau doit être en cours
-        if ($record->statut !== 'en_cours') {
-            return false;
-        }
-
-        // Rôles pouvant retourner
-        return $user->hasAnyRole([
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier'
-        ]);
     }
 
     public static function form(Form $form): Form
@@ -509,7 +242,7 @@ class BordereauEngagementResource extends Resource
                             ? $record->exercice->libelle
                             : null
                     )
-                    ->toggleable(), 
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° Bordereau')

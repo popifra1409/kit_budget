@@ -12,21 +12,19 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use Filament\Tables\Actions\Action;
+use App\Exports\DisponibilitesBudgetExport;
+use Maatwebsite\Excel\Facades\Excel;
+use PDF;
 
 class BudgetResource extends Resource
 {
     protected static ?string $model = Budget::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-
     protected static ?string $navigationLabel = 'Budgets';
-
     protected static ?string $modelLabel = 'Budget';
-
     protected static ?string $pluralModelLabel = 'Budgets';
-
     protected static ?string $navigationGroup = 'Gestion Budgétaire';
-
     protected static ?int $navigationSort = 1;
 
     /**
@@ -49,7 +47,6 @@ class BudgetResource extends Resource
     {
         return auth()->check() ? auth()->user()->hasAnyRole([
             'super_admin',
-            // 'operateur_budget',
             'chef_service_budget'
         ]) : false;
     }
@@ -72,7 +69,6 @@ class BudgetResource extends Resource
 
         return $record->estModifiable();
     }
-
 
     public static function canDelete($record): bool
     {
@@ -279,13 +275,23 @@ class BudgetResource extends Resource
 
                 Tables\Columns\TextColumn::make('budget_total')
                     ->label('Budget Total')
-                    ->formatStateUsing(fn($record) => number_format($record->getBudgetTotalRectifie(), 0, ',', ' ') . ' FCFA')
+                    ->formatStateUsing(fn($record) => number_format($record->lignesBudgetaires->sum('budget_rectifie'), 0, ',', ' ') . ' FCFA')
                     ->color('success'),
 
                 Tables\Columns\TextColumn::make('taux_execution')
                     ->label('Taux exec.')
-                    ->formatStateUsing(fn($record) => number_format($record->getTauxExecution(), 1) . '%')
-                    ->color(fn($record) => $record->getTauxExecution() >= 80 ? 'success' : ($record->getTauxExecution() >= 50 ? 'warning' : 'danger')),
+                    ->formatStateUsing(function ($record) {
+                        $total = $record->lignesBudgetaires->sum('budget_rectifie');
+                        $paye = $record->lignesBudgetaires->sum('paye');
+                        $taux = $total > 0 ? ($paye / $total) * 100 : 0;
+                        return number_format($taux, 1) . '%';
+                    })
+                    ->color(function ($record) {
+                        $total = $record->lignesBudgetaires->sum('budget_rectifie');
+                        $paye = $record->lignesBudgetaires->sum('paye');
+                        $taux = $total > 0 ? ($paye / $total) * 100 : 0;
+                        return $taux >= 80 ? 'success' : ($taux >= 50 ? 'warning' : 'danger');
+                    }),
 
                 Tables\Columns\TextColumn::make('date_adoption')
                     ->label('Date adoption')
@@ -332,6 +338,80 @@ class BudgetResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+
+                // ========================================
+                // ACTION : EXPORT EXCEL
+                // ========================================
+                Action::make('exportExcel')
+                    ->label('Export Excel')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('success')
+                    ->action(function (Budget $record) {
+                        $filename = 'disponibilites_' .
+                            str_replace(' ', '_', $record->code) . '_' .
+                            now()->format('Ymd_His') . '.xlsx';
+
+                        return Excel::download(
+                            new DisponibilitesBudgetExport($record),
+                            $filename
+                        );
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Exporter les disponibilités en Excel')
+                    ->modalDescription(
+                        fn(Budget $record) =>
+                        "Exporter l'état des disponibilités budgétaires pour : {$record->libelle}"
+                    )
+                    ->modalSubmitActionLabel('Télécharger')
+                    ->visible(fn() => auth()->user()->hasAnyRole([
+                        'super_admin',
+                        'chef_service_budget',
+                        'sous_directeur_budget',
+                        'directeur_general',
+                        'controleur_financier',
+                    ])),
+
+                // ========================================
+                // ACTION : EXPORT PDF
+                // ========================================
+                Action::make('exportPdf')
+                    ->label('Export PDF')
+                    ->icon('heroicon-o-document-text')
+                    ->color('danger')
+                    ->action(function (Budget $record) {
+                        $lignes = $record->lignesBudgetaires()
+                            ->with(['nomenclature'])
+                            ->get();
+
+                        $pdf = PDF::loadView('exports.disponibilites-budget-pdf', [
+                            'budget' => $record,
+                            'lignes' => $lignes,
+                        ]);
+
+                        $pdf->setPaper('a4', 'landscape');
+
+                        $filename = 'disponibilites_' .
+                            str_replace(' ', '_', $record->code) . '_' .
+                            now()->format('Ymd_His') . '.pdf';
+
+                        return response()->streamDownload(function () use ($pdf) {
+                            echo $pdf->stream();
+                        }, $filename);
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Exporter les disponibilités en PDF')
+                    ->modalDescription(
+                        fn(Budget $record) =>
+                        "Générer un document PDF avec l'état des disponibilités pour : {$record->libelle}"
+                    )
+                    ->modalSubmitActionLabel('Générer PDF')
+                    ->visible(fn() => auth()->user()->hasAnyRole([
+                        'super_admin',
+                        'chef_service_budget',
+                        'sous_directeur_budget',
+                        'directeur_general',
+                        'controleur_financier',
+                    ])),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

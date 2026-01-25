@@ -36,118 +36,69 @@ class BonCommandeResource extends Resource
     protected static ?int $navigationSort = 1;
 
     /**
-     * Permissions - Bons de commande avec validation
+     * ==========================================
+     * Permissions – Bons de commande
+     * ==========================================
      */
+
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
-    }
-
-    /**
-     * Vérifier si l'utilisateur peut éditer ce bon de commande
-     * Conditions : Rôle autorisé + Exercice modifiable
-     */
-    public static function canEdit($record): bool
-    {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Super admin peut toujours éditer (même exercices clos)
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // 3. Vérifier le rôle requis
-        if (!$user->hasAnyRole(['operateur_budget', 'chef_service_budget'])) {
-            return false;
-        }
-
-        // 4. Vérifier que l'exercice est modifiable
-        return $record->estModifiable();
-    }
-
-    /**
-     * Vérifier si l'utilisateur peut supprimer ce bon de commande
-     * Conditions : Super admin uniquement + Exercice modifiable
-     */
-
-    public static function canDelete($record): bool
-    {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        return $record->estModifiable();
+        return auth()->user()?->can('view_any_bon_commande') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_bon_commande') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_bon_commande') ?? false;
     }
 
     /**
-     * Action spéciale : Valider un bon de commande
+     * Édition : permission + exercice modifiable
+     */
+    public static function canEdit($record): bool
+    {
+        if (!auth()->user()?->can('edit_bon_commande')) {
+            return false;
+        }
+
+        // Le super_admin peut tout modifier (optionnel)
+        if (auth()->user()->can('force_edit_bon_commande')) {
+            return true;
+        }
+
+        return $record->estModifiable();
+    }
+
+    /**
+     * Suppression : permission admin + exercice modifiable
+     */
+    public static function canDelete($record): bool
+    {
+        if (!auth()->user()?->can('delete_bon_commande')) {
+            return false;
+        }
+
+        return $record->estModifiable();
+    }
+
+    /**
+     * Action spéciale : Valider
      */
     public static function canValider($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier'
-        ]) : false;
+        return auth()->user()?->can('valider_bon_commande') ?? false;
     }
 
     /**
-     * Action spéciale : Annuler un bon de commande
+     * Action spéciale : Annuler
      */
     public static function canAnnuler($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general'
-        ]) : false;
+        return auth()->user()?->can('annuler_bon_commande') ?? false;
     }
 
     public static function form(Form $form): Form

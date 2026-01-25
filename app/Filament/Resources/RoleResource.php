@@ -27,31 +27,38 @@ class RoleResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+
+    protected static function isAdmin(): bool
+    {
+        return auth()->check() &&
+            auth()->user()->hasAnyRole(['super_admin', 'admin']);
+    }
+
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return self::isAdmin();
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return self::isAdmin();
     }
-    
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()->hasRole('super_admin');
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()->hasRole('super_admin');
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()->hasRole('super_admin');
+    }
+
 
     public static function form(Form $form): Form
     {
@@ -178,14 +185,22 @@ class RoleResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make()
-                    ->requiresConfirmation()
-                    ->before(function (Role $record) {
-                        if ($record->users()->count() > 0) {
-                            throw new \Exception('Impossible de supprimer un rôle assigné à des utilisateurs');
-                        }
-                    }),
+                Tables\Actions\EditAction::make()
+                    ->visible(
+                        fn() =>
+                        auth()->user()->hasAnyRole([
+                            'chef_service_budget',
+                            'sous_directeur_budget',
+                            'daaf',
+                        ])
+                    ),
+                // Tables\Actions\DeleteAction::make()
+                //     ->requiresConfirmation()
+                //     ->before(function (Role $record) {
+                //         if ($record->users()->count() > 0) {
+                //             throw new \Exception('Impossible de supprimer un rôle assigné à des utilisateurs');
+                //         }
+                //     }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

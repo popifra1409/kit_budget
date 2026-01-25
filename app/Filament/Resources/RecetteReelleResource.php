@@ -19,6 +19,48 @@ class RecetteReelleResource extends Resource
     protected static ?string $navigationGroup = 'Gestion Budgétaire';
     protected static ?int $navigationSort = 2;
 
+    public static function canViewAny(): bool
+    {
+        return auth()->check()
+            && ! auth()->user()->hasRole('operateur_budget');
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check()
+            && ! auth()->user()->hasRole('operateur_budget');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->hasAnyRole([
+                'chef_service_budget',
+                'sous_directeur_budget',
+                'daaf',
+            ]);
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->hasAnyRole([
+                'chef_service_budget',
+                'sous_directeur_budget',
+                'daaf',
+            ]);
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->hasAnyRole([
+                'admin',
+                'super_admin',
+            ]);
+    }
+
+
     // ====================================
     // FORMULAIRE
     // ====================================
