@@ -38,6 +38,7 @@ class RolePermissionSeeder extends Seeder
             'prevision_recette',
             'programme',
             'recette_reelle',
+            'role',
             'service',
             'tache',
             'user',
@@ -60,7 +61,37 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 3. SUPER ADMIN (TOUT)
+        | 3. PERMISSIONS SPÉCIALES (non CRUD)
+        |--------------------------------------------------------------------------
+        */
+        $specialPermissions = [
+            'activer_parametres_fournisseur',
+            'blacklister_fournisseur',
+            'activer_budget',
+            'adopter_budget',
+            'cloturer_budget',
+            'ouvrir_exercice',
+            'cloturer_exercice',
+            'reconduire_exercice',
+            'valider_engagement',
+            'annuler_engagement',
+            'valider_decision_administrative',
+            'annuler_decision_administrative',
+            'valider_memoire_depense',
+            'publier_memoire_depense',
+            'activer_service',
+        ];
+
+        foreach ($specialPermissions as $perm) {
+            Permission::firstOrCreate([
+                'name' => $perm,
+                'guard_name' => 'web',
+            ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | 4. SUPER ADMIN (TOUT)
         |--------------------------------------------------------------------------
         */
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin']);
@@ -68,7 +99,7 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 4. ADMIN (GESTION SYSTÈME)
+        | 5. ADMIN (GESTION SYSTÈME)
         |--------------------------------------------------------------------------
         */
         $admin = Role::firstOrCreate(['name' => 'admin']);
@@ -76,7 +107,7 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 5. OPÉRATEUR BUDGET
+        | 6. OPÉRATEUR BUDGET
         |--------------------------------------------------------------------------
         */
         $operateur = Role::firstOrCreate(['name' => 'operateur_budget']);
@@ -90,7 +121,7 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 6. CHEF SERVICE BUDGET
+        | 7. CHEF SERVICE BUDGET
         |--------------------------------------------------------------------------
         */
         $chefService = Role::firstOrCreate(['name' => 'chef_service_budget']);
@@ -99,14 +130,13 @@ class RolePermissionSeeder extends Seeder
             'view_recette_reelle',
             'create_recette_reelle',
             'update_recette_reelle',
-
             'view_any_prevision_recette',
             'update_prevision_recette',
         ]);
 
         /*
         |--------------------------------------------------------------------------
-        | 7. SOUS DIRECTEUR BUDGET
+        | 8. SOUS DIRECTEUR BUDGET
         |--------------------------------------------------------------------------
         */
         $sousDirecteur = Role::firstOrCreate(['name' => 'sous_directeur_budget']);
@@ -119,7 +149,7 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 8. DAAF
+        | 9. DAAF
         |--------------------------------------------------------------------------
         */
         $daaf = Role::firstOrCreate(['name' => 'daaf']);
@@ -132,7 +162,7 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 9. AUTRES RÔLES (LECTURE)
+        | 10. AUTRES RÔLES (LECTURE)
         |--------------------------------------------------------------------------
         */
         foreach (
@@ -149,6 +179,6 @@ class RolePermissionSeeder extends Seeder
             ]);
         }
 
-        $this->command->info('✅ Rôles et permissions COMPLETS créés avec succès');
+        $this->command->info('✅ Rôles et permissions COMPLETS créés avec toutes les actions spéciales.');
     }
 }

@@ -26,12 +26,12 @@ class UserResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->check() && auth()->user()->hasAnyRole(['super_admin', 'admin']);
+        return auth()->user()?->can('view_any_user') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() && auth()->user()->hasAnyRole(['super_admin', 'admin']);
+        return auth()->user()?->can('create_user') ?? false;
     }
 
     public static function canEdit($record): bool
@@ -42,11 +42,13 @@ class UserResource extends Resource
 
         $user = auth()->user();
 
-        if ($user->hasRole('super_admin')) {
+        // Super admin peut toujours éditer
+        if ($user->can('super_admin_user')) {
             return true;
         }
 
-        if ($user->hasRole('admin')) {
+        // Admin peut éditer sauf super admin
+        if ($user->can('admin_user')) {
             if ($record->hasRole('super_admin')) {
                 return false;
             }
@@ -64,11 +66,11 @@ class UserResource extends Resource
 
         $user = auth()->user();
 
-        if ($user->hasRole('super_admin')) {
+        if ($user->can('super_admin_user')) {
             return true;
         }
 
-        if ($user->hasRole('admin')) {
+        if ($user->can('admin_user')) {
             if ($record->hasRole('super_admin')) {
                 return false;
             }
@@ -86,11 +88,11 @@ class UserResource extends Resource
 
         $user = auth()->user();
 
-        if ($user->hasRole('super_admin')) {
+        if ($user->can('super_admin_user')) {
             return true;
         }
 
-        if ($user->hasRole('admin')) {
+        if ($user->can('admin_user')) {
             if ($record->hasRole('super_admin')) {
                 return false;
             }
@@ -108,7 +110,8 @@ class UserResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        if (auth()->check() && auth()->user()->hasRole('admin') && !auth()->user()->hasRole('super_admin')) {
+        // Bloquer la visibilité des super admin pour les admin "classiques"
+        if (auth()->check() && auth()->user()->can('admin_user') && !auth()->user()->can('super_admin_user')) {
             $query->whereDoesntHave('roles', function ($q) {
                 $q->where('name', 'super_admin');
             });
@@ -116,6 +119,7 @@ class UserResource extends Resource
 
         return $query;
     }
+
 
     // ========================================
     // FORMULAIRE

@@ -33,26 +33,23 @@ class TacheResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_tache') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_tache') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('create_tache') ?? false;
     }
 
+    /**
+     * Vérifier si l'utilisateur peut éditer cette tâche
+     * Conditions : permission + exercice modifiable
+     */
     public static function canEdit($record): bool
     {
         if (!auth()->check()) {
@@ -61,19 +58,11 @@ class TacheResource extends Resource
 
         $user = auth()->user();
 
-        // Super admin OK
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Vérifier le rôle
-        if (!$user->hasAnyRole(['chef_service_budget'])) {
+        if (! $user->can('update_tache')) {
             return false;
         }
 
-        // Vérifier l'exercice
-        if (!$record->estModifiable()) {
-            // Optionnel : notifier l'utilisateur
+        if (! $record->estModifiable()) {
             if (request()->routeIs('filament.*')) {
                 \Filament\Notifications\Notification::make()
                     ->title('Exercice verrouillé')
@@ -87,25 +76,18 @@ class TacheResource extends Resource
         return true;
     }
 
+    /**
+     * Vérifier si l'utilisateur peut supprimer cette tâche
+     * Conditions : permission + exercice modifiable
+     */
     public static function canDelete($record): bool
     {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        // (sauf si on veut autoriser, dans ce cas retourner true directement)
-        return $record->estModifiable();
+        return auth()->user()?->can('delete_tache') && $record->estModifiable();
     }
 
+    /**
+     * Message personnalisé quand édition impossible
+     */
     public static function canEditRecord($record): bool
     {
         $canEdit = static::canEdit($record);
@@ -119,19 +101,6 @@ class TacheResource extends Resource
         }
 
         return $canEdit;
-    }
-
-    public static function canView($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
     }
 
     public static function form(Form $form): Form

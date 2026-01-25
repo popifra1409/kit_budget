@@ -27,64 +27,39 @@ class ServiceResource extends Resource
     protected static ?int $navigationSort = 1;
 
     /**
-     * Permissions - Référentiel géré par SA/CS
+     * Permissions - Référentiel Services
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('view_any_service') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_service') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_service') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_service') ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_service') ?? false;
     }
 
     /**
-     * Action spéciale : Activer/désactiver
+     * Action spéciale : Activer/désactiver un service
      */
     public static function canActiver($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('activer_service') ?? false;
     }
 
     public static function form(Form $form): Form

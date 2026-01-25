@@ -36,24 +36,12 @@ class VirementBudgetaireResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_virement_budgetaire') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('create_virement_budgetaire') ?? false;
     }
 
     public static function canEdit($record): bool
@@ -64,11 +52,11 @@ class VirementBudgetaireResource extends Resource
 
         $user = auth()->user();
 
-        if ($user->hasRole('super_admin')) {
+        if ($user->can('super_admin_virement_budgetaire')) {
             return true;
         }
 
-        if (!$user->hasAnyRole(['chef_service_budget'])) {
+        if (! $user->can('chef_service_budget_virement_budgetaire')) {
             return false;
         }
 
@@ -83,7 +71,7 @@ class VirementBudgetaireResource extends Resource
 
         $user = auth()->user();
 
-        if (!$user->hasRole('super_admin')) {
+        if (! $user->can('super_admin_virement_budgetaire')) {
             return false;
         }
 
@@ -107,15 +95,7 @@ class VirementBudgetaireResource extends Resource
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_virement_budgetaire') ?? false;
     }
 
     /**
@@ -123,12 +103,7 @@ class VirementBudgetaireResource extends Resource
      */
     public static function canExecuter($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            // 'directeur_general'
-        ]) : false;
+        return auth()->user()?->can('executer_virement_budgetaire') ?? false;
     }
 
     /**
@@ -136,12 +111,7 @@ class VirementBudgetaireResource extends Resource
      */
     public static function canAnnuler($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            // 'directeur_general'
-        ]) : false;
+        return auth()->user()?->can('annuler_virement_budgetaire') ?? false;
     }
 
     public static function form(Form $form): Form

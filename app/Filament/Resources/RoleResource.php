@@ -28,35 +28,32 @@ class RoleResource extends Resource
     protected static ?int $navigationSort = 2;
 
 
-    protected static function isAdmin(): bool
-    {
-        return auth()->check() &&
-            auth()->user()->hasAnyRole(['super_admin', 'admin']);
-    }
-
+    /**
+     * Permissions - Gestion des rôles
+     */
     public static function canViewAny(): bool
     {
-        return self::isAdmin();
+        return auth()->user()?->can('view_any_role') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return self::isAdmin();
+        return auth()->user()?->can('view_role') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()->hasRole('super_admin');
+        return auth()->user()?->can('create_role') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        return auth()->user()->hasRole('super_admin');
+        return auth()->user()?->can('update_role') ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()->hasRole('super_admin');
+        return auth()->user()?->can('delete_role') ?? false;
     }
 
 

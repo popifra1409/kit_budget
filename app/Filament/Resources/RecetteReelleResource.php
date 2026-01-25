@@ -19,45 +19,47 @@ class RecetteReelleResource extends Resource
     protected static ?string $navigationGroup = 'Gestion Budgétaire';
     protected static ?int $navigationSort = 2;
 
+    /**
+     * Permissions - Recettes réelles
+     */
     public static function canViewAny(): bool
     {
-        return auth()->check()
-            && ! auth()->user()->hasRole('operateur_budget');
+        return auth()->user()?->can('view_any_recette_reelle') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check()
-            && ! auth()->user()->hasRole('operateur_budget');
+        return auth()->user()?->can('view_recette_reelle') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check()
-            && auth()->user()->hasAnyRole([
-                'chef_service_budget',
-                'sous_directeur_budget',
-                'daaf',
-            ]);
+        return auth()->user()?->can('create_recette_reelle') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        return auth()->check()
-            && auth()->user()->hasAnyRole([
-                'chef_service_budget',
-                'sous_directeur_budget',
-                'daaf',
-            ]);
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->can('update_recette_reelle')) {
+            // Ici tu peux ajouter une logique métier si nécessaire
+            return true;
+        }
+
+        return false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->check()
-            && auth()->user()->hasAnyRole([
-                'admin',
-                'super_admin',
-            ]);
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+
+        return $user->can('delete_recette_reelle');
     }
 
 

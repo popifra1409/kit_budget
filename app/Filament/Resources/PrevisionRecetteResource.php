@@ -38,62 +38,44 @@ class PrevisionRecetteResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            'controleur_financier',
-            'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        if (!$user->hasAnyRole(['chef_service_budget'])) {
-            return false;
-        }
-
-        return $record->estModifiable();
-    }
-
-    public static function canDelete($record): bool
-    {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        if (!$user->hasRole('super_admin')) {
-            return false;
-        }
-
-        return $record->estModifiable();
+        return auth()->user()?->can('view_any_prevision_recette') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return static::canViewAny();
+        return auth()->user()?->can('view_prevision_recette') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_prevision_recette') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+
+        // Super admin ou permission update
+        if ($user->can('update_prevision_recette')) {
+            // Vérification métier : l'enregistrement est modifiable
+            return $record->estModifiable();
+        }
+
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+
+        // Seul super admin ou permission delete sur enregistrement modifiable
+        return $user->can('delete_prevision_recette') && $record->estModifiable();
     }
 
     public static function form(Form $form): Form

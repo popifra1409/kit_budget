@@ -27,31 +27,31 @@ class ParametresStructureResource extends Resource
     protected static ?int $navigationSort = 100;
 
     /**
-     * Permissions - Paramètres système (Super Admin uniquement)
+     * Permissions - Paramètres système
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('view_any_parametres_structure') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('view_parametres_structure') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_parametres_structure') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_parametres_structure') ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_parametres_structure') ?? false;
     }
 
     /**
@@ -59,8 +59,9 @@ class ParametresStructureResource extends Resource
      */
     public static function canActiver($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('activer_parametres_structure') ?? false;
     }
+
 
     public static function form(Form $form): Form
     {

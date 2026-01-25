@@ -29,41 +29,41 @@ class ParametresFournisseurResource extends Resource
 
     protected static ?int $navigationSort = 101;
 
-     /**
-     * Permissions - Paramètres système (Super Admin uniquement)
-     */
-    public static function canViewAny(): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canView($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
     /**
-     * Action spéciale : Activer un paramètre
-     */
-    public static function canActiver($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
+ * Permissions – Paramètres système (Super Admin uniquement)
+ */
+public static function canViewAny(): bool
+{
+    return auth()->check() && auth()->user()->can('view_any_parametres_fournisseur');
+}
+
+public static function canView($record): bool
+{
+    return auth()->check() && auth()->user()->can('view_parametres_fournisseur');
+}
+
+public static function canCreate(): bool
+{
+    return auth()->check() && auth()->user()->can('create_parametres_fournisseur');
+}
+
+public static function canEdit($record): bool
+{
+    return auth()->check() && auth()->user()->can('update_parametres_fournisseur');
+}
+
+public static function canDelete($record): bool
+{
+    return auth()->check() && auth()->user()->can('delete_parametres_fournisseur');
+}
+
+/**
+ * Action spéciale : Activer un paramètre
+ */
+public static function canActiver($record): bool
+{
+    return auth()->check() && auth()->user()->can('activer_parametres_fournisseur');
+}
 
     public static function form(Form $form): Form
     {

@@ -26,29 +26,33 @@ class PermissionResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
+
+    /**
+     * Permissions - Gestion des permissions (Super Admin)
+     */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('view_any_permission') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('view_permission') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_permission') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_permission') ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_permission') ?? false;
     }
 
     public static function form(Form $form): Form

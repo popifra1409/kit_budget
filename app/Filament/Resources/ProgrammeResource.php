@@ -29,94 +29,57 @@ class ProgrammeResource extends Resource
     protected static ?int $navigationSort = 1;
 
     /**
-     * Permissions - Gestion quotidienne par OB/CS
+     * Permissions - Gestion quotidienne des programmes
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_programme') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_programme') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('create_programme') ?? false;
     }
 
-    /**
-     * Vérifier si l'utilisateur peut éditer ce programme
-     * Conditions : Rôle autorisé + Exercice modifiable
-     */
     public static function canEdit($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
         $user = auth()->user();
-
-        // Super admin OK
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Vérifier le rôle
-        if (!$user->hasAnyRole(['chef_service_budget'])) {
+        if (!$user) {
             return false;
         }
 
-        // Vérifier l'exercice
-        if (!$record->estModifiable()) {
-            // Optionnel : notifier l'utilisateur
-            if (request()->routeIs('filament.*')) {
+        if ($user->can('update_programme')) {
+            // Vérification métier : l'enregistrement est modifiable
+            if (!$record->estModifiable() && request()->routeIs('filament.*')) {
                 \Filament\Notifications\Notification::make()
                     ->title('Exercice verrouillé')
                     ->warning()
                     ->body("L'exercice {$record->exercice->annee} est {$record->exercice->getBadgeStatut()}. Modifications impossibles.")
                     ->send();
             }
-            return false;
+
+            return $record->estModifiable();
         }
 
-        return true;
+        return false;
     }
 
-    /**
-     * Vérifier si l'utilisateur peut supprimer ce programme
-     * Conditions : Super admin uniquement + Exercice modifiable
-     */
     public static function canDelete($record): bool
     {
-        // 1. Vérifier que l'utilisateur est connecté
-        if (!auth()->check()) {
-            return false;
-        }
-
         $user = auth()->user();
-
-        // 2. Seul super admin peut supprimer
-        if (!$user->hasRole('super_admin')) {
+        if (!$user) {
             return false;
         }
 
-        // 3. Même super admin ne peut pas supprimer sur exercice archivé
-        // (sauf si on veut autoriser, dans ce cas retourner true directement)
-        return $record->estModifiable();
+        // Seul un utilisateur avec permission delete peut supprimer et si modifiable
+        return $user->can('delete_programme') && $record->estModifiable();
     }
 
-    /**
-     * Message personnalisé quand édition impossible
-     */
     public static function canEditRecord($record): bool
     {
         $canEdit = static::canEdit($record);
@@ -125,25 +88,13 @@ class ProgrammeResource extends Resource
             \Filament\Notifications\Notification::make()
                 ->title('Édition impossible')
                 ->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un super admin peut modifier.")
+                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Seul un utilisateur avec permission peut modifier.")
                 ->send();
         }
 
         return $canEdit;
     }
 
-    public static function canView($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
-    }
 
     public static function form(Form $form): Form
     {

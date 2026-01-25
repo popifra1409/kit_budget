@@ -28,55 +28,39 @@ class MemoireDepenseResource extends Resource
     protected static ?int $navigationSort = 30;
 
     /**
-     * Permissions - Mémoires de dépenses (CF valide, AC publie)
+     * Permissions – Mémoires de dépenses
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            'agence_comptable'
-        ]) : false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->check() && auth()->user()->can('view_any_memoire_depense');
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            'agence_comptable'
-        ]) : false;
+        return auth()->check() && auth()->user()->can('view_memoire_depense');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check() && auth()->user()->can('create_memoire_depense');
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('update_memoire_depense')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->check() && auth()->user()->can('delete_memoire_depense');
     }
 
     /**
@@ -84,10 +68,7 @@ class MemoireDepenseResource extends Resource
      */
     public static function canValider($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'controleur_financier'
-        ]) : false;
+        return auth()->check() && auth()->user()->can('valider_memoire_depense');
     }
 
     /**
@@ -95,10 +76,7 @@ class MemoireDepenseResource extends Resource
      */
     public static function canPublier($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'agence_comptable'
-        ]) : false;
+        return auth()->check() && auth()->user()->can('publier_memoire_depense');
     }
 
     public static function form(Form $form): Form
