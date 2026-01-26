@@ -36,48 +36,12 @@ class UserResource extends Resource
 
     public static function canEdit($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        // Super admin peut toujours éditer
-        if ($user->can('super_admin_user')) {
-            return true;
-        }
-
-        // Admin peut éditer sauf super admin
-        if ($user->can('admin_user')) {
-            if ($record->hasRole('super_admin')) {
-                return false;
-            }
-            return true;
-        }
-
-        return false;
+        return auth()->user()?->can('update_user') ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        if ($user->can('super_admin_user')) {
-            return true;
-        }
-
-        if ($user->can('admin_user')) {
-            if ($record->hasRole('super_admin')) {
-                return false;
-            }
-            return true;
-        }
-
-        return false;
+        return auth()->user()?->can('delete_user') ?? false;
     }
 
     public static function canView($record): bool
