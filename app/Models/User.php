@@ -58,24 +58,33 @@ class User extends Authenticatable implements FilamentUser
      */
     public function canAccessPanel(Panel $panel): bool
     {
+        // // Vérifier d'abord si l'utilisateur est actif
+        // if (!$this->actif) {
+        //     session(['compte_inactif' => true]);
+        //     return false;
+        // }
+
+        // // Vérifier que l'utilisateur a un rôle approprié
+        // return $this->hasAnyRole([
+        //     'super_admin',
+        //     'admin',
+        //     'directeur_general',
+        //     'daaf',
+        //     'sous_directeur_budget',
+        //     'chef_service_budget',
+        //     'operateur_budget',
+        //     'controleur_financier',
+        //     'agence_comptable',
+        //     'pupitreur',
+        // ]);
         // Vérifier d'abord si l'utilisateur est actif
         if (!$this->actif) {
             session(['compte_inactif' => true]);
             return false;
         }
 
-        // Vérifier que l'utilisateur a un rôle approprié
-        return $this->hasAnyRole([
-            'super_admin',
-            'admin',
-            'directeur_general',
-            'daaf',
-            'sous_directeur_budget',
-            'chef_service_budget',
-            'operateur_budget',
-            'controleur_financier',
-            'agence_comptable',
-        ]);
+        // Accepter tous les utilisateurs avec au moins un rôle
+        return $this->roles()->exists();
     }
 
     /**
@@ -245,7 +254,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function engagements()
     {
-        return $this->hasMany(\App\Models\Engagement::class, 'createur_id');
+        return $this->hasMany(\App\Models\Engagement::class, 'engage_par');
     }
 
     /**
@@ -261,7 +270,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function depensesReelles()
     {
-        return $this->hasMany(\App\Models\DepenseReelle::class, 'createur_id');
+        //return $this->hasMany(\App\Models\DepenseReelle::class, 'createur_id');
     }
 
     // ========================================

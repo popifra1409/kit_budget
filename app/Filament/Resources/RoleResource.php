@@ -30,30 +30,77 @@ class RoleResource extends Resource
 
     /**
      * Permissions - Gestion des rôles
+     * Super admin a tous les droits même sans permissions explicites
      */
     public static function canViewAny(): bool
     {
+        // Super admin a accès automatique
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('view_any_role') ?? false;
     }
 
     public static function canView($record): bool
     {
+        // Super admin a accès automatique
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('view_role') ?? false;
     }
 
     public static function canCreate(): bool
     {
+        // Super admin a accès automatique
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('create_role') ?? false;
     }
 
     public static function canEdit($record): bool
     {
+        // Super admin a accès automatique
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('update_role') ?? false;
     }
 
     public static function canDelete($record): bool
     {
+        // Protection : Ne jamais supprimer le rôle super_admin
+        if ($record->name === 'super_admin') {
+            return false;
+        }
+
+        // Super admin a accès automatique
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('delete_role') ?? false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        // Super admin a accès automatique
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Les autres rôles doivent avoir la permission
+        return auth()->user()?->can('delete_any_role') ?? false;
     }
 
 

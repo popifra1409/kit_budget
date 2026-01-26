@@ -46,6 +46,7 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             // ->login()
             ->login(Login::class)
+            ->profile()
 
             // 🎨 PALETTE DE COULEURS PERSONNALISÉE
             ->colors([
@@ -85,11 +86,12 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->pages([
-                Pages\Dashboard::class,
+                // Pages\Dashboard::class,
             ])
             ->widgets([
                 Widgets\AccountWidget::class,
-                \App\Filament\Widgets\CacheManagementWidget::class,
+                // \App\Filament\Widgets\CacheManagementWidget::class,
+                \App\Filament\Widgets\WelcomeWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
