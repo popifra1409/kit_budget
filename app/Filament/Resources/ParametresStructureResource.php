@@ -276,6 +276,82 @@ class ParametresStructureResource extends Resource
                     ])
                     ->columns(3)
                     ->collapsed(),
+                Forms\Components\Section::make('Paramètres Impôt sur le Revenu (IR)')
+                    ->description('Configuration des tranches d\'IR selon la réglementation camerounaise')
+                    ->schema([
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\TextInput::make('ir_tranche1_max')
+                                    ->label('Tranche 1 - Montant Max (FCFA)')
+                                    ->numeric()
+                                    ->default(500000)
+                                    ->prefix('≤')
+                                    ->helperText('Montant HT maximum pour la tranche 1'),
+
+                                Forms\Components\TextInput::make('ir_tranche1_taux')
+                                    ->label('Taux Tranche 1 (%)')
+                                    ->numeric()
+                                    ->default(5.5)
+                                    ->suffix('%')
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->maxValue(100),
+
+                                Forms\Components\Placeholder::make('tranche1_info')
+                                    ->label('Application')
+                                    ->content('HT ≤ 500 000 FCFA → IR = 5.5%'),
+
+                                Forms\Components\TextInput::make('ir_tranche2_min')
+                                    ->label('Tranche 2 - Montant Min (FCFA)')
+                                    ->numeric()
+                                    ->default(500001)
+                                    ->prefix('>')
+                                    ->helperText('Montant HT minimum pour la tranche 2'),
+
+                                Forms\Components\TextInput::make('ir_tranche2_max')
+                                    ->label('Tranche 2 - Montant Max (FCFA)')
+                                    ->numeric()
+                                    ->default(3000000)
+                                    ->prefix('≤')
+                                    ->helperText('Montant HT maximum pour la tranche 2'),
+
+                                Forms\Components\TextInput::make('ir_tranche2_taux')
+                                    ->label('Taux Tranche 2 (%)')
+                                    ->numeric()
+                                    ->default(11)
+                                    ->suffix('%')
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->maxValue(100),
+
+                                Forms\Components\Placeholder::make('tranche2_info')
+                                    ->label('Application')
+                                    ->content('500 001 < HT ≤ 3 000 000 → IR = 11%')
+                                    ->columnSpan(2),
+
+                                Forms\Components\TextInput::make('ir_tranche3_min')
+                                    ->label('Tranche 3 - Montant Min (FCFA)')
+                                    ->numeric()
+                                    ->default(3000001)
+                                    ->prefix('>')
+                                    ->helperText('Montant HT minimum pour la tranche 3'),
+
+                                Forms\Components\TextInput::make('ir_tranche3_taux')
+                                    ->label('Taux Tranche 3 (%)')
+                                    ->numeric()
+                                    ->default(15)
+                                    ->suffix('%')
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->maxValue(100),
+
+                                Forms\Components\Placeholder::make('tranche3_info')
+                                    ->label('Application')
+                                    ->content('HT > 3 000 000 FCFA → IR = 15%'),
+                            ]),
+                    ])
+                    ->columns(3)
+                    ->collapsed(),
             ]);
     }
 

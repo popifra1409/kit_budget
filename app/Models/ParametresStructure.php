@@ -44,6 +44,13 @@ class ParametresStructure extends Model
         'monnaie',
         'actif',
         'exercice_courant',
+        'ir_tranche1_max',
+        'ir_tranche1_taux',
+        'ir_tranche2_min',
+        'ir_tranche2_max',
+        'ir_tranche2_taux',
+        'ir_tranche3_min',
+        'ir_tranche3_taux',
     ];
 
     protected $casts = [

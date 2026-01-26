@@ -254,7 +254,8 @@ class BonCommande extends Model
         \DB::beginTransaction();
         try {
             // Net à payer = TTC - IR
-            $netAPayer = $this->montant_ttc - $this->montant_ir;
+            // Net à payer = HT - IR (montant effectivement perçu par le fournisseur)
+            $netAPayer = $this->montant_ht - $this->montant_ir;
 
             // Vérification finale du montant total
             if ($netAPayer <= 0) {
@@ -262,10 +263,10 @@ class BonCommande extends Model
                     "❌ MONTANT INVALIDE\n\n" .
                         "Le montant net à payer du BC est invalide.\n\n" .
                         "Montant HT: " . number_format($this->montant_ht, 0, ',', ' ') . " FCFA\n" .
+                        "Montant IR: " . number_format($this->montant_ir, 0, ',', ' ') . " FCFA\n" .
+                        "Net à percevoir: " . number_format($netAPayer, 0, ',', ' ') . " FCFA\n" .
                         "TVA: " . number_format($this->montant_tva, 0, ',', ' ') . " FCFA\n" .
-                        "TTC: " . number_format($this->montant_ttc, 0, ',', ' ') . " FCFA\n" .
-                        "IR: " . number_format($this->montant_ir, 0, ',', ' ') . " FCFA\n" .
-                        "Net: " . number_format($netAPayer, 0, ',', ' ') . " FCFA\n\n" .
+                        "TTC: " . number_format($this->montant_ttc, 0, ',', ' ') . " FCFA\n\n" .
                         "Vérifiez les montants des lignes du BC."
                 );
             }
@@ -440,6 +441,20 @@ class BonCommande extends Model
     }
 
     /**
+     * Obtenir le nombre de lignes
+     */
+    public function getNombreLignesAttribute(): int
+    {
+        // Si la relation est déjà chargée, utiliser la collection
+        if ($this->relationLoaded('lignes')) {
+            return $this->lignes->count();
+        }
+
+        // Sinon faire une requête
+        return $this->lignes()->count();
+    }
+
+    /**
      * Obtenir le taux de livraison
      */
     public function getTauxLivraison(): float
@@ -451,6 +466,38 @@ class BonCommande extends Model
 
         $totalLivree = $this->lignes()->sum('quantite_livree');
         return ($totalLivree / $totalQuantite) * 100;
+    }
+
+    /**
+     * Calcule le Net à Percevoir (HT - IR)
+     */
+    public function getNetAPercevoirAttribute(): float
+    {
+        return $this->montant_ht - $this->montant_ir;
+    }
+
+    /**
+     * Formater le net à percevoir
+     */
+    public function getNetAPercevoirFormatteAttribute(): string
+    {
+        return number_format($this->net_a_percevoir, 0, ',', ' ') . ' FCFA';
+    }
+
+    /**
+     * Formater l'IR
+     */
+    public function getMontantIrFormatteAttribute(): string
+    {
+        return number_format($this->montant_ir, 0, ',', ' ') . ' FCFA';
+    }
+
+    /**
+     * Formater le montant HT
+     */
+    public function getMontantHtFormatteAttribute(): string
+    {
+        return number_format($this->montant_ht, 0, ',', ' ') . ' FCFA';
     }
 
     public function getActivitylogOptions(): LogOptions

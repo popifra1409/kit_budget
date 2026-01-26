@@ -43,6 +43,7 @@ class RolePermissionSeeder extends Seeder
             'tache',
             'user',
             'virement_budgetaire',
+            'reference_mercuriale'
         ];
 
         /*

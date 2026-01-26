@@ -257,18 +257,62 @@ class BonCommandeResource extends Resource
                                     })
                                     ->columnSpan(2),
 
+                                // ===== NOUVEAU : Choix Mercuriale ou Saisie Libre =====
+                                Forms\Components\Select::make('reference_mercuriale_id')
+                                    ->label('Référence Mercuriale')
+                                    ->options(function (callable $get) {
+                                        $exerciceId = $get('../../exercice_id');
+                                        if (!$exerciceId) {
+                                            return ['Veuillez d\'abord sélectionner un exercice'];
+                                        }
+
+                                        $references = \App\Models\ReferenceMercuriale::where('exercice_id', $exerciceId)
+                                            ->where('actif', true)
+                                            ->get()
+                                            ->mapWithKeys(fn($ref) => [
+                                                $ref->id => "{$ref->code_reference} - {$ref->designation} ({$ref->unite}) - " .
+                                                    number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
+                                            ]);
+
+                                        return ['manual' => '➕ Saisie manuelle (sans mercuriale)'] + $references->toArray();
+                                    })
+                                    ->searchable()
+                                    ->preload()
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        if ($state && $state !== 'manual') {
+                                            $reference = \App\Models\ReferenceMercuriale::find($state);
+                                            if ($reference) {
+                                                $set('designation', $reference->designation);
+                                                $set('unite', $reference->unite);
+                                                $set('prix_unitaire_ht', $reference->prix_reference);
+                                            }
+                                        } else {
+                                            // Réinitialiser pour saisie manuelle
+                                            $set('designation', '');
+                                            $set('unite', 'pièce');
+                                            $set('prix_unitaire_ht', 0);
+                                        }
+                                    })
+                                    ->helperText('Choisissez une référence mercuriale ou "Saisie manuelle"')
+                                    ->columnSpan(2),
+
                                 Forms\Components\TextInput::make('designation')
                                     ->label('Désignation')
                                     ->required()
                                     ->maxLength(255)
                                     ->placeholder('Ex: Ordinateur portable HP EliteBook')
+                                    ->disabled(fn(callable $get) => $get('reference_mercuriale_id') && $get('reference_mercuriale_id') !== 'manual')
+                                    ->dehydrated()
                                     ->columnSpan(2),
 
                                 Forms\Components\TextInput::make('unite')
                                     ->label('Unité')
                                     ->maxLength(255)
                                     ->placeholder('pièce, kg, m, etc.')
-                                    ->default('pièce'),
+                                    ->default('pièce')
+                                    ->disabled(fn(callable $get) => $get('reference_mercuriale_id') && $get('reference_mercuriale_id') !== 'manual')
+                                    ->dehydrated(),
 
                                 Forms\Components\TextInput::make('quantite')
                                     ->label('Quantité')
@@ -316,23 +360,15 @@ class BonCommandeResource extends Resource
                                         $montantTva = $ht * ($tva / 100);
                                         $ttc = $ht + $montantTva;
 
-                                        // Calculer IR
-                                        if ($tauxIr > 0) {
-                                            $ir = $ht * ($tauxIr / 100);
-                                        } else {
-                                            // Barème automatique
-                                            if ($ht < 500000) {
-                                                $ir = $ht * 0.055;
-                                            } elseif ($ht < 3000000) {
-                                                $ir = $ht * 0.11;
-                                            } else {
-                                                $ir = $ht * 0.15;
-                                            }
-                                        }
+                                        // Calculer IR en utilisant le helper
+                                        $ir = \App\Helpers\IrHelper::calculerIR($ht, $tauxIr > 0 ? $tauxIr : null);
 
-                                        $net = $ttc - $ir;
+                                        // Net à payer = HT - IR (et NON TTC - IR)
+                                        $net = $ht - $ir;
 
-                                        return "TTC: " . number_format($ttc, 0, ',', ' ') . " FCFA\n" .
+                                        return "HT: " . number_format($ht, 0, ',', ' ') . " FCFA\n" .
+                                            "TVA (" . number_format($tva, 2) . "%): " . number_format($montantTva, 0, ',', ' ') . " FCFA\n" .
+                                            "TTC: " . number_format($ttc, 0, ',', ' ') . " FCFA\n" .
                                             "IR: " . number_format($ir, 0, ',', ' ') . " FCFA\n" .
                                             "Net à payer: " . number_format($net, 0, ',', ' ') . " FCFA";
                                     })
@@ -349,10 +385,15 @@ class BonCommandeResource extends Resource
                             ->minItems(1)
                             ->mutateRelationshipDataBeforeCreateUsing(function (array $data, callable $get): array {
                                 $data['nomenclature_id'] = $get('nomenclature_commune_id');
+
+                                // Nettoyer reference_mercuriale_id si c'est "manual"
+                                if (isset($data['reference_mercuriale_id']) && $data['reference_mercuriale_id'] === 'manual') {
+                                    unset($data['reference_mercuriale_id']);
+                                }
+
                                 return $data;
                             })
                             ->mutateRelationshipDataBeforeFillUsing(function (array $data, callable $get): array {
-                                // Pour l'édition, on pré-remplit avec la nomenclature commune
                                 return $data;
                             }),
                     ]),
@@ -424,6 +465,22 @@ class BonCommandeResource extends Resource
                     ->sortable()
                     ->weight('bold')
                     ->color('success'),
+
+                Tables\Columns\TextColumn::make('montant_ir')
+                    ->label('IR')
+                    ->money('XAF')
+                    ->sortable()
+                    ->color('warning')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('net_a_percevoir')
+                    ->label('Net à Percevoir')
+                    ->money('XAF')
+                    ->sortable()
+                    ->weight('bold')
+                    ->color('primary')
+                    ->description(fn($record) => "HT: " . number_format($record->montant_ht, 0, ',', ' ') . " - IR: " . number_format($record->montant_ir, 0, ',', ' '))
+                    ->toggleable(),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')

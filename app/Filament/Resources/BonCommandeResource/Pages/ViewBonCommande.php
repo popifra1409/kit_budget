@@ -154,7 +154,7 @@ class ViewBonCommande extends ViewRecord
                     ])
                     ->columns(2),
 
-                Infolists\Components\Section::make('Montants')
+                Infolists\Components\Section::make('Détails Financiers')
                     ->schema([
                         Infolists\Components\TextEntry::make('montant_ht')
                             ->label('Montant HT')
@@ -175,12 +175,27 @@ class ViewBonCommande extends ViewRecord
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold'),
 
-                        Infolists\Components\TextEntry::make('nombre_lignes')
+                        Infolists\Components\TextEntry::make('montant_ir')
+                            ->label('Montant IR')
+                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                            ->color('danger')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+
+                        Infolists\Components\TextEntry::make('net_a_percevoir')
+                            ->label('Net à Percevoir')
+                            ->formatStateUsing(fn($record) => number_format($record->net_a_percevoir, 0, ',', ' ') . ' FCFA')
+                            ->color('primary')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                            ->weight('bold')
+                            ->helperText('HT - IR (montant perçu par le fournisseur)'),
+
+                        Infolists\Components\TextEntry::make('lignes_count')
                             ->label('Nombre de lignes')
-                            ->formatStateUsing(fn($record) => $record->lignes()->count())
-                            ->badge(),
+                            ->state(fn($record) => $record->lignes->count())
+                            ->badge()
+                            ->color('gray'),
                     ])
-                    ->columns(4),
+                    ->columns(3),
 
                 Infolists\Components\Section::make('Engagement Budgétaire')
                     ->schema([
