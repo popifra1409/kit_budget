@@ -14,7 +14,7 @@
     <style>
         @page {
             size: A4 portrait;
-            margin: 15mm 15mm 18mm 15mm;
+            margin: 15mm 15mm 0mm 15mm;
         }
 
         body {
@@ -170,6 +170,32 @@
             padding-top: 4px;
             font-weight: bold;
         }
+
+        /* ===== HEADER TABLE CLEAN ===== */
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: none;
+        }
+
+        .header-table td {
+            border: none;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        /* Centre le contenu texte */
+        .header-table .republique,
+        .header-table .structure,
+        .header-table .adresse {
+            text-align: center;
+        }
+
+        /* Centre le logo */
+        .header-table .logo {
+            display: block;
+            margin: 0 auto 4px auto;
+        }
     </style>
 </head>
 
@@ -178,12 +204,22 @@
     <!-- ================= HEADER ================= -->
     <table class="header-table">
         <tr>
+            <td class="header-right">
+                <div class="republique">
+                    RÉPUBLIQUE DU CAMEROUN<br>
+                    <em>Paix – Travail – Patrie</em>
+                </div>
+                <div class="republique" style="margin-top:4px">
+                    MMINISTERE DE LA SANTE PUBLIQUE
+                </div>
+            </td>
+
             <td class="header-left">
                 @if ($parametres && $parametres->logo)
                     <img src="{{ public_path('storage/' . $parametres->logo) }}" class="logo">
                 @endif
                 <div class="structure">
-                    {{ $parametres->sigle ?? 'CHY' }} DE {{ strtoupper($parametres->ville ?? 'YAOUNDÉ') }}
+                    {{ $parametres->nom_structure ?? 'HGY' }}
                 </div>
                 <div class="adresse">
                     {{ $parametres->adresse ?? '' }}<br>
@@ -193,16 +229,11 @@
 
             <td class="header-right">
                 <div class="republique">
-                    RÉPUBLIQUE DU CAMEROUN<br>
-                    <em>Paix – Travail – Patrie</em>
-                </div>
-                <div class="republique" style="margin-top:4px">
                     REPUBLIC OF CAMEROON<br>
                     <em>Peace – Work – Fatherland</em>
                 </div>
-
-                <div class="commande-box">
-                    COMMANDE N° {{ $bonCommande->numero }}
+                <div class="republique" style="margin-top:4px">
+                    <em>MINISTRY OF PUBLIC WORK</em>
                 </div>
             </td>
         </tr>
@@ -211,12 +242,15 @@
     {{-- Date et lieu --}}
     <div style="text-align: right; margin: 15px 0; font-size: 10pt;">
         <strong>Yaoundé, le</strong> {{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
+        <div class="commande-box">
+            BON DE COMMANDE N° {{ $bonCommande->numero }}
+        </div>
     </div>
 
     <!-- ================= INFOS ================= -->
     <div class="info">
         <div class="info-row">
-            <div><span>Fournisseur :</span> {{ $bonCommande->fournisseur->raison_sociale ?? '' }}</div>
+            <div><span>Nom ou raison du Prestataire :</span> {{ $bonCommande->fournisseur->raison_sociale ?? '' }}</div>
         </div>
         <div class="info-row">
             <span class="info-label">Livraison – Réception de 7h30 à 12h <br>du Lundi au Mercredi - Sauf urgence</span>
@@ -249,8 +283,9 @@
                         <td class="num">{{ $i + 1 }}</td>
                         <td class="designation">{{ $ligne->designation }}</td>
                         <td class="num">{{ $ligne->quantite }}</td>
-                        <td class="money">{{ number_format($ligne->prix_unitaire, 0, ',', ' ') }}</td>
-                        <td class="money">{{ number_format($ligne->total, 0, ',', ' ') }}</td>
+                        <td class="money">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
+                        <td class="money">
+                            {{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -264,16 +299,22 @@
                     <td class="money">{{ number_format($bonCommande->montant_ht, 0, ',', ' ') }}</td>
                 </tr>
                 <tr>
-                    <td>MONTANT TVA</td>
+                    <td>MONTANT TVA </td>
                     <td class="money">{{ number_format($bonCommande->montant_tva, 0, ',', ' ') }}</td>
                 </tr>
                 <tr>
-                    <td>TVA</td>
-                    <td class="money">{{ number_format($bonCommande->montant_tva, 0, ',', ' ') }}</td>
+                    <td>MONTANT IR</td>
+                    <td class="money">{{ number_format($bonCommande->montant_ir, 0, ',', ' ') }}</td>
                 </tr>
 
                 <tr>
-                    <td class="total-final">TOTAL TTC</td>
+                    <td class="total-final">NET A PAYER</td>
+                    <td class="money total-final">
+                        {{ number_format($bonCommande->net_a_percevoir, 0, ',', ' ') }}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="total-final">MONTANT TOTAL TTC</td>
                     <td class="money total-final">
                         {{ number_format($bonCommande->montant_ttc, 0, ',', ' ') }}
                     </td>
@@ -282,18 +323,22 @@
         </div>
 
         <!-- ================= SIGNATURE ================= -->
+
         <div class="montant-lettres">
-            Arrêté le présent bon de commande à la somme de :
-            <strong>{{ $bonCommande->montant_lettres }}</strong>
+            Arrêté le présent bon de commande à la somme de
+            <strong>{{ \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc) }}</strong>
         </div>
 
         <div class="signature">
             <div class="signature-box">
-                <div class="fonction">Le Directeur</div>
-                <div class="nom">{{ $parametres->directeur ?? '' }}</div>
+                <div class="fonction">
+                    {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
+                </div>
+                <div class="nom">
+                    {{ $parametres->nom_ordonnateur ?? '' }}
+                </div>
             </div>
         </div>
-
 </body>
 
 </html>
