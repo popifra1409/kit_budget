@@ -11,6 +11,10 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use App\Filament\Forms\Components\ExerciceSelect;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Imports\ReferenceMercurialeImport;
+use Filament\Forms\Components\FileUpload;
+use Filament\Notifications\Notification;
 
 class ReferenceMercurialeResource extends Resource
 {
@@ -81,7 +85,7 @@ class ReferenceMercurialeResource extends Resource
     {
         return parent::getEloquentQuery()->with('exercice');
     }
-    
+
 
     public static function form(Form $form): Form
     {
@@ -220,6 +224,95 @@ class ReferenceMercurialeResource extends Resource
                     ->placeholder('Tous')
                     ->trueLabel('Actifs uniquement')
                     ->falseLabel('Inactifs uniquement'),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('importer')
+                    ->label('Importer depuis Excel/CSV')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('success')
+                    ->form([
+                        Forms\Components\Select::make('exercice_id')
+                            ->label('Exercice budgétaire')
+                            ->options(fn() => \App\Models\Exercice::pluck('libelle', 'id'))
+                            ->default(fn() => \App\Models\Exercice::getActif()?->id)
+                            ->required()
+                            ->helperText('Les références seront importées pour cet exercice'),
+
+                        FileUpload::make('fichier')
+                            ->label('Fichier à importer')
+                            ->acceptedFileTypes([
+                                'application/vnd.ms-excel',
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'text/csv',
+                                'text/plain',
+                            ])
+                            ->maxSize(5120) // 5MB
+                            ->required()
+                            ->helperText('Formats acceptés : .xlsx, .csv (max 5MB)')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Placeholder::make('instructions')
+                            ->label('Instructions')
+                            ->content('
+                    Le fichier doit contenir les colonnes suivantes (dans cet ordre) :
+                    1. Code référence
+                    2. Désignation
+                    3. Unité
+                    4. Prix référence
+                    5. Rubrique
+                    6. Sous-rubrique
+                ')
+                            ->columnSpanFull(),
+                    ])
+                    ->action(function (array $data) {
+                        try {
+                            $import = new ReferenceMercurialeImport($data['exercice_id']);
+
+                            Excel::import($import, $data['fichier']);
+
+                            $failures = $import->getFailures();
+
+                            if (count($failures) > 0) {
+                                $erreurs = collect($failures)->map(function ($failure) {
+                                    return "Ligne {$failure->row()}: " . implode(', ', $failure->errors());
+                                })->take(5)->implode("\n");
+
+                                Notification::make()
+                                    ->title('Import terminé avec des erreurs')
+                                    ->warning()
+                                    ->body("Certaines lignes n'ont pas pu être importées :\n\n{$erreurs}")
+                                    ->persistent()
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->title('Import réussi')
+                                    ->success()
+                                    ->body('Toutes les références mercuriales ont été importées avec succès.')
+                                    ->send();
+                            }
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Erreur lors de l\'import')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('telecharger_modele')
+                    ->label('Télécharger le modèle')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->action(function () {
+                        return response()->streamDownload(function () {
+                            $csv = "Code référence,Désignation,Unité,Prix référence,Rubrique,Sous-rubrique\n";
+                            $csv .= "REF-2026-001,Ordinateur portable HP EliteBook,pièce,450000,Informatique,Matériel informatique\n";
+                            $csv .= "REF-2026-002,Imprimante Laser Canon,pièce,85000,Informatique,Périphériques\n";
+                            $csv .= "REF-2026-003,Papier A4 80g (Ramette),ramette,2500,Fournitures,Papeterie\n";
+                            echo $csv;
+                        }, 'modele-references-mercuriales.csv');
+                    }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

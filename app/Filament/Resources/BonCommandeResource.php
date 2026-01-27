@@ -607,24 +607,52 @@ class BonCommandeResource extends Resource
                     }),
             ])
             ->actions([
-                Action::make('telecharger_bon_commande')
-                    ->label('Télécharger')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('success')
-                    ->url(fn($record) => route('pdf.telecharger', [
-                        'etat' => 'bon_commande',
-                        'id' => $record->id
-                    ])),
+                Tables\Actions\ActionGroup::make([
+                    // Bon de commande administratif
+                    Tables\Actions\Action::make('telecharger_bon_commande_admin')
+                        ->label('BC Administratif (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'bon_commande',
+                            'id' => $record->id
+                        ])),
 
-                Action::make('afficher_bon_commande')
-                    ->label('Aperçu')
-                    ->icon('heroicon-o-eye')
-                    ->color('info')
-                    ->url(fn($record) => route('pdf.afficher', [
-                        'etat' => 'bon_commande',
-                        'id' => $record->id
-                    ]))
-                    ->openUrlInNewTab(),
+                    Tables\Actions\Action::make('afficher_bon_commande_admin')
+                        ->label('BC Administratif (Aperçu)')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'bon_commande',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+
+                    // Bon de commande simple
+                    Tables\Actions\Action::make('telecharger_bon_commande_simple')
+                        ->label('BC Simple (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('primary')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'bon_commande_simple',
+                            'id' => $record->id
+                        ])),
+
+                    Tables\Actions\Action::make('afficher_bon_commande_simple')
+                        ->label('BC Simple (Aperçu)')
+                        ->icon('heroicon-o-eye')
+                        ->color('gray')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'bon_commande_simple',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+                ])
+                    ->label('Télécharger / Aperçu')
+                    ->icon('heroicon-m-document-arrow-down')
+                    ->size('sm')
+                    ->color('success')
+                    ->button(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

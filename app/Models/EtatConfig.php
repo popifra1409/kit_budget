@@ -53,75 +53,6 @@ class EtatConfig extends Model
     }
 
     /**
-     * Obtenir les champs variables avec valeurs par défaut
-     */
-    public function getChampsVariablesAttribute($value)
-    {
-        $champs = json_decode($value, true) ?? [];
-
-        foreach ($champs as $nom => &$config) {
-            $config['type'] = $config['type'] ?? 'text';
-            $config['required'] = $config['required'] ?? false;
-        }
-
-        return $champs;
-    }
-
-    /**
-     * Obtenir la configuration d'en-tête avec valeurs par défaut
-     */
-    public function getEnteteConfigAttribute($value)
-    {
-        return array_merge([
-            'afficher_logo' => true,
-            'logo' => 'images/logo-ministere.png',
-            'institution' => 'MINISTERE DE LA SANTE PUBLIQUE',
-            'etablissement' => 'HOPITAL GENERAL DE YAOUNDE',
-            'adresse' => "B.P. 5408 – Yaoundé\nTél.: (237) 221.31.81 - 221.20.18",
-        ], json_decode($value, true) ?? []);
-    }
-
-    /**
-     * Obtenir les options PDF avec valeurs par défaut
-     */
-    public function getOptionsPdfAttribute($value)
-    {
-        return array_merge([
-            'orientation' => 'portrait',
-            'page-size' => 'A4',
-        ], json_decode($value, true) ?? []);
-    }
-
-    /**
-     * Obtenir la configuration des signatures
-     */
-    public function getSignatureConfigAttribute($value)
-    {
-        $default = [
-            'afficher' => true,
-            'signatures' => [
-                [
-                    'titre' => 'L\'ORDONNATEUR',
-                    'position' => 'left',
-                    'largeur' => 33,
-                ],
-                [
-                    'titre' => 'LE CONTRÔLEUR FINANCIER',
-                    'position' => 'center',
-                    'largeur' => 33,
-                ],
-                [
-                    'titre' => 'L\'AGENT COMPTABLE',
-                    'position' => 'right',
-                    'largeur' => 33,
-                ],
-            ],
-        ];
-
-        return array_merge($default, json_decode($value, true) ?? []);
-    }
-
-    /**
      * Vérifier si un champ existe
      */
     public function hasChamp(string $nom): bool
@@ -155,5 +86,25 @@ class EtatConfig extends Model
             ->get()
             ->groupBy('categorie')
             ->toArray();
+    }
+
+    /**
+     * Vérifier si l'état est modifiable
+     */
+    public function estModifiable(): bool
+    {
+        // Logique métier : certains états système ne peuvent pas être modifiés
+        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement'];
+        return !in_array($this->code, $etatsSysteme);
+    }
+
+    /**
+     * Vérifier si l'état est supprimable
+     */
+    public function estSupprimable(): bool
+    {
+        // Ne pas supprimer les états système
+        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement', 'bon_commande', 'bon_commande_simple'];
+        return !in_array($this->code, $etatsSysteme);
     }
 }

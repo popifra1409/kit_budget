@@ -47,13 +47,17 @@ class PdfGenerator
     {
         $donneesPrepares = [];
 
-        if (is_object($donnees) && method_exists($donnees, 'toArray')) {
-            $donnees = $donnees->toArray();
-        }
+        // Garder l'objet original
+        $donneesOriginales = $donnees;
+
+        // Convertir en tableau UNIQUEMENT pour data_get
+        $donneesArray = is_object($donnees) && method_exists($donnees, 'toArray')
+            ? $donnees->toArray()
+            : $donnees;
 
         foreach ($config->champs_variables ?? [] as $nom => $configChamp) {
             $source = $configChamp['source'] ?? $nom;
-            $valeur = data_get($donnees, $source);
+            $valeur = data_get($donneesArray, $source);
 
             $donneesPrepares[$nom] = $this->formaterValeur(
                 $valeur,
@@ -66,11 +70,12 @@ class PdfGenerator
             $donneesPrepares[$nom] = $this->executerCalcul(
                 $configCalcul,
                 $donneesPrepares,
-                $donnees
+                $donneesArray
             );
         }
 
-        $donneesPrepares['_raw'] = $donnees;
+        // Stocker l'objet original, pas le tableau
+        $donneesPrepares['_raw'] = $donneesOriginales;
 
         return $donneesPrepares;
     }

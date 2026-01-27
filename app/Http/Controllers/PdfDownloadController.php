@@ -17,6 +17,7 @@ class PdfDownloadController extends Controller
             'certificat_engagement' => BordereauEngagement::class,
             'autorisation_engagement' => BordereauEngagement::class,
             'bon_commande' => BonCommande::class,
+            'bon_commande_simple' => BonCommande::class,
         ];
 
         if (!isset($modelMap[$etat])) {
@@ -46,6 +47,7 @@ class PdfDownloadController extends Controller
             'certificat_engagement' => BordereauEngagement::class,
             'autorisation_engagement' => BordereauEngagement::class,
             'bon_commande' => BonCommande::class,
+            'bon_commande_simple' => BonCommande::class,
         ];
 
         if (!isset($modelMap[$etat])) {
@@ -61,6 +63,13 @@ class PdfDownloadController extends Controller
                 'validateur',
                 'engagements.engageable.lignes.nomenclature.parent',
                 'engagements.engageable.lignes.nomenclature.tache.activite.action.programme',
+            ])->findOrFail($id);
+        } elseif ($model === BonCommande::class) {
+            // Charger les relations pour BonCommande
+            $record = $model::with([
+                'fournisseur',
+                'serviceDemandeur',
+                'lignes',
             ])->findOrFail($id);
         } else {
             $record = $model::findOrFail($id);
