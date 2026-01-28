@@ -35,6 +35,23 @@ class EngagementResource extends Resource
     protected static ?int $navigationSort = 1;
 
 
+    public static function getNavigationBadge(): ?string
+    {
+        $count = \App\Models\Transmission::query()
+            ->where('document_type', 'App\Models\Engagement')
+            ->pourDestinataire(auth()->id())
+            ->enAttente()
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
+
+
     /**
      * Permissions – Engagements budgétaires
      */
@@ -402,6 +419,113 @@ class EngagementResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\Filter::make('date_engagement')
+                    ->form([
+                        Forms\Components\DatePicker::make('date_engagement_from')
+                            ->label('Date d\'engagement du')
+                            ->placeholder('JJ/MM/AAAA'),
+                        Forms\Components\DatePicker::make('date_engagement_until')
+                            ->label('Date d\'engagement au')
+                            ->placeholder('JJ/MM/AAAA'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        return $query
+                            ->when($data['date_engagement_from'], fn($q, $date) =>
+                            $q->whereDate('date_engagement', '>=', $date))
+                            ->when($data['date_engagement_until'], fn($q, $date) =>
+                            $q->whereDate('date_engagement', '<=', $date));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['date_engagement_from'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Engagé depuis le ' . \Carbon\Carbon::parse($data['date_engagement_from'])->format('d/m/Y'))
+                                ->removeField('date_engagement_from');
+                        }
+
+                        if ($data['date_engagement_until'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Engagé jusqu\'au ' . \Carbon\Carbon::parse($data['date_engagement_until'])->format('d/m/Y'))
+                                ->removeField('date_engagement_until');
+                        }
+
+                        return $indicators;
+                    }),
+
+                // FILTRE PAR PÉRIODE PRÉDÉFINIE
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période prédéfinie')
+                            ->options([
+                                'today' => 'Aujourd\'hui',
+                                'yesterday' => 'Hier',
+                                'this_week' => 'Cette semaine',
+                                'last_week' => 'Semaine dernière',
+                                'this_month' => 'Ce mois',
+                                'last_month' => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year' => 'Cette année',
+                                'last_year' => 'Année dernière',
+                            ])
+                            ->placeholder('Sélectionner une période'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        $periode = $data['periode'] ?? null;
+
+                        if (!$periode) {
+                            return $query;
+                        }
+
+                        return match ($periode) {
+                            'today' => $query->whereDate('date_engagement', today()),
+                            'yesterday' => $query->whereDate('date_engagement', today()->subDay()),
+                            'this_week' => $query->whereBetween('date_engagement', [
+                                now()->startOfWeek(),
+                                now()->endOfWeek()
+                            ]),
+                            'last_week' => $query->whereBetween('date_engagement', [
+                                now()->subWeek()->startOfWeek(),
+                                now()->subWeek()->endOfWeek()
+                            ]),
+                            'this_month' => $query->whereMonth('date_engagement', now()->month)
+                                ->whereYear('date_engagement', now()->year),
+                            'last_month' => $query->whereMonth('date_engagement', now()->subMonth()->month)
+                                ->whereYear('date_engagement', now()->subMonth()->year),
+                            'this_quarter' => $query->whereBetween('date_engagement', [
+                                now()->startOfQuarter(),
+                                now()->endOfQuarter()
+                            ]),
+                            'last_quarter' => $query->whereBetween('date_engagement', [
+                                now()->subQuarter()->startOfQuarter(),
+                                now()->subQuarter()->endOfQuarter()
+                            ]),
+                            'this_year' => $query->whereYear('date_engagement', now()->year),
+                            'last_year' => $query->whereYear('date_engagement', now()->subYear()->year),
+                            default => $query,
+                        };
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) {
+                            return null;
+                        }
+
+                        $labels = [
+                            'today' => 'Aujourd\'hui',
+                            'yesterday' => 'Hier',
+                            'this_week' => 'Cette semaine',
+                            'last_week' => 'Semaine dernière',
+                            'this_month' => 'Ce mois',
+                            'last_month' => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year' => 'Cette année',
+                            'last_year' => 'Année dernière',
+                        ];
+
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
+
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')

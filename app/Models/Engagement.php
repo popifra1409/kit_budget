@@ -12,10 +12,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasWorkflow;
 
 class Engagement extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity;
 
     protected $fillable = [
         'exercice_id',

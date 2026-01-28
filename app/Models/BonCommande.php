@@ -11,10 +11,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasWorkflow;
 
 class BonCommande extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity;
 
     protected $table = 'bons_commande';
 

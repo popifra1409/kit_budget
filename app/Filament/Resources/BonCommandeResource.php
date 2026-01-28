@@ -18,6 +18,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Actions\Action;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use App\Models\User;
 
 class BonCommandeResource extends Resource
 {
@@ -34,6 +35,22 @@ class BonCommandeResource extends Resource
     protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?int $navigationSort = 1;
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = \App\Models\Transmission::query()
+            ->where('document_type', 'App\Models\BonCommande')
+            ->pourDestinataire(auth()->id())
+            ->enAttente()
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
 
     /**
      * ==========================================
@@ -194,6 +211,7 @@ class BonCommandeResource extends Resource
 
                         Forms\Components\DatePicker::make('date_livraison_prevue')
                             ->label('Date de livraison prévue')
+                            ->required()
                             ->after('date_emission'),
                     ])
                     ->columns(2),
@@ -510,6 +528,113 @@ class BonCommandeResource extends Resource
                     ->falseColor('gray'),
             ])
             ->filters([
+                Tables\Filters\Filter::make('date_emission')
+                    ->form([
+                        Forms\Components\DatePicker::make('date_emission_from')
+                            ->label('Date d\'émission du')
+                            ->placeholder('JJ/MM/AAAA'),
+                        Forms\Components\DatePicker::make('date_emission_until')
+                            ->label('Date d\'émission au')
+                            ->placeholder('JJ/MM/AAAA'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        return $query
+                            ->when($data['date_emission_from'], fn($q, $date) =>
+                            $q->whereDate('date_emission', '>=', $date))
+                            ->when($data['date_emission_until'], fn($q, $date) =>
+                            $q->whereDate('date_emission', '<=', $date));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['date_emission_from'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Émis depuis le ' . \Carbon\Carbon::parse($data['date_emission_from'])->format('d/m/Y'))
+                                ->removeField('date_emission_from');
+                        }
+
+                        if ($data['date_emission_until'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Émis jusqu\'au ' . \Carbon\Carbon::parse($data['date_emission_until'])->format('d/m/Y'))
+                                ->removeField('date_emission_until');
+                        }
+
+                        return $indicators;
+                    }),
+
+                // FILTRE PAR PÉRIODE PRÉDÉFINIE
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période prédéfinie')
+                            ->options([
+                                'today' => 'Aujourd\'hui',
+                                'yesterday' => 'Hier',
+                                'this_week' => 'Cette semaine',
+                                'last_week' => 'Semaine dernière',
+                                'this_month' => 'Ce mois',
+                                'last_month' => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year' => 'Cette année',
+                                'last_year' => 'Année dernière',
+                            ])
+                            ->placeholder('Sélectionner une période'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        $periode = $data['periode'] ?? null;
+
+                        if (!$periode) {
+                            return $query;
+                        }
+
+                        return match ($periode) {
+                            'today' => $query->whereDate('date_emission', today()),
+                            'yesterday' => $query->whereDate('date_emission', today()->subDay()),
+                            'this_week' => $query->whereBetween('date_emission', [
+                                now()->startOfWeek(),
+                                now()->endOfWeek()
+                            ]),
+                            'last_week' => $query->whereBetween('date_emission', [
+                                now()->subWeek()->startOfWeek(),
+                                now()->subWeek()->endOfWeek()
+                            ]),
+                            'this_month' => $query->whereMonth('date_emission', now()->month)
+                                ->whereYear('date_emission', now()->year),
+                            'last_month' => $query->whereMonth('date_emission', now()->subMonth()->month)
+                                ->whereYear('date_emission', now()->subMonth()->year),
+                            'this_quarter' => $query->whereBetween('date_emission', [
+                                now()->startOfQuarter(),
+                                now()->endOfQuarter()
+                            ]),
+                            'last_quarter' => $query->whereBetween('date_emission', [
+                                now()->subQuarter()->startOfQuarter(),
+                                now()->subQuarter()->endOfQuarter()
+                            ]),
+                            'this_year' => $query->whereYear('date_emission', now()->year),
+                            'last_year' => $query->whereYear('date_emission', now()->subYear()->year),
+                            default => $query,
+                        };
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) {
+                            return null;
+                        }
+
+                        $labels = [
+                            'today' => 'Aujourd\'hui',
+                            'yesterday' => 'Hier',
+                            'this_week' => 'Cette semaine',
+                            'last_week' => 'Semaine dernière',
+                            'this_month' => 'Ce mois',
+                            'last_month' => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year' => 'Cette année',
+                            'last_year' => 'Année dernière',
+                        ];
+
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
+
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
@@ -541,6 +666,7 @@ class BonCommandeResource extends Resource
                     ->placeholder('Tous')
                     ->trueLabel('Engagés')
                     ->falseLabel('Non engagés'),
+
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -605,8 +731,151 @@ class BonCommandeResource extends Resource
                             ->warning()
                             ->send();
                     }),
-            ])
-            ->actions([
+
+                Tables\Actions\Action::make('transmettre')
+                    ->label('Transmettre')
+                    ->icon('heroicon-o-paper-airplane')
+                    ->color('info')
+                    ->visible(fn($record) => $record->peutEtreTransmis() && in_array($record->statut, ['brouillon', 'valide']))
+                    ->form([
+                        Forms\Components\Select::make('destinataire_id')
+                            ->label('Transmettre à')
+                            ->options(User::whereNotNull('name')->pluck('name', 'id'))
+                            ->required()
+                            ->searchable()
+                            ->preload(),
+
+                        Forms\Components\Select::make('action_attendue')
+                            ->label('Action attendue')
+                            ->options([
+                                'validation' => 'Validation',
+                                'engagement' => 'Engagement',
+                                'verification' => 'Vérification',
+                                'signature' => 'Signature',
+                                'information' => 'Pour information',
+                            ])
+                            ->required()
+                            ->default('validation'),
+
+                        Forms\Components\Textarea::make('commentaire')
+                            ->label('Commentaire')
+                            ->rows(3)
+                            ->placeholder('Ajoutez un commentaire pour le destinataire...'),
+
+                        Forms\Components\Select::make('priorite')
+                            ->label('Priorité')
+                            ->options([
+                                'basse' => 'Basse',
+                                'normale' => 'Normale',
+                                'haute' => 'Haute',
+                                'urgente' => 'Urgente',
+                            ])
+                            ->default('normale')
+                            ->required(),
+
+                        Forms\Components\DatePicker::make('date_limite')
+                            ->label('Date limite (optionnel)')
+                            ->minDate(now())
+                            ->helperText('Date limite pour traiter cette transmission'),
+                    ])
+                    ->action(function ($record, array $data) {
+                        try {
+                            $destinataire = User::findOrFail($data['destinataire_id']);
+
+                            $record->transmettreA(
+                                $destinataire,
+                                $data['action_attendue'],
+                                $data['commentaire'] ?? null,
+                                [
+                                    'priorite' => $data['priorite'],
+                                    'date_limite' => $data['date_limite'] ?? null,
+                                ]
+                            );
+
+                            Notification::make()
+                                ->title('Document transmis')
+                                ->success()
+                                ->body("Le document a été transmis à {$destinataire->name}")
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Erreur')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('retourner')
+                    ->label('Retourner')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('warning')
+                    ->visible(fn($record) => $record->estDestinataireActuel() && $record->transmissionEnCours())
+                    ->form([
+                        Forms\Components\Textarea::make('motif')
+                            ->label('Motif du retour')
+                            ->required()
+                            ->rows(3)
+                            ->placeholder('Expliquez pourquoi le document est retourné...'),
+                    ])
+                    ->requiresConfirmation()
+                    ->modalHeading('Retourner pour correction')
+                    ->modalDescription('Le document sera retourné à l\'expéditeur avec votre motif')
+                    ->action(function ($record, array $data) {
+                        try {
+                            $record->retournerPourCorrection($data['motif']);
+
+                            Notification::make()
+                                ->title('Document retourné')
+                                ->warning()
+                                ->body('Le document a été retourné à l\'expéditeur')
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Erreur')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('cloturer_transmission')
+                    ->label('Clôturer')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn($record) => $record->estDestinataireActuel() && $record->transmissionEnCours())
+                    ->form([
+                        Forms\Components\Textarea::make('reponse')
+                            ->label('Réponse/Commentaire')
+                            ->rows(3)
+                            ->placeholder('Optionnel : Ajoutez un commentaire de clôture...'),
+                    ])
+                    ->requiresConfirmation()
+                    ->modalHeading('Clôturer la transmission')
+                    ->modalDescription('Confirmez que vous avez traité cette transmission')
+                    ->action(function ($record, array $data) {
+                        $record->cloturerTransmission($data['reponse'] ?? null);
+
+                        Notification::make()
+                            ->title('Transmission clôturée')
+                            ->success()
+                            ->body('La transmission a été traitée avec succès')
+                            ->send();
+                    }),
+
+                Tables\Actions\Action::make('historique_transmissions')
+                    ->label('Historique')
+                    ->icon('heroicon-o-clock')
+                    ->color('gray')
+                    ->visible(fn($record) => $record->aEteTransmis())
+                    ->modalHeading(fn($record) => 'Historique des transmissions - ' . $record->numero)
+                    ->modalContent(fn($record) => view('filament.modals.historique-transmissions', [
+                        'transmissions' => $record->historiqueTransmissions()
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Fermer'),
+
+                // Actions de téléchargement PDF
                 Tables\Actions\ActionGroup::make([
                     // Bon de commande administratif
                     Tables\Actions\Action::make('telecharger_bon_commande_admin')

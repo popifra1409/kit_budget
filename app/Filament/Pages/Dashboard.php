@@ -14,7 +14,9 @@ class Dashboard extends BaseDashboard
     {
         return auth()->check();
     }
+
     protected static bool $shouldRegisterNavigation = true;
+
     /**
      * Ordre dans la navigation
      */
@@ -45,148 +47,136 @@ class Dashboard extends BaseDashboard
     {
         $user = auth()->user();
 
-        // Widgets pour super_admin
+        // Widgets de workflow (prioritaires)
+        $workflowWidgets = [
+            \App\Filament\Widgets\StatistiquesTransmissionsWidget::class,
+            \App\Filament\Widgets\MesTachesEnAttenteWidget::class,
+        ];
+
+        // Widgets de workflow admin
+        $workflowAdminWidgets = [
+            \App\Filament\Widgets\StatistiquesTransmissionsWidget::class,
+            \App\Filament\Widgets\MesTachesEnAttenteWidget::class,
+            \App\Filament\Widgets\ToutesLesTransmissionsWidget::class,
+        ];
+
+        // Widgets budgétaires
+        $budgetWidgets = [
+            \App\Filament\Widgets\ExerciceActifWidget::class,
+            \App\Filament\Widgets\BudgetOverviewWidget::class,
+            \App\Filament\Widgets\AlertesWidget::class,
+            \App\Filament\Widgets\TauxRealisationWidget::class,
+        ];
+
+        $advancedBudgetWidgets = [
+            \App\Filament\Widgets\GraphiqueEvolution::class,
+            \App\Filament\Widgets\EvolutionMensuelleWidget::class,
+            \App\Filament\Widgets\EngagementsParTypeWidget::class,
+        ];
+
+        $recettesWidgets = [
+            \App\Filament\Widgets\StatsRecettesOverview::class,
+            \App\Filament\Widgets\TableRecettesMensuelles::class,
+            \App\Filament\Widgets\RecettesStats::class,
+            \App\Filament\Widgets\ChartRecettesMensuelles::class,
+        ];
+
+        $adminWidgets = [
+            \App\Filament\Widgets\CacheManagementWidget::class,
+            \App\Filament\Widgets\ActivitesRecentesWidget::class,
+        ];
+
+        // Super Admin
         if ($user->hasRole('super_admin')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-                \App\Filament\Widgets\CacheManagementWidget::class,
-                \App\Filament\Widgets\ActivitesRecentesWidget::class,
-            ];
+            return array_merge(
+                $workflowAdminWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets,
+                $recettesWidgets,
+                $adminWidgets
+            );
         }
 
-        // Widgets pour chef de service
+        // Admin
         if ($user->hasRole('admin')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-                \App\Filament\Widgets\CacheManagementWidget::class,
-                \App\Filament\Widgets\ActivitesRecentesWidget::class,
-            ];
+            return array_merge(
+                $workflowAdminWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets,
+                $recettesWidgets,
+                $adminWidgets
+            );
         }
 
-        // Widgets pour chef de service
+        // Directeur Général
         if ($user->hasRole('directeur_general')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-            ];
+            return array_merge(
+                $workflowAdminWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets,
+                $recettesWidgets
+            );
         }
 
-        // Widgets pour opérateur
+        // DAAF
         if ($user->hasRole('daaf')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-            ];
+            return array_merge(
+                $workflowAdminWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets,
+                $recettesWidgets
+            );
         }
 
-        // Widgets pour opérateur
+        // Chef Service Budget
         if ($user->hasRole('chef_service_budget')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-            ];
+            return array_merge(
+                $workflowWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets,
+                $recettesWidgets
+            );
         }
 
-        // Widgets pour opérateur
-        if ($user->hasRole('operateur_budget')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-            ];
-        }
-
-        // Widgets pour opérateur
+        // Sous-directeur Budget
         if ($user->hasRole('sous_directeur_budget')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-            ];
+            return array_merge(
+                $workflowWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets,
+                $recettesWidgets
+            );
         }
 
-        // Widgets pour opérateur
+        // Contrôleur Financier
         if ($user->hasRole('controleur_financier')) {
-            return [
-                \App\Filament\Widgets\ExerciceActifWidget::class,
-                \App\Filament\Widgets\BudgetOverviewWidget::class,
-                \App\Filament\Widgets\AlertesWidget::class,
-                \App\Filament\Widgets\TauxRealisationWidget::class,
-                \App\Filament\Widgets\GraphiqueEvolution::class,
-                \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-                \App\Filament\Widgets\EngagementsParTypeWidget::class,
-            ];
+            return array_merge(
+                $workflowAdminWidgets,
+                $budgetWidgets,
+                $advancedBudgetWidgets
+            );
         }
 
-        // Widgets pour opérateur
+        // Opérateur Budget
+        if ($user->hasRole('operateur_budget')) {
+            return array_merge(
+                $workflowWidgets,
+                $budgetWidgets
+            );
+        }
+
+        // Agence Comptable
         if ($user->hasRole('agence_comptable')) {
-            return [
-                \App\Filament\Widgets\StatsRecettesOverview::class,
-                \App\Filament\Widgets\TableRecettesMensuelles::class,
-                \App\Filament\Widgets\RecettesStats::class,
-                \App\Filament\Widgets\ChartRecettesMensuelles::class,
-            ];
+            return array_merge(
+                $workflowWidgets,
+                $recettesWidgets
+            );
         }
-
 
         // Widgets par défaut (pour tous les autres rôles)
         return [
+            \App\Filament\Widgets\StatistiquesTransmissionsWidget::class,
+            \App\Filament\Widgets\MesTachesEnAttenteWidget::class,
             \App\Filament\Widgets\WelcomeWidget::class,
         ];
     }

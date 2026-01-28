@@ -38,12 +38,13 @@ class RolePermissionSeeder extends Seeder
             'prevision_recette',
             'programme',
             'recette_reelle',
+            'reference_mercuriale',
             'role',
             'service',
             'tache',
+            'transmission',  // ← AJOUTÉ
             'user',
             'virement_budgetaire',
-            'reference_mercuriale'
         ];
 
         /*
@@ -66,21 +67,41 @@ class RolePermissionSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
         $specialPermissions = [
+            // Paramètres & Structure
             'activer_parametres_fournisseur',
             'blacklister_fournisseur',
             'activer_budget',
             'adopter_budget',
             'cloturer_budget',
+            'activer_service',
+
+            // Exercice
             'ouvrir_exercice',
             'cloturer_exercice',
             'reconduire_exercice',
+
+            // Engagement
             'valider_engagement',
             'annuler_engagement',
+
+            // Décision Administrative
             'valider_decision_administrative',
             'annuler_decision_administrative',
+
+            // Mémoire de dépense
             'valider_memoire_depense',
             'publier_memoire_depense',
-            'activer_service',
+
+            // Workflow / Transmissions ← NOUVELLES PERMISSIONS
+            'transmettre_document',
+            'retourner_document',
+            'cloturer_transmission',
+            'annuler_transmission',
+            'view_all_transmissions',  // Voir toutes les transmissions (admin)
+            'view_my_transmissions',   // Voir uniquement ses transmissions
+
+            // Références mercuriales
+            'activer_reference_mercuriale',
         ];
 
         foreach ($specialPermissions as $perm) {
@@ -116,8 +137,18 @@ class RolePermissionSeeder extends Seeder
             'view_budget',
             'view_any_budget',
             'create_engagement',
+            'view_engagement',
+            'view_any_engagement',
+            'create_bon_commande',
+            'view_bon_commande',
+            'view_any_bon_commande',
             'view_prevision_recette',
             'view_any_prevision_recette',
+
+            // Workflow
+            'transmettre_document',
+            'view_my_transmissions',
+            'view_transmission',
         ]);
 
         /*
@@ -133,6 +164,18 @@ class RolePermissionSeeder extends Seeder
             'update_recette_reelle',
             'view_any_prevision_recette',
             'update_prevision_recette',
+            'view_any_engagement',
+            'view_engagement',
+            'valider_engagement',
+            'view_any_bon_commande',
+            'view_bon_commande',
+
+            // Workflow
+            'transmettre_document',
+            'retourner_document',
+            'cloturer_transmission',
+            'view_my_transmissions',
+            'view_any_transmission',
         ]);
 
         /*
@@ -146,6 +189,18 @@ class RolePermissionSeeder extends Seeder
             'view_recette_reelle',
             'create_recette_reelle',
             'update_recette_reelle',
+            'view_any_engagement',
+            'view_engagement',
+            'valider_engagement',
+            'view_any_bon_commande',
+            'view_bon_commande',
+
+            // Workflow
+            'transmettre_document',
+            'retourner_document',
+            'cloturer_transmission',
+            'view_my_transmissions',
+            'view_any_transmission',
         ]);
 
         /*
@@ -159,27 +214,80 @@ class RolePermissionSeeder extends Seeder
             'view_recette_reelle',
             'create_recette_reelle',
             'update_recette_reelle',
+            'view_any_engagement',
+            'view_engagement',
+            'valider_engagement',
+
+            // Workflow
+            'transmettre_document',
+            'retourner_document',
+            'cloturer_transmission',
+            'view_all_transmissions',
         ]);
 
         /*
         |--------------------------------------------------------------------------
-        | 10. AUTRES RÔLES (LECTURE)
+        | 10. CONTROLEUR FINANCIER
         |--------------------------------------------------------------------------
         */
-        foreach (
-            [
-                'controleur_financier',
-                'directeur_general',
-                'agence_comptable',
-            ] as $roleName
-        ) {
-            $role = Role::firstOrCreate(['name' => $roleName]);
-            $role->syncPermissions([
-                'view_any_recette_reelle',
-                'view_recette_reelle',
-            ]);
-        }
+        $controleur = Role::firstOrCreate(['name' => 'controleur_financier']);
+        $controleur->syncPermissions([
+            'view_any_recette_reelle',
+            'view_recette_reelle',
+            'view_any_engagement',
+            'view_engagement',
+            'valider_engagement',
+            'view_any_bon_commande',
+            'view_bon_commande',
 
-        $this->command->info('✅ Rôles et permissions COMPLETS créés avec toutes les actions spéciales.');
+            // Workflow
+            'transmettre_document',
+            'retourner_document',
+            'cloturer_transmission',
+            'view_all_transmissions',
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | 11. DIRECTEUR GENERAL
+        |--------------------------------------------------------------------------
+        */
+        $directeur = Role::firstOrCreate(['name' => 'directeur_general']);
+        $directeur->syncPermissions([
+            'view_any_recette_reelle',
+            'view_recette_reelle',
+            'view_any_engagement',
+            'view_engagement',
+            'valider_engagement',
+            'view_any_bon_commande',
+            'view_bon_commande',
+
+            // Workflow
+            'transmettre_document',
+            'retourner_document',
+            'cloturer_transmission',
+            'view_all_transmissions',
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | 12. AGENCE COMPTABLE
+        |--------------------------------------------------------------------------
+        */
+        $agence = Role::firstOrCreate(['name' => 'agence_comptable']);
+        $agence->syncPermissions([
+            'view_any_recette_reelle',
+            'view_recette_reelle',
+            'view_any_engagement',
+            'view_engagement',
+            'view_any_bon_commande',
+            'view_bon_commande',
+
+            // Workflow
+            'view_my_transmissions',
+            'cloturer_transmission',
+        ]);
+
+        $this->command->info('✅ Rôles et permissions COMPLETS créés avec workflow et transmissions.');
     }
 }
