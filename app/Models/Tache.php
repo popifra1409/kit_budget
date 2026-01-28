@@ -49,7 +49,7 @@ class Tache extends Model
      */
     public function activite(): BelongsTo
     {
-        return $this->belongsTo(Activite::class);
+        return $this->belongsTo(Activite::class, 'activite_id');
     }
 
     /**

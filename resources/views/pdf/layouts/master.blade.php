@@ -77,6 +77,31 @@
         }
 
         /* ================= INFOS ================= */
+        .doc-title-wrapper {
+            text-align: center;
+            /* centre le bloc enfant */
+            margin: 150px 0 20px 0;
+        }
+
+        .doc-title {
+            display: block;
+            width: 100%;
+            text-align: center;
+            font-size: 11pt;
+            font-weight: bold;
+            margin: 15px 0 20px 0;
+            border: 1px solid #000;
+            /* optionnel */
+            padding: 6px 0;
+            /* optionnel */
+        }   
+
+        .info-line {
+            margin: 6px 0;
+            font-size: 9pt;
+            line-height: 1.4;
+        }
+
         .info {
             margin: 10px 0;
             font-size: 8.8pt;

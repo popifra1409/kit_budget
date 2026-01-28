@@ -37,7 +37,7 @@ class Activite extends Model
      */
     public function action(): BelongsTo
     {
-        return $this->belongsTo(Action::class);
+        return $this->belongsTo(Action::class, 'action_id');
     }
 
     /**

@@ -456,6 +456,73 @@ class EngagementResource extends Resource
                             ->success()
                             ->send();
                     }),
+                // Groupe d'actions pour télécharger/aperçu
+                Tables\Actions\ActionGroup::make([
+                    // Certificat d'engagement
+                    Tables\Actions\Action::make('telecharger_certificat')
+                        ->label('Certificat (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'certificat_engagement',
+                            'id' => $record->id
+                        ])),
+
+                    Tables\Actions\Action::make('afficher_certificat')
+                        ->label('Certificat (Aperçu)')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'certificat_engagement',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+
+                    // Autorisation d'engagement
+                    Tables\Actions\Action::make('telecharger_autorisation')
+                        ->label('Autorisation (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('primary')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'autorisation_engagement',
+                            'id' => $record->id
+                        ])),
+
+                    Tables\Actions\Action::make('afficher_autorisation')
+                        ->label('Autorisation (Aperçu)')
+                        ->icon('heroicon-o-eye')
+                        ->color('gray')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'autorisation_engagement',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+
+                    // Fiche de performance
+                    Tables\Actions\Action::make('telecharger_fiche')
+                        ->label('Fiche Perf. (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('warning')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'fiche_performance',
+                            'id' => $record->id
+                        ])),
+
+                    Tables\Actions\Action::make('afficher_fiche')
+                        ->label('Fiche Perf. (Aperçu)')
+                        ->icon('heroicon-o-eye')
+                        ->color('secondary')
+                        ->url(fn($record) => route('pdf.afficher', [
+                            'etat' => 'fiche_performance',
+                            'id' => $record->id
+                        ]))
+                        ->openUrlInNewTab(),
+                ])
+                    ->label('Télécharger / Aperçu')
+                    ->icon('heroicon-m-document-arrow-down')
+                    ->size('sm')
+                    ->color('success')
+                    ->button(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

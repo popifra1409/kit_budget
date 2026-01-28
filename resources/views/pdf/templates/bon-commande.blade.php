@@ -1,6 +1,28 @@
 @extends('pdf.layouts.master')
 
-@section('styles')
+@php
+    // Récupérer les données du bon
+    $bonCommande = $donnees['_raw'];
+
+    // Définir des valeurs par défaut
+    $service = $donnees['service'] ?? ($bonCommande->serviceDemandeur->nom ?? 'RESSOURCES HUMAINES');
+    $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
+    $dateImpression = $donnees['date_impression'] ?? date('d/m/Y');
+    $prestataireNom = $donnees['prestataire_nom'] ?? ($bonCommande->fournisseur->raison_sociale ?? '');
+    $prestataireAdresse = $donnees['prestataire_adresse'] ?? ($bonCommande->fournisseur->adresse ?? '...............');
+    $prestataireTel = $donnees['prestataire_tel'] ?? ($bonCommande->fournisseur->telephone ?? '......................');
+    $prestataireContribuable =
+        $donnees['prestataire_contribuable'] ??
+        ($bonCommande->fournisseur->numero_contribuable ?? '........................');
+@endphp
+
+@section('title', 'BCA N° ' . $numeroBca)
+
+@section('montant_lettres')
+    {{ $donnees['montant_lettres'] ?? \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc ?? 0) }}
+@endsection
+
+@section('additional_styles')
     <style>
         .service-info {
             margin-bottom: 8px;
@@ -21,6 +43,49 @@
             margin-bottom: 10px;
         }
 
+        .text-center {
+            text-align: center;
+        }
+
+        .mb-10 {
+            margin-bottom: 10px;
+        }
+
+        .mb-15 {
+            margin-bottom: 15px;
+        }
+
+        .mt-10 {
+            margin-top: 10px;
+        }
+
+        .mt-20 {
+            margin-top: 20px;
+        }
+
+        .font-bold {
+            font-weight: bold;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        table.simple {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table.simple td {
+            border: none;
+            padding: 4px;
+            font-size: 9pt;
+        }
+
+        table.simple td:first-child {
+            width: 30%;
+        }
+
         .articles-table {
             margin: 15px 0;
             font-size: 9pt;
@@ -31,11 +96,15 @@
             font-weight: bold;
             text-align: center;
             font-size: 9pt;
+            border: 1px solid #000;
+            padding: 6px;
         }
 
         .articles-table td {
             text-align: left;
             font-size: 9pt;
+            border: 1px solid #000;
+            padding: 6px;
         }
 
         .articles-table td.nombre {
@@ -51,22 +120,48 @@
             width: 50%;
             margin-left: auto;
         }
+
+        .totaux-table td.label {
+            width: 60%;
+            padding: 4px;
+        }
+
+        .totaux-table td.valeur {
+            width: 40%;
+            text-align: right;
+            padding: 4px;
+        }
+
+        .signature-container {
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .signature-block {
+            float: left;
+            text-align: center;
+        }
+
+        .clearfix::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
     </style>
 @endsection
 
 @section('content')
-
     {{-- Service et numéro BCA --}}
     <div class="service-info">
-        SERVICE {{ $donnees['service'] ?? 'RESSOURCES HUMAINES' }}
+        SERVICE {{ strtoupper($service) }}
     </div>
 
     <div class="bca-numero">
-        BCA N°: {{ $donnees['numero_bca'] ?? '.........' }}
+        BCA N°: {{ $numeroBca }}
     </div>
 
     <div class="date-impression">
-        Imprimé le {{ $donnees['date_impression'] ?? date('d/m/Y') }}
+        Imprimé le {{ $dateImpression }}
     </div>
 
     {{-- Section: Pour les objets et matières ci-après --}}
@@ -79,25 +174,25 @@
         <table class="simple">
             <tr>
                 <td><strong>Nom ou raison du Prestataire</strong></td>
-                <td class="font-bold">{{ $donnees['prestataire_nom'] ?? '' }}</td>
+                <td class="font-bold">{{ $prestataireNom }}</td>
             </tr>
             <tr>
                 <td>Adresse</td>
-                <td>{{ $donnees['prestataire_adresse'] ?? '...............' }}</td>
+                <td>{{ $prestataireAdresse }}</td>
             </tr>
             <tr>
                 <td></td>
-                <td>Tél: {{ $donnees['prestataire_tel'] ?? '......................' }}</td>
+                <td>Tél: {{ $prestataireTel }}</td>
             </tr>
             <tr>
                 <td>N° contribuable</td>
-                <td>{{ $donnees['prestataire_contribuable'] ?? '........................' }}</td>
+                <td>{{ $prestataireContribuable }}</td>
             </tr>
         </table>
     </div>
 
     {{-- Tableau des articles --}}
-    <table class="articles-table bordered">
+    <table class="articles-table">
         <thead>
             <tr>
                 <th style="width: 10%;">Qté</th>
@@ -107,29 +202,19 @@
             </tr>
         </thead>
         <tbody>
-            @if (isset($donnees['articles']) && is_array($donnees['articles']))
-                @foreach ($donnees['articles'] as $article)
+            @if (isset($bonCommande->lignes) && $bonCommande->lignes->count() > 0)
+                @foreach ($bonCommande->lignes as $ligne)
                     <tr>
-                        <td class="nombre">{{ $article['quantite'] ?? 1 }}</td>
-                        <td>{{ $article['designation'] ?? '' }}</td>
-                        <td class="nombre">{{ number_format(floatval($article['prix_unitaire'] ?? 0), 0, ',', ' ') }}</td>
-                        <td class="nombre">{{ number_format(floatval($article['montant'] ?? 0), 0, ',', ' ') }} F cfa</td>
+                        <td class="nombre">{{ $ligne->quantite }}</td>
+                        <td>{{ $ligne->designation }}</td>
+                        <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
+                        <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }} F cfa</td>
                     </tr>
                 @endforeach
-            @else
-                {{-- Article unique --}}
-                <tr>
-                    <td class="nombre">{{ $donnees['quantite'] ?? 1 }}</td>
-                    <td>{{ $donnees['designation'] ?? ($donnees['objet'] ?? '') }}</td>
-                    <td class="nombre">
-                        {{ number_format(floatval($donnees['_raw']['prix_unitaire'] ?? ($donnees['_raw']['montant_total'] ?? 0)), 0, ',', ' ') }}
-                    </td>
-                    <td class="nombre">{{ $donnees['montant'] ?? '0' }}</td>
-                </tr>
             @endif
             <tr>
                 <td colspan="3" class="text-right font-bold">TOTAL</td>
-                <td class="nombre font-bold">{{ $donnees['montant'] ?? '0' }}</td>
+                <td class="nombre font-bold">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }} F cfa</td>
             </tr>
         </tbody>
     </table>
@@ -141,61 +226,42 @@
         <table class="totaux-table simple">
             <tr>
                 <td class="label">Prix total HT</td>
-                <td class="valeur font-bold">{{ $donnees['montant_ht'] ?? ($donnees['montant'] ?? '0') }}</td>
+                <td class="valeur font-bold">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }} F cfa</td>
             </tr>
             <tr>
                 <td class="label">TVA</td>
-                <td class="valeur font-bold">{{ $donnees['montant_tva'] ?? '0 F cfa' }}</td>
+                <td class="valeur font-bold">{{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }} F cfa</td>
             </tr>
             <tr>
                 <td class="label">Prix total TTC</td>
-                <td class="valeur font-bold">{{ $donnees['montant_ttc'] ?? ($donnees['montant'] ?? '0') }}</td>
+                <td class="valeur font-bold">{{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} F cfa</td>
             </tr>
         </table>
 
         <div class="mt-10">
-            <strong>Montant total en</strong> {{ $donnees['montant_lettres'] ?? '' }}
+            <strong>Montant total en lettres:</strong> @yield('montant_lettres')
         </div>
 
         <div class="mt-10">
-            <strong>Délai de livraison</strong>
+            <strong>Délai de livraison:</strong>
+            @if ($bonCommande->date_livraison_prevue)
+                {{ \Carbon\Carbon::parse($bonCommande->date_livraison_prevue)->format('d/m/Y') }}
+            @else
+                ...................................
+            @endif
         </div>
     </div>
 
     {{-- Signatures --}}
-    <div class="mt-20">
-        <div class="text-right" style="margin-bottom: 15px; font-size: 8pt;">
+    <div class="mt-20 clearfix">
+        <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
             1/1 Signé à Yaoundé Le..............................................
         </div>
 
-        <table style="width: 100%;">
-            <tr>
-                <td style="width: 33%; text-align: center;">
-                    <div class="font-bold">Le Prestataire</div>
-                    <div class="mt-10 font-bold">{{ $donnees['prestataire_nom'] ?? 'AGENT COMPTABLE' }}</div>
-                </td>
-
-                <td style="width: 33%; text-align: center;">
-                    <!-- Vide -->
-                </td>
-
-                <td style="width: 33%; text-align: center;">
-                    <div class="font-bold">L'ordonnateur</div>
-                </td>
-            </tr>
-        </table>
-    </div>
-
-    {{-- Signatures --}}
-    <div class="mt-20 clearfix" style="clear: both;">
-        <div class="text-right" style="margin-bottom: 20px;">
-            1/1 Signé à Yaoundé Le..............................................
-        </div>
-
-        <div class="signature-container clearfix">
+        <div class="signature-container">
             <div class="signature-block" style="width: 33%;">
                 <div class="font-bold">Le Prestataire</div>
-                <div class="mt-10 font-bold">{{ $donnees['prestataire_nom'] ?? 'AGENT COMPTABLE' }}</div>
+                <div class="mt-10 font-bold">{{ $prestataireNom }}</div>
             </div>
 
             <div class="signature-block" style="width: 33%;">
@@ -204,8 +270,11 @@
 
             <div class="signature-block" style="width: 33%;">
                 <div class="font-bold">L'ordonnateur</div>
+                <div class="mt-10 font-bold">{{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}</div>
+                <div style="margin-top: 40px; border-top: 1px solid #000; padding-top: 5px;">
+                    {{ $parametres->nom_ordonnateur ?? '' }}
+                </div>
             </div>
         </div>
     </div>
-
 @endsection

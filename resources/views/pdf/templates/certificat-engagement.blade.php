@@ -1,65 +1,173 @@
 @extends('pdf.layouts.master')
 
-@section('content')
-    {{-- Section 1 : Montant de l'autorisation --}}
-    <div class="mb-20">
-        <p class="font-bold mb-10">Une Autorisation d'Engagement d'un montant de:</p>
+@php
+    $engagement = $donnees['_raw'];
+    $nomenclature = $engagement->nomenclaturePrincipale;
+    $tache = $nomenclature->tache ?? null;
+    $activite = $tache->activite ?? null;
+    $action = $activite->action ?? null;
+    $programme = $action->programme ?? null;
+@endphp
 
-        @include('pdf.components.montant', [
-            'montant' => $donnees['montant'],
-            'montantLettres' => $donnees['montant_lettres'],
-        ])
+@section('title', 'Certificat d\'Engagement')
+
+@section('montant_lettres')
+    {{ \App\Helpers\NombreEnLettres::montantCFA($engagement->montant_engage ?? 0) }}
+@endsection
+
+@section('additional_styles')
+    <style>
+        .doc-title {
+            text-align: center;
+            font-size: 11pt;
+            font-weight: bold;
+            margin: 15px auto 20px auto;
+            padding: 6px 12px;
+
+            border: 1px solid #000;
+            /* encadrement */
+            display: inline-block;
+            /* encadre seulement le texte */
+            text-decoration: none;
+            /* on enlève le soulignement */
+        }
+
+        .section-title {
+            font-weight: bold;
+            font-size: 9pt;
+            margin: 12px 0 6px 0;
+        }
+
+        .info-line {
+            margin: 6px 0;
+            font-size: 11pt;
+            line-height: 2.0;
+        }
+
+        .info-line strong {
+            font-weight: bold;
+        }
+
+        .hierarchie-table {
+            width: 100%;
+            margin: 15px 0;
+            border-collapse: collapse;
+            font-size: 8.5pt;
+        }
+
+        .hierarchie-table th,
+        .hierarchie-table td {
+            border: 1px solid #000;
+            padding: 6px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .hierarchie-table th {
+            background-color: #f0f0f0;
+            font-weight: bold;
+            width: 20%;
+        }
+
+        .visa-section {
+            margin-top: 40px;
+            text-align: right;
+            font-weight: bold;
+            font-size: 9pt;
+        }
+    </style>
+@endsection
+
+@section('content')
+    {{-- Titre --}}
+    <div class="doc-title doc-title-wrapper">
+        CERTIFICAT D'ENGAGEMENT
     </div>
 
-    {{-- Section 2 : Acte administratif --}}
-    <div class="mb-15">
-        <p class="font-bold mb-10">Est réservée pour l'acte Administratif ci-après:</p>
+    {{-- Introduction --}}
+    <div class="info-line">
+        Une Autorisation d'Engagement d'un montant de:
+    </div>
 
-        <table class="simple">
+    <div class="info-line">
+        <strong>Montant en chiffres:</strong> {{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa
+    </div>
+
+    <div class="info-line">
+        <strong>En lettres:</strong> @yield('montant_lettres')
+    </div>
+
+    {{-- Réservation --}}
+    <div class="section-title">
+        Est réservée pour l'acte Administratif ci-après:
+    </div>
+
+    <div class="info-line">
+        <strong>Référence:</strong> {{ $engagement->reference_document ?? 'BON DE COMMANDE' }}
+    </div>
+
+    <div class="info-line">
+        <strong>Date de Signature:</strong>
+        {{ $engagement->date_engagement ? \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') : '.....................' }}
+    </div>
+
+    <div class="info-line">
+        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Pr. ESSOMBA NOEL EMMANUEL' }}
+    </div>
+
+    <div class="info-line">
+        <strong>Objet:</strong> {{ $engagement->objet }}
+    </div>
+
+    <div class="info-line">
+        <strong>Bénéficiaire:</strong>
+        {{ $engagement->beneficiaire->raison_sociale ?? ($engagement->beneficiaire->name ?? '') }}
+    </div>
+
+    {{-- Imputation --}}
+    <div class="section-title">
+        Cette autorisation d'Engagement est imputée de la manière suivante:
+    </div>
+
+    <div class="info-line">
+        <strong>Chapitre:</strong> {{ substr($nomenclature->code, 0, 2) }}
+    </div>
+
+    <div class="info-line">
+        <strong>Article:</strong> {{ substr($nomenclature->code, 0, 3) }}
+    </div>
+
+    <div class="info-line">
+        <strong>Paragraphe:</strong> {{ $nomenclature->code }}
+    </div>
+
+    {{-- Tableau hiérarchique --}}
+        <table class="hierarchie-table">
             <tr>
-                <td class="label"><strong>Référence:</strong></td>
-                <td class="valeur">{{ $donnees['reference'] ?? '' }}</td>
+                <th>PROGRAMME:</th>
+                <td>{{ $programme->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}</td>
             </tr>
             <tr>
-                <td class="label"><strong>Date de Signature</strong></td>
-                <td class="valeur">{{ $donnees['date_signature'] ?? '....................................' }}</td>
+                <th>OBJECTIF:</th>
+                <td>{{ $programme->objectifsPrincipaux->libelle ?? ' la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
+                </td>
             </tr>
             <tr>
-                <td class="label"><strong>Signataire:</strong></td>
-                <td class="valeur">{{ $donnees['signataire'] ?? '' }}</td>
+                <th>ACTION:</th>
+                <td>{{ $action->libelle ?? 'Gestion budgétaire et financière' }}</td>
             </tr>
             <tr>
-                <td class="label"><strong>Objet:</strong></td>
-                <td class="valeur font-bold">{{ $donnees['objet'] ?? '' }}</td>
+                <th>ACTIVITÉ:</th>
+                <td>{{ $activite->libelle ?? 'Appuyer les services en consommables médicaux' }}</td>
             </tr>
             <tr>
-                <td class="label"><strong>Bénéficiaire:</strong></td>
-                <td class="valeur font-bold">{{ $donnees['beneficiaire'] ?? '' }}</td>
+                <th>TACHE:</th>
+                <td>{{ $tache->libelle ?? 'Fourniture d\'Anatomopathologie' }}</td>
             </tr>
         </table>
-    </div>
 
-    {{-- Section 3 : Imputation budgétaire --}}
-    @include('pdf.components.imputation', [
-        'chapitre' => $donnees['chapitre'] ?? '',
-        'article' => $donnees['article'] ?? '',
-        'paragraphe' => $donnees['paragraphe'] ?? '',
-        'typeDocument' => 'autorisation d\'Engagement',
-    ])
-
-    {{-- Section 4 : Programme/Objectif/Action/Activité/Tâche --}}
-    @if (isset($donnees['programme']) && $donnees['programme'])
-        @include('pdf.components.poaat', [
-            'programme' => $donnees['programme'] ?? '',
-            'objectif' => $donnees['objectif'] ?? '',
-            'action' => $donnees['action'] ?? '',
-            'activite' => $donnees['activite'] ?? '',
-            'tache' => $donnees['tache'] ?? '',
-        ])
-    @endif
-
-    {{-- Section 5 : Visa de l'ordonnateur --}}
-    <div class="mt-20">
-        <p class="text-center font-bold">VISA DE L'ORDONNATEUR.</p>
+    {{-- Visa --}}
+    <div class="visa-section">
+        VISA DE L'ORDONNATEUR.
     </div>
 @endsection

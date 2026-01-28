@@ -37,7 +37,7 @@ class Action extends Model
      */
     public function programme(): BelongsTo
     {
-        return $this->belongsTo(Programme::class);
+        return $this->belongsTo(Programme::class, 'programme_id');
     }
 
     /**

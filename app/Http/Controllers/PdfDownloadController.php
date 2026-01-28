@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\PdfGenerator\PdfGenerator;
 use App\Models\BordereauEngagement;
 use App\Models\BonCommande;
+use App\Models\Engagement;
 use Illuminate\Http\Request;
 
 class PdfDownloadController extends Controller
@@ -14,8 +15,15 @@ class PdfDownloadController extends Controller
     public function telecharger(Request $request, string $etat, int $id)
     {
         $modelMap = [
-            'certificat_engagement' => BordereauEngagement::class,
-            'autorisation_engagement' => BordereauEngagement::class,
+            // États liés aux Engagements individuels
+            'certificat_engagement' => Engagement::class,
+            'autorisation_engagement' => Engagement::class,
+            'fiche_performance' => Engagement::class,
+
+            // État lié au Bordereau (liste des engagements)
+            'bordereau_engagement' => BordereauEngagement::class,
+
+            // États liés aux Bons de Commande
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
         ];
@@ -26,13 +34,34 @@ class PdfDownloadController extends Controller
 
         $model = $modelMap[$etat];
 
-        // Charger les relations pour BordereauEngagement
+        // Charger les relations selon le type de modèle
         if ($model === BordereauEngagement::class) {
             $record = $model::with([
                 'budget',
                 'validateur',
-                'engagements.engageable.lignes.nomenclature.parent',
-                'engagements.engageable.lignes.nomenclature.tache.activite.action.programme',
+                'engagements.beneficiaire',
+                'engagements.nomenclaturePrincipale',
+                'engagements.lignes',
+            ])->findOrFail($id);
+        } elseif ($model === Engagement::class) {
+            $record = $model::with([
+                'budget',
+                'nomenclaturePrincipale',
+                'nomenclaturePrincipale.parent',
+                'nomenclaturePrincipale.tache',
+                'nomenclaturePrincipale.tache.activite',
+                'nomenclaturePrincipale.tache.activite.action',
+                'nomenclaturePrincipale.tache.activite.action.programme',
+                'beneficiaire',
+                'lignes',
+                'engageable',
+            ])->findOrFail($id);
+        } elseif ($model === BonCommande::class) {
+            $record = $model::with([
+                'fournisseur',
+                'serviceDemandeur',
+                'lignes',
+                'engagement',
             ])->findOrFail($id);
         } else {
             $record = $model::findOrFail($id);
@@ -44,8 +73,15 @@ class PdfDownloadController extends Controller
     public function afficher(Request $request, string $etat, int $id)
     {
         $modelMap = [
-            'certificat_engagement' => BordereauEngagement::class,
-            'autorisation_engagement' => BordereauEngagement::class,
+            // États liés aux Engagements individuels
+            'certificat_engagement' => Engagement::class,
+            'autorisation_engagement' => Engagement::class,
+            'fiche_performance' => Engagement::class,
+
+            // État lié au Bordereau (liste des engagements)
+            'bordereau_engagement' => BordereauEngagement::class,
+
+            // États liés aux Bons de Commande
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
         ];
@@ -56,20 +92,34 @@ class PdfDownloadController extends Controller
 
         $model = $modelMap[$etat];
 
-        // Charger les relations pour BordereauEngagement
+        // Charger les relations selon le type de modèle
         if ($model === BordereauEngagement::class) {
             $record = $model::with([
                 'budget',
                 'validateur',
-                'engagements.engageable.lignes.nomenclature.parent',
-                'engagements.engageable.lignes.nomenclature.tache.activite.action.programme',
+                'engagements.beneficiaire',
+                'engagements.nomenclaturePrincipale',
+                'engagements.lignes',
+            ])->findOrFail($id);
+        } elseif ($model === Engagement::class) {
+            $record = $model::with([
+                'budget',
+                'nomenclaturePrincipale',
+                'nomenclaturePrincipale.parent',
+                'nomenclaturePrincipale.tache',
+                'nomenclaturePrincipale.tache.activite',
+                'nomenclaturePrincipale.tache.activite.action',
+                'nomenclaturePrincipale.tache.activite.action.programme',
+                'beneficiaire',
+                'lignes',
+                'engageable',
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
-            // Charger les relations pour BonCommande
             $record = $model::with([
                 'fournisseur',
                 'serviceDemandeur',
                 'lignes',
+                'engagement',
             ])->findOrFail($id);
         } else {
             $record = $model::findOrFail($id);
