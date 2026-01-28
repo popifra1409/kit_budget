@@ -13,6 +13,10 @@ use App\Models\LignePrevisionRecette;
 use App\Observers\LignePrevisionRecetteObserver;
 use App\Http\Responses\CustomLogoutResponse;
 use Filament\Http\Responses\Auth\Contracts\LogoutResponse;
+use App\Models\BonCommande;
+use App\Observers\BonCommandeObserver;
+use App\Models\PieceDossier;
+use App\Observers\PieceDossierObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -34,6 +38,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         LignePrevisionRecette::observe(LignePrevisionRecetteObserver::class);
+        // Enregistrer l'observer BonCommande
+        BonCommande::observe(BonCommandeObserver::class);
+        PieceDossier::observe(PieceDossierObserver::class);
         // Enregistrer le CSS personnalisé
         FilamentAsset::register([
             Css::make('custom-theme', resource_path('css/filament/admin/theme.css')),

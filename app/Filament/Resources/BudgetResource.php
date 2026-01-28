@@ -22,9 +22,9 @@ class BudgetResource extends Resource
 {
     protected static ?string $model = Budget::class;
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-    protected static ?string $navigationLabel = 'Budgets';
-    protected static ?string $modelLabel = 'Budget';
-    protected static ?string $pluralModelLabel = 'Budgets';
+    protected static ?string $navigationLabel = 'Dépenses';
+    protected static ?string $modelLabel = 'Dépense';
+    protected static ?string $pluralModelLabel = 'Dépenses';
     protected static ?string $navigationGroup = 'Gestion Budgétaire';
     protected static ?int $navigationSort = 1;
 

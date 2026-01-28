@@ -23,7 +23,7 @@ class FournisseurResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Fournisseurs';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Fournisseurs & Documents';
 
     protected static ?int $navigationSort = 2;
 

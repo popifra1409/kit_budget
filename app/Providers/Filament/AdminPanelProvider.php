@@ -73,7 +73,7 @@ class AdminPanelProvider extends PanelProvider
             // 📂 ORDRE DES GROUPES DE NAVIGATION
             ->navigationGroups([
                 'Commandes & Engagement',
-                'Document',
+                'Fournisseurs & Documents',
                 'Gestion Budgétaire',
                 'Cadre Logique',
                 'Configuration Budget',

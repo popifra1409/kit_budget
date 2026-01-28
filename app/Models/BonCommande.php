@@ -390,6 +390,59 @@ class BonCommande extends Model
     }
 
     /**
+     * Créer ou mettre à jour le dossier fournisseur
+     */
+    public function creerOuMettreAJourDossier(): DossierFournisseur
+    {
+        // Chercher un dossier existant
+        $dossier = DossierFournisseur::where('document_principal_type', get_class($this))
+            ->where('document_principal_id', $this->id)
+            ->first();
+
+        if (!$dossier) {
+            // Créer un nouveau dossier
+            $dossier = DossierFournisseur::create([
+                'numero_dossier' => DossierFournisseur::genererNumeroDossier('bon_commande'),
+                'fournisseur_id' => $this->fournisseur_id,
+                'exercice_id' => $this->exercice_id,
+                'type_dossier' => 'bon_commande',
+                'document_principal_type' => get_class($this),
+                'document_principal_id' => $this->id,
+                'reference_principale' => $this->numero,
+                'objet' => $this->objet ?? 'Bon de commande ' . $this->numero,
+                'montant_total' => $this->montant_ttc,
+                'montant_engage' => $this->engagement ? $this->montant_ttc : 0,
+                'date_ouverture' => $this->date_emission ?? now(),
+                'date_limite_livraison' => $this->date_livraison_prevue,
+                'responsable_id' => $this->created_by ?? auth()->id(),
+                'createur_id' => $this->created_by ?? auth()->id(),
+                'statut' => 'ouvert',
+            ]);
+
+            // Ajouter automatiquement le BC comme pièce
+            $dossier->ajouterPiece([
+                'type_piece' => 'bon_commande',
+                'document_type' => get_class($this),
+                'document_id' => $this->id,
+                'nom_fichier' => "BC-{$this->numero}.pdf",
+                'chemin_fichier' => '', // Sera rempli lors de la génération PDF
+                'valide' => true,
+                'valide_par' => auth()->id(),
+                'date_validation' => now(),
+            ]);
+        } else {
+            // Mettre à jour le dossier existant
+            $dossier->update([
+                'montant_total' => $this->montant_ttc,
+                'montant_engage' => $this->engagement ? $this->montant_ttc : 0,
+                'date_limite_livraison' => $this->date_livraison_prevue,
+            ]);
+        }
+
+        return $dossier;
+    }
+
+    /**
      * Désengager le budget (en cas d'annulation)
      */
     public function desengagerBudget(): void

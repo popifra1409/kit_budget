@@ -26,6 +26,7 @@ class RolePermissionSeeder extends Seeder
             'bordereau_engagement',
             'budget',
             'decision_administrative',
+            'dossier_fournisseur',      // ← AJOUTÉ
             'engagement',
             'etat_config',
             'exercice',
@@ -35,6 +36,7 @@ class RolePermissionSeeder extends Seeder
             'parametres_fournisseur',
             'parametres_structure',
             'permission',
+            'piece_dossier',            // ← AJOUTÉ
             'prevision_recette',
             'programme',
             'recette_reelle',
@@ -42,7 +44,7 @@ class RolePermissionSeeder extends Seeder
             'role',
             'service',
             'tache',
-            'transmission',  // ← AJOUTÉ
+            'transmission',
             'user',
             'virement_budgetaire',
         ];
@@ -92,13 +94,24 @@ class RolePermissionSeeder extends Seeder
             'valider_memoire_depense',
             'publier_memoire_depense',
 
-            // Workflow / Transmissions ← NOUVELLES PERMISSIONS
+            // Workflow / Transmissions
             'transmettre_document',
             'retourner_document',
             'cloturer_transmission',
             'annuler_transmission',
-            'view_all_transmissions',  // Voir toutes les transmissions (admin)
-            'view_my_transmissions',   // Voir uniquement ses transmissions
+            'view_all_transmissions',
+            'view_my_transmissions',
+
+            // Dossiers Fournisseurs ← NOUVEAUX
+            'cloturer_dossier_fournisseur',
+            'annuler_dossier_fournisseur',
+            'ajouter_piece_dossier',
+            'supprimer_piece_dossier',
+            'valider_piece_dossier',
+            'invalider_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_all_dossiers',  // Voir tous les dossiers (admin)
+            'view_my_dossiers',   // Voir uniquement ses dossiers
 
             // Références mercuriales
             'activer_reference_mercuriale',
@@ -134,21 +147,35 @@ class RolePermissionSeeder extends Seeder
         */
         $operateur = Role::firstOrCreate(['name' => 'operateur_budget']);
         $operateur->syncPermissions([
+            // Budget
             'view_budget',
             'view_any_budget',
+            'view_prevision_recette',
+            'view_any_prevision_recette',
+
+            // Engagement
             'create_engagement',
             'view_engagement',
             'view_any_engagement',
+
+            // Bon de commande
             'create_bon_commande',
             'view_bon_commande',
             'view_any_bon_commande',
-            'view_prevision_recette',
-            'view_any_prevision_recette',
+            'update_bon_commande',
 
             // Workflow
             'transmettre_document',
             'view_my_transmissions',
             'view_transmission',
+
+            // Dossiers fournisseurs
+            'view_dossier_fournisseur',
+            'view_any_dossier_fournisseur',
+            'create_dossier_fournisseur',
+            'ajouter_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_my_dossiers',
         ]);
 
         /*
@@ -158,17 +185,23 @@ class RolePermissionSeeder extends Seeder
         */
         $chefService = Role::firstOrCreate(['name' => 'chef_service_budget']);
         $chefService->syncPermissions([
+            // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
             'create_recette_reelle',
             'update_recette_reelle',
             'view_any_prevision_recette',
             'update_prevision_recette',
+
+            // Engagements
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+
+            // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
+            'update_bon_commande',
 
             // Workflow
             'transmettre_document',
@@ -176,6 +209,16 @@ class RolePermissionSeeder extends Seeder
             'cloturer_transmission',
             'view_my_transmissions',
             'view_any_transmission',
+
+            // Dossiers fournisseurs
+            'view_any_dossier_fournisseur',
+            'view_dossier_fournisseur',
+            'create_dossier_fournisseur',
+            'update_dossier_fournisseur',
+            'ajouter_piece_dossier',
+            'valider_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_all_dossiers',
         ]);
 
         /*
@@ -185,13 +228,18 @@ class RolePermissionSeeder extends Seeder
         */
         $sousDirecteur = Role::firstOrCreate(['name' => 'sous_directeur_budget']);
         $sousDirecteur->syncPermissions([
+            // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
             'create_recette_reelle',
             'update_recette_reelle',
+
+            // Engagements
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+
+            // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
 
@@ -201,6 +249,14 @@ class RolePermissionSeeder extends Seeder
             'cloturer_transmission',
             'view_my_transmissions',
             'view_any_transmission',
+
+            // Dossiers fournisseurs
+            'view_any_dossier_fournisseur',
+            'view_dossier_fournisseur',
+            'update_dossier_fournisseur',
+            'valider_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_all_dossiers',
         ]);
 
         /*
@@ -210,10 +266,13 @@ class RolePermissionSeeder extends Seeder
         */
         $daaf = Role::firstOrCreate(['name' => 'daaf']);
         $daaf->syncPermissions([
+            // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
             'create_recette_reelle',
             'update_recette_reelle',
+
+            // Engagements
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
@@ -223,6 +282,15 @@ class RolePermissionSeeder extends Seeder
             'retourner_document',
             'cloturer_transmission',
             'view_all_transmissions',
+
+            // Dossiers fournisseurs
+            'view_any_dossier_fournisseur',
+            'view_dossier_fournisseur',
+            'update_dossier_fournisseur',
+            'cloturer_dossier_fournisseur',
+            'valider_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_all_dossiers',
         ]);
 
         /*
@@ -232,11 +300,16 @@ class RolePermissionSeeder extends Seeder
         */
         $controleur = Role::firstOrCreate(['name' => 'controleur_financier']);
         $controleur->syncPermissions([
+            // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
+
+            // Engagements
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+
+            // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
 
@@ -245,6 +318,13 @@ class RolePermissionSeeder extends Seeder
             'retourner_document',
             'cloturer_transmission',
             'view_all_transmissions',
+
+            // Dossiers fournisseurs
+            'view_any_dossier_fournisseur',
+            'view_dossier_fournisseur',
+            'valider_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_all_dossiers',
         ]);
 
         /*
@@ -254,11 +334,16 @@ class RolePermissionSeeder extends Seeder
         */
         $directeur = Role::firstOrCreate(['name' => 'directeur_general']);
         $directeur->syncPermissions([
+            // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
+
+            // Engagements
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+
+            // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
 
@@ -267,6 +352,14 @@ class RolePermissionSeeder extends Seeder
             'retourner_document',
             'cloturer_transmission',
             'view_all_transmissions',
+
+            // Dossiers fournisseurs
+            'view_any_dossier_fournisseur',
+            'view_dossier_fournisseur',
+            'cloturer_dossier_fournisseur',
+            'valider_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_all_dossiers',
         ]);
 
         /*
@@ -276,18 +369,30 @@ class RolePermissionSeeder extends Seeder
         */
         $agence = Role::firstOrCreate(['name' => 'agence_comptable']);
         $agence->syncPermissions([
+            // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
+
+            // Engagements
             'view_any_engagement',
             'view_engagement',
+
+            // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
 
             // Workflow
             'view_my_transmissions',
             'cloturer_transmission',
+
+            // Dossiers fournisseurs
+            'view_any_dossier_fournisseur',
+            'view_dossier_fournisseur',
+            'ajouter_piece_dossier',
+            'telecharger_piece_dossier',
+            'view_my_dossiers',
         ]);
 
-        $this->command->info('✅ Rôles et permissions COMPLETS créés avec workflow et transmissions.');
+        $this->command->info('✅ Rôles et permissions COMPLETS créés avec workflow, transmissions et dossiers fournisseurs.');
     }
 }
