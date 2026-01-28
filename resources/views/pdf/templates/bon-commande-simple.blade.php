@@ -14,7 +14,7 @@
     <style>
         @page {
             size: A4 portrait;
-            margin: 15mm 15mm 0mm 15mm;
+            margin: 0mm 15mm 18mm 15mm;
         }
 
         body {
@@ -84,6 +84,30 @@
             font-weight: bold;
         }
 
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 8.5pt;
+        }
+
+        .info-table td {
+            border: none;
+            padding: 4px 6px;
+            vertical-align: top;
+        }
+
+        .info-table .label {
+            width: 35%;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .info-table .value {
+            width: 65%;
+            text-align: left;
+        }
+
         /* ================= TABLE ================= */
         table {
             width: 100%;
@@ -149,15 +173,29 @@
             font-size: 8.5pt;
         }
 
+        /* Signature à droite */
         .signature {
-            margin-top: 40px;
+            float: right;
+            width: 45%;
             text-align: right;
         }
 
         .signature-box {
             display: inline-block;
-            width: 200px;
             text-align: center;
+        }
+
+        .signature .fonction {
+            font-weight: bold;
+            margin-bottom: 45px;
+            font-size: 8.5pt;
+        }
+
+        .signature .nom {
+            border-top: 1px solid #000;
+            padding-top: 4px;
+            font-weight: bold;
+            font-size: 8.5pt;
         }
 
         .fonction {
@@ -196,6 +234,26 @@
             display: block;
             margin: 0 auto 4px auto;
         }
+
+        .bas-page {
+            width: 100%;
+            margin-top: 35px;
+        }
+
+        /* Clearfix DOMPDF safe */
+        .bas-page::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        /* Mention à gauche */
+        .mention-gauche {
+            float: left;
+            width: 45%;
+            font-size: 8.5pt;
+            text-align: left;
+        }
     </style>
 </head>
 
@@ -210,7 +268,7 @@
                     <em>Paix – Travail – Patrie</em>
                 </div>
                 <div class="republique" style="margin-top:4px">
-                    MMINISTERE DE LA SANTE PUBLIQUE
+                    MINISTERE DE LA SANTE PUBLIQUE
                 </div>
             </td>
 
@@ -241,30 +299,57 @@
 
     {{-- Date et lieu --}}
     <div style="text-align: right; margin: 15px 0; font-size: 10pt;">
-        <strong>Yaoundé, le</strong> {{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
         <div class="commande-box">
-            BON DE COMMANDE N° {{ $bonCommande->numero }}
+            COMMANDE HGY N° {{ $bonCommande->numero }}
         </div>
+        <strong>Yaoundé, le</strong> {{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
     </div>
 
     <!-- ================= INFOS ================= -->
     <div class="info">
-        <div class="info-row">
-            <div><span>Nom ou raison du Prestataire :</span> {{ $bonCommande->fournisseur->raison_sociale ?? '' }}</div>
-        </div>
-        <div class="info-row">
-            <span class="info-label">Livraison – Réception de 7h30 à 12h <br>du Lundi au Mercredi - Sauf urgence</span>
-            {{ $bonCommande->serviceDemandeur->nom ?? '' }}
-        </div>
-        <div class="info-row">
-            <span class="info-label">DELAI</span>: le plus court possible <br>et à nous confirmer au plus tard le
-            _____________
-            <span class="info-label">IMPUTATION</span>:
-            {{ $bonCommande->engagement->nomenclaturePrincipale->code ?? '' }} -
-            {{ $bonCommande->engagement->objet ?? '' }}<br> <span class="info-label">OBJET</span>:
-            {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
+        <table class="info-table">
+            <tr>
+                <td class="label">Nom ou raison du Prestataire :</td>
+                <td class="value">
+                    {{ $bonCommande->fournisseur->raison_sociale ?? '' }}
+                </td>
+            </tr>
 
-        </div>
+            <tr>
+                <td class="label">
+                    Livraison – Réception<br>
+                    de 7h30 à 12h du Lundi au Mercredi<br>
+                    (Sauf urgence)
+                </td>
+                <td class="value">
+                    {{ $bonCommande->serviceDemandeur->nom ?? '' }}
+                </td>
+            </tr>
+
+            <tr>
+                <td class="label">DÉLAI :</td>
+                <td class="value">
+                    le plus court possible et à nous confirmer au plus tard le _____________
+                </td>
+            </tr>
+
+            <tr>
+                <td class="label">IMPUTATION :</td>
+                <td class="value">
+                    {{ $bonCommande->engagement->nomenclaturePrincipale->code ?? '' }}
+                    –
+                    {{ $bonCommande->engagement->objet ?? '' }}
+                </td>
+            </tr>
+
+            <tr>
+                <td class="label">OBJET :</td>
+                <td class="value">
+                    {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
+                </td>
+            </tr>
+        </table>
+
 
         <!-- ================= TABLE ================= -->
         <table>
@@ -329,16 +414,25 @@
             <strong>{{ \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc) }}</strong>
         </div>
 
-        <div class="signature">
-            <div class="signature-box">
-                <div class="fonction">
-                    {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
+        <div class="bas-page">
+            <div class="mention-gauche">
+                <div>Ref. Offre : __________________</div>
+                <div style="margin-top:6px;">
+                    Conditions : voir au verso
                 </div>
-                <div class="nom">
-                    {{ $parametres->nom_ordonnateur ?? '' }}
+            </div>
+            <div class="signature">
+                <div class="signature-box">
+                    <div class="fonction">
+                        {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
+                    </div>
+                    <div class="nom">
+                        {{ $parametres->nom_ordonnateur ?? '' }}
+                    </div>
                 </div>
             </div>
         </div>
+
 </body>
 
 </html>

@@ -3,287 +3,235 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>{{ $config->nom }}</title>
+    <title>@yield('title', 'Document PDF')</title>
+
     <style>
         @page {
-            margin: 15mm 10mm;
             size: A4 portrait;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+            margin: 0mm 15mm 18mm 15mm;
         }
 
         body {
-            font-family: 'DejaVu Sans', 'Arial', sans-serif;
-            font-size: 10pt;
-            line-height: 1.3;
+            font-family: DejaVu Sans, Arial, sans-serif;
+            font-size: 9.5pt;
             color: #000;
         }
 
-        .container {
-            width: 100%;
-            max-width: 100%;
-            padding: 0 5px;
-        }
-
-        /* En-tête - Version simplifiée sans float */
-        .header {
-            margin-bottom: 10px;
-            width: 100%;
-        }
-
-        .header-row {
+        /* ================= HEADER ================= */
+        .header-table {
             width: 100%;
             border-collapse: collapse;
+            border: none;
+            margin-bottom: 12px;
         }
 
-        .header-row td {
-            vertical-align: top;
-            padding: 0 5px;
+        .header-table td {
+            border: none;
+            text-align: center;
+            vertical-align: middle;
         }
 
         .header-left {
-            width: 45%;
-            text-align: left;
+            width: 33%;
         }
 
         .header-center {
-            width: 10%;
-            text-align: center;
+            width: 34%;
         }
 
         .header-right {
-            width: 45%;
-            text-align: right;
+            width: 33%;
         }
 
-        .institution {
-            font-weight: bold;
-            font-size: 9pt;
-            margin-bottom: 2px;
+        .logo {
+            display: block;
+            max-width: 90px;
+            margin: 0 auto 4px auto;
         }
 
-        .etablissement {
+        .structure {
             font-weight: bold;
             font-size: 10pt;
-            color: #cc0000;
-            margin-bottom: 2px;
+            line-height: 1.2;
+            text-align: center;
         }
 
         .adresse {
             font-size: 8pt;
+            text-align: center;
+        }
+
+        .republique {
+            font-weight: bold;
+            font-size: 8.5pt;
             line-height: 1.2;
+            text-align: center;
         }
 
-        /* Titre du document */
-        .titre-document {
-            text-align: center;
-            font-size: 14pt;
-            font-weight: bold;
-            margin: 15px 0;
-            padding: 8px;
+        .commande-box {
             border: 2px solid #000;
-            text-transform: uppercase;
+            padding: 5px;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 6px;
         }
 
-        /* Styles communs */
-        table {
+        /* ================= INFOS ================= */
+        .info {
+            margin: 10px 0;
+            font-size: 8.8pt;
+        }
+
+        .info-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 8px 0;
+            margin-top: 10px;
+            font-size: 8.5pt;
         }
 
-        table.simple td,
-        table.simple th {
-            padding: 4px;
+        .info-table td {
+            border: none;
+            padding: 4px 6px;
             vertical-align: top;
-            word-wrap: break-word;
         }
 
-        table.bordered,
-        table.bordered td,
-        table.bordered th {
-            border: 1px solid #000;
-            padding: 6px;
-            word-wrap: break-word;
-        }
-
-        table.bordered th {
-            background-color: #f0f0f0;
-            font-weight: bold;
-        }
-
-        .label {
-            font-weight: bold;
+        .info-table .label {
             width: 35%;
+            font-weight: bold;
+            white-space: nowrap;
         }
 
-        .valeur {
+        .info-table .value {
             width: 65%;
-            word-wrap: break-word;
-        }
-
-        /* Montant */
-        .montant-box {
-            background-color: #f9f9f9;
-            border: 1px solid #ccc;
-            padding: 8px;
-            margin: 10px 0;
-        }
-
-        .montant-chiffres {
-            font-size: 12pt;
-            font-weight: bold;
-        }
-
-        .montant-lettres {
-            font-style: italic;
-            margin-top: 4px;
-            font-size: 9pt;
-        }
-
-        /* Imputation budgétaire */
-        .imputation-section {
-            margin: 10px 0;
-        }
-
-        .imputation-titre {
-            font-weight: bold;
-            margin-bottom: 8px;
-            font-size: 10pt;
-        }
-
-        /* Programme/Objectif/Action/Activité/Tâche */
-        .poaat-table {
-            border: 1px solid #000;
-            margin: 10px 0;
-        }
-
-        .poaat-table td {
-            padding: 6px;
-            border: 1px solid #000;
-            word-wrap: break-word;
-        }
-
-        .poaat-label {
-            font-weight: bold;
-            width: 22%;
-            background-color: #f0f0f0;
-        }
-
-        .poaat-valeur {
-            width: 78%;
-        }
-
-        /* Signatures */
-        .signature-zone {
-            margin-top: 30px;
-            page-break-inside: avoid;
-        }
-
-        .signature-row {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .signature-row td {
-            text-align: center;
-            vertical-align: top;
-            padding: 8px;
-        }
-
-        .signature-titre {
-            font-weight: bold;
-            margin-bottom: 50px;
-            text-decoration: underline;
-            font-size: 9pt;
-        }
-
-        .signature-nom {
-            font-style: italic;
-            font-size: 9pt;
-        }
-
-        /* Utilitaires */
-        .text-center {
-            text-align: center;
-        }
-
-        .text-right {
-            text-align: right;
-        }
-
-        .text-left {
             text-align: left;
         }
 
-        .font-bold {
+        /* ================= TABLE ================= */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 8.5pt;
+        }
+
+        th,
+        td {
+            border: 1px solid #000;
+            padding: 4px;
+        }
+
+        th {
+            background: #e6e6e6;
+            text-align: center;
             font-weight: bold;
         }
 
-        .font-italic {
-            font-style: italic;
+        td.num {
+            text-align: center;
+            white-space: nowrap;
         }
 
-        .mb-10 {
-            margin-bottom: 10px;
+        td.money {
+            text-align: right;
+            white-space: nowrap;
         }
 
-        .mb-15 {
-            margin-bottom: 15px;
+        td.designation {
+            word-break: break-word;
         }
 
-        .mb-20 {
-            margin-bottom: 20px;
-        }
-
-        .mt-10 {
+        /* ================= TOTAUX ================= */
+        .totaux {
+            width: 45%;
+            margin-left: auto;
             margin-top: 10px;
+            font-size: 8.8pt;
         }
 
-        .mt-15 {
-            margin-top: 15px;
+        .totaux table {
+            width: 100%;
         }
 
-        .mt-20 {
-            margin-top: 20px;
+        .totaux td {
+            border: none;
+            padding: 3px;
         }
 
-        /* Éviter les débordements */
-        p,
-        div,
-        span {
-            word-wrap: break-word;
-            overflow-wrap: break-word;
+        .total-final {
+            border: 2px solid #000;
+            font-weight: bold;
+            background: #e6e6e6;
         }
 
-        /* Styles spécifiques au document */
-        @yield('styles')
+        /* ================= FOOTER ================= */
+        .montant-lettres {
+            margin-top: 30px;
+            text-align: center;
+            font-style: italic;
+            font-size: 8.5pt;
+        }
+
+        .bas-page {
+            width: 100%;
+            margin-top: 35px;
+        }
+
+        .bas-page::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        .mention-gauche {
+            float: left;
+            width: 45%;
+            font-size: 8.5pt;
+            text-align: left;
+        }
+
+        .signature {
+            float: right;
+            width: 45%;
+            text-align: right;
+        }
+
+        .signature-box {
+            display: inline-block;
+            text-align: center;
+        }
+
+        .signature .fonction {
+            font-weight: bold;
+            margin-bottom: 45px;
+            font-size: 8.5pt;
+        }
+
+        .signature .nom {
+            border-top: 1px solid #000;
+            padding-top: 4px;
+            font-weight: bold;
+            font-size: 8.5pt;
+        }
+
+        @yield('additional_styles')
     </style>
 </head>
 
 <body>
-    <div class="container">
-        {{-- En-tête --}}
-        @include('pdf.layouts.header')
+    @php
+        $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+    @endphp
 
-        {{-- Titre du document --}}
-        <div class="titre-document">
-            {{ $config->nom }}
-        </div>
+    {{-- Header --}}
+    @include('pdf.partials.header')
 
-        {{-- Contenu principal --}}
+    {{-- Contenu principal --}}
+    <div class="content">
         @yield('content')
-
-        {{-- Pied de page (si nécessaire) --}}
-        @if (isset($config->pied_page_config['afficher']) && $config->pied_page_config['afficher'])
-            @include('pdf.layouts.footer')
-        @endif
     </div>
+
+    {{-- Footer --}}
+    @include('pdf.partials.footer')
 </body>
 
 </html>
