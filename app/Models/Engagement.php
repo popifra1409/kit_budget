@@ -264,4 +264,124 @@ class Engagement extends Model
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
+
+    /**
+     * Relation : Bon de commande (si créé via BC)
+     */
+    public function bonCommande(): BelongsTo
+    {
+        return $this->belongsTo(BonCommande::class, 'bon_commande_id');
+    }
+
+    /**
+     * Créer les ordonnances de paiement (Standard + Impôt)
+     */
+    public function creerOrdonnancesPaiement(): array
+    {
+        $ordonnances = [];
+
+        // Récupérer le BC lié via la relation
+        $bonCommande = $this->bonCommande;
+
+        $montantBrut = $this->montant_engage;
+        $montantIR = $bonCommande->montant_ir ?? 0;
+        $montantNet = $montantBrut - $montantIR;
+
+        // 1. OP Standard (pour le fournisseur)
+        $opStandard = \App\Models\OrdonnancePaiement::create([
+            'numero' => \App\Models\OrdonnancePaiement::genererNumero('standard'),
+            'exercice_id' => $this->exercice_id,
+            'type_ordonnance' => 'standard',
+            'engagement_id' => $this->id,
+            'beneficiaire_type' => $bonCommande ? get_class($bonCommande->fournisseur) : null,
+            'beneficiaire_id' => $bonCommande->fournisseur_id ?? null,
+            'objet' => $this->objet,
+            'montant_brut' => $montantBrut,
+            'montant_impot' => $montantIR,
+            'montant_net' => $montantNet,
+            'date_emission' => now(),
+            'mois_emission' => now()->format('m'),
+            'periode' => now()->format('m/Y'),
+            'statut' => 'brouillon',
+            'created_by' => auth()->id(),
+        ]);
+
+        $ordonnances['standard'] = $opStandard;
+
+        // 2. OP Impôt (si IR > 0)
+        if ($montantIR > 0) {
+            $opImpot = \App\Models\OrdonnancePaiement::create([
+                'numero' => \App\Models\OrdonnancePaiement::genererNumero('impot'),
+                'exercice_id' => $this->exercice_id,
+                'type_ordonnance' => 'impot',
+                'engagement_id' => $this->id,
+                'beneficiaire_type' => null, // Direction des Impôts
+                'beneficiaire_id' => null,
+                'objet' => "IMPOT SUR REVENU - " . $this->objet,
+                'montant_brut' => $montantBrut,
+                'montant_impot' => $montantIR,
+                'montant_net' => $montantIR, // Pour l'OP impôt, le net = montant impôt
+                'montant_pec' => $montantBrut - $montantIR,
+                'date_emission' => now(),
+                'mois_emission' => now()->format('m'),
+                'periode' => now()->format('m/Y'),
+                'statut' => 'brouillon',
+                'created_by' => auth()->id(),
+            ]);
+
+            $ordonnances['impot'] = $opImpot;
+        }
+
+        // 3. Ajouter les OP au dossier fournisseur si existe
+        if ($bonCommande) {
+            $dossier = \App\Models\DossierFournisseur::where('document_principal_type', get_class($bonCommande))
+                ->where('document_principal_id', $bonCommande->id)
+                ->first();
+
+            if ($dossier) {
+                // Ajouter OP Standard comme pièce
+                $dossier->ajouterPiece([
+                    'type_piece' => 'ordre_paiement',
+                    'document_type' => get_class($opStandard),
+                    'document_id' => $opStandard->id,
+                    'nom_fichier' => "OP-Standard-{$opStandard->numero}.pdf",
+                    'chemin_fichier' => '',
+                    'valide' => false,
+                ]);
+
+                // Ajouter OP Impôt comme pièce si existe
+                if (isset($ordonnances['impot'])) {
+                    $dossier->ajouterPiece([
+                        'type_piece' => 'piece_comptable',
+                        'document_type' => get_class($ordonnances['impot']),
+                        'document_id' => $ordonnances['impot']->id,
+                        'nom_fichier' => "OP-Impot-{$ordonnances['impot']->numero}.pdf",
+                        'chemin_fichier' => '',
+                        'valide' => false,
+                    ]);
+                }
+
+                // Mettre à jour le statut du dossier
+                $dossier->update(['statut' => 'attente_paiement']);
+            }
+        }
+
+        return $ordonnances;
+    }
+
+    /**
+     * Vérifier si l'engagement a déjà des OP
+     */
+    public function hasOrdonnancesPaiement(): bool
+    {
+        return \App\Models\OrdonnancePaiement::where('engagement_id', $this->id)->exists();
+    }
+
+    /**
+     * Obtenir les ordonnances de paiement liées
+     */
+    public function ordonnancesPaiement()
+    {
+        return $this->hasMany(\App\Models\OrdonnancePaiement::class);
+    }
 }

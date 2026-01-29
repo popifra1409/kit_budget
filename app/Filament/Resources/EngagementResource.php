@@ -580,6 +580,51 @@ class EngagementResource extends Resource
                             ->success()
                             ->send();
                     }),
+                Tables\Actions\Action::make('creer_ordonnances')
+                    ->label('Créer OP')
+                    ->icon('heroicon-o-banknotes')
+                    ->color('success')
+                    ->visible(fn($record) => !$record->hasOrdonnancesPaiement())
+                    ->requiresConfirmation()
+                    ->modalHeading('Créer les Ordonnances de Paiement')
+                    ->modalDescription('Cela va créer automatiquement l\'OP Standard (fournisseur) et l\'OP Impôt (si applicable)')
+                    ->action(function ($record) {
+                        try {
+                            $ordonnances = $record->creerOrdonnancesPaiement();
+
+                            $message = "OP créées : ";
+                            if (isset($ordonnances['standard'])) {
+                                $message .= "Standard ({$ordonnances['standard']->numero})";
+                            }
+                            if (isset($ordonnances['impot'])) {
+                                $message .= ", Impôt ({$ordonnances['impot']->numero})";
+                            }
+
+                            Notification::make()
+                                ->title('Ordonnances créées')
+                                ->success()
+                                ->body($message)
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Erreur')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('voir_ordonnances')
+                    ->label('Voir OP')
+                    ->icon('heroicon-o-eye')
+                    ->color('info')
+                    ->visible(fn($record) => $record->hasOrdonnancesPaiement())
+                    ->url(fn($record) => route('filament.admin.resources.ordonnance-paiements.index', [
+                        'tableFilters' => [
+                            'engagement_id' => ['value' => $record->id]
+                        ]
+                    ])),
+                    
                 // Groupe d'actions pour télécharger/aperçu
                 Tables\Actions\ActionGroup::make([
                     // Certificat d'engagement

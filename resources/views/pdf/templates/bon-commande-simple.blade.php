@@ -53,14 +53,14 @@
                 <td class="value">
                     {{ $bonCommande->engagement->nomenclaturePrincipale->code ?? '' }}
                     –
-                    {{ $bonCommande->engagement->objet ?? '' }}
+                    {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
                 </td>
             </tr>
 
             <tr>
                 <td class="label">OBJET :</td>
                 <td class="value">
-                    {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
+                    {{ $bonCommande->engagement->objet ?? '' }}
                 </td>
             </tr>
         </table>

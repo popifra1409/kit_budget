@@ -1,4 +1,4 @@
-@extends('pdf.layouts.master')
+@extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
 
 @php
     $engagement = $donnees['_raw'];
@@ -22,7 +22,6 @@
             font-size: 11pt;
             font-weight: bold;
             margin: 15px 0 20px 0;
-            text-decoration: underline;
         }
 
         .info-line {
@@ -35,16 +34,11 @@
             font-weight: bold;
         }
 
-        .section-box {
-            border: 1px solid #000;
-            padding: 8px;
-            margin: 10px 0;
-            font-size: 8.5pt;
-        }
-
-        .section-box .title {
+        .section-title {
             font-weight: bold;
-            margin-bottom: 6px;
+            font-size: 9pt;
+            margin: 15px 0 8px 0;
+            text-transform: uppercase;
         }
 
         .moyens-table {
@@ -61,28 +55,9 @@
         }
 
         .moyens-table td.label {
-            width: 30%;
+            width: 35%;
             font-weight: bold;
             background-color: #f0f0f0;
-        }
-
-        .visa-container {
-            width: 100%;
-            margin-top: 30px;
-        }
-
-        .visa-container table {
-            width: 100%;
-            border: none;
-        }
-
-        .visa-container td {
-            width: 50%;
-            border: none;
-            padding: 10px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 8.5pt;
         }
     </style>
 @endsection
@@ -139,52 +114,36 @@
         <strong>NIVEAU ACTUEL D'AVANCEMENT:</strong>
     </div>
 
-    {{-- Mise à disposition des moyens --}}
-    <div style="margin-top: 15px;">
-        <div style="font-weight: bold; font-size: 9pt; margin-bottom: 6px;">
-            MISE A DISPOSITION DES MOYENS
-        </div>
-
-        <table class="moyens-table">
-            <tr>
-                <td class="label">Autorisation de dépenses</td>
-                <td></td>
-            </tr>
-            <tr>
-                <td class="label">Imputation:</td>
-                <td>{{ $nomenclature->code }}</td>
-            </tr>
-            <tr>
-                <td class="label">N°BON:</td>
-                <td>{{ $engagement->reference_document ?? '' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Montant:</td>
-                <td>{{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa</td>
-            </tr>
-            <tr>
-                <td class="label">Date:</td>
-                <td>{{ $engagement->date_engagement ? \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') : '' }}
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Objet de la dépense:</td>
-                <td>{{ $engagement->objet }}</td>
-            </tr>
-        </table>
+    {{-- Section : Mise à disposition des moyens --}}
+    <div class="section-title">
+        MISE A DISPOSITION DES MOYENS
     </div>
 
-    {{-- Visas --}}
-    <div class="visa-container">
-        <table>
-            <tr>
-                <td>
-                    VISA DU RESPONSABLE DE LA TACHE
-                </td>
-                <td>
-                    VISA DE L'ORDONNATEUR.
-                </td>
-            </tr>
-        </table>
-    </div>
+    <table class="moyens-table">
+        <tr>
+            <td class="label">Autorisation de dépenses</td>
+            <td></td>
+        </tr>
+        <tr>
+            <td class="label">Imputation:</td>
+            <td>{{ $nomenclature->code }}</td>
+        </tr>
+        <tr>
+            <td class="label">N°BON:</td>
+            <td>{{ $engagement->reference_document ?? '' }}</td>
+        </tr>
+        <tr>
+            <td class="label">Montant:</td>
+            <td>{{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa</td>
+        </tr>
+        <tr>
+            <td class="label">Date:</td>
+            <td>{{ $engagement->date_engagement ? \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') : '' }}
+            </td>
+        </tr>
+        <tr>
+            <td class="label">Objet de la dépense:</td>
+            <td>{{ $engagement->objet }}</td>
+        </tr>
+    </table>
 @endsection

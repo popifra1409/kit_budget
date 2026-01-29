@@ -60,6 +60,10 @@ class Dashboard extends BaseDashboard
             \App\Filament\Widgets\ToutesLesTransmissionsWidget::class,
         ];
 
+        $profilWidgets = [
+            \App\Filament\Widgets\ChangerMotDePasseWidget::class,
+        ];
+
         // Widgets budgétaires
         $budgetWidgets = [
             \App\Filament\Widgets\ExerciceActifWidget::class,

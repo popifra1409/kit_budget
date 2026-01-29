@@ -1,4 +1,8 @@
-@extends('pdf.layouts.master')
+@extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
+
+@section('footer_override')
+    @include('pdf.partials.footer-engagement')
+@endsection
 
 @php
     $engagement = $donnees['_raw'];
@@ -172,9 +176,4 @@
             <td>{{ $tache->libelle ?? $nomenclature->libelle }}</td>
         </tr>
     </table>
-
-    {{-- Visa --}}
-    <div class="visa-section">
-        VISA DE L'ORDONNATEUR.
-    </div>
 @endsection

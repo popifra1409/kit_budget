@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use App\Traits\HasExercice;
+use App\Models\Engagement;
+use App\Models\BonCommande;
 
 class DossierFournisseur extends Model
 {
@@ -188,6 +190,57 @@ class DossierFournisseur extends Model
             'autre' => 'Autre',
             default => $this->type_dossier,
         };
+    }
+
+    /**
+     * Obtenir l'engagement principal du dossier
+     */
+    public function getEngagementPrincipal(): ?Engagement
+    {
+        // Si le document principal est un BC
+        if ($this->document_principal_type === BonCommande::class) {
+            $bc = BonCommande::find($this->document_principal_id);
+            return $bc?->engagement;
+        }
+
+        // Si le document principal est un engagement
+        if ($this->document_principal_type === Engagement::class) {
+            return Engagement::find($this->document_principal_id);
+        }
+
+        return null;
+    }
+
+    /**
+     * Vérifier si le dossier a des ordonnances de paiement
+     */
+    public function hasOrdonnancesPaiement(): bool
+    {
+        $engagement = $this->getEngagementPrincipal();
+
+        if (!$engagement) {
+            return false;
+        }
+
+        return \App\Models\OrdonnancePaiement::where('engagement_id', $engagement->id)->exists();
+    }
+
+    /**
+     * Créer les ordonnances de paiement depuis le dossier
+     */
+    public function creerOrdonnancesPaiement(): array
+    {
+        $engagement = $this->getEngagementPrincipal();
+
+        if (!$engagement) {
+            throw new \Exception("Aucun engagement trouvé pour ce dossier");
+        }
+
+        if ($engagement->hasOrdonnancesPaiement()) {
+            throw new \Exception("Les ordonnances de paiement existent déjà pour cet engagement");
+        }
+
+        return $engagement->creerOrdonnancesPaiement();
     }
 
     /*

@@ -7,6 +7,7 @@ use App\Models\BordereauEngagement;
 use App\Models\BonCommande;
 use App\Models\Engagement;
 use Illuminate\Http\Request;
+use App\Models\OrdonnancePaiement;
 
 class PdfDownloadController extends Controller
 {
@@ -26,6 +27,10 @@ class PdfDownloadController extends Controller
             // États liés aux Bons de Commande
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
+
+            // États liés aux Ordonnances de paiement
+            'ordonnance_paiement' => OrdonnancePaiement::class,
+            'ordonnance_paiement_impot' => OrdonnancePaiement::class,
         ];
 
         if (!isset($modelMap[$etat])) {
@@ -55,6 +60,12 @@ class PdfDownloadController extends Controller
                 'beneficiaire',
                 'lignes',
                 'engageable',
+            ])->findOrFail($id);
+        } elseif ($model === OrdonnancePaiement::class) {
+            $record = $model::with([
+                'engagement.nomenclaturePrincipale',
+                'engagement.bonCommande.fournisseur',
+                'beneficiaire',
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
             $record = $model::with([
@@ -84,6 +95,10 @@ class PdfDownloadController extends Controller
             // États liés aux Bons de Commande
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
+
+            // États liés aux Ordonnances de paiement ← AJOUTER CES 2 LIGNES
+            'ordonnance_paiement' => OrdonnancePaiement::class,
+            'ordonnance_paiement_impot' => OrdonnancePaiement::class,
         ];
 
         if (!isset($modelMap[$etat])) {
@@ -113,6 +128,12 @@ class PdfDownloadController extends Controller
                 'beneficiaire',
                 'lignes',
                 'engageable',
+            ])->findOrFail($id);
+        } elseif ($model === OrdonnancePaiement::class) {  // ← AJOUTER CE BLOC
+            $record = $model::with([
+                'engagement.nomenclaturePrincipale',
+                'engagement.bonCommande.fournisseur',
+                'beneficiaire',
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
             $record = $model::with([

@@ -278,7 +278,56 @@ class ViewDossierFournisseur extends ViewRecord
                             ->send();
                     }
                 }),
-                
+            // NOUVELLE ACTION : Créer les Ordonnances de Paiement
+            Actions\Action::make('creer_ordonnances')
+                ->label('Créer les OP')
+                ->icon('heroicon-o-banknotes')
+                ->color('primary')
+                ->visible(fn($record) => !$record->hasOrdonnancesPaiement() && $record->statut !== 'cloture')
+                ->requiresConfirmation()
+                ->modalHeading('Créer les Ordonnances de Paiement')
+                ->modalDescription('Cela va créer automatiquement l\'OP Standard (fournisseur) et l\'OP Impôt (si applicable). Les OP seront ajoutées au dossier.')
+                ->action(function () {
+                    try {
+                        $ordonnances = $this->record->creerOrdonnancesPaiement();
+
+                        $message = "OP créées : ";
+                        if (isset($ordonnances['standard'])) {
+                            $message .= "Standard ({$ordonnances['standard']->numero})";
+                        }
+                        if (isset($ordonnances['impot'])) {
+                            $message .= ", Impôt ({$ordonnances['impot']->numero})";
+                        }
+
+                        Notification::make()
+                            ->title('Ordonnances créées avec succès')
+                            ->success()
+                            ->body($message)
+                            ->send();
+
+                        return redirect()->to(static::getUrl(['record' => $this->record]));
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('Erreur')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->send();
+                    }
+                }),
+
+            // NOUVELLE ACTION : Voir les Ordonnances de Paiement
+            Actions\Action::make('voir_ordonnances')
+                ->label('Voir les OP')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->visible(fn($record) => $record->hasOrdonnancesPaiement())
+                ->url(function () {
+                    $engagement = $this->record->getEngagementPrincipal();
+                    return $engagement
+                        ? route('filament.admin.resources.ordonnance-paiements.index') . '?tableFilters[engagement_id][value]=' . $engagement->id
+                        : route('filament.admin.resources.ordonnance-paiements.index');
+                }),
+
             // Clôturer le dossier
             Actions\Action::make('cloturer')
                 ->label('Clôturer')

@@ -1,4 +1,8 @@
-@extends('pdf.layouts.master')
+@extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
+
+@section('footer_override')
+    @include('pdf.partials.footer-engagement')
+@endsection
 
 @php
     $engagement = $donnees['_raw'];
@@ -21,7 +25,7 @@
             text-align: center;
             font-size: 11pt;
             font-weight: bold;
-            margin: 15px auto 20px auto;
+            margin: 10px auto 20px auto;
             padding: 6px 12px;
 
             border: 1px solid #000;
@@ -35,7 +39,7 @@
         .section-title {
             font-weight: bold;
             font-size: 9pt;
-            margin: 12px 0 6px 0;
+            margin: 10px 0 6px 0;
         }
 
         .info-line {
@@ -50,7 +54,7 @@
 
         .hierarchie-table {
             width: 100%;
-            margin: 15px 0;
+            margin: 10px 0;
             border-collapse: collapse;
             font-size: 8.5pt;
         }
@@ -70,7 +74,7 @@
         }
 
         .visa-section {
-            margin-top: 40px;
+            margin-top: 20px;
             text-align: right;
             font-weight: bold;
             font-size: 9pt;
@@ -142,32 +146,27 @@
     </div>
 
     {{-- Tableau hiérarchique --}}
-        <table class="hierarchie-table">
-            <tr>
-                <th>PROGRAMME:</th>
-                <td>{{ $programme->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}</td>
-            </tr>
-            <tr>
-                <th>OBJECTIF:</th>
-                <td>{{ $programme->objectifsPrincipaux->libelle ?? ' la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
-                </td>
-            </tr>
-            <tr>
-                <th>ACTION:</th>
-                <td>{{ $action->libelle ?? 'Gestion budgétaire et financière' }}</td>
-            </tr>
-            <tr>
-                <th>ACTIVITÉ:</th>
-                <td>{{ $activite->libelle ?? 'Appuyer les services en consommables médicaux' }}</td>
-            </tr>
-            <tr>
-                <th>TACHE:</th>
-                <td>{{ $tache->libelle ?? 'Fourniture d\'Anatomopathologie' }}</td>
-            </tr>
-        </table>
-
-    {{-- Visa --}}
-    <div class="visa-section">
-        VISA DE L'ORDONNATEUR.
-    </div>
+    <table class="hierarchie-table">
+        <tr>
+            <th>PROGRAMME:</th>
+            <td>{{ $programme->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}</td>
+        </tr>
+        <tr>
+            <th>OBJECTIF:</th>
+            <td>{{ $programme->objectifsPrincipaux->libelle ?? ' la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
+            </td>
+        </tr>
+        <tr>
+            <th>ACTION:</th>
+            <td>{{ $action->libelle ?? 'Gestion budgétaire et financière' }}</td>
+        </tr>
+        <tr>
+            <th>ACTIVITÉ:</th>
+            <td>{{ $activite->libelle ?? 'Appuyer les services en consommables médicaux' }}</td>
+        </tr>
+        <tr>
+            <th>TACHE:</th>
+            <td>{{ $tache->sousTaches->libelle ?? 'Fourniture d\'Anatomopathologie' }}</td>
+        </tr>
+    </table>
 @endsection

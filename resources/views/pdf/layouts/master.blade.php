@@ -79,7 +79,6 @@
         /* ================= INFOS ================= */
         .doc-title-wrapper {
             text-align: center;
-            /* centre le bloc enfant */
             margin: 150px 0 20px 0;
         }
 
@@ -91,10 +90,8 @@
             font-weight: bold;
             margin: 15px 0 20px 0;
             border: 1px solid #000;
-            /* optionnel */
             padding: 6px 0;
-            /* optionnel */
-        }   
+        }
 
         .info-line {
             margin: 6px 0;
@@ -247,16 +244,24 @@
         $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
     @endphp
 
-    {{-- Header --}}
-    @include('pdf.partials.header')
+    {{-- Header personnalisable --}}
+    @if (isset($typeHeader) && View::exists("pdf.partials.header-{$typeHeader}"))
+        @include("pdf.partials.header-{$typeHeader}")
+    @else
+        @include('pdf.partials.header')
+    @endif
 
     {{-- Contenu principal --}}
     <div class="content">
         @yield('content')
     </div>
 
-    {{-- Footer --}}
-    @include('pdf.partials.footer')
+    {{-- Footer personnalisable --}}
+    @if (isset($typeFooter) && View::exists("pdf.partials.footer-{$typeFooter}"))
+        @include("pdf.partials.footer-{$typeFooter}")
+    @else
+        @include('pdf.partials.footer')
+    @endif
 </body>
 
 </html>
