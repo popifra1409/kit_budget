@@ -26,7 +26,7 @@ class RolePermissionSeeder extends Seeder
             'bordereau_engagement',
             'budget',
             'decision_administrative',
-            'dossier_fournisseur',      // ← AJOUTÉ
+            'dossier_fournisseur',
             'engagement',
             'etat_config',
             'exercice',
@@ -36,7 +36,7 @@ class RolePermissionSeeder extends Seeder
             'parametres_fournisseur',
             'parametres_structure',
             'permission',
-            'piece_dossier',            // ← AJOUTÉ
+            'piece_dossier',
             'prevision_recette',
             'programme',
             'recette_reelle',
@@ -72,6 +72,7 @@ class RolePermissionSeeder extends Seeder
             // Paramètres & Structure
             'activer_parametres_fournisseur',
             'blacklister_fournisseur',
+            'toggle_fournisseur',
             'activer_budget',
             'adopter_budget',
             'cloturer_budget',

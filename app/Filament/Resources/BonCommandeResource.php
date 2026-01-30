@@ -78,16 +78,11 @@ class BonCommandeResource extends Resource
      */
     public static function canEdit($record): bool
     {
-        if (!auth()->user()?->can('edit_bon_commande')) {
-            return false;
-        }
-
-        // Le super_admin peut tout modifier (optionnel)
-        if (auth()->user()->can('force_edit_bon_commande')) {
-            return true;
-        }
-
-        return $record->estModifiable();
+        return auth()->user()?->can('force_update_bon_commande')
+            || (
+                auth()->user()?->can('update_bon_commande')
+                && $record->statut === 'brouillon'
+            );
     }
 
     /**
@@ -95,11 +90,11 @@ class BonCommandeResource extends Resource
      */
     public static function canDelete($record): bool
     {
-        if (!auth()->user()?->can('delete_bon_commande')) {
-            return false;
-        }
-
-        return $record->estModifiable();
+        return auth()->user()?->can('force_delete_bon_commande')
+            || (
+                auth()->user()?->can('delete_bon_commande')
+                && $record->statut === 'brouillon'
+            );
     }
 
     /**

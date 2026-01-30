@@ -33,51 +33,27 @@ class FournisseurResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_any_fournisseur') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('create_fournisseur') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('update_fournisseur') ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->check() ? auth()->user()->hasRole('super_admin') : false;
+        return auth()->user()?->can('delete_fournisseur') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            // 'operateur_budget',
-            'chef_service_budget',
-            'sous_directeur_budget',
-            'directeur_general',
-            // 'controleur_financier',
-            // 'agence_comptable'
-        ]) : false;
+        return auth()->user()?->can('view_fournisseur') ?? false;
     }
 
     /**
@@ -85,10 +61,7 @@ class FournisseurResource extends Resource
      */
     public static function canActiver($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'chef_service_budget'
-        ]) : false;
+        return auth()->user()?->can('toggle_fournisseur') ?? false;
     }
 
     /**
@@ -96,10 +69,7 @@ class FournisseurResource extends Resource
      */
     public static function canBlacklister($record): bool
     {
-        return auth()->check() ? auth()->user()->hasAnyRole([
-            'super_admin',
-            'directeur_general'
-        ]) : false;
+        return auth()->user()?->can('blacklist_fournisseur') ?? false;
     }
 
     public static function form(Form $form): Form

@@ -77,6 +77,29 @@ class BonCommande extends Model
         });
     }
 
+    protected static function booted()
+    {
+        static::deleting(function ($bc) {
+            if (!auth()->user()?->hasRole('super_admin')) {
+                throw new \Exception(
+                    'Suppression interdite : réservé au super administrateur.'
+                );
+            }
+        });
+
+        static::updating(function ($bc) {
+            if (
+                $bc->isDirty() &&
+                $bc->getOriginal('statut') !== 'brouillon' &&
+                !auth()->user()?->hasRole('super_admin')
+            ) {
+                throw new \Exception(
+                    'Modification interdite : bon de commande non brouillon.'
+                );
+            }
+        });
+    }
+
     /**
      * Relation : Budget
      */
@@ -491,7 +514,7 @@ class BonCommande extends Model
      */
     public function estModifiable(): bool
     {
-        return in_array($this->statut, ['brouillon', 'valide']);
+        return trim(strtolower($this->statut)) === 'brouillon';
     }
 
     /**

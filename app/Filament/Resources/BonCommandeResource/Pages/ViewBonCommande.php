@@ -17,7 +17,11 @@ class ViewBonCommande extends ViewRecord
     {
         return [
             Actions\EditAction::make()
-                ->visible(fn($record) => $record->estModifiable()),
+                ->visible(false),
+
+            Actions\DeleteAction::make()
+                ->visible(fn() => static::getResource()::canDelete($this->record))
+                ->requiresConfirmation(),
 
             Actions\Action::make('valider')
                 ->label('Valider')
@@ -37,46 +41,17 @@ class ViewBonCommande extends ViewRecord
                 ->label('Engager le Budget')
                 ->icon('heroicon-o-banknotes')
                 ->color('primary')
-                ->visible(fn($record) => $record->statut === 'valide' && !$record->engage)
+                ->visible(fn($record) => $record->statut === 'valide' && ! $record->engage)
                 ->requiresConfirmation()
-                ->modalHeading('Engager le budget')
-                ->modalDescription(
-                    fn($record) =>
-                    "Engager le budget pour ce BC de " . number_format($record->montant_ttc, 0, ',', ' ') . " FCFA ? " .
-                        "Cette action consommera le budget des lignes budgétaires concernées."
-                )
-                ->action(function ($record) {
-                    try {
-                        $record->engagerBudget();
-                        Notification::make()
-                            ->title('Budget engagé avec succès')
-                            ->success()
-                            ->body('Le budget a été consommé sur les lignes budgétaires.')
-                            ->send();
-                    } catch (\Exception $e) {
-                        Notification::make()
-                            ->title('Erreur lors de l\'engagement')
-                            ->danger()
-                            ->body($e->getMessage())
-                            ->send();
-                    }
-                }),
+                ->action(fn($record) => $record->engagerBudget()),
 
             Actions\Action::make('annuler')
                 ->label('Annuler')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn($record) => !in_array($record->statut, ['annule', 'livre']))
+                ->visible(fn($record) => ! in_array($record->statut, ['annule', 'livre']))
                 ->requiresConfirmation()
-                ->modalHeading('Annuler le BC')
-                ->modalDescription('Êtes-vous sûr de vouloir annuler ce BC ? Si le budget est engagé, il sera désengagé automatiquement.')
-                ->action(function ($record) {
-                    $record->annuler();
-                    Notification::make()
-                        ->title('BC annulé')
-                        ->warning()
-                        ->send();
-                }),
+                ->action(fn($record) => $record->annuler()),
         ];
     }
 
@@ -86,6 +61,12 @@ class ViewBonCommande extends ViewRecord
             ->schema([
                 Infolists\Components\Section::make('Informations générales')
                     ->schema([
+                        Infolists\Components\TextEntry::make('verrou')
+                            ->label('')
+                            ->state(fn($record) => $record->estModifiable() ? null : '🔒 Document verrouillé')
+                            ->color('danger')
+                            ->visible(fn($record) => ! $record->estModifiable()),
+
                         Infolists\Components\TextEntry::make('numero')
                             ->label('Numéro BC')
                             ->copyable()
