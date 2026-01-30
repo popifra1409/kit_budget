@@ -1,11 +1,11 @@
 {{-- Montant en lettres --}}
-<div class="montant-lettres">
+{{-- <div class="montant-lettres">
     Arrêté le présent bon de commande à la somme de
     <strong>@yield('montant_lettres')</strong>
-</div>
+</div> --}}
 
 {{-- Bas de page avec mentions et signature --}}
-<div class="bas-page">
+{{-- <div class="bas-page">
     <div class="mention-gauche">
         <div>Ref. Offre : __________________</div>
         <div style="margin-top:6px;">
@@ -23,4 +23,4 @@
             </div>
         </div>
     </div>
-</div>
+</div> --}}

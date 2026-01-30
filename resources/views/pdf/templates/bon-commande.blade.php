@@ -13,7 +13,7 @@
     $prestataireTel = $donnees['prestataire_tel'] ?? ($bonCommande->fournisseur->telephone ?? '......................');
     $prestataireContribuable =
         $donnees['prestataire_contribuable'] ??
-        ($bonCommande->fournisseur->numero_contribuable ?? '........................');
+        ($bonCommande->fournisseur->nif ?? '........................');
 @endphp
 
 @section('title', 'BCA N° ' . $numeroBca)

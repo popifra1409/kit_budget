@@ -41,15 +41,18 @@ class NombreEnLettres
     /**
      * Convertir un nombre en lettres (français)
      */
-    public static function convertir($nombre, bool $majuscule = false, string $devise = 'F cfa'): string
+    public static function convertir($nombre, bool $majuscule = false, string $devise = 'Fcfa'): string
     {
         if (!is_numeric($nombre)) {
             return '';
         }
 
-        $nombre = floatval($nombre);
-        $entier = floor($nombre);
-        $decimal = round(($nombre - $entier) * 100);
+        // $nombre = floatval($nombre);
+        // $entier = floor($nombre);
+        // $decimal = round(($nombre - $entier) * 100);
+        $nombre = round(floatval($nombre)); // ARRONDI GLOBAL
+        $entier = $nombre;
+        $decimal = 0;
 
         $resultat = self::convertirEntier($entier);
 
@@ -144,14 +147,25 @@ class NombreEnLettres
             $dizaine = floor($nombre / 10);
             $unite = $nombre % 10;
 
-            $resultat .= self::$dizaines[$dizaine];
+            // Cas 70 et 90
+            if ($dizaine == 7 || $dizaine == 9) {
+                $base = ($dizaine == 7) ? 60 : 80;
+                $resultat .= self::$dizaines[$base / 10];
+                $reste = $nombre - $base;
 
-            if ($unite == 1 && $dizaine != 8) {
-                $resultat .= ' et un';
-            } elseif ($unite > 1) {
-                $resultat .= '-' . self::$unites[$unite];
-            } elseif ($dizaine == 8 && $unite == 0) {
-                $resultat .= 's';
+                if ($reste > 0) {
+                    $resultat .= '-' . self::convertirEntier($reste);
+                }
+            } else {
+                $resultat .= self::$dizaines[$dizaine];
+
+                if ($unite == 1 && $dizaine != 8) {
+                    $resultat .= ' et un';
+                } elseif ($unite > 0) {
+                    $resultat .= '-' . self::$unites[$unite];
+                } elseif ($dizaine == 8) {
+                    $resultat .= 's';
+                }
             }
         } elseif ($nombre > 0) {
             $resultat .= self::$unites[$nombre];
@@ -165,7 +179,7 @@ class NombreEnLettres
      */
     public static function montantCFA($montant): string
     {
-        return self::convertir($montant, true, 'F cfa');
+        return self::convertir($montant, true, 'Fcfa');
     }
 
     /**

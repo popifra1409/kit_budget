@@ -8,6 +8,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use App\Models\LigneBudgetaire;
+use Illuminate\Database\Eloquent\Model;
 
 class LignesRelationManager extends RelationManager
 {
@@ -18,10 +19,28 @@ class LignesRelationManager extends RelationManager
     protected static ?string $label = 'Ligne';
 
     protected static ?string $pluralLabel = 'Lignes';
+    
+
+    protected function canCreate(): bool
+    {
+        return $this->getOwnerRecord()->statut === 'brouillon';
+    }
+
+    protected function canEdit($record): bool
+    {
+        return $this->getOwnerRecord()->statut === 'brouillon';
+    }
+
+    protected function canDelete($record): bool
+    {
+        return $this->getOwnerRecord()->statut === 'brouillon';
+    }
+
 
     public function form(Form $form): Form
     {
         return $form
+            ->disabled(fn() => $this->getOwnerRecord()->statut !== 'brouillon')
             ->schema([
                 Forms\Components\Select::make('nomenclature_id')
                     ->label('Nomenclature budgétaire')
@@ -187,6 +206,7 @@ class LignesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\CreateAction::make()
                     ->label('Ajouter une ligne')
+                    ->visible(fn() => $this->getOwnerRecord()->statut === 'brouillon')
                     ->mutateFormDataUsing(function (array $data): array {
                         // Auto-incrémenter le numéro de ligne
                         $dernierNumero = $this->getOwnerRecord()

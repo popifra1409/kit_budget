@@ -195,7 +195,7 @@
 
         .bas-page {
             width: 100%;
-            margin-top: 30px;
+            margin-top: 70px;
         }
 
         .bas-page::after {
