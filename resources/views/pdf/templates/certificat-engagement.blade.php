@@ -166,7 +166,7 @@
         </tr>
         <tr>
             <th>TACHE:</th>
-            <td>{{ $tache->sousTaches->libelle ?? 'Fourniture d\'Anatomopathologie' }}</td>
+            <td>{{ $tache->libelle ?? $nomenclature->libelle }}</td>
         </tr>
     </table>
 @endsection
