@@ -79,7 +79,7 @@
         /* ================= INFOS ================= */
         .doc-title-wrapper {
             text-align: center;
-            margin: 150px 0 20px 0;
+            margin: 50px 0 20px 0;
         }
 
         .doc-title {
@@ -88,7 +88,7 @@
             text-align: center;
             font-size: 11pt;
             font-weight: bold;
-            margin: 15px 0 20px 0;
+            margin: 10px 0 20px 0;
             border: 1px solid #000;
             padding: 6px 0;
         }
@@ -187,7 +187,7 @@
 
         /* ================= FOOTER ================= */
         .montant-lettres {
-            margin-top: 30px;
+            margin-top: 20px;
             text-align: center;
             font-style: italic;
             font-size: 8.5pt;
@@ -195,7 +195,7 @@
 
         .bas-page {
             width: 100%;
-            margin-top: 35px;
+            margin-top: 30px;
         }
 
         .bas-page::after {
@@ -224,7 +224,7 @@
 
         .signature .fonction {
             font-weight: bold;
-            margin-bottom: 45px;
+            margin-bottom: 35px;
             font-size: 8.5pt;
         }
 

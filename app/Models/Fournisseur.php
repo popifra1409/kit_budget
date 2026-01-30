@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Fournisseur extends Model
 {
@@ -39,6 +40,7 @@ class Fournisseur extends Model
         'blackliste',
         'motif_blacklist',
         'observations',
+        'regime_fiscal_id',
     ];
 
     protected $casts = [
@@ -52,6 +54,26 @@ class Fournisseur extends Model
     public function bonsCommande(): HasMany
     {
         return $this->hasMany(BonCommande::class, 'fournisseur_id');
+    }
+
+    /**
+     * Relation : Régime fiscal
+     */
+    public function regimeFiscal(): BelongsTo
+    {
+        return $this->belongsTo(RegimeFiscal::class);
+    }
+
+    /**
+     * Calculer l'IR pour un montant donné
+     */
+    public function calculerIR(float $montantHT): float
+    {
+        if (!$this->regimeFiscal) {
+            return 0;
+        }
+
+        return $this->regimeFiscal->calculerIR($montantHT);
     }
 
     /**

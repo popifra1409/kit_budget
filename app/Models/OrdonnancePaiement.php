@@ -15,7 +15,7 @@ class OrdonnancePaiement extends Model
 
     protected $table = 'ordonnances_paiement';
 
-    protected $fillable = [
+     protected $fillable = [
         'numero',
         'exercice_id',
         'type_ordonnance',
@@ -115,22 +115,43 @@ class OrdonnancePaiement extends Model
     */
 
     /**
-     * Générer un numéro d'OP
+     * Générer un numéro d'OP basé sur le numéro d'engagement
+     */
+    public static function genererNumeroFromEngagement(Engagement $engagement, string $type = 'standard'): string
+    {
+        // Extraire les parties du numéro d'engagement (ex: BE-2026-00004)
+        $parts = explode('-', $engagement->numero);
+
+        if (count($parts) >= 3) {
+            $annee = $parts[1];
+            $numero = $parts[2];
+
+            $prefix = $type === 'impot' ? 'OPT' : 'OP';
+
+            return "{$prefix}-{$annee}-{$numero}";
+        }
+
+        // Fallback si le format est différent
+        return static::genererNumero($type);
+    }
+
+    /**
+     * Générer un numéro d'OP classique (fallback)
      */
     public static function genererNumero(string $type = 'standard'): string
     {
         $year = now()->year;
-        $prefix = $type === 'impot' ? 'OPI' : 'OP';
+        $prefix = $type === 'impot' ? 'OPT' : 'OP';
 
         $lastOp = static::where('numero', 'like', "{$prefix}-{$year}-%")
             ->latest('id')
             ->first();
 
         $numero = $lastOp
-            ? ((int) substr($lastOp->numero, -4)) + 1
+            ? ((int) substr($lastOp->numero, -5)) + 1
             : 1;
 
-        return sprintf('%s-%s-%04d', $prefix, $year, $numero);
+        return sprintf('%s-%s-%05d', $prefix, $year, $numero);
     }
 
     /**

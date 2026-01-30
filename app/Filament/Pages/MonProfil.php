@@ -5,12 +5,16 @@ namespace App\Filament\Pages;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Pages\Page;
+use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
-class MonProfil extends Page
+class MonProfil extends Page implements HasForms
 {
+    use InteractsWithForms;
+
     protected static ?string $navigationIcon = 'heroicon-o-user-circle';
 
     protected static string $view = 'filament.pages.mon-profil';
@@ -21,95 +25,32 @@ class MonProfil extends Page
 
     protected static ?int $navigationSort = 100;
 
-    public ?array $data = [];
+    // Données du profil
+    public ?string $name = '';
+    public ?string $email = '';
+
+    // Données du mot de passe
+    public ?string $current_password = '';
+    public ?string $password = '';
+    public ?string $password_confirmation = '';
 
     public function mount(): void
     {
-        $this->form->fill([
-            'name' => auth()->user()->name,
-            'email' => auth()->user()->email,
+        $this->name = auth()->user()->name;
+        $this->email = auth()->user()->email;
+    }
+
+    public function updateProfile(): void
+    {
+        $this->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . auth()->id(),
         ]);
-    }
-
-    public function form(Form $form): Form
-    {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Informations personnelles')
-                    ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->label('Nom complet')
-                            ->required()
-                            ->maxLength(255),
-
-                        Forms\Components\TextInput::make('email')
-                            ->label('Email')
-                            ->email()
-                            ->required()
-                            ->unique('users', 'email', ignoreRecord: true)
-                            ->maxLength(255),
-                    ])
-                    ->columns(2),
-
-                Forms\Components\Section::make('Changer le mot de passe')
-                    ->schema([
-                        Forms\Components\TextInput::make('current_password')
-                            ->label('Mot de passe actuel')
-                            ->password()
-                            ->revealable()
-                            ->required()
-                            ->currentPassword()
-                            ->dehydrated(false),
-
-                        Forms\Components\TextInput::make('password')
-                            ->label('Nouveau mot de passe')
-                            ->password()
-                            ->revealable()
-                            ->required()
-                            ->rule(Password::default())
-                            ->dehydrated(fn($state) => filled($state))
-                            ->live(debounce: 500)
-                            ->same('password_confirmation')
-                            ->helperText('Minimum 8 caractères'),
-
-                        Forms\Components\TextInput::make('password_confirmation')
-                            ->label('Confirmer le mot de passe')
-                            ->password()
-                            ->revealable()
-                            ->required()
-                            ->dehydrated(false),
-                    ])
-                    ->columns(3)
-                    ->description('Laissez vide si vous ne souhaitez pas changer votre mot de passe'),
-            ])
-            ->statePath('data');
-    }
-
-    public function save(): void
-    {
-        $data = $this->form->getState();
 
         $user = auth()->user();
-
-        // Mettre à jour les informations de base
-        $user->name = $data['name'];
-        $user->email = $data['email'];
-
-        // Mettre à jour le mot de passe si fourni
-        if (!empty($data['password'])) {
-            $user->password = Hash::make($data['password']);
-        }
-
+        $user->name = $this->name;
+        $user->email = $this->email;
         $user->save();
-
-        // Réinitialiser le formulaire
-        $this->form->fill([
-            'name' => $user->name,
-            'email' => $user->email,
-            'current_password' => '',
-            'password' => '',
-            'password_confirmation' => '',
-        ]);
 
         Notification::make()
             ->title('Profil mis à jour')
@@ -118,12 +59,27 @@ class MonProfil extends Page
             ->send();
     }
 
-    protected function getFormActions(): array
+    public function updatePassword(): void
     {
-        return [
-            Forms\Components\Actions\Action::make('save')
-                ->label('Enregistrer les modifications')
-                ->submit('save'),
-        ];
+        $this->validate([
+            'current_password' => 'required|current_password',
+            'password' => ['required', Password::default(), 'same:password_confirmation'],
+            'password_confirmation' => 'required',
+        ]);
+
+        $user = auth()->user();
+        $user->password = Hash::make($this->password);
+        $user->save();
+
+        // Réinitialiser les champs
+        $this->current_password = '';
+        $this->password = '';
+        $this->password_confirmation = '';
+
+        Notification::make()
+            ->title('Mot de passe modifié')
+            ->success()
+            ->body('Votre mot de passe a été changé avec succès.')
+            ->send();
     }
 }

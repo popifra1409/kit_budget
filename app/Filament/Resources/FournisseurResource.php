@@ -10,6 +10,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use App\Models\RegimeFiscal;
 
 class FournisseurResource extends Resource
 {
@@ -139,6 +140,44 @@ class FournisseurResource extends Resource
                             ->label('Forme juridique')
                             ->maxLength(255)
                             ->placeholder('Ex: SARL, SA, EI'),
+
+                        Forms\Components\Section::make('Informations fiscales')
+                            ->schema([
+                                Forms\Components\Select::make('regime_fiscal_id')
+                                    ->label('Régime fiscal')
+                                    ->relationship('regimeFiscal', 'libelle')
+                                    ->options(RegimeFiscal::actifs()->pluck('libelle', 'id'))
+                                    ->searchable()
+                                    ->preload()
+                                    ->required()
+                                    ->helperText(function ($get) {
+                                        $regimeId = $get('regime_fiscal_id');
+                                        if ($regimeId) {
+                                            $regime = RegimeFiscal::find($regimeId);
+                                            if ($regime) {
+                                                return "Taux IR par défaut : {$regime->taux_ir_defaut}%";
+                                            }
+                                        }
+                                        return 'Sélectionnez le régime fiscal du fournisseur';
+                                    })
+                                    ->live(),
+
+                                Forms\Components\Placeholder::make('info_regime')
+                                    ->label('Information')
+                                    ->content(function ($get) {
+                                        $regimeId = $get('regime_fiscal_id');
+                                        if ($regimeId) {
+                                            $regime = RegimeFiscal::find($regimeId);
+                                            if ($regime) {
+                                                return $regime->description;
+                                            }
+                                        }
+                                        return '';
+                                    })
+                                    ->visible(fn($get) => filled($get('regime_fiscal_id'))),
+                            ])
+                            ->columns(1)
+                            ->collapsible(),
 
                         Forms\Components\Select::make('type')
                             ->label('Type de fournisseur')
@@ -282,6 +321,18 @@ class FournisseurResource extends Resource
                     ->searchable()
                     ->placeholder('-')
                     ->toggleable(),
+
+                Tables\Columns\TextColumn::make('regimeFiscal.libelle')
+                    ->label('Régime fiscal')
+                    ->badge()
+                    ->color(fn($record) => match ($record->regimeFiscal?->code) {
+                        'IGS' => 'success',
+                        'REEL' => 'primary',
+                        'EXONERE' => 'warning',
+                        default => 'gray',
+                    })
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\BadgeColumn::make('type')
                     ->label('Type')

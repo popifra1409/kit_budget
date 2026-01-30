@@ -280,30 +280,67 @@ class Engagement extends Model
     {
         $ordonnances = [];
 
-        // Récupérer le BC lié via la relation
+        // Récupérer le BC lié via la relation (peut être null)
         $bonCommande = $this->bonCommande;
 
+        // Déterminer le fournisseur/bénéficiaire
+        $beneficiaire = null;
+        $montantIR = 0;
+
+        if ($bonCommande) {
+            // Via Bon de Commande
+            $beneficiaire = $bonCommande->fournisseur;
+            $montantIR = $bonCommande->montant_ir ?? 0;
+        } else {
+            // Engagement direct (sans BC)
+            // Le bénéficiaire peut être défini dans l'engagement lui-même
+            $beneficiaire = $this->beneficiaire ?? $this->engageable;
+        }
+
+        if (!$beneficiaire) {
+            throw new \Exception("Aucun bénéficiaire trouvé pour cet engagement. Veuillez définir un bénéficiaire.");
+        }
+
         $montantBrut = $this->montant_engage;
-        $montantIR = $bonCommande->montant_ir ?? 0;
         $montantNet = $montantBrut - $montantIR;
 
-        // 1. OP Standard (pour le fournisseur)
+        // Log pour debug
+        \Log::info('Création OP', [
+            'engagement_id' => $this->id,
+            'a_bon_commande' => $bonCommande ? 'OUI' : 'NON',
+            'beneficiaire_id' => $beneficiaire->id,
+            'beneficiaire_class' => get_class($beneficiaire),
+            'beneficiaire_nom' => $beneficiaire->raison_sociale ?? $beneficiaire->name,
+            'montant_ir' => $montantIR,
+        ]);
+
+        // 1. OP Standard (pour le fournisseur/bénéficiaire)
         $opStandard = \App\Models\OrdonnancePaiement::create([
-            'numero' => \App\Models\OrdonnancePaiement::genererNumero('standard'),
+            'numero' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'standard'),
             'exercice_id' => $this->exercice_id,
             'type_ordonnance' => 'standard',
             'engagement_id' => $this->id,
-            'beneficiaire_type' => $bonCommande ? get_class($bonCommande->fournisseur) : null,
-            'beneficiaire_id' => $bonCommande->fournisseur_id ?? null,
+            'beneficiaire_type' => get_class($beneficiaire),
+            'beneficiaire_id' => $beneficiaire->id,
             'objet' => $this->objet,
             'montant_brut' => $montantBrut,
             'montant_impot' => $montantIR,
             'montant_net' => $montantNet,
             'date_emission' => now(),
             'mois_emission' => now()->format('m'),
+            'numero_bon' => $bonCommande->numero ?? null,
+            'numero_emission' => $this->numero ?? null,
+            'numero_op' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'standard'),
             'periode' => now()->format('m/Y'),
             'statut' => 'brouillon',
             'created_by' => auth()->id(),
+        ]);
+
+        // Vérifier que le bénéficiaire a bien été enregistré
+        \Log::info('OP créée', [
+            'op_id' => $opStandard->id,
+            'beneficiaire_type_saved' => $opStandard->beneficiaire_type,
+            'beneficiaire_id_saved' => $opStandard->beneficiaire_id,
         ]);
 
         $ordonnances['standard'] = $opStandard;
@@ -311,19 +348,22 @@ class Engagement extends Model
         // 2. OP Impôt (si IR > 0)
         if ($montantIR > 0) {
             $opImpot = \App\Models\OrdonnancePaiement::create([
-                'numero' => \App\Models\OrdonnancePaiement::genererNumero('impot'),
+                'numero' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'impot'),
                 'exercice_id' => $this->exercice_id,
                 'type_ordonnance' => 'impot',
                 'engagement_id' => $this->id,
-                'beneficiaire_type' => null, // Direction des Impôts
+                'beneficiaire_type' => null,
                 'beneficiaire_id' => null,
-                'objet' => "IMPOT SUR REVENU - " . $this->objet,
-                'montant_brut' => $montantBrut,
-                'montant_impot' => $montantIR,
-                'montant_net' => $montantIR, // Pour l'OP impôt, le net = montant impôt
-                'montant_pec' => $montantBrut - $montantIR,
+                'objet' => "Reversement AIR",
+                'montant_brut' => $montantIR,
+                'montant_impot' => 0,
+                'montant_net' => $montantIR,
+                'montant_pec' => $montantNet,
                 'date_emission' => now(),
                 'mois_emission' => now()->format('m'),
+                'numero_bon' => $bonCommande->numero ?? null,
+                'numero_emission' => $this->numero ?? null,
+                'numero_op' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'impot'),
                 'periode' => now()->format('m/Y'),
                 'statut' => 'brouillon',
                 'created_by' => auth()->id(),
@@ -339,29 +379,26 @@ class Engagement extends Model
                 ->first();
 
             if ($dossier) {
-                // Ajouter OP Standard comme pièce
                 $dossier->ajouterPiece([
                     'type_piece' => 'ordre_paiement',
                     'document_type' => get_class($opStandard),
                     'document_id' => $opStandard->id,
-                    'nom_fichier' => "OP-Standard-{$opStandard->numero}.pdf",
+                    'nom_fichier' => "OP-{$opStandard->numero}.pdf",
                     'chemin_fichier' => '',
                     'valide' => false,
                 ]);
 
-                // Ajouter OP Impôt comme pièce si existe
                 if (isset($ordonnances['impot'])) {
                     $dossier->ajouterPiece([
                         'type_piece' => 'piece_comptable',
                         'document_type' => get_class($ordonnances['impot']),
                         'document_id' => $ordonnances['impot']->id,
-                        'nom_fichier' => "OP-Impot-{$ordonnances['impot']->numero}.pdf",
+                        'nom_fichier' => "OPT-{$ordonnances['impot']->numero}.pdf",
                         'chemin_fichier' => '',
                         'valide' => false,
                     ]);
                 }
 
-                // Mettre à jour le statut du dossier
                 $dossier->update(['statut' => 'attente_paiement']);
             }
         }

@@ -95,15 +95,39 @@ class ViewOrdonnancePaiement extends ViewRecord
                             ->label('Période'),
 
                         Infolists\Components\TextEntry::make('numero_bon')
-                            ->label('N° Bon de caisse'),
+                            ->label('N° Bon de caisse')
+                            ->placeholder('-'),
 
                         Infolists\Components\TextEntry::make('numero_emission')
-                            ->label('N° d\'émission'),
+                            ->label('N° d\'émission')
+                            ->placeholder('-'),
 
                         Infolists\Components\TextEntry::make('numero_op')
-                            ->label('N° OP'),
+                            ->label('N° OP')
+                            ->placeholder('-'),
                     ])
                     ->columns(3),
+
+                // Bénéficiaire
+                Infolists\Components\Section::make('Bénéficiaire')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('beneficiaire.raison_sociale')
+                            ->label('Raison sociale')
+                            ->default(fn($record) => $record->beneficiaire?->name ?? 'Direction des Impôts')
+                            ->placeholder('Direction des Impôts'),
+
+                        Infolists\Components\TextEntry::make('beneficiaire.telephone')
+                            ->label('Téléphone')
+                            ->placeholder('-')
+                            ->visible(fn($record) => $record->beneficiaire),
+
+                        Infolists\Components\TextEntry::make('beneficiaire.email')
+                            ->label('Email')
+                            ->placeholder('-')
+                            ->visible(fn($record) => $record->beneficiaire),
+                    ])
+                    ->columns(3)
+                    ->collapsible(),
 
                 // Paiement
                 Infolists\Components\Section::make('Informations de paiement')
@@ -118,7 +142,8 @@ class ViewOrdonnancePaiement extends ViewRecord
                             ->placeholder('Non renseignée'),
                     ])
                     ->columns(2)
-                    ->visible(fn($record) => $record->statut === 'payee'),
+                    ->visible(fn($record) => $record->statut === 'payee')
+                    ->collapsible(),
 
                 // Observations
                 Infolists\Components\Section::make('Observations')
@@ -131,43 +156,6 @@ class ViewOrdonnancePaiement extends ViewRecord
                     ->collapsible()
                     ->collapsed()
                     ->visible(fn($record) => $record->observations),
-                // Ordonnances de paiement liées
-                Infolists\Components\Section::make('Ordonnances de Paiement')
-                    ->schema([
-                        Infolists\Components\RepeatableEntry::make('ordonnancesPaiement')
-                            ->label('')
-                            ->schema([
-                                Infolists\Components\TextEntry::make('numero')
-                                    ->label('N° OP')
-                                    ->badge()
-                                    ->color('primary'),
-
-                                Infolists\Components\TextEntry::make('type_ordonnance')
-                                    ->label('Type')
-                                    ->formatStateUsing(fn($state) => match ($state) {
-                                        'standard' => 'Standard',
-                                        'impot' => 'Impôt',
-                                        default => $state,
-                                    })
-                                    ->badge(),
-
-                                Infolists\Components\TextEntry::make('montant_net')
-                                    ->label('Montant')
-                                    ->money('XAF'),
-
-                                Infolists\Components\TextEntry::make('statut_label')
-                                    ->label('Statut')
-                                    ->badge()
-                                    ->color(fn($record) => $record->statut_color),
-
-                                Infolists\Components\TextEntry::make('date_emission')
-                                    ->label('Date')
-                                    ->date('d/m/Y'),
-                            ])
-                            ->columns(5),
-                    ])
-                    ->collapsible()
-                    ->visible(fn($record) => $record->ordonnancesPaiement()->exists()),
             ]);
     }
 
@@ -175,6 +163,28 @@ class ViewOrdonnancePaiement extends ViewRecord
     {
         return [
             Actions\EditAction::make(),
+
+            // Télécharger OP
+            Actions\Action::make('telecharger')
+                ->label('Télécharger PDF')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('success')
+                ->url(fn($record) => route('pdf.telecharger', [
+                    'etat' => $record->type_ordonnance === 'impot' ? 'ordonnance_paiement_impot' : 'ordonnance_paiement',
+                    'id' => $record->id
+                ])),
+
+            // Aperçu OP
+            Actions\Action::make('apercu')
+                ->label('Aperçu PDF')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->url(fn($record) => route('pdf.afficher', [
+                    'etat' => $record->type_ordonnance === 'impot' ? 'ordonnance_paiement_impot' : 'ordonnance_paiement',
+                    'id' => $record->id
+                ]))
+                ->openUrlInNewTab(),
+
             Actions\DeleteAction::make(),
         ];
     }

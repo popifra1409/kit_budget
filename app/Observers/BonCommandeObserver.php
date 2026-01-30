@@ -92,7 +92,8 @@ class BonCommandeObserver
         $filename = "{$etatCode}-{$record->id}-" . time() . ".pdf";
         $path = "dossiers-fournisseurs/{$filename}";
 
-        \Storage::put($path, $pdfContent);
+        // ✅ CORRECTION : Utiliser put() avec le contenu du PDF
+        \Storage::disk('public')->put($path, $pdfContent);
 
         return $path;
     }
