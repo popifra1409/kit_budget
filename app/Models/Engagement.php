@@ -268,10 +268,16 @@ class Engagement extends Model
     /**
      * Relation : Bon de commande (si créé via BC)
      */
-    public function bonCommande(): BelongsTo
+    // public function bonCommande(): BelongsTo
+    // {
+    //     return $this->belongsTo(BonCommande::class, 'bon_commande_id');
+    // }
+
+    public function bonCommande()
     {
-        return $this->belongsTo(BonCommande::class, 'bon_commande_id');
+        return $this->hasOne(BonCommande::class, 'engagement_id');
     }
+
 
     /**
      * Créer les ordonnances de paiement (Standard + Impôt)

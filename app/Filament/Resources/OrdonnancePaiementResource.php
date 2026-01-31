@@ -72,20 +72,25 @@ class OrdonnancePaiementResource extends Resource
                             ->preload()
                             ->live()
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state) {
-                                    $engagement = Engagement::with('bonCommande')->find($state);
-                                    if ($engagement) {
-                                        $set('objet', $engagement->objet);
-                                        $set('montant_brut', $engagement->montant_engage);
+                                if (!$state) {
+                                    return;
+                                }
 
-                                        // Calcul automatique pour standard
-                                        if ($engagement->bonCommande) {
-                                            $ir = $engagement->bonCommande->montant_ir ?? 0;
-                                            $net = $engagement->montant_engage - $ir;
-                                            $set('montant_impot', $ir);
-                                            $set('montant_net', $net);
-                                        }
-                                    }
+                                $engagement = Engagement::with('engageable')->find($state);
+
+                                if (
+                                    $engagement &&
+                                    $engagement->engageable instanceof \App\Models\BonCommande
+                                ) {
+                                    $bc = $engagement->engageable;
+
+                                    $ir = $bc->montant_ir ?? 0;
+                                    $net = $engagement->montant_engage - $ir;
+
+                                    $set('objet', $bc->objet);
+                                    $set('montant_brut', $engagement->montant_engage);
+                                    $set('montant_impot', $ir);
+                                    $set('montant_net', $net);
                                 }
                             }),
 

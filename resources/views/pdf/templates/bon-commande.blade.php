@@ -12,8 +12,7 @@
     $prestataireAdresse = $donnees['prestataire_adresse'] ?? ($bonCommande->fournisseur->adresse ?? '...............');
     $prestataireTel = $donnees['prestataire_tel'] ?? ($bonCommande->fournisseur->telephone ?? '......................');
     $prestataireContribuable =
-        $donnees['prestataire_contribuable'] ??
-        ($bonCommande->fournisseur->nif ?? '........................');
+        $donnees['prestataire_contribuable'] ?? ($bonCommande->fournisseur->nif ?? '........................');
 @endphp
 
 @section('title', 'BCA N° ' . $numeroBca)
@@ -166,6 +165,9 @@
 
     {{-- Section: Pour les objets et matières ci-après --}}
     <div class="text-center font-bold mb-15">
+        BON DE COMMANDE ADMINISTRATIF
+    </div>
+       <div class="text-center font-bold mb-15">
         Pour les objets et matières ci-après:
     </div>
 
@@ -222,7 +224,6 @@
     {{-- Section totaux --}}
     <div class="totaux-section">
         <p class="font-bold mb-10">Les parties arrêtent la présente commande à:</p>
-
         <table class="totaux-table simple">
             <tr>
                 <td class="label">Prix total HT</td>

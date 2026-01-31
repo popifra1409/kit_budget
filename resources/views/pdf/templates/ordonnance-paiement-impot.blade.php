@@ -100,7 +100,7 @@ $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
                         </td>
                         <td
                             style="padding: 2px 4px; text-align: center; font-size: 10pt; font-weight: bold; line-height: 1.2;">
-                            {{ number_format($ordonnance->montant_net, 0, ',', ' ') }}
+                            {{ number_format($ordonnance->montant_ir, 0, ',', ' ') }}
                         </td>
                     </tr>
                 </table>
@@ -147,7 +147,7 @@ $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
                         <td style="padding: 2px 0; width: 35%; text-align: right;">
                             <div
                                 style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; line-height: 1.2;">
-                                {{ number_format($ordonnance->montant_ir, 0, ',', ' ') }}
+                                {{ number_format($ordonnance->montant_impot, 0, ',', ' ') }}
                             </div>
                         </td>
                     </tr>

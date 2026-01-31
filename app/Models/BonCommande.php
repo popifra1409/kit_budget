@@ -316,7 +316,7 @@ class BonCommande extends Model
                 'date_engagement' => now(),
                 'exercice' => now()->year,
                 'objet' => $this->objet,
-                'montant_engage' => $netAPayer,
+                'montant_engage' => $this->montant_ttc,
                 'statut' => 'provisoire',
             ]);
 

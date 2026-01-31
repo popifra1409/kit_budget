@@ -83,16 +83,34 @@ class BonCommandeObserver
     /**
      * Générer et sauvegarder un PDF dans le dossier
      */
+    // protected function genererEtSauvegarderPdf($record, string $etatCode): string
+    // {
+    //     $pdfGenerator = app(\App\Services\PdfGenerator\PdfGenerator::class);
+    //     $pdfContent = $pdfGenerator->generer($etatCode, $record);
+
+    //     // Sauvegarder dans storage
+    //     $filename = "{$etatCode}-{$record->id}-" . time() . ".pdf";
+    //     $path = "dossiers-fournisseurs/{$filename}";
+
+    //     // ✅ CORRECTION : Utiliser put() avec le contenu du PDF
+    //     \Storage::disk('public')->put($path, $pdfContent);
+
+    //     return $path;
+    // }
     protected function genererEtSauvegarderPdf($record, string $etatCode): string
     {
         $pdfGenerator = app(\App\Services\PdfGenerator\PdfGenerator::class);
-        $pdfContent = $pdfGenerator->generer($etatCode, $record);
+
+        // ✅ récupérer l'objet PDF
+        $pdf = $pdfGenerator->generer($etatCode, $record);
+
+        // ✅ convertir en string binaire
+        $pdfContent = $pdf->output();
 
         // Sauvegarder dans storage
         $filename = "{$etatCode}-{$record->id}-" . time() . ".pdf";
         $path = "dossiers-fournisseurs/{$filename}";
 
-        // ✅ CORRECTION : Utiliser put() avec le contenu du PDF
         \Storage::disk('public')->put($path, $pdfContent);
 
         return $path;
