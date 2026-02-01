@@ -44,6 +44,8 @@ class DecisionAdministrative extends Model
         'montant_engage',
         'date_engagement',
         'observations',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [
@@ -60,6 +62,49 @@ class DecisionAdministrative extends Model
         'montant_engage' => 'decimal:2',
         'engagee' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function ($decision) {
+            if (!$decision->numero) {
+                $decision->numero = $decision->genererNumero();
+            }
+
+            // Assigner automatiquement le créateur
+            if (!$decision->created_by) {
+                $decision->created_by = auth()->id();
+            }
+        });
+
+        static::updating(function ($decision) {
+            // Assigner automatiquement le modificateur
+            $decision->updated_by = auth()->id();
+
+            // Vérifier les permissions
+            if (
+                $decision->isDirty() &&
+                $decision->getOriginal('statut') !== 'brouillon' &&
+                !auth()->user()?->hasRole('super_admin')
+            ) {
+                throw new \Exception('Modification interdite : décision non brouillon.');
+            }
+
+            // Bloquer si en cours de transmission
+            if ($decision->estEnCoursDeTransmission() && !auth()->user()?->can('force_update_decision_administrative')) {
+                throw new \Exception('Modification interdite : décision en cours de transmission.');
+            }
+        });
+
+        static::deleting(function ($decision) {
+            if (!auth()->user()?->hasRole('super_admin')) {
+                throw new \Exception('Suppression interdite : réservé au super administrateur.');
+            }
+
+            if ($decision->engage) {
+                throw new \Exception('Suppression interdite : décision déjà engagée. Annulez-la d\'abord.');
+            }
+        });
+    }
 
     /**
      * Boot - Générer le numéro et calculer automatiquement
@@ -353,12 +398,20 @@ class DecisionAdministrative extends Model
      */
     public function getNomCompletPersonnel(): string
     {
-        if ($this->personnel) {
-            return $this->personnel->name;
+        if ($this->personnel && !empty($this->personnel->nom_complet)) {
+            return $this->personnel->nom_complet;
         }
 
-        return $this->nom_personnel ?? 'N/A';
+        if (!empty($this->personnel_id_ancien)) {
+            $user = User::find($this->personnel_id_ancien);
+            if ($user && !empty($user->name)) {
+                return $user->name;
+            }
+        }
+
+        return ''; // valeur par défaut obligatoire
     }
+
 
     public function getActivitylogOptions(): LogOptions
     {
@@ -367,5 +420,173 @@ class DecisionAdministrative extends Model
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
+    }
+
+    /**
+     * Relation polymorphique : Transmissions
+     */
+    public function transmissions()
+    {
+        return $this->morphMany(Transmission::class, 'document');
+    }
+
+    /**
+     * Vérifier si la décision est en cours de transmission
+     */
+    public function estEnCoursDeTransmission(): bool
+    {
+        return $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->exists();
+    }
+
+    /**
+     * Vérifier si l'utilisateur actuel est le destinataire
+     */
+    public function estDestinataireActuel(): bool
+    {
+        $transmissionEnCours = $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+
+        return $transmissionEnCours
+            && $transmissionEnCours->destinataire_id === auth()->id();
+    }
+
+    /**
+     * Vérifier si peut être vu par l'utilisateur
+     */
+    public function peutEtreVuPar(?int $userId = null): bool
+    {
+        $userId = $userId ?? auth()->id();
+
+        // Super admin peut tout voir
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Si pas de transmission en cours, tout le monde peut voir
+        if (!$this->estEnCoursDeTransmission()) {
+            return true;
+        }
+
+        // Si en cours de transmission, seul le destinataire actuel peut voir
+        return $this->estDestinataireActuel();
+    }
+
+    /**
+     * Méthodes de transmission (trait Transmissible)
+     */
+    public function transmettreA(
+        User $destinataire,
+        string $actionAttendue,
+        ?string $commentaire = null,
+        array $metadata = []
+    ): Transmission {
+        if ($this->estEnCoursDeTransmission()) {
+            throw new \Exception('Cette décision est déjà en cours de transmission.');
+        }
+
+        $transmission = new Transmission([
+            'document_type' => static::class,
+            'document_id' => $this->id,
+            'expediteur_id' => auth()->id(),
+            'destinataire_id' => $destinataire->id,
+            'action_attendue' => $actionAttendue,
+            'commentaire' => $commentaire,
+            'statut' => 'en_attente',
+            'priorite' => $metadata['priorite'] ?? 'normale',
+            'date_limite' => $metadata['date_limite'] ?? null,
+            'date_transmission' => now(), // ✅ OBLIGATOIRE
+            'metadata' => $metadata,
+        ]);
+
+        $transmission->save();
+
+        activity()
+            ->performedOn($this)
+            ->causedBy(auth()->user())
+            ->withProperties(['destinataire' => $destinataire->name])
+            ->log('Décision transmise');
+
+        return $transmission;
+    }
+
+    public function retournerPourCorrection(string $motif): void
+    {
+        $transmission = $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+
+        if (!$transmission || $transmission->destinataire_id !== auth()->id()) {
+            throw new \Exception('Vous n\'êtes pas le destinataire de cette transmission.');
+        }
+
+        $transmission->statut = 'retourne';
+        $transmission->date_traitement = now();
+        $transmission->reponse = $motif;
+        $transmission->save();
+
+        activity()
+            ->performedOn($this)
+            ->causedBy(auth()->user())
+            ->withProperties(['motif' => $motif])
+            ->log('Décision retournée pour correction');
+    }
+
+    public function cloturerTransmission(?string $reponse = null): void
+    {
+        $transmission = $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+
+        if (!$transmission || $transmission->destinataire_id !== auth()->id()) {
+            throw new \Exception('Vous n\'êtes pas le destinataire de cette transmission.');
+        }
+
+        $transmission->statut = 'traite';
+        $transmission->date_traitement = now();
+        $transmission->reponse = $reponse;
+        $transmission->save();
+
+        activity()
+            ->performedOn($this)
+            ->causedBy(auth()->user())
+            ->log('Transmission clôturée');
+    }
+
+    public function peutEtreTransmis(): bool
+    {
+        // Ne peut pas transmettre si déjà en cours de transmission
+        if ($this->estEnCoursDeTransmission()) {
+            return false;
+        }
+
+        // Peut transmettre si brouillon ou validé
+        return in_array($this->statut, ['brouillon', 'valide']);
+    }
+
+    public function transmissionEnCours(): ?Transmission
+    {
+        return $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+    }
+
+    public function aEteTransmis(): bool
+    {
+        return $this->transmissions()->exists();
+    }
+
+    public function historiqueTransmissions()
+    {
+        return $this->transmissions()
+            ->with(['expediteur', 'destinataire'])
+            ->orderBy('created_at', 'desc')
+            ->get();
     }
 }

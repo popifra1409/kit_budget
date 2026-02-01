@@ -33,18 +33,22 @@ class RolePermissionSeeder extends Seeder
             'fournisseur',
             'memoire_depense',
             'nomenclature_budgetaire',
+            'ordonnance_paiement',        
             'parametres_fournisseur',
             'parametres_structure',
             'permission',
+            'personnel',                   
             'piece_dossier',
             'prevision_recette',
             'programme',
             'recette_reelle',
             'reference_mercuriale',
+            'regime_fiscal',               
             'role',
             'service',
             'tache',
             'transmission',
+            'type_engagement',           
             'user',
             'virement_budgetaire',
         ];
@@ -54,6 +58,8 @@ class RolePermissionSeeder extends Seeder
         | 2. CRÉATION DES PERMISSIONS CRUD
         |--------------------------------------------------------------------------
         */
+        $this->command->info('📝 Création des permissions CRUD...');
+
         foreach ($modules as $module) {
             foreach (['view', 'view_any', 'create', 'update', 'delete'] as $action) {
                 Permission::firstOrCreate([
@@ -83,6 +89,11 @@ class RolePermissionSeeder extends Seeder
             'cloturer_exercice',
             'reconduire_exercice',
 
+            // Bon de commande
+            'valider_bon_commande',
+            'annuler_bon_commande',
+            'force_update_bon_commande',
+
             // Engagement
             'valider_engagement',
             'annuler_engagement',
@@ -90,6 +101,13 @@ class RolePermissionSeeder extends Seeder
             // Décision Administrative
             'valider_decision_administrative',
             'annuler_decision_administrative',
+            'force_update_decision_administrative',
+
+            // Ordonnance de paiement - NOUVEAU
+            'valider_ordonnance_paiement',
+            'annuler_ordonnance_paiement',
+            'creer_op_depuis_engagement',
+            'generer_pdf_ordonnance',
 
             // Mémoire de dépense
             'valider_memoire_depense',
@@ -103,7 +121,7 @@ class RolePermissionSeeder extends Seeder
             'view_all_transmissions',
             'view_my_transmissions',
 
-            // Dossiers Fournisseurs ← NOUVEAUX
+            // Dossiers Fournisseurs
             'cloturer_dossier_fournisseur',
             'annuler_dossier_fournisseur',
             'ajouter_piece_dossier',
@@ -111,12 +129,14 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'invalider_piece_dossier',
             'telecharger_piece_dossier',
-            'view_all_dossiers',  // Voir tous les dossiers (admin)
-            'view_my_dossiers',   // Voir uniquement ses dossiers
+            'view_all_dossiers',
+            'view_my_dossiers',
 
             // Références mercuriales
             'activer_reference_mercuriale',
         ];
+
+        $this->command->info('📝 Création des permissions spéciales...');
 
         foreach ($specialPermissions as $perm) {
             Permission::firstOrCreate([
@@ -127,27 +147,52 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 4. SUPER ADMIN (TOUT)
+        | 4. ATTRIBUTION DES PERMISSIONS AUX RÔLES (NON DESTRUCTIF)
         |--------------------------------------------------------------------------
         */
-        $superAdmin = Role::firstOrCreate(['name' => 'super_admin']);
+        $this->command->info('🔐 Attribution des permissions aux rôles...');
+
+        // Méthode helper pour donner des permissions sans écraser
+        $givePermissionsToRole = function ($roleName, array $permissions) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+
+            // Utiliser givePermissionTo au lieu de syncPermissions
+            // pour ne PAS écraser les permissions existantes
+            foreach ($permissions as $permission) {
+                if (!$role->hasPermissionTo($permission)) {
+                    $role->givePermissionTo($permission);
+                }
+            }
+
+            return $role;
+        };
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUPER ADMIN (TOUT)
+        |--------------------------------------------------------------------------
+        */
+        $this->command->info('  → Super Admin');
+        $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        // Super admin garde TOUTES les permissions
         $superAdmin->syncPermissions(Permission::all());
 
         /*
         |--------------------------------------------------------------------------
-        | 5. ADMIN (GESTION SYSTÈME)
+        | ADMIN (GESTION SYSTÈME)
         |--------------------------------------------------------------------------
         */
-        $admin = Role::firstOrCreate(['name' => 'admin']);
+        $this->command->info('  → Admin');
+        $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions(Permission::all());
 
         /*
         |--------------------------------------------------------------------------
-        | 6. OPÉRATEUR BUDGET
+        | OPÉRATEUR BUDGET
         |--------------------------------------------------------------------------
         */
-        $operateur = Role::firstOrCreate(['name' => 'operateur_budget']);
-        $operateur->syncPermissions([
+        $this->command->info('  → Opérateur Budget');
+        $givePermissionsToRole('operateur_budget', [
             // Budget
             'view_budget',
             'view_any_budget',
@@ -165,6 +210,14 @@ class RolePermissionSeeder extends Seeder
             'view_any_bon_commande',
             'update_bon_commande',
 
+            // Ordonnance de paiement
+            'view_ordonnance_paiement',
+            'view_any_ordonnance_paiement',
+
+            // Personnel (lecture)
+            'view_personnel',
+            'view_any_personnel',
+
             // Workflow
             'transmettre_document',
             'view_my_transmissions',
@@ -181,11 +234,11 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 7. CHEF SERVICE BUDGET
+        | CHEF SERVICE BUDGET
         |--------------------------------------------------------------------------
         */
-        $chefService = Role::firstOrCreate(['name' => 'chef_service_budget']);
-        $chefService->syncPermissions([
+        $this->command->info('  → Chef Service Budget');
+        $givePermissionsToRole('chef_service_budget', [
             // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
@@ -203,6 +256,15 @@ class RolePermissionSeeder extends Seeder
             'view_any_bon_commande',
             'view_bon_commande',
             'update_bon_commande',
+            'valider_bon_commande',
+
+            // Ordonnance de paiement
+            'view_any_ordonnance_paiement',
+            'view_ordonnance_paiement',
+
+            // Personnel
+            'view_personnel',
+            'view_any_personnel',
 
             // Workflow
             'transmettre_document',
@@ -224,11 +286,11 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 8. SOUS DIRECTEUR BUDGET
+        | SOUS DIRECTEUR BUDGET
         |--------------------------------------------------------------------------
         */
-        $sousDirecteur = Role::firstOrCreate(['name' => 'sous_directeur_budget']);
-        $sousDirecteur->syncPermissions([
+        $this->command->info('  → Sous-Directeur Budget');
+        $givePermissionsToRole('sous_directeur_budget', [
             // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
@@ -243,6 +305,16 @@ class RolePermissionSeeder extends Seeder
             // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
+            'valider_bon_commande',
+
+            // Ordonnance de paiement
+            'view_any_ordonnance_paiement',
+            'view_ordonnance_paiement',
+            'creer_op_depuis_engagement',
+
+            // Personnel
+            'view_personnel',
+            'view_any_personnel',
 
             // Workflow
             'transmettre_document',
@@ -262,11 +334,11 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 9. DAAF
+        | DAAF
         |--------------------------------------------------------------------------
         */
-        $daaf = Role::firstOrCreate(['name' => 'daaf']);
-        $daaf->syncPermissions([
+        $this->command->info('  → DAAF');
+        $givePermissionsToRole('daaf', [
             // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
@@ -277,6 +349,30 @@ class RolePermissionSeeder extends Seeder
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+
+            // Bons de commande
+            'view_any_bon_commande',
+            'view_bon_commande',
+            'valider_bon_commande',
+
+            // Ordonnance de paiement
+            'view_any_ordonnance_paiement',
+            'view_ordonnance_paiement',
+            'creer_op_depuis_engagement',
+            'valider_ordonnance_paiement',
+
+            // Décisions administratives
+            'view_any_decision_administrative',
+            'view_decision_administrative',
+            'create_decision_administrative',
+            'update_decision_administrative',
+            'valider_decision_administrative',
+
+            // Personnel (gestion complète)
+            'view_any_personnel',
+            'view_personnel',
+            'create_personnel',
+            'update_personnel',
 
             // Workflow
             'transmettre_document',
@@ -296,11 +392,11 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 10. CONTROLEUR FINANCIER
+        | CONTROLEUR FINANCIER
         |--------------------------------------------------------------------------
         */
-        $controleur = Role::firstOrCreate(['name' => 'controleur_financier']);
-        $controleur->syncPermissions([
+        $this->command->info('  → Contrôleur Financier');
+        $givePermissionsToRole('controleur_financier', [
             // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
@@ -313,6 +409,21 @@ class RolePermissionSeeder extends Seeder
             // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
+            'valider_bon_commande',
+
+            // Ordonnance de paiement
+            'view_any_ordonnance_paiement',
+            'view_ordonnance_paiement',
+            'valider_ordonnance_paiement',
+
+            // Décisions administratives
+            'view_any_decision_administrative',
+            'view_decision_administrative',
+            'valider_decision_administrative',
+
+            // Personnel (lecture)
+            'view_personnel',
+            'view_any_personnel',
 
             // Workflow
             'transmettre_document',
@@ -330,11 +441,11 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 11. DIRECTEUR GENERAL
+        | DIRECTEUR GENERAL
         |--------------------------------------------------------------------------
         */
-        $directeur = Role::firstOrCreate(['name' => 'directeur_general']);
-        $directeur->syncPermissions([
+        $this->command->info('  → Directeur Général');
+        $givePermissionsToRole('directeur_general', [
             // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
@@ -347,6 +458,23 @@ class RolePermissionSeeder extends Seeder
             // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
+            'valider_bon_commande',
+
+            // Ordonnance de paiement
+            'view_any_ordonnance_paiement',
+            'view_ordonnance_paiement',
+            'valider_ordonnance_paiement',
+
+            // Décisions administratives
+            'view_any_decision_administrative',
+            'view_decision_administrative',
+            'valider_decision_administrative',
+
+            // Personnel (lecture + rôles)
+            'view_any_personnel',
+            'view_personnel',
+            'view_any_role',
+            'view_role',
 
             // Workflow
             'transmettre_document',
@@ -365,11 +493,11 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | 12. AGENCE COMPTABLE
+        | AGENCE COMPTABLE
         |--------------------------------------------------------------------------
         */
-        $agence = Role::firstOrCreate(['name' => 'agence_comptable']);
-        $agence->syncPermissions([
+        $this->command->info('  → Agence Comptable');
+        $givePermissionsToRole('agence_comptable', [
             // Recettes
             'view_any_recette_reelle',
             'view_recette_reelle',
@@ -381,6 +509,18 @@ class RolePermissionSeeder extends Seeder
             // Bons de commande
             'view_any_bon_commande',
             'view_bon_commande',
+
+            // Ordonnance de paiement
+            'view_any_ordonnance_paiement',
+            'view_ordonnance_paiement',
+
+            // Décisions administratives
+            'view_any_decision_administrative',
+            'view_decision_administrative',
+
+            // Personnel (lecture)
+            'view_personnel',
+            'view_any_personnel',
 
             // Workflow
             'view_my_transmissions',
@@ -394,6 +534,16 @@ class RolePermissionSeeder extends Seeder
             'view_my_dossiers',
         ]);
 
-        $this->command->info('✅ Rôles et permissions COMPLETS créés avec workflow, transmissions et dossiers fournisseurs.');
+        /*
+        |--------------------------------------------------------------------------
+        | NETTOYAGE CACHE
+        |--------------------------------------------------------------------------
+        */
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->command->info('');
+        $this->command->info('✅ Rôles et permissions mis à jour avec succès !');
+        $this->command->info('📊 Total permissions : ' . Permission::count());
+        $this->command->info('👥 Total rôles : ' . Role::count());
     }
 }

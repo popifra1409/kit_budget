@@ -48,6 +48,8 @@ class BonCommande extends Model
         'montant_irnc',
         'montant_autres_taxes',
         'produit_importe',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

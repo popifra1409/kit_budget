@@ -181,6 +181,34 @@ class User extends Authenticatable implements FilamentUser
         return $this->getNiveauHierarchique() >= $destinataire->getNiveauHierarchique();
     }
 
+    /**
+     * Obtenir le rôle principal de l'utilisateur
+     */
+    public function getRolePrincipal(): ?\App\Models\Role
+    {
+        return $this->roles()->first();
+    }
+
+    /**
+     * Vérifier si l'utilisateur est supérieur hiérarchique
+     */
+    public function estSuperieurDe(User $autreUser): bool
+    {
+        return $this->getNiveauHierarchique() > $autreUser->getNiveauHierarchique();
+    }
+
+    /**
+     * Obtenir les utilisateurs subordonnés
+     */
+    public function subordonnes()
+    {
+        $monNiveau = $this->getNiveauHierarchique();
+
+        return static::whereHas('roles', function ($query) use ($monNiveau) {
+            $query->where('niveau_hierarchique', '<', $monNiveau);
+        })->get();
+    }
+
     // ========================================
     // RELATIONS BORDEREAUX ENGAGEMENT
     // COLONNES RÉELLES : emis_par, detenu_par_id, valide_par, rejete_par

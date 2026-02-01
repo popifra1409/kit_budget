@@ -3,13 +3,12 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\RoleResource\Pages;
+use Spatie\Permission\Models\Role;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Spatie\Permission\Models\Role;
-use Spatie\Permission\Models\Permission;
 
 class RoleResource extends Resource
 {
@@ -25,82 +24,40 @@ class RoleResource extends Resource
 
     protected static ?string $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 1;
 
 
     /**
      * Permissions - Gestion des rôles
-     * Super admin a tous les droits même sans permissions explicites
      */
     public static function canViewAny(): bool
     {
-        // Super admin a accès automatique
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('view_any_role') ?? false;
     }
 
     public static function canView($record): bool
     {
-        // Super admin a accès automatique
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('view_role') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        // Super admin a accès automatique
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('create_role') ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        // Super admin a accès automatique
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Les autres rôles doivent avoir la permission
         return auth()->user()?->can('update_role') ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        // Protection : Ne jamais supprimer le rôle super_admin
-        if ($record->name === 'super_admin') {
+        // Ne peut supprimer que si aucun utilisateur n'a ce rôle
+        if (!auth()->user()?->can('delete_role')) {
             return false;
         }
 
-        // Super admin a accès automatique
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Les autres rôles doivent avoir la permission
-        return auth()->user()?->can('delete_role') ?? false;
-    }
-
-    public static function canDeleteAny(): bool
-    {
-        // Super admin a accès automatique
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Les autres rôles doivent avoir la permission
-        return auth()->user()?->can('delete_any_role') ?? false;
+        return $record->users()->count() === 0;
     }
 
 
@@ -115,59 +72,40 @@ class RoleResource extends Resource
                             ->required()
                             ->unique(ignoreRecord: true)
                             ->maxLength(255)
-                            ->helperText('Nom technique du rôle (ex: controleur_financier)'),
+                            ->placeholder('Ex: operateur_budget')
+                            ->helperText('Nom technique du rôle (sans espaces)'),
 
-                        Forms\Components\TextInput::make('guard_name')
-                            ->label('Guard')
-                            ->default('web')
+                        Forms\Components\TextInput::make('niveau_hierarchique')
+                            ->label('Niveau hiérarchique')
+                            ->numeric()
                             ->required()
-                            ->maxLength(255)
-                            ->disabled()
-                            ->dehydrated(true),
-                    ])
-                    ->columns(2),
+                            ->default(0)
+                            ->minValue(0)
+                            ->maxValue(100)
+                            ->helperText('0 = plus bas niveau, 100 = plus haut niveau')
+                            ->suffix('/100'),
 
-                Forms\Components\Section::make('Permissions')
-                    ->schema([
-                        Forms\Components\CheckboxList::make('permissions')
-                            ->label('Permissions du rôle')
+                        Forms\Components\Placeholder::make('niveau_info')
+                            ->label('Guide des niveaux')
+                            ->content(function () {
+                                return "• 10: Opérateurs (budget, recette)\n" .
+                                    "• 30: Chefs de service\n" .
+                                    "• 50: Sous-directeurs\n" .
+                                    "• 60: Contrôleur financier, Agent comptable\n" .
+                                    "• 70: DAAF\n" .
+                                    "• 90: Directeur\n" .
+                                    "• 100: Super administrateur";
+                            })
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('permissions')
+                            ->label('Permissions')
+                            ->multiple()
                             ->relationship('permissions', 'name')
-                            ->columns(3)
-                            ->gridDirection('row')
+                            ->preload()
                             ->searchable()
-                            ->bulkToggleable()
-                            ->getOptionLabelFromRecordUsing(
-                                fn($record) =>
-                                self::formatPermissionLabel($record->name)
-                            )
-                            ->helperText('Sélectionnez les permissions pour ce rôle'),
+                            ->columnSpanFull(),
                     ]),
-
-                Forms\Components\Section::make('Statistiques')
-                    ->schema([
-                        Forms\Components\Placeholder::make('users_count')
-                            ->label('Utilisateurs avec ce rôle')
-                            ->content(
-                                fn(?Role $record): string =>
-                                $record?->users()->count() ?? 0
-                            ),
-
-                        Forms\Components\Placeholder::make('created_at')
-                            ->label('Créé le')
-                            ->content(
-                                fn(?Role $record): string =>
-                                $record?->created_at?->format('d/m/Y à H:i') ?? '-'
-                            ),
-
-                        Forms\Components\Placeholder::make('updated_at')
-                            ->label('Modifié le')
-                            ->content(
-                                fn(?Role $record): string =>
-                                $record?->updated_at?->format('d/m/Y à H:i') ?? '-'
-                            ),
-                    ])
-                    ->columns(3)
-                    ->visible(fn($record) => $record !== null),
             ]);
     }
 
@@ -176,47 +114,34 @@ class RoleResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Rôle')
+                    ->label('Nom')
                     ->searchable()
                     ->sortable()
-                    ->weight('bold')
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'super_admin' => '🔴 Super Admin',
-                        'operateur_budget' => '👤 Opérateur Budget',
-                        'chef_service_budget' => '👨‍💼 Chef Service Budget',
-                        'sous_directeur_budget' => '👔 Sous-Directeur Budget',
-                        'directeur_general' => '🎯 Directeur Général',
-                        'controleur_financier' => '💼 Contrôleur Financier',
-                        'agence_comptable' => '💰 Agence Comptable',
-                        default => $state
-                    })
+                    ->weight('bold'),
+
+                Tables\Columns\TextColumn::make('niveau_hierarchique')
+                    ->label('Niveau')
+                    ->sortable()
                     ->badge()
-                    ->color(fn($state) => match ($state) {
-                        'super_admin' => 'danger',
-                        'operateur_budget' => 'primary',
-                        'chef_service_budget' => 'info',
-                        'sous_directeur_budget' => 'warning',
+                    ->color(fn($record) => match (true) {
+                        $record->niveau_hierarchique >= 90 => 'danger',
+                        $record->niveau_hierarchique >= 60 => 'warning',
+                        $record->niveau_hierarchique >= 30 => 'primary',
                         default => 'success',
-                    }),
+                    })
+                    ->formatStateUsing(fn($state) => "Niveau {$state}"),
 
                 Tables\Columns\TextColumn::make('permissions_count')
                     ->label('Permissions')
                     ->counts('permissions')
                     ->badge()
-                    ->color('success')
-                    ->sortable(false), // ← CORRECTION PostgreSQL
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('users_count')
                     ->label('Utilisateurs')
                     ->counts('users')
                     ->badge()
-                    ->color('info')
-                    ->sortable(false), // ← CORRECTION PostgreSQL
-
-                Tables\Columns\TextColumn::make('guard_name')
-                    ->label('Guard')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->color('success'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Créé le')
@@ -228,38 +153,16 @@ class RoleResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(
-                        fn() =>
-                        auth()->user()->hasAnyRole([
-                            'chef_service_budget',
-                            'sous_directeur_budget',
-                            'daaf',
-                        ])
-                    ),
-                // Tables\Actions\DeleteAction::make()
-                //     ->requiresConfirmation()
-                //     ->before(function (Role $record) {
-                //         if ($record->users()->count() > 0) {
-                //             throw new \Exception('Impossible de supprimer un rôle assigné à des utilisateurs');
-                //         }
-                //     }),
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn($record) => $record->users()->count() === 0),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->requiresConfirmation(),
+                    Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('name');
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ->defaultSort('niveau_hierarchique', 'desc');
     }
 
     public static function getPages(): array
@@ -268,50 +171,6 @@ class RoleResource extends Resource
             'index' => Pages\ListRoles::route('/'),
             'create' => Pages\CreateRole::route('/create'),
             'edit' => Pages\EditRole::route('/{record}/edit'),
-            'view' => Pages\ViewRole::route('/{record}'),
         ];
-    }
-
-    public static function getNavigationBadge(): ?string
-    {
-        return static::getModel()::count();
-    }
-
-    /**
-     * Formater le libellé des permissions
-     */
-    public static function formatPermissionLabel(string $permission): string
-    {
-        return match ($permission) {
-            // Bordereaux
-            'view_bordereau' => '👁️ Voir bordereau',
-            'view_any_bordereau' => '👁️ Voir tous bordereaux',
-            'create_bordereau' => '➕ Créer bordereau',
-            'update_bordereau' => '✏️ Modifier bordereau',
-            'delete_bordereau' => '🗑️ Supprimer bordereau',
-
-            // Actions workflow
-            'soumettre_bordereau' => '📤 Soumettre bordereau',
-            'transmettre_bordereau' => '📨 Transmettre bordereau',
-            'receptionner_bordereau' => '📥 Réceptionner bordereau',
-            'valider_bordereau' => '✅ Valider bordereau',
-            'rejeter_bordereau' => '❌ Rejeter bordereau',
-            'retourner_bordereau' => '↩️ Retourner bordereau',
-            'cloturer_bordereau' => '🔒 Clôturer bordereau',
-
-            // Engagements
-            'valider_engagement' => '✅ Valider engagement',
-            'rejeter_engagement' => '❌ Rejeter engagement',
-
-            // Vues
-            'view_bordereaux_attente' => '⏳ Voir bordereaux en attente',
-            'view_bordereaux_service' => '🏢 Voir bordereaux du service',
-            'view_all_bordereaux' => '🌐 Voir tous bordereaux',
-
-            // Stats
-            'view_stats_workflow' => '📊 Voir statistiques',
-
-            default => ucfirst(str_replace('_', ' ', $permission))
-        };
     }
 }

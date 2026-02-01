@@ -19,6 +19,7 @@ use Filament\Tables\Actions\Action;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use App\Models\User;
+use App\Filament\Actions\WorkflowActions;
 
 class BonCommandeResource extends Resource
 {
@@ -603,18 +604,30 @@ class BonCommandeResource extends Resource
 
         $user = auth()->user();
 
-        // Super admin voit tout
-        if ($user->hasRole('super_admin')) {
+        // Super admin voit TOUT
+        if ($user && $user->hasRole('super_admin')) {
             return $query;
         }
 
-        // Pour les autres utilisateurs : filtrer les BC en cours de transmission
+        if (!$user) {
+            return $query->whereRaw('1 = 0'); // Aucun résultat
+        }
+
+        // Pour les autres utilisateurs
         return $query->where(function ($q) use ($user) {
-            // BC sans transmission en cours (tout le monde peut voir)
-            $q->whereDoesntHave('transmissions', function ($transmission) {
-                $transmission->where('statut', 'en_attente');
-            })
-                // OU BC dont je suis le destinataire actuel
+            // 1. Documents créés par moi (toujours visibles)
+            $q->where('created_by', $user->id)
+
+                // OU
+
+                // 2. Documents sans transmission en cours (tout le monde peut voir)
+                ->orWhereDoesntHave('transmissions', function ($transmission) {
+                    $transmission->where('statut', 'en_attente');
+                })
+
+                // OU
+
+                // 3. Documents dont je suis le destinataire actuel
                 ->orWhereHas('transmissions', function ($transmission) use ($user) {
                     $transmission->where('statut', 'en_attente')
                         ->where('destinataire_id', $user->id);
@@ -775,15 +788,30 @@ class BonCommandeResource extends Resource
                             return null;
                         }
 
+                        // Si je suis le destinataire
                         if ($transmission->destinataire_id === auth()->id()) {
                             return 'À traiter';
                         }
 
+                        // Si je suis l'expéditeur
+                        if ($transmission->expediteur_id === auth()->id()) {
+                            return 'En attente chez ' . $transmission->destinataire->name;
+                        }
+
+                        // Sinon affichage générique
                         return 'Transmis à ' . $transmission->destinataire->name;
                     })
                     ->badge()
-                    ->color(fn($state) => $state === 'À traiter' ? 'warning' : 'info')
-                    ->icon(fn($state) => $state === 'À traiter' ? 'heroicon-o-bell-alert' : 'heroicon-o-paper-airplane')
+                    ->color(fn($state) => match (true) {
+                        $state === 'À traiter' => 'warning',
+                        str_starts_with($state ?? '', 'En attente') => 'info',
+                        default => 'gray'
+                    })
+                    ->icon(fn($state) => match (true) {
+                        $state === 'À traiter' => 'heroicon-o-bell-alert',
+                        str_starts_with($state ?? '', 'En attente') => 'heroicon-o-clock',
+                        default => 'heroicon-o-paper-airplane'
+                    })
                     ->placeholder('-')
                     ->toggleable(),
 
@@ -929,7 +957,7 @@ class BonCommandeResource extends Resource
                     ->falseLabel('Non engagés'),
 
                 Tables\Filters\Filter::make('mes_transmissions')
-                    ->label('Mes transmissions')
+                    ->label('Mes transmissions envoyées')
                     ->query(function ($query) {
                         return $query->whereHas('transmissions', function ($transmission) {
                             $transmission->where('expediteur_id', auth()->id())
@@ -941,310 +969,29 @@ class BonCommandeResource extends Resource
                 Tables\Filters\Filter::make('a_traiter')
                     ->label('À traiter par moi')
                     ->query(function ($query) {
-                        return $query->whereHas('transmissions', function ($transmission) {
-                            $transmission->where('destinataire_id', auth()->id())
-                                ->where('statut', 'en_attente');
+                        $userId = auth()->id();
+
+                        return $query->where(function ($q) use ($userId) {
+                            // 1. Documents créés par moi et en brouillon
+                            $q->where(function ($subQ) use ($userId) {
+                                $subQ->where('created_by', $userId)
+                                    ->where('statut', 'brouillon');
+                            })
+                                // OU
+                                // 2. Documents transmis à moi (en attente)
+                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                });
                         });
                     })
                     ->toggle()
-                    ->default(),
+                    ->default(), // Activé par défaut
 
             ])
-            ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn($record) => $record->estModifiable()),
-
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('warning')
-                    ->visible(fn($record) => $record->statut === 'brouillon')
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->valider(auth()->user());
-                        Notification::make()
-                            ->title('BC validé')
-                            ->success()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('engager')
-                    ->label('Engager')
-                    ->icon('heroicon-o-banknotes')
-                    ->color('primary')
-                    ->visible(fn($record) => $record->statut === 'valide' && !$record->engage)
-                    ->requiresConfirmation()
-                    ->modalHeading('Engager le budget')
-                    ->modalDescription(
-                        fn($record) =>
-                        "Engager le budget pour ce BC de " . number_format($record->montant_ttc, 0, ',', ' ') . " FCFA ? " .
-                            "Cette action consommera le budget des lignes budgétaires concernées."
-                    )
-                    ->action(function ($record) {
-                        try {
-                            $record->engagerBudget();
-                            Notification::make()
-                                ->title('Budget engagé avec succès')
-                                ->success()
-                                ->body('Le budget a été consommé sur les lignes budgétaires.')
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Erreur lors de l\'engagement')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
-                        }
-                    }),
-
-                Tables\Actions\Action::make('annuler')
-                    ->label('Annuler')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->visible(fn($record) => !in_array($record->statut, ['annule', 'livre']))
-                    ->requiresConfirmation()
-                    ->modalHeading('Annuler le BC')
-                    ->modalDescription('Êtes-vous sûr de vouloir annuler ce BC ? Si le budget est engagé, il sera désengagé automatiquement.')
-                    ->action(function ($record) {
-                        $record->annuler();
-                        Notification::make()
-                            ->title('BC annulé')
-                            ->warning()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('transmettre')
-                    ->label('Transmettre')
-                    ->icon('heroicon-o-paper-airplane')
-                    ->color('info')
-                    ->visible(fn($record) => $record->peutEtreTransmis() && in_array($record->statut, ['brouillon', 'valide']))
-                    ->form([
-                        Forms\Components\Select::make('destinataire_id')
-                            ->label('Transmettre à')
-                            ->options(User::whereNotNull('name')->pluck('name', 'id'))
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->live(),
-
-                        Forms\Components\Select::make('action_attendue')
-                            ->label('Action attendue')
-                            ->options([
-                                'validation' => 'Validation',
-                                'engagement' => 'Engagement',
-                                'verification' => 'Vérification',
-                                'signature' => 'Signature',
-                                'information' => 'Pour information',
-                            ])
-                            ->required()
-                            ->default('validation'),
-
-                        Forms\Components\Textarea::make('commentaire')
-                            ->label('Commentaire')
-                            ->rows(3)
-                            ->placeholder('Ajoutez un commentaire pour le destinataire...'),
-
-                        Forms\Components\Select::make('priorite')
-                            ->label('Priorité')
-                            ->options(function (Forms\Get $get) {
-                                $destinataireId = $get('destinataire_id');
-
-                                if (!$destinataireId) {
-                                    return [
-                                        'normale' => 'Normale',
-                                    ];
-                                }
-
-                                $destinataire = User::find($destinataireId);
-                                $expediteur = auth()->user();
-
-                                // Si l'expéditeur a un niveau égal ou supérieur, il peut choisir toutes les priorités
-                                if ($expediteur->peutImposerPrioriteA($destinataire)) {
-                                    return [
-                                        'basse' => 'Basse',
-                                        'normale' => 'Normale',
-                                        'haute' => 'Haute',
-                                        'urgente' => 'Urgente',
-                                    ];
-                                }
-
-                                // Sinon, seulement les priorités basse et normale
-                                return [
-                                    'basse' => 'Basse',
-                                    'normale' => 'Normale',
-                                ];
-                            })
-                            ->default('normale')
-                            ->required()
-                            ->live()
-                            ->helperText(function (Forms\Get $get) {
-                                $destinataireId = $get('destinataire_id');
-
-                                if (!$destinataireId) {
-                                    return '';
-                                }
-
-                                $destinataire = User::find($destinataireId);
-                                $expediteur = auth()->user();
-
-                                if (!$expediteur->peutImposerPrioriteA($destinataire)) {
-                                    return '⚠️ Vous ne pouvez pas définir une priorité haute ou urgente pour un supérieur hiérarchique.';
-                                }
-
-                                return '';
-                            }),
-
-                        Forms\Components\DatePicker::make('date_limite')
-                            ->label('Date limite (optionnel)')
-                            ->minDate(now())
-                            ->helperText('Date limite pour traiter cette transmission'),
-                    ])
-                    ->action(function ($record, array $data) {
-                        try {
-                            $destinataire = User::findOrFail($data['destinataire_id']);
-
-                            $record->transmettreA(
-                                $destinataire,
-                                $data['action_attendue'],
-                                $data['commentaire'] ?? null,
-                                [
-                                    'priorite' => $data['priorite'],
-                                    'date_limite' => $data['date_limite'] ?? null,
-                                ]
-                            );
-
-                            Notification::make()
-                                ->title('Document transmis')
-                                ->success()
-                                ->body("Le document a été transmis à {$destinataire->name}")
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Erreur')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
-                        }
-                    }),
-
-                Tables\Actions\Action::make('retourner')
-                    ->label('Retourner')
-                    ->icon('heroicon-o-arrow-uturn-left')
-                    ->color('warning')
-                    ->visible(fn($record) => $record->estDestinataireActuel() && $record->transmissionEnCours())
-                    ->form([
-                        Forms\Components\Textarea::make('motif')
-                            ->label('Motif du retour')
-                            ->required()
-                            ->rows(3)
-                            ->placeholder('Expliquez pourquoi le document est retourné...'),
-                    ])
-                    ->requiresConfirmation()
-                    ->modalHeading('Retourner pour correction')
-                    ->modalDescription('Le document sera retourné à l\'expéditeur avec votre motif')
-                    ->action(function ($record, array $data) {
-                        try {
-                            $record->retournerPourCorrection($data['motif']);
-
-                            Notification::make()
-                                ->title('Document retourné')
-                                ->warning()
-                                ->body('Le document a été retourné à l\'expéditeur')
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Erreur')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
-                        }
-                    }),
-
-                Tables\Actions\Action::make('cloturer_transmission')
-                    ->label('Clôturer')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn($record) => $record->estDestinataireActuel() && $record->transmissionEnCours())
-                    ->form([
-                        Forms\Components\Textarea::make('reponse')
-                            ->label('Réponse/Commentaire')
-                            ->rows(3)
-                            ->placeholder('Optionnel : Ajoutez un commentaire de clôture...'),
-                    ])
-                    ->requiresConfirmation()
-                    ->modalHeading('Clôturer la transmission')
-                    ->modalDescription('Confirmez que vous avez traité cette transmission')
-                    ->action(function ($record, array $data) {
-                        $record->cloturerTransmission($data['reponse'] ?? null);
-
-                        Notification::make()
-                            ->title('Transmission clôturée')
-                            ->success()
-                            ->body('La transmission a été traitée avec succès')
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('historique_transmissions')
-                    ->label('Historique')
-                    ->icon('heroicon-o-clock')
-                    ->color('gray')
-                    ->visible(fn($record) => $record->aEteTransmis())
-                    ->modalHeading(fn($record) => 'Historique des transmissions - ' . $record->numero)
-                    ->modalContent(fn($record) => view('filament.modals.historique-transmissions', [
-                        'transmissions' => $record->historiqueTransmissions()
-                    ]))
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Fermer'),
-
-                // Actions de téléchargement PDF
-                Tables\Actions\ActionGroup::make([
-                    // Bon de commande administratif
-                    Tables\Actions\Action::make('telecharger_bon_commande_admin')
-                        ->label('BC Administratif (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('success')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'bon_commande',
-                            'id' => $record->id
-                        ])),
-
-                    Tables\Actions\Action::make('afficher_bon_commande_admin')
-                        ->label('BC Administratif (Aperçu)')
-                        ->icon('heroicon-o-eye')
-                        ->color('info')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'bon_commande',
-                            'id' => $record->id
-                        ]))
-                        ->openUrlInNewTab(),
-
-                    // Bon de commande simple
-                    Tables\Actions\Action::make('telecharger_bon_commande_simple')
-                        ->label('BC Simple (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('primary')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'bon_commande_simple',
-                            'id' => $record->id
-                        ])),
-
-                    Tables\Actions\Action::make('afficher_bon_commande_simple')
-                        ->label('BC Simple (Aperçu)')
-                        ->icon('heroicon-o-eye')
-                        ->color('gray')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'bon_commande_simple',
-                            'id' => $record->id
-                        ]))
-                        ->openUrlInNewTab(),
-                ])
-                    ->label('Télécharger / Aperçu')
-                    ->icon('heroicon-m-document-arrow-down')
-                    ->size('sm')
-                    ->color('success')
-                    ->button(),
-            ])
+            ->actions(
+                WorkflowActions::make(avecEngagement: true)
+            )
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

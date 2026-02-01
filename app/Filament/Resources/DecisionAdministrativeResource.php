@@ -15,6 +15,8 @@ use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use App\Filament\Actions\WorkflowActions;
+use Illuminate\Database\Eloquent\Builder;
 
 class DecisionAdministrativeResource extends Resource
 {
@@ -65,14 +67,18 @@ class DecisionAdministrativeResource extends Resource
             return false;
         }
 
+        // Si en cours de transmission, seul force_update peut modifier
+        if ($record->estEnCoursDeTransmission()) {
+            return $user->can('force_update_decision_administrative');
+        }
+
         if (!$record->estModifiable()) {
-            if ($record->estLectureSeule()) {
+            if ($record->exercice && !$record->exercice->estModifiable()) {
                 \Filament\Notifications\Notification::make()
                     ->title('Modification impossible')
                     ->warning()
                     ->body(
-                        "L'exercice {$record->exercice->annee} est {$record->exercice->statut}.
-                    Modification interdite."
+                        "L'exercice {$record->exercice->annee} est {$record->exercice->statut}. Modification interdite."
                     )
                     ->send();
             }
@@ -113,7 +119,44 @@ class DecisionAdministrativeResource extends Resource
         return auth()->check()
             && auth()->user()->can('annuler_decision_administrative');
     }
-    
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = parent::getEloquentQuery()->with('exercice');
+
+        $user = auth()->user();
+
+        // Super admin voit TOUT
+        if ($user && $user->hasRole('super_admin')) {
+            return $query;
+        }
+
+        if (!$user) {
+            return $query->whereRaw('1 = 0'); // Aucun résultat
+        }
+
+        // Pour les autres utilisateurs
+        return $query->where(function ($q) use ($user) {
+            // 1. Décisions créées par moi (toujours visibles)
+            $q->where('created_by', $user->id)
+
+                // OU
+
+                // 2. Décisions sans transmission en cours (tout le monde peut voir)
+                ->orWhereDoesntHave('transmissions', function ($transmission) {
+                    $transmission->where('statut', 'en_attente');
+                })
+
+                // OU
+
+                // 3. Décisions dont je suis le destinataire actuel
+                ->orWhereHas('transmissions', function ($transmission) use ($user) {
+                    $transmission->where('statut', 'en_attente')
+                        ->where('destinataire_id', $user->id);
+                });
+        });
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -137,28 +180,155 @@ class DecisionAdministrativeResource extends Resource
                             ->live(),
 
                         Forms\Components\Select::make('personnel_id')
-                            ->label('Personnel')
-                            ->options(User::all()->pluck('name', 'id'))
+                            ->label('Personnel concerné')
+                            ->options(function () {
+                                return \App\Models\Personnel::query()
+                                    ->where('actif', true)
+                                    ->orderBy('nom')
+                                    ->orderBy('prenoms')
+                                    ->get()
+                                    ->mapWithKeys(function ($personnel) {
+                                        $label = "{$personnel->matricule} - {$personnel->nom} {$personnel->prenoms}";
+                                        if ($personnel->fonction) {
+                                            $label .= " ({$personnel->fonction})";
+                                        }
+                                        return [$personnel->id => $label];
+                                    });
+                            })
                             ->searchable()
                             ->preload()
+                            ->required()
                             ->live()
-                            ->helperText('Sélectionner si le personnel est un utilisateur'),
+                            ->helperText(function ($get) {
+                                $personnelId = $get('personnel_id');
+                                if ($personnelId) {
+                                    $personnel = \App\Models\Personnel::find($personnelId);
+                                    if ($personnel) {
+                                        $info = "📋 Matricule: {$personnel->matricule}";
+                                        if ($personnel->fonction) {
+                                            $info .= " | Fonction: {$personnel->fonction}";
+                                        }
+                                        if ($personnel->service) {
+                                            $info .= " | Service: {$personnel->service->nom}";
+                                        }
+                                        return $info;
+                                    }
+                                }
+                                return 'Sélectionnez un membre du personnel ou créez une nouvelle fiche';
+                            })
+                            ->createOptionForm([
+                                Forms\Components\Section::make('Identité')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('matricule')
+                                                    ->label('Matricule')
+                                                    ->default(fn() => \App\Models\Personnel::genererMatricule())
+                                                    ->disabled()
+                                                    ->dehydrated()
+                                                    ->required()
+                                                    ->maxLength(50),
 
-                        Forms\Components\TextInput::make('nom_personnel')
-                            ->label('Nom du personnel (si non utilisateur)')
-                            ->maxLength(255)
-                            ->placeholder('Ex: Jean DUPONT')
-                            ->visible(fn(callable $get) => !$get('personnel_id')),
+                                                Forms\Components\Select::make('civilite')
+                                                    ->label('Civilité')
+                                                    ->options([
+                                                        'M.' => 'M.',
+                                                        'Mme' => 'Mme',
+                                                        'Mlle' => 'Mlle',
+                                                    ]),
 
-                        Forms\Components\TextInput::make('matricule')
-                            ->label('Matricule')
-                            ->maxLength(255)
-                            ->placeholder('Ex: MAT-2024-001'),
+                                                Forms\Components\Select::make('sexe')
+                                                    ->label('Sexe')
+                                                    ->options([
+                                                        'M' => 'Masculin',
+                                                        'F' => 'Féminin',
+                                                    ])
+                                                    ->required(),
+                                            ]),
 
-                        Forms\Components\TextInput::make('fonction')
-                            ->label('Fonction')
-                            ->maxLength(255)
-                            ->placeholder('Ex: Chef de Service'),
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('nom')
+                                                    ->label('Nom')
+                                                    ->required()
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('prenoms')
+                                                    ->label('Prénoms')
+                                                    ->required()
+                                                    ->maxLength(255),
+                                            ]),
+                                    ]),
+
+                                Forms\Components\Section::make('Affectation')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\Select::make('service_id')
+                                                    ->label('Service')
+                                                    ->options(\App\Models\Service::where('actif', true)->pluck('nom', 'id'))
+                                                    ->searchable()
+                                                    ->preload(),
+
+                                                Forms\Components\TextInput::make('fonction')
+                                                    ->label('Fonction')
+                                                    ->maxLength(255)
+                                                    ->required(),
+                                            ]),
+
+                                        Forms\Components\Grid::make(3)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('grade')
+                                                    ->label('Grade')
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('categorie')
+                                                    ->label('Catégorie')
+                                                    ->maxLength(255)
+                                                    ->placeholder('A, B, C, D'),
+
+                                                Forms\Components\TextInput::make('echelon')
+                                                    ->label('Échelon')
+                                                    ->maxLength(255),
+                                            ]),
+                                    ]),
+
+                                Forms\Components\Section::make('Contact')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('telephone')
+                                                    ->label('Téléphone')
+                                                    ->tel()
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('email')
+                                                    ->label('Email')
+                                                    ->email()
+                                                    ->maxLength(255),
+                                            ]),
+                                    ])
+                                    ->collapsible()
+                                    ->collapsed(),
+                            ])
+                            ->createOptionUsing(function (array $data) {
+                                $personnel = \App\Models\Personnel::create($data);
+
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Personnel créé')
+                                    ->success()
+                                    ->body("Le personnel {$personnel->nom_complet} a été ajouté.")
+                                    ->send();
+
+                                return $personnel->id;
+                            }),
+
+                        Forms\Components\Select::make('service_emetteur_id')
+                            ->label('Service émetteur')
+                            ->options(\App\Models\Service::where('actif', true)->pluck('nom', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Service qui émet la décision'),
                     ])
                     ->columns(3),
 
@@ -280,11 +450,6 @@ class DecisionAdministrativeResource extends Resource
             ]);
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
-    {
-        return parent::getEloquentQuery()->with('exercice');
-    }
-
     public static function table(Table $table): Table
     {
         return $table
@@ -394,6 +559,45 @@ class DecisionAdministrativeResource extends Resource
                     ->boolean()
                     ->trueColor('success')
                     ->falseColor('gray'),
+
+                Tables\Columns\TextColumn::make('transmission_status')
+                    ->label('Transmission')
+                    ->getStateUsing(function ($record) {
+                        $transmission = $record->transmissions()
+                            ->where('statut', 'en_attente')
+                            ->latest()
+                            ->first();
+
+                        if (!$transmission) {
+                            return null;
+                        }
+
+                        // Si je suis le destinataire
+                        if ($transmission->destinataire_id === auth()->id()) {
+                            return 'À traiter';
+                        }
+
+                        // Si je suis l'expéditeur
+                        if ($transmission->expediteur_id === auth()->id()) {
+                            return 'En attente chez ' . $transmission->destinataire->name;
+                        }
+
+                        // Sinon affichage générique
+                        return 'Transmis à ' . $transmission->destinataire->name;
+                    })
+                    ->badge()
+                    ->color(fn($state) => match (true) {
+                        $state === 'À traiter' => 'warning',
+                        str_starts_with($state ?? '', 'En attente') => 'info',
+                        default => 'gray'
+                    })
+                    ->icon(fn($state) => match (true) {
+                        $state === 'À traiter' => 'heroicon-o-bell-alert',
+                        str_starts_with($state ?? '', 'En attente') => 'heroicon-o-clock',
+                        default => 'heroicon-o-paper-airplane'
+                    })
+                    ->placeholder('-')
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('exercice_id')
@@ -440,66 +644,40 @@ class DecisionAdministrativeResource extends Resource
                     ->placeholder('Toutes')
                     ->trueLabel('Engagées')
                     ->falseLabel('Non engagées'),
-            ])
-            ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn($record) => $record->estModifiable()),
 
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('warning')
-                    ->visible(fn($record) => $record->statut === 'brouillon')
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->valider(auth()->user());
-                        Notification::make()
-                            ->title('Décision validée')
-                            ->success()
-                            ->send();
-                    }),
+                Tables\Filters\Filter::make('mes_transmissions')
+                    ->label('Mes transmissions envoyées')
+                    ->query(function ($query) {
+                        return $query->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('expediteur_id', auth()->id())
+                                ->where('statut', 'en_attente');
+                        });
+                    })
+                    ->toggle(),
 
-                Tables\Actions\Action::make('engager')
-                    ->label('Engager')
-                    ->icon('heroicon-o-banknotes')
-                    ->color('primary')
-                    ->visible(fn($record) => $record->statut === 'validee' && !$record->engagee)
-                    ->requiresConfirmation()
-                    ->form([
-                        Forms\Components\Select::make('nomenclature_id')
-                            ->label('Nomenclature budgétaire')
-                            ->options(function (callable $get, $record) {
-                                return \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
-                                    ->with('nomenclature')
-                                    ->get()
-                                    ->mapWithKeys(fn($lb) => [
-                                        $lb->nomenclature_id => "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} (Dispo: " .
-                                            number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
-                                    ]);
+                Tables\Filters\Filter::make('a_traiter')
+                    ->label('À traiter par moi')
+                    ->query(function ($query) {
+                        $userId = auth()->id();
+
+                        return $query->where(function ($q) use ($userId) {
+                            // 1. Décisions créées par moi et en brouillon
+                            $q->where(function ($subQ) use ($userId) {
+                                $subQ->where('created_by', $userId)
+                                    ->where('statut', 'brouillon');
                             })
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->helperText('Sélectionner la ligne budgétaire sur laquelle imputer cette dépense'),
-                    ])
-                    ->action(function ($record, array $data) {
-                        try {
-                            $record->engagerBudget($data['nomenclature_id']);
-                            Notification::make()
-                                ->title('Budget engagé avec succès')
-                                ->success()
-                                ->body("Montant net engagé: " . number_format($record->montant_net, 0, ',', ' ') . " FCFA")
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Erreur lors de l\'engagement')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
-                        }
-                    }),
+                                // OU
+                                // 2. Décisions transmises à moi (en attente)
+                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                });
+                        });
+                    })
+                    ->toggle()
+                    ->default(), // Activé par défaut
             ])
+            ->actions(WorkflowActions::make(avecEngagement: true))
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
