@@ -59,7 +59,7 @@ class MonProfil extends Page implements HasForms
             ->send();
     }
 
-    public function updatePassword(): void
+    public function updatePassword(): \Illuminate\Http\RedirectResponse
     {
         $this->validate([
             'current_password' => 'required|current_password',
@@ -71,15 +71,21 @@ class MonProfil extends Page implements HasForms
         $user->password = Hash::make($this->password);
         $user->save();
 
-        // Réinitialiser les champs
-        $this->current_password = '';
-        $this->password = '';
-        $this->password_confirmation = '';
-
+        // Notification avant déconnexion
         Notification::make()
             ->title('Mot de passe modifié')
             ->success()
-            ->body('Votre mot de passe a été changé avec succès.')
+            ->body('Votre mot de passe a été changé. Vous allez être déconnecté.')
             ->send();
+
+        // Déconnecter l'utilisateur
+        auth()->logout();
+
+        // Invalider la session
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
+
+        // Rediriger vers la page de login
+        return redirect()->route('filament.admin.auth.login');
     }
 }

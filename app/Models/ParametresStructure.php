@@ -51,12 +51,14 @@ class ParametresStructure extends Model
         'ir_tranche2_taux',
         'ir_tranche3_min',
         'ir_tranche3_taux',
+        'duree_conservation_logs',
     ];
 
     protected $casts = [
         'taux_tva_defaut' => 'decimal:2',
         'actif' => 'boolean',
         'exercice_courant' => 'integer',
+        'duree_conservation_logs' => 'integer',
     ];
 
     /**

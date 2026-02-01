@@ -78,6 +78,12 @@ class BonCommandeResource extends Resource
      */
     public static function canEdit($record): bool
     {
+        // Si en cours de transmission, PERSONNE ne peut modifier (sauf super admin avec force)
+        if ($record->estEnCoursDeTransmission()) {
+            return auth()->user()?->can('force_update_bon_commande') ?? false;
+        }
+
+        // Logique normale : force_update OU (update ET brouillon)
         return auth()->user()?->can('force_update_bon_commande')
             || (
                 auth()->user()?->can('update_bon_commande')
@@ -152,10 +158,8 @@ class BonCommandeResource extends Resource
                                     return;
                                 }
 
-                                // Stocker le taux IR du fournisseur pour référence
-                                $set('taux_ir_fournisseur', $fournisseur->regimeFiscal->taux_ir_defaut);
-
-                                // Recalculer l'IR sur toutes les lignes existantes
+                                // Recalculer l'IR sur toutes les lignes avec le type d'engagement
+                                $typeEngagementId = $get('type_engagement_id');
                                 $lignes = $get('lignes') ?? [];
 
                                 foreach ($lignes as $index => $ligne) {
@@ -163,9 +167,12 @@ class BonCommandeResource extends Resource
                                     $pu = (float) ($ligne['prix_unitaire_ht'] ?? 0);
                                     $ht = $qte * $pu;
 
-                                    if ($ht > 0) {
-                                        $ir = $fournisseur->calculerIR($ht);
-                                        $lignes[$index]['montant_ir'] = $ir;
+                                    if ($ht > 0 && $typeEngagementId) {
+                                        $type = \App\Models\TypeEngagement::find($typeEngagementId);
+                                        if ($type) {
+                                            $tauxIR = $type->calculerTauxIR($fournisseur->regimeFiscal);
+                                            $lignes[$index]['taux_ir'] = $tauxIR;
+                                        }
                                     }
                                 }
 
@@ -219,6 +226,144 @@ class BonCommandeResource extends Resource
                             ->rows(2)
                             ->columnSpanFull(),
                     ]),
+
+                Forms\Components\Section::make('Taxes et charges')
+                    ->description('Taxes applicables selon le type d\'engagement et le fournisseur')
+                    ->schema([
+                        Forms\Components\Select::make('type_engagement_id')
+                            ->label('Type d\'engagement')
+                            ->relationship('typeEngagement', 'libelle')
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->helperText(function (callable $get) {
+                                $typeId = $get('type_engagement_id');
+                                if ($typeId) {
+                                    $type = \App\Models\TypeEngagement::find($typeId);
+                                    if ($type) {
+                                        return $type->description;
+                                    }
+                                }
+
+                                // Suggestion automatique
+                                $montantTTC = $get('montant_ttc') ?? 0;
+                                if ($montantTTC > 0) {
+                                    $typeSuggere = \App\Models\TypeEngagement::determinerParMontant($montantTTC);
+                                    if ($typeSuggere) {
+                                        return "💡 Suggestion : {$typeSuggere->libelle}";
+                                    }
+                                }
+
+                                return 'Le type sera déterminé automatiquement selon le montant';
+                            }),
+
+                        Forms\Components\Toggle::make('produit_importe')
+                            ->label('Produit importé (soumis à TSR)')
+                            ->helperText('Activez si les produits viennent de l\'étranger')
+                            ->live()
+                            ->columnSpanFull(),
+
+                        Forms\Components\Placeholder::make('info_taxes')
+                            ->label('Information')
+                            ->content(function (callable $get) {
+                                $typeId = $get('type_engagement_id');
+                                $fournisseurId = $get('fournisseur_id');
+
+                                if (!$typeId || !$fournisseurId) {
+                                    return 'Sélectionnez un type d\'engagement et un fournisseur pour voir les taxes applicables';
+                                }
+
+                                $type = \App\Models\TypeEngagement::find($typeId);
+                                $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
+
+                                if (!$type || !$fournisseur) {
+                                    return '-';
+                                }
+
+                                $info = "📊 Taxes applicables :\n\n";
+
+                                // IR
+                                $tauxIR = $type->calculerTauxIR($fournisseur->regimeFiscal);
+                                $info .= "• IR : {$tauxIR}% ";
+
+                                if ($type->mode_calcul_ir === 'fixe') {
+                                    $info .= "(taux fixe pour {$type->libelle})\n";
+                                } elseif ($type->mode_calcul_ir === 'selon_regime') {
+                                    $regime = $fournisseur->regimeFiscal?->libelle ?? 'Non défini';
+                                    $info .= "(selon régime {$regime})\n";
+                                }
+
+                                // TSR
+                                if ($get('produit_importe')) {
+                                    $info .= "• TSR : Applicable (produit importé)\n";
+                                }
+
+                                // TVA
+                                $info .= "• TVA : 19.25% (par défaut)\n";
+
+                                return $info;
+                            })
+                            ->columnSpanFull(),
+
+                        Forms\Components\Grid::make(4)
+                            ->schema([
+                                Forms\Components\TextInput::make('montant_tsr')
+                                    ->label('TSR')
+                                    ->numeric()
+                                    ->prefix('FCFA')
+                                    ->default(0)
+                                    ->disabled(fn(callable $get) => !$get('produit_importe'))
+                                    ->helperText('Taxe Statistique Régionale'),
+
+                                Forms\Components\TextInput::make('montant_cnps')
+                                    ->label('CNPS')
+                                    ->numeric()
+                                    ->prefix('FCFA')
+                                    ->default(0)
+                                    ->helperText('Cotisations sociales'),
+
+                                Forms\Components\TextInput::make('montant_irnc')
+                                    ->label('IRNC')
+                                    ->numeric()
+                                    ->prefix('FCFA')
+                                    ->default(0)
+                                    ->helperText('IR Non Commercial'),
+
+                                Forms\Components\TextInput::make('montant_autres_taxes')
+                                    ->label('Autres taxes')
+                                    ->numeric()
+                                    ->prefix('FCFA')
+                                    ->default(0)
+                                    ->helperText('Autres prélèvements'),
+                            ]),
+
+                        Forms\Components\Placeholder::make('total_taxes')
+                            ->label('Total des taxes et prélèvements')
+                            ->content(function (callable $get) {
+                                $total = ($get('montant_tva') ?? 0)
+                                    + ($get('montant_ir') ?? 0)
+                                    + ($get('montant_tsr') ?? 0)
+                                    + ($get('montant_cnps') ?? 0)
+                                    + ($get('montant_irnc') ?? 0)
+                                    + ($get('montant_autres_taxes') ?? 0);
+
+                                return number_format($total, 0, ',', ' ') . ' FCFA';
+                            })
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
+                    ->collapsible(),
+
+                Forms\Components\Section::make('Référence')
+                    ->schema([
+                        Forms\Components\TextInput::make('reference')
+                            ->label('Référence externe')
+                            ->maxLength(100)
+                            ->placeholder('Ex: REF-2025-001')
+                            ->helperText('Référence du fournisseur ou numéro de dossier externe'),
+                    ])
+                    ->collapsible()
+                    ->collapsed(),
 
                 Forms\Components\Section::make('Lignes du Bon de Commande')
                     ->description('Choisissez d\'abord la nomenclature budgétaire qui sera utilisée pour toutes les lignes, puis ajoutez les articles/services.')
@@ -454,7 +599,27 @@ class BonCommandeResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        $query = parent::getEloquentQuery()->with('exercice');
+
+        $user = auth()->user();
+
+        // Super admin voit tout
+        if ($user->hasRole('super_admin')) {
+            return $query;
+        }
+
+        // Pour les autres utilisateurs : filtrer les BC en cours de transmission
+        return $query->where(function ($q) use ($user) {
+            // BC sans transmission en cours (tout le monde peut voir)
+            $q->whereDoesntHave('transmissions', function ($transmission) {
+                $transmission->where('statut', 'en_attente');
+            })
+                // OU BC dont je suis le destinataire actuel
+                ->orWhereHas('transmissions', function ($transmission) use ($user) {
+                    $transmission->where('statut', 'en_attente')
+                        ->where('destinataire_id', $user->id);
+                });
+        });
     }
 
     public static function table(Table $table): Table
@@ -560,6 +725,68 @@ class BonCommandeResource extends Resource
                     ->boolean()
                     ->trueColor('success')
                     ->falseColor('gray'),
+
+                Tables\Columns\TextColumn::make('typeEngagement.libelle')
+                    ->label('Type')
+                    ->badge()
+                    ->color(fn($record) => match ($record->typeEngagement?->code) {
+                        'BC' => 'success',
+                        'LC' => 'warning',
+                        'MARCHE' => 'primary',
+                        'DECOMPTE_LC', 'DECOMPTE_MARCHE' => 'info',
+                        default => 'gray',
+                    })
+                    ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('reference')
+                    ->label('Référence')
+                    ->searchable()
+                    ->toggleable()
+                    ->placeholder('-'),
+
+                // Modifier la colonne montant_ir pour montant_total_impots
+                Tables\Columns\TextColumn::make('montant_total_impots')
+                    ->label('Total Impôts')
+                    ->getStateUsing(fn($record) => $record->calculerMontantTotalImpots())
+                    ->money('XAF')
+                    ->sortable()
+                    ->color('warning')
+                    ->description(function ($record) {
+                        $details = [];
+                        if ($record->montant_tva > 0) $details[] = "TVA: " . number_format($record->montant_tva, 0, ',', ' ');
+                        if ($record->montant_ir > 0) $details[] = "IR: " . number_format($record->montant_ir, 0, ',', ' ');
+                        if ($record->montant_tsr > 0) $details[] = "TSR: " . number_format($record->montant_tsr, 0, ',', ' ');
+                        if ($record->montant_cnps > 0) $details[] = "CNPS: " . number_format($record->montant_cnps, 0, ',', ' ');
+
+                        return implode(' | ', $details);
+                    })
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('transmission_status')
+                    ->label('Transmission')
+                    ->getStateUsing(function ($record) {
+                        $transmission = $record->transmissions()
+                            ->where('statut', 'en_attente')
+                            ->latest()
+                            ->first();
+
+                        if (!$transmission) {
+                            return null;
+                        }
+
+                        if ($transmission->destinataire_id === auth()->id()) {
+                            return 'À traiter';
+                        }
+
+                        return 'Transmis à ' . $transmission->destinataire->name;
+                    })
+                    ->badge()
+                    ->color(fn($state) => $state === 'À traiter' ? 'warning' : 'info')
+                    ->icon(fn($state) => $state === 'À traiter' ? 'heroicon-o-bell-alert' : 'heroicon-o-paper-airplane')
+                    ->placeholder('-')
+                    ->toggleable(),
+
             ])
             ->filters([
                 Tables\Filters\Filter::make('date_emission')
@@ -701,6 +928,27 @@ class BonCommandeResource extends Resource
                     ->trueLabel('Engagés')
                     ->falseLabel('Non engagés'),
 
+                Tables\Filters\Filter::make('mes_transmissions')
+                    ->label('Mes transmissions')
+                    ->query(function ($query) {
+                        return $query->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('expediteur_id', auth()->id())
+                                ->where('statut', 'en_attente');
+                        });
+                    })
+                    ->toggle(),
+
+                Tables\Filters\Filter::make('a_traiter')
+                    ->label('À traiter par moi')
+                    ->query(function ($query) {
+                        return $query->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('destinataire_id', auth()->id())
+                                ->where('statut', 'en_attente');
+                        });
+                    })
+                    ->toggle()
+                    ->default(),
+
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -777,7 +1025,8 @@ class BonCommandeResource extends Resource
                             ->options(User::whereNotNull('name')->pluck('name', 'id'))
                             ->required()
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            ->live(),
 
                         Forms\Components\Select::make('action_attendue')
                             ->label('Action attendue')
@@ -798,14 +1047,53 @@ class BonCommandeResource extends Resource
 
                         Forms\Components\Select::make('priorite')
                             ->label('Priorité')
-                            ->options([
-                                'basse' => 'Basse',
-                                'normale' => 'Normale',
-                                'haute' => 'Haute',
-                                'urgente' => 'Urgente',
-                            ])
+                            ->options(function (Forms\Get $get) {
+                                $destinataireId = $get('destinataire_id');
+
+                                if (!$destinataireId) {
+                                    return [
+                                        'normale' => 'Normale',
+                                    ];
+                                }
+
+                                $destinataire = User::find($destinataireId);
+                                $expediteur = auth()->user();
+
+                                // Si l'expéditeur a un niveau égal ou supérieur, il peut choisir toutes les priorités
+                                if ($expediteur->peutImposerPrioriteA($destinataire)) {
+                                    return [
+                                        'basse' => 'Basse',
+                                        'normale' => 'Normale',
+                                        'haute' => 'Haute',
+                                        'urgente' => 'Urgente',
+                                    ];
+                                }
+
+                                // Sinon, seulement les priorités basse et normale
+                                return [
+                                    'basse' => 'Basse',
+                                    'normale' => 'Normale',
+                                ];
+                            })
                             ->default('normale')
-                            ->required(),
+                            ->required()
+                            ->live()
+                            ->helperText(function (Forms\Get $get) {
+                                $destinataireId = $get('destinataire_id');
+
+                                if (!$destinataireId) {
+                                    return '';
+                                }
+
+                                $destinataire = User::find($destinataireId);
+                                $expediteur = auth()->user();
+
+                                if (!$expediteur->peutImposerPrioriteA($destinataire)) {
+                                    return '⚠️ Vous ne pouvez pas définir une priorité haute ou urgente pour un supérieur hiérarchique.';
+                                }
+
+                                return '';
+                            }),
 
                         Forms\Components\DatePicker::make('date_limite')
                             ->label('Date limite (optionnel)')

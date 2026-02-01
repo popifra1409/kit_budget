@@ -352,6 +352,19 @@ class ParametresStructureResource extends Resource
                     ])
                     ->columns(3)
                     ->collapsed(),
+                    
+                Forms\Components\Section::make('Journal d\'activité')
+                    ->schema([
+                        Forms\Components\TextInput::make('duree_conservation_logs')
+                            ->label('Durée de conservation des logs (jours)')
+                            ->numeric()
+                            ->default(90)
+                            ->minValue(30)
+                            ->maxValue(365)
+                            ->helperText('Les logs plus anciens seront automatiquement supprimés chaque semaine'),
+                    ])
+                    ->collapsible()
+                    ->collapsed(),
             ]);
     }
 

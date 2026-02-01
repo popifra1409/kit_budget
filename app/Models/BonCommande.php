@@ -41,6 +41,13 @@ class BonCommande extends Model
         'engage',
         'montant_engage',
         'date_engagement',
+        'type_engagement_id',
+        'reference',
+        'montant_tsr',
+        'montant_cnps',
+        'montant_irnc',
+        'montant_autres_taxes',
+        'produit_importe',
     ];
 
     protected $casts = [
@@ -56,7 +63,45 @@ class BonCommande extends Model
         'montant_ttc' => 'decimal:2',
         'montant_engage' => 'decimal:2',
         'engage' => 'boolean',
+        'type_engagement_id',
+        'reference',
+        'montant_tsr',
+        'montant_cnps',
+        'montant_irnc',
+        'montant_autres_taxes',
+        'produit_importe',
     ];
+
+    /**
+     * Relation : Type d'engagement
+     */
+    public function typeEngagement(): BelongsTo
+    {
+        return $this->belongsTo(TypeEngagement::class);
+    }
+
+    /**
+     * Calculer le montant total des impôts et taxes
+     * (TVA + IR + TSR + CNPS + IRNC + Autres)
+     */
+    public function calculerMontantTotalImpots(): float
+    {
+        return $this->montant_tva
+            + $this->montant_ir
+            + $this->montant_tsr
+            + $this->montant_cnps
+            + $this->montant_irnc
+            + $this->montant_autres_taxes;
+    }
+
+    /**
+     * Obtenir le montant net à percevoir
+     * Pour OP : Montant Brut (TTC) - Total Impôts
+     */
+    public function getMontantNetPercevoir(): float
+    {
+        return $this->montant_ttc - $this->calculerMontantTotalImpots();
+    }
 
     /**
      * Boot - Générer le numéro automatiquement
@@ -77,24 +122,157 @@ class BonCommande extends Model
         });
     }
 
-    protected static function booted()
+    /**
+     * Déterminer automatiquement le type d'engagement selon le montant
+     */
+    public function determinerTypeEngagement(): void
     {
-        static::deleting(function ($bc) {
+        $type = TypeEngagement::determinerParMontant($this->montant_ttc);
+
+        if ($type) {
+            $this->type_engagement_id = $type->id;
+            $this->save();
+        }
+    }
+
+    /**
+     * Vérifier si le BC est en cours de transmission (pas clôturé, pas retourné)
+     */
+    public function estEnCoursDeTransmission(): bool
+    {
+        return $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->exists();
+    }
+
+    /**
+     * Vérifier si l'utilisateur actuel est le destinataire de la transmission en cours
+     */
+    public function estDestinataireActuel(): bool
+    {
+        $transmissionEnCours = $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+
+        return $transmissionEnCours
+            && $transmissionEnCours->destinataire_id === auth()->id();
+    }
+
+    /**
+     * Vérifier si l'utilisateur actuel est l'auteur/propriétaire du BC
+     */
+    public function estAuteur(): bool
+    {
+        // Vous pouvez ajuster cette logique selon votre modèle
+        // Par exemple, si vous avez un champ created_by
+        return $this->created_by === auth()->id();
+    }
+
+    /**
+     * Vérifier si l'utilisateur actuel peut voir ce BC
+     */
+    public function peutEtreVuPar(?int $userId = null): bool
+    {
+        $userId = $userId ?? auth()->id();
+
+        // Super admin peut tout voir
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Si pas de transmission en cours, tout le monde peut voir
+        if (!$this->estEnCoursDeTransmission()) {
+            return true;
+        }
+
+        // Si en cours de transmission, seul le destinataire actuel peut voir
+        return $this->estDestinataireActuel();
+    }
+
+    /**
+     * Vérifier si l'utilisateur actuel peut modifier ce BC
+     */
+    public function peutEtreModifiePar(?int $userId = null): bool
+    {
+        $userId = $userId ?? auth()->id();
+
+        // Super admin peut tout modifier
+        if (auth()->user()?->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Si en cours de transmission, seul le destinataire peut "agir" (pas modifier, mais traiter)
+        if ($this->estEnCoursDeTransmission()) {
+            return false; // Personne ne peut modifier pendant une transmission
+        }
+
+        // Si brouillon, vérifier les permissions normales
+        return $this->estModifiable();
+    }
+
+    protected static function booted(): void
+    {
+        // ========================================
+        // ÉVÉNEMENT : AVANT CRÉATION
+        // ========================================
+        static::creating(function ($bonCommande) {
+            // 1. Générer le numéro si pas défini
+            if (!$bonCommande->numero) {
+                $bonCommande->numero = $bonCommande->genererNumero();
+            }
+
+            // 2. Déterminer le type d'engagement automatiquement si non défini
+            if (!$bonCommande->type_engagement_id && $bonCommande->montant_ttc > 0) {
+                $type = \App\Models\TypeEngagement::determinerParMontant($bonCommande->montant_ttc);
+                if ($type) {
+                    $bonCommande->type_engagement_id = $type->id;
+                }
+            }
+        });
+
+        // ========================================
+        // ÉVÉNEMENT : AVANT MISE À JOUR
+        // ========================================
+        static::updating(function ($bonCommande) {
+            // 1. CONTRÔLE DE SÉCURITÉ : Vérifier les permissions
+            if (
+                $bonCommande->isDirty() &&
+                $bonCommande->getOriginal('statut') !== 'brouillon' &&
+                !auth()->user()?->hasRole('super_admin')
+            ) {
+                throw new \Exception(
+                    'Modification interdite : bon de commande non brouillon. Seul le super administrateur peut modifier un BC validé.'
+                );
+            }
+
+            // 2. Recalculer le type d'engagement si le montant change
+            // (mais uniquement si l'utilisateur n'a pas manuellement changé le type)
+            if ($bonCommande->isDirty('montant_ttc') && !$bonCommande->isDirty('type_engagement_id')) {
+                if ($bonCommande->montant_ttc > 0) {
+                    $type = \App\Models\TypeEngagement::determinerParMontant($bonCommande->montant_ttc);
+                    if ($type) {
+                        $bonCommande->type_engagement_id = $type->id;
+                    }
+                }
+            }
+        });
+
+        // ========================================
+        // ÉVÉNEMENT : AVANT SUPPRESSION
+        // ========================================
+        static::deleting(function ($bonCommande) {
+            // CONTRÔLE DE SÉCURITÉ : Seul le super admin peut supprimer
             if (!auth()->user()?->hasRole('super_admin')) {
                 throw new \Exception(
                     'Suppression interdite : réservé au super administrateur.'
                 );
             }
-        });
 
-        static::updating(function ($bc) {
-            if (
-                $bc->isDirty() &&
-                $bc->getOriginal('statut') !== 'brouillon' &&
-                !auth()->user()?->hasRole('super_admin')
-            ) {
+            // Note : Si le BC est engagé, vous pourriez ajouter un contrôle supplémentaire
+            if ($bonCommande->engage) {
                 throw new \Exception(
-                    'Modification interdite : bon de commande non brouillon.'
+                    'Suppression interdite : ce bon de commande est déjà engagé. Annulez-le d\'abord.'
                 );
             }
         });
@@ -545,12 +723,19 @@ class BonCommande extends Model
         return ($totalLivree / $totalQuantite) * 100;
     }
 
+    // /**
+    //  * Calcule le Net à Percevoir (HT - IR)
+    //  */
+    // public function getNetAPercevoirAttribute(): float
+    // {
+    //     return $this->montant_ht - $this->montant_ir;
+    // }
     /**
-     * Calcule le Net à Percevoir (HT - IR)
+     * Accesseur : Net à percevoir
      */
     public function getNetAPercevoirAttribute(): float
     {
-        return $this->montant_ht - $this->montant_ir;
+        return $this->getMontantNetPercevoir();
     }
 
     /**

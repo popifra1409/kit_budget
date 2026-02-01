@@ -164,6 +164,23 @@ class User extends Authenticatable implements FilamentUser
         $this->update(['actif' => false]);
     }
 
+    /**
+     * Obtenir le niveau hiérarchique de l'utilisateur
+     */
+    public function getNiveauHierarchique(): int
+    {
+        $role = $this->roles()->first();
+        return $role?->niveau_hierarchique ?? 0;
+    }
+
+    /**
+     * Vérifier si l'utilisateur peut imposer une priorité à un autre utilisateur
+     */
+    public function peutImposerPrioriteA(User $destinataire): bool
+    {
+        return $this->getNiveauHierarchique() >= $destinataire->getNiveauHierarchique();
+    }
+
     // ========================================
     // RELATIONS BORDEREAUX ENGAGEMENT
     // COLONNES RÉELLES : emis_par, detenu_par_id, valide_par, rejete_par

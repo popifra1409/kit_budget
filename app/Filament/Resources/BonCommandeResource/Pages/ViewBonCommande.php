@@ -15,6 +15,23 @@ class ViewBonCommande extends ViewRecord
 
     protected function getHeaderActions(): array
     {
+        // Afficher un message si en cours de transmission
+        if ($this->record->estEnCoursDeTransmission()) {
+            $transmission = $this->record->transmissions()
+                ->where('statut', 'en_attente')
+                ->latest()
+                ->first();
+
+            if ($transmission && $transmission->destinataire_id !== auth()->id()) {
+                \Filament\Notifications\Notification::make()
+                    ->warning()
+                    ->title('Document en cours de transmission')
+                    ->body("Ce document a été transmis à {$transmission->destinataire->name} et n'est plus modifiable.")
+                    ->persistent()
+                    ->send();
+            }
+        }
+
         return [
             Actions\EditAction::make()
                 ->visible(false),
