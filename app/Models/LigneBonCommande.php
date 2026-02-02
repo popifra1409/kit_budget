@@ -16,6 +16,8 @@ class LigneBonCommande extends Model
     protected $fillable = [
         'bon_commande_id',
         'nomenclature_id',
+        'reference_mercuriale_id',
+        'reference_personnalisee',
         'numero_ligne',
         'designation',
         'unite',
@@ -95,7 +97,28 @@ class LigneBonCommande extends Model
      */
     public function nomenclature(): BelongsTo
     {
-        return $this->belongsTo(NomenclatureBudgetaire::class);
+        return $this->belongsTo(NomenclatureBudgetaire::class, 'nomenclature_id');
+    }
+
+    public function referenceMercuriale(): BelongsTo
+    {
+        return $this->belongsTo(ReferenceMercuriale::class, 'reference_mercuriale_id');
+    }
+
+     // ===== ACCESSEURS =====
+
+    /**
+     * Obtenir la référence à afficher (mercuriale ou personnalisée)
+     */
+    public function getReferenceAttribute(): ?string
+    {
+        // Si référence mercuriale, retourner son code
+        if ($this->referenceMercuriale) {
+            return $this->referenceMercuriale->code_reference;
+        }
+
+        // Sinon retourner la référence personnalisée
+        return $this->reference_personnalisee;
     }
 
     /**

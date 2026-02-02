@@ -16,6 +16,7 @@ use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use App\Filament\Actions\WorkflowActions;
+use App\Services\DecisionAdministrativePdfService;
 use Illuminate\Database\Eloquent\Builder;
 
 class DecisionAdministrativeResource extends Resource
@@ -677,7 +678,13 @@ class DecisionAdministrativeResource extends Resource
                     ->toggle()
                     ->default(), // Activé par défaut
             ])
-            ->actions(WorkflowActions::make(avecEngagement: true))
+            ->actions(
+                WorkflowActions::make(
+                    avecEngagement: true,
+                    pdfServiceClass: DecisionAdministrativePdfService::class,
+                    pdfRouteName: 'decisions-administratives.pdf.preview'
+                )
+            )
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

@@ -25,6 +25,7 @@ class BonCommande extends Model
         'budget_id',
         'fournisseur_id',
         'service_demandeur_id',
+        'service_beneficiaire_id',
         'date_emission',
         'date_livraison_prevue',
         'date_livraison_effective',
@@ -72,6 +73,7 @@ class BonCommande extends Model
         'montant_irnc',
         'montant_autres_taxes',
         'produit_importe',
+        'net_a_payer' => 'decimal:2',
     ];
 
     /**
@@ -303,6 +305,14 @@ class BonCommande extends Model
     {
         return $this->belongsTo(Service::class, 'service_demandeur_id');
     }
+    /**
+     * Service bénéficiaire (celui qui reçoit les biens/services)
+     * Si c'est le même que le demandeur, ajoutez cette relation
+     */
+    public function serviceBeneficiaire(): BelongsTo
+    {
+        return $this->belongsTo(Service::class, 'service_beneficiaire_id');
+    }
 
     /**
      * Relation : Validateur
@@ -362,6 +372,41 @@ class BonCommande extends Model
         }
 
         return sprintf('BC-%d-%04d', $annee, $nouveauNumero);
+    }
+
+    /**
+     * Générer le numéro d'engagement à partir du numéro du BC
+     * BC-2025-001 devient BE-2025-001
+     */
+    protected function genererNumeroEngagement(): string
+    {
+        if (!$this->numero) {
+            throw new \Exception('Le bon de commande n\'a pas de numéro');
+        }
+
+        // Remplacer BC par BE
+        $numeroEngagement = str_replace('BC-', 'BE-', $this->numero);
+
+        // Si le numéro ne commence pas par BC-, essayer d'autres patterns
+        if ($numeroEngagement === $this->numero) {
+            // Pattern alternatif : BC/2025/001 -> BE/2025/001
+            $numeroEngagement = preg_replace('/^BC([\/\-_])/', 'BE$1', $this->numero);
+        }
+
+        // Si aucun pattern n'a matché, ajouter simplement BE- au début
+        if ($numeroEngagement === $this->numero) {
+            $numeroEngagement = 'BE-' . $this->numero;
+        }
+
+        // Vérifier l'unicité du numéro d'engagement
+        $count = 1;
+        $numeroBase = $numeroEngagement;
+        while (Engagement::where('reference_document', $numeroEngagement)->exists()) {
+            $numeroEngagement = $numeroBase . '-' . $count;
+            $count++;
+        }
+
+        return $numeroEngagement;
     }
 
     /**
@@ -457,6 +502,8 @@ class BonCommande extends Model
 
         \DB::beginTransaction();
         try {
+            // ✅ GÉNÉRATION DU NUMÉRO D'ENGAGEMENT
+            $numeroEngagement = $this->genererNumeroEngagement();
             // Net à payer = TTC - IR
             // Net à payer = HT - IR (montant effectivement perçu par le fournisseur)
             $netAPayer = $this->montant_ht - $this->montant_ir;
@@ -488,6 +535,7 @@ class BonCommande extends Model
                 'budget_id' => $this->budget_id,
                 'type_engagement' => 'BC',
                 'nomenclature_principale_id' => $nomenclaturePrincipaleId,
+                'reference_document' => $numeroEngagement,
                 'reference_document' => $this->numero,
                 'engageable_type' => self::class,
                 'engageable_id' => $this->id,
@@ -586,6 +634,14 @@ class BonCommande extends Model
             $this->save();
 
             \DB::commit();
+
+            // ✅ LOG POUR CONFIRMATION
+            \Log::info("Engagement créé", [
+                'bc_numero' => $this->numero,
+                'engagement_numero' => $numeroEngagement,
+                'engagement_id' => $engagement->id,
+                'montant' => $netAPayer,
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
             throw $e;

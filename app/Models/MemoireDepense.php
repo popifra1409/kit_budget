@@ -76,9 +76,12 @@ class MemoireDepense extends Model
         return $this->belongsTo(BordereauEngagement::class);
     }
 
+    /**
+     * ✅ CORRECTION : Spécifier explicitement la clé étrangère
+     */
     public function bonCommande(): BelongsTo
     {
-        return $this->belongsTo(BonCommande::class);
+        return $this->belongsTo(BonCommande::class, 'bon_commande_id');
     }
 
     public function lignes(): HasMany

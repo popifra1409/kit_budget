@@ -20,6 +20,7 @@ use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use App\Models\User;
 use App\Filament\Actions\WorkflowActions;
+use App\Services\BonCommandePdfService;
 
 class BonCommandeResource extends Resource
 {
@@ -365,10 +366,10 @@ class BonCommandeResource extends Resource
                     ])
                     ->collapsible()
                     ->collapsed(),
-
                 Forms\Components\Section::make('Lignes du Bon de Commande')
                     ->description('Choisissez d\'abord la nomenclature budgétaire qui sera utilisée pour toutes les lignes, puis ajoutez les articles/services.')
                     ->schema([
+                        // ===== NOMENCLATURE COMMUNE =====
                         Forms\Components\Select::make('nomenclature_commune_id')
                             ->label('Nomenclature budgétaire (commune à toutes les lignes)')
                             ->options(function (callable $get) {
@@ -389,28 +390,22 @@ class BonCommandeResource extends Resource
                             ->searchable()
                             ->preload()
                             ->live()
+                            ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                // Copier la nomenclature dans toutes les lignes existantes
+                                $lignes = $get('lignes') ?? [];
+
+                                foreach ($lignes as $index => $ligne) {
+                                    $set("lignes.{$index}.nomenclature_id", $state);
+                                }
+                            })
                             ->helperText('Cette nomenclature sera automatiquement assignée à toutes les lignes ci-dessous')
                             ->columnSpanFull(),
 
                         Forms\Components\Repeater::make('lignes')
                             ->relationship('lignes')
                             ->schema([
-                                Forms\Components\Hidden::make('nomenclature_id')
-                                    ->default(fn(callable $get) => $get('../../nomenclature_commune_id')),
 
-                                Forms\Components\Placeholder::make('nomenclature_info')
-                                    ->label('Nomenclature')
-                                    ->content(function (callable $get) {
-                                        $nomenclatureId = $get('../../nomenclature_commune_id');
-                                        if (!$nomenclatureId) {
-                                            return 'Sélectionnez d\'abord la nomenclature ci-dessus';
-                                        }
-                                        $nomenclature = \App\Models\NomenclatureBudgetaire::find($nomenclatureId);
-                                        return $nomenclature ? "{$nomenclature->code} - {$nomenclature->libelle}" : '-';
-                                    })
-                                    ->columnSpan(2),
-
-                                // ===== NOUVEAU : Choix Mercuriale ou Saisie Libre =====
+                                // ===== Choix Mercuriale ou Saisie Libre =====
                                 Forms\Components\Select::make('reference_mercuriale_id')
                                     ->label('Référence Mercuriale')
                                     ->options(function (callable $get) {
@@ -439,6 +434,7 @@ class BonCommandeResource extends Resource
                                                 $set('designation', $reference->designation);
                                                 $set('unite', $reference->unite);
                                                 $set('prix_unitaire_ht', $reference->prix_reference);
+                                                $set('reference_personnalisee', null); // Effacer la ref perso
                                             }
                                         } else {
                                             // Réinitialiser pour saisie manuelle
@@ -447,155 +443,261 @@ class BonCommandeResource extends Resource
                                             $set('prix_unitaire_ht', 0);
                                         }
                                     })
+                                    ->dehydrateStateUsing(fn($state) => $state === 'manual' ? null : $state)
                                     ->helperText('Choisissez une référence mercuriale ou "Saisie manuelle"')
                                     ->columnSpan(2),
 
+                                // ===== Référence personnalisée (pour saisie manuelle) =====
+                                Forms\Components\TextInput::make('reference_personnalisee')
+                                    ->label('Réf. perso')
+                                    ->maxLength(100)
+                                    ->placeholder('Ex: REF-001')
+                                    ->visible(fn(callable $get) => $get('reference_mercuriale_id') === 'manual' || !$get('reference_mercuriale_id'))
+                                    ->columnSpan(1),
+
+                                // ===== Désignation et Observations =====
                                 Forms\Components\TextInput::make('designation')
                                     ->label('Désignation')
                                     ->required()
-                                    ->maxLength(255)
-                                    ->placeholder('Ex: Ordinateur portable HP EliteBook')
-                                    ->disabled(fn(callable $get) => $get('reference_mercuriale_id') && $get('reference_mercuriale_id') !== 'manual')
-                                    ->dehydrated()
                                     ->columnSpan(2),
 
-                                Forms\Components\TextInput::make('unite')
-                                    ->label('Unité')
-                                    ->maxLength(255)
-                                    ->placeholder('pièce, kg, m, etc.')
-                                    ->default('pièce')
-                                    ->disabled(fn(callable $get) => $get('reference_mercuriale_id') && $get('reference_mercuriale_id') !== 'manual')
-                                    ->dehydrated(),
+                                Forms\Components\Textarea::make('observations')
+                                    ->label('Observations')
+                                    ->rows(2)
+                                    ->columnSpan(3),
 
-                                Forms\Components\TextInput::make('quantite')
-                                    ->label('Quantité')
-                                    ->required()
-                                    ->numeric()
-                                    ->default(1)
-                                    ->minValue(0.001)
-                                    ->live(debounce: 500)
-                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                                        self::recalculerLigne($set, $get);
-                                    }),
+                                // ===== Quantités, Prix, Taxes =====
+                                Forms\Components\Grid::make(6)
+                                    ->schema([
+                                        Forms\Components\TextInput::make('quantite')
+                                            ->label('Qté')
+                                            ->numeric()
+                                            ->required()
+                                            ->default(1)
+                                            ->minValue(0)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get)),
 
-                                Forms\Components\TextInput::make('prix_unitaire_ht')
-                                    ->label('Prix Unitaire HT')
-                                    ->required()
-                                    ->numeric()
-                                    ->prefix('FCFA')
-                                    ->default(0)
-                                    ->live(debounce: 500)
-                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                                        self::recalculerLigne($set, $get);
-                                    }),
+                                        Forms\Components\Select::make('unite')
+                                            ->label('Unité')
+                                            ->options([
+                                                'pièce' => 'Pièce',
+                                                'lot' => 'Lot',
+                                                'kg' => 'Kg',
+                                                'litre' => 'L',
+                                                'mètre' => 'M',
+                                                'heure' => 'H',
+                                                'jour' => 'J',
+                                                'forfait' => 'Forfait',
+                                            ])
+                                            ->required()
+                                            ->default('pièce')
+                                            ->searchable(),
 
-                                Forms\Components\TextInput::make('taux_tva')
-                                    ->label('Taux TVA (%)')
-                                    ->numeric()
-                                    ->default(19.25)
-                                    ->suffix('%')
-                                    ->minValue(0)
-                                    ->maxValue(100)
-                                    ->live(debounce: 500),
+                                        Forms\Components\TextInput::make('prix_unitaire_ht')
+                                            ->label('P.U HT')
+                                            ->numeric()
+                                            ->required()
+                                            ->prefix('FCFA')
+                                            ->minValue(0)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get)),
 
-                                Forms\Components\TextInput::make('taux_ir')
-                                    ->label('Taux IR (%)')
-                                    ->numeric()
-                                    ->suffix('%')
-                                    ->minValue(0)
-                                    ->maxValue(100)
-                                    ->live(debounce: 500)
-                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                                        self::recalculerLigne($set, $get);
-                                    })
-                                    ->helperText('Pré-rempli selon régime fiscal, modifiable'),
+                                        Forms\Components\TextInput::make('taux_tva')
+                                            ->label('TVA %')
+                                            ->numeric()
+                                            ->default(19.25)
+                                            ->suffix('%')
+                                            ->minValue(0)
+                                            ->maxValue(100)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get)),
 
-                                Forms\Components\Placeholder::make('montant_preview')
-                                    ->label('Montants estimés')
+                                        Forms\Components\TextInput::make('taux_ir')
+                                            ->label('IR %')
+                                            ->numeric()
+                                            ->default(0)
+                                            ->suffix('%')
+                                            ->minValue(0)
+                                            ->maxValue(100)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get))
+                                            ->helperText('IR spécifique (0 = auto)'),
+
+                                        Forms\Components\Placeholder::make('net_display')
+                                            ->label('Net à payer')
+                                            ->content(function (callable $get) {
+                                                $netAPayer = (float) ($get('net_a_payer') ?? 0);
+                                                return number_format($netAPayer, 0, ',', ' ') . ' FCFA';
+                                            }),
+                                    ]),
+
+                                // ===== Champs cachés =====
+                                Forms\Components\Hidden::make('montant_ht')->default(0),
+                                Forms\Components\Hidden::make('montant_tva')->default(0),
+                                Forms\Components\Hidden::make('montant_ir')->default(0),
+                                Forms\Components\Hidden::make('montant_ttc')->default(0),
+                                Forms\Components\Hidden::make('net_a_payer')->default(0),
+                                Forms\Components\Hidden::make('nomenclature_id'), // ← Récupéré de nomenclature_commune_id
+                                Forms\Components\Hidden::make('quantite_livree')->default(0),
+                                Forms\Components\Hidden::make('quantite_restante')
+                                    ->default(fn(callable $get) => $get('quantite') ?? 0),
+
+                                // ===== Récapitulatif =====
+                                Forms\Components\Placeholder::make('recap_montants')
+                                    ->label('Récapitulatif')
                                     ->content(function (callable $get) {
-                                        $qte = (float) ($get('quantite') ?? 0);
-                                        $pu = (float) ($get('prix_unitaire_ht') ?? 0);
-                                        $tva = (float) ($get('taux_tva') ?? 19.25);
-                                        $tauxIr = (float) ($get('taux_ir') ?? 0);
+                                        $montantHT = (float) ($get('montant_ht') ?? 0);
+                                        $montantTVA = (float) ($get('montant_tva') ?? 0);
+                                        $montantIR = (float) ($get('montant_ir') ?? 0);
+                                        $montantTTC = (float) ($get('montant_ttc') ?? 0);
+                                        $netAPayer = (float) ($get('net_a_payer') ?? 0);
 
-                                        $ht = $qte * $pu;
-                                        $montantTva = $ht * ($tva / 100);
-                                        $ttc = $ht + $montantTva;
-
-                                        // Calculer IR
-                                        $fournisseurId = $get('../../fournisseur_id');
-                                        $ir = 0;
-
-                                        if ($tauxIr > 0) {
-                                            // Taux manuel fourni
-                                            $ir = $ht * ($tauxIr / 100);
-                                        } elseif ($fournisseurId) {
-                                            // Utiliser le régime du fournisseur
-                                            $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
-                                            if ($fournisseur && $fournisseur->regimeFiscal) {
-                                                $ir = $fournisseur->calculerIR($ht);
-                                            }
-                                        }
-
-                                        // Net à payer = HT - IR
-                                        $net = $ht - $ir;
-
-                                        return "HT: " . number_format($ht, 0, ',', ' ') . " FCFA\n" .
-                                            "TVA (" . number_format($tva, 2) . "%): " . number_format($montantTva, 0, ',', ' ') . " FCFA\n" .
-                                            "TTC: " . number_format($ttc, 0, ',', ' ') . " FCFA\n" .
-                                            "IR: " . number_format($ir, 0, ',', ' ') . " FCFA\n" .
-                                            "Net à payer: " . number_format($net, 0, ',', ' ') . " FCFA";
+                                        return sprintf(
+                                            "HT: %s | TVA: %s | TTC: %s | IR: %s | Net: %s",
+                                            number_format($montantHT, 0, ',', ' '),
+                                            number_format($montantTVA, 0, ',', ' '),
+                                            number_format($montantTTC, 0, ',', ' '),
+                                            number_format($montantIR, 0, ',', ' '),
+                                            number_format($netAPayer, 0, ',', ' ')
+                                        );
                                     })
-                                    ->columnSpan(2),
+                                    ->columnSpan(3),
                             ])
-                            ->columns(6)
+                            ->columns(3)
+                            ->defaultItems(1)
+                            ->addActionLabel('➕ Ajouter une ligne')
+                            ->reorderable()
                             ->collapsible()
-                            ->itemLabel(
-                                fn(array $state): ?string =>
-                                $state['designation'] ?? 'Nouvelle ligne'
-                            )
-                            ->addActionLabel('Ajouter une ligne')
-                            ->columnSpanFull()
-                            ->minItems(1)
+                            ->itemLabel(fn(array $state): ?string => $state['designation'] ?? 'Nouvelle ligne')
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                static::recalculerTotaux($state, $set);
+                            })
                             ->mutateRelationshipDataBeforeCreateUsing(function (array $data, callable $get): array {
-                                $data['nomenclature_id'] = $get('nomenclature_commune_id');
-
-                                // Nettoyer reference_mercuriale_id si c'est "manual"
-                                if (isset($data['reference_mercuriale_id']) && $data['reference_mercuriale_id'] === 'manual') {
-                                    unset($data['reference_mercuriale_id']);
+                                // Assigner la nomenclature commune lors de la création de nouvelles lignes
+                                $nomenclatureCommuneId = $get('nomenclature_commune_id');
+                                if ($nomenclatureCommuneId) {
+                                    $data['nomenclature_id'] = $nomenclatureCommuneId;
                                 }
-
                                 return $data;
                             })
                             ->mutateRelationshipDataBeforeFillUsing(function (array $data, callable $get): array {
+                                // Lors du chargement, s'assurer que la nomenclature commune est définie
+                                if (empty($data['nomenclature_id'])) {
+                                    $nomenclatureCommuneId = $get('nomenclature_commune_id');
+                                    if ($nomenclatureCommuneId) {
+                                        $data['nomenclature_id'] = $nomenclatureCommuneId;
+                                    }
+                                }
                                 return $data;
                             }),
-                    ]),
+                    ])
+                    ->collapsible()
+                    ->collapsed(fn($record) => $record !== null && $record->lignes()->count() > 0),
             ]);
+    }
+
+    /**
+     * Recalculer une ligne (montants HT, TVA, IR, TTC, net à payer)
+     */
+    protected static function recalculerLigne(callable $set, callable $get): void
+    {
+        $quantite = (float) ($get('quantite') ?? 0);
+        $prixUnitaireHT = (float) ($get('prix_unitaire_ht') ?? 0);
+        $tauxTVA = (float) ($get('taux_tva') ?? 19.25);
+        $tauxIR = (float) ($get('taux_ir') ?? 0);
+
+        // 1. Calcul du montant HT
+        $montantHT = $quantite * $prixUnitaireHT;
+        $set('montant_ht', round($montantHT, 2));
+
+        // 2. Calcul du montant TVA
+        $montantTVA = ($montantHT * $tauxTVA) / 100;
+        $set('montant_tva', round($montantTVA, 2));
+
+        // 3. Calcul du montant TTC
+        $montantTTC = $montantHT + $montantTVA;
+        $set('montant_ttc', round($montantTTC, 2));
+
+        // 4. Calcul de l'IR
+        $montantIR = 0;
+
+        if ($tauxIR > 0) {
+            // IR manuel spécifié
+            $montantIR = ($montantHT * $tauxIR) / 100;
+        } else {
+            // IR automatique basé sur le type d'engagement et le régime fiscal
+            $typeEngagementId = $get('../../type_engagement_id');
+            $fournisseurId = $get('../../fournisseur_id');
+
+            if ($typeEngagementId && $fournisseurId && $montantHT > 0) {
+                $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
+                $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
+
+                if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
+                    $tauxIRAuto = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
+                    $montantIR = ($montantHT * $tauxIRAuto) / 100;
+                    $set('taux_ir', $tauxIRAuto); // Mettre à jour le taux affiché
+                }
+            }
+        }
+
+        $set('montant_ir', round($montantIR, 2));
+
+        // 5. Calcul du net à payer
+        // Option 1: Net à payer = HT - IR (montant sans TVA, après retenue IR)
+        $netAPayer = $montantHT - $montantIR;
+
+        // Option 2: Net à payer = TTC - IR (si l'IR doit être déduit du TTC)
+        // $netAPayer = $montantTTC - $montantIR;
+
+        $set('net_a_payer', round($netAPayer, 2));
+
+        // 6. Mettre à jour quantite_restante
+        $quantiteLivree = (float) ($get('quantite_livree') ?? 0);
+        $set('quantite_restante', max(0, $quantite - $quantiteLivree));
+
+        // 7. Déclencher le recalcul des totaux du BC
+        $lignes = $get('../../lignes') ?? [];
+        static::recalculerTotaux($lignes, function ($key, $value) use ($set) {
+            $set("../../{$key}", $value);
+        });
     }
 
     /**
      * Recalculer une ligne (IR, montants, etc.)
      */
-    protected static function recalculerLigne(callable $set, callable $get): void
+    protected static function recalculerTotaux(?array $lignes, callable $set): void
     {
-        $qte = (float) ($get('quantite') ?? 0);
-        $pu = (float) ($get('prix_unitaire_ht') ?? 0);
-        $ht = $qte * $pu;
-
-        // Calculer l'IR automatiquement si pas de taux manuel
-        $tauxIr = (float) ($get('taux_ir') ?? 0);
-
-        if ($tauxIr == 0 && $ht > 0) {
-            $fournisseurId = $get('../../fournisseur_id');
-            if ($fournisseurId) {
-                $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
-                if ($fournisseur && $fournisseur->regimeFiscal) {
-                    $tauxCalcule = $fournisseur->regimeFiscal->taux_ir_defaut;
-                    $set('taux_ir', $tauxCalcule);
-                }
-            }
+        if (!$lignes) {
+            return;
         }
+
+        $totalHT = 0;
+        $totalTVA = 0;
+        $totalIR = 0;
+        $totalTTC = 0;
+        $totalNetAPayer = 0;
+
+        foreach ($lignes as $ligne) {
+            $totalHT += (float) ($ligne['montant_ht'] ?? 0);
+            $totalTVA += (float) ($ligne['montant_tva'] ?? 0);
+            $totalIR += (float) ($ligne['montant_ir'] ?? 0);
+            $totalTTC += (float) ($ligne['montant_ttc'] ?? 0);
+            $totalNetAPayer += (float) ($ligne['net_a_payer'] ?? 0);
+        }
+
+        // Mise à jour des totaux du BC
+        $set('montant_ht', round($totalHT, 2));
+        $set('montant_tva', round($totalTVA, 2));
+        $set('montant_ir', round($totalIR, 2));
+        $set('montant_ttc', round($totalTTC, 2));
+
+        // Net à payer du BC = somme des nets à payer des lignes
+        // OU si vous préférez : HT total - IR total
+        $set('net_a_payer', round($totalNetAPayer, 2));
+        // Alternative : $set('net_a_payer', round($totalHT - $totalIR, 2));
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
@@ -757,6 +859,21 @@ class BonCommandeResource extends Resource
                     ->searchable()
                     ->toggleable()
                     ->placeholder('-'),
+                    
+                Tables\Columns\TextColumn::make('engagement.reference_document')
+                    ->label('N° Engagement')
+                    ->searchable()
+                    ->badge()
+                    ->color('success')
+                    ->icon('heroicon-o-banknotes')
+                    ->placeholder('-')
+                    ->visible(fn($record) => $record && $record->engage && $record->engagement)
+                    ->description(
+                        fn($record) =>
+                        $record && $record->engagement && $record->date_engagement
+                            ? 'Engagé le ' . $record->date_engagement->format('d/m/Y')
+                            : null
+                    ),
 
                 // Modifier la colonne montant_ir pour montant_total_impots
                 Tables\Columns\TextColumn::make('montant_total_impots')
@@ -965,32 +1082,36 @@ class BonCommandeResource extends Resource
                         });
                     })
                     ->toggle(),
-
                 Tables\Filters\Filter::make('a_traiter')
                     ->label('À traiter par moi')
                     ->query(function ($query) {
                         $userId = auth()->id();
 
                         return $query->where(function ($q) use ($userId) {
-                            // 1. Documents créés par moi et en brouillon
+                            // 1. Documents créés par moi ET en brouillon
                             $q->where(function ($subQ) use ($userId) {
                                 $subQ->where('created_by', $userId)
                                     ->where('statut', 'brouillon');
                             })
                                 // OU
-                                // 2. Documents transmis à moi (en attente)
-                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
+                                // 2. Documents transmis à moi (en attente de traitement)
+                                ->orWhere(function ($subQ) use ($userId) {
+                                    $subQ->whereHas('transmissions', function ($transmission) use ($userId) {
+                                        $transmission->where('destinataire_id', $userId)
+                                            ->where('statut', 'en_attente');
+                                    });
                                 });
                         });
                     })
                     ->toggle()
-                    ->default(), // Activé par défaut
-
+                    ->default(false), // ← CHANGÉ : Désactivé par défaut
             ])
             ->actions(
-                WorkflowActions::make(avecEngagement: true)
+                WorkflowActions::make(
+                    avecEngagement: true,
+                    pdfServiceClass: BonCommandePdfService::class,
+                    pdfRouteName: 'bons-commande.pdf.preview'
+                )
             )
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

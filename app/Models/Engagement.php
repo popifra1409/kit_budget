@@ -90,6 +90,55 @@ class Engagement extends Model
     }
 
     /**
+     * ✅ Méthode helper pour obtenir le BC si c'est le type engageable
+     */
+    public function getBonCommandeAttribute()
+    {
+        // Charger la relation si nécessaire
+        if (!$this->relationLoaded('engageable')) {
+            $this->load('engageable');
+        }
+
+        // Vérifier le type
+        if ($this->engageable instanceof \App\Models\BonCommande) {
+            return $this->engageable;
+        }
+
+        return null;
+    }
+
+    /**
+     * ✅ MÉTHODE ALTERNATIVE : Obtenir le bon de commande
+     * Plus explicite et peut être appelée comme méthode
+     */
+    public function obtenirBonCommande(): ?\App\Models\BonCommande
+    {
+        $this->loadMissing('engageable');
+
+        return $this->engageable instanceof \App\Models\BonCommande
+            ? $this->engageable
+            : null;
+    }
+
+    /**
+     * ✅ Vérifier si l'engagement est lié à un BC
+     */
+    public function estBonCommande(): bool
+    {
+        return $this->engageable_type === \App\Models\BonCommande::class
+            || $this->engageable_type === 'App\Models\BonCommande';
+    }
+
+    /**
+     * ✅ Vérifier si l'engagement est lié à une Décision
+     */
+    public function estDecision(): bool
+    {
+        return $this->engageable_type === \App\Models\DecisionAdministrative::class
+            || $this->engageable_type === 'App\Models\DecisionAdministrative';
+    }
+
+    /**
      * Relation : Bénéficiaire (polymorphique)
      * Fournisseur, User, etc.
      */
@@ -201,17 +250,17 @@ class Engagement extends Model
             throw new \Exception("Impossible d'annuler un engagement soldé");
         }
 
-        // Désengager les lignes budgétaires
-        foreach ($this->lignes as $ligne) {
-            $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                ->where('nomenclature_id', $ligne->nomenclature_id)
-                ->firstOrFail();
+        DB::transaction(function () {
+            foreach ($this->lignes as $ligne) {
+                $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
+                    ->where('nomenclature_id', $ligne->nomenclature_id)
+                    ->firstOrFail();
 
-            $ligneBudgetaire->annulerEngagement($ligne->montant);
-        }
+                $ligneBudgetaire->annulerEngagement($ligne->montant);
+            }
 
-        $this->statut = 'annule';
-        $this->save();
+            $this->update(['statut' => 'annule']);
+        });
     }
 
     /**
@@ -259,12 +308,16 @@ class Engagement extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
-            ->logOnlyDirty()
-            ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
+            ->logOnly([
+                'numero',
+                'budget_id',
+                'exercice_id',
+                'statut',
+                'montant_engage',
+                'date_validation'
+            ])
+            ->logOnlyDirty();
     }
-
     /**
      * Relation : Bon de commande (si créé via BC)
      */
@@ -273,10 +326,10 @@ class Engagement extends Model
     //     return $this->belongsTo(BonCommande::class, 'bon_commande_id');
     // }
 
-    public function bonCommande()
-    {
-        return $this->hasOne(BonCommande::class, 'engagement_id');
-    }
+    // public function bonCommande()
+    // {
+    //     return $this->hasOne(BonCommande::class, 'bon_commande_id');
+    // }
 
 
     /**
@@ -286,7 +339,7 @@ class Engagement extends Model
     {
         $ordonnances = [];
 
-        // Récupérer le BC lié via la relation (peut être null)
+        // Récupérer le BC lié via la relation
         $bonCommande = $this->bonCommande;
 
         // Déterminer le fournisseur/bénéficiaire
@@ -294,14 +347,15 @@ class Engagement extends Model
         $montantIR = 0;
 
         if ($bonCommande) {
-            // Via Bon de Commande
-            $beneficiaire = $bonCommande->fournisseur;
-            $montantIR = $bonCommande->montant_ir ?? 0;
-        } else {
-            // Engagement direct (sans BC)
-            // Le bénéficiaire peut être défini dans l'engagement lui-même
-            $beneficiaire = $this->beneficiaire ?? $this->engageable;
+            // ✅ Si on a un BC, utiliser creerDepuisBonCommande qui est plus complet
+            return [
+                'standard' => \App\Models\OrdonnancePaiement::creerDepuisBonCommande($bonCommande, 'standard'),
+                'impot' => \App\Models\OrdonnancePaiement::creerDepuisBonCommande($bonCommande, 'impot'),
+            ];
         }
+
+        // ❌ Engagement sans BC - utiliser l'ancienne logique
+        $beneficiaire = $this->beneficiaire ?? $this->engageable;
 
         if (!$beneficiaire) {
             throw new \Exception("Aucun bénéficiaire trouvé pour cet engagement. Veuillez définir un bénéficiaire.");
@@ -311,12 +365,10 @@ class Engagement extends Model
         $montantNet = $montantBrut - $montantIR;
 
         // Log pour debug
-        \Log::info('Création OP', [
+        \Log::info('Création OP sans BC', [
             'engagement_id' => $this->id,
-            'a_bon_commande' => $bonCommande ? 'OUI' : 'NON',
             'beneficiaire_id' => $beneficiaire->id,
             'beneficiaire_class' => get_class($beneficiaire),
-            'beneficiaire_nom' => $beneficiaire->raison_sociale ?? $beneficiaire->name,
             'montant_ir' => $montantIR,
         ]);
 
@@ -334,19 +386,11 @@ class Engagement extends Model
             'montant_net' => $montantNet,
             'date_emission' => now(),
             'mois_emission' => now()->format('m'),
-            'numero_bon' => $bonCommande->numero ?? null,
             'numero_emission' => $this->numero ?? null,
             'numero_op' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'standard'),
             'periode' => now()->format('m/Y'),
             'statut' => 'brouillon',
             'created_by' => auth()->id(),
-        ]);
-
-        // Vérifier que le bénéficiaire a bien été enregistré
-        \Log::info('OP créée', [
-            'op_id' => $opStandard->id,
-            'beneficiaire_type_saved' => $opStandard->beneficiaire_type,
-            'beneficiaire_id_saved' => $opStandard->beneficiaire_id,
         ]);
 
         $ordonnances['standard'] = $opStandard;
@@ -367,7 +411,6 @@ class Engagement extends Model
                 'montant_pec' => $montantNet,
                 'date_emission' => now(),
                 'mois_emission' => now()->format('m'),
-                'numero_bon' => $bonCommande->numero ?? null,
                 'numero_emission' => $this->numero ?? null,
                 'numero_op' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'impot'),
                 'periode' => now()->format('m/Y'),
@@ -376,37 +419,6 @@ class Engagement extends Model
             ]);
 
             $ordonnances['impot'] = $opImpot;
-        }
-
-        // 3. Ajouter les OP au dossier fournisseur si existe
-        if ($bonCommande) {
-            $dossier = \App\Models\DossierFournisseur::where('document_principal_type', get_class($bonCommande))
-                ->where('document_principal_id', $bonCommande->id)
-                ->first();
-
-            if ($dossier) {
-                $dossier->ajouterPiece([
-                    'type_piece' => 'ordre_paiement',
-                    'document_type' => get_class($opStandard),
-                    'document_id' => $opStandard->id,
-                    'nom_fichier' => "OP-{$opStandard->numero}.pdf",
-                    'chemin_fichier' => '',
-                    'valide' => false,
-                ]);
-
-                if (isset($ordonnances['impot'])) {
-                    $dossier->ajouterPiece([
-                        'type_piece' => 'piece_comptable',
-                        'document_type' => get_class($ordonnances['impot']),
-                        'document_id' => $ordonnances['impot']->id,
-                        'nom_fichier' => "OPT-{$ordonnances['impot']->numero}.pdf",
-                        'chemin_fichier' => '',
-                        'valide' => false,
-                    ]);
-                }
-
-                $dossier->update(['statut' => 'attente_paiement']);
-            }
         }
 
         return $ordonnances;

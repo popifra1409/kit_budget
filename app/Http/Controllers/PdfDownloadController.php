@@ -62,9 +62,10 @@ class PdfDownloadController extends Controller
                 'engageable',
             ])->findOrFail($id);
         } elseif ($model === OrdonnancePaiement::class) {
+            // ✅ CORRECTION : Charger engageable au lieu de bonCommande
             $record = $model::with([
                 'engagement.nomenclaturePrincipale',
-                'engagement.bonCommande.fournisseur',
+                'engagement.engageable.fournisseur', // ✅ engageable au lieu de bonCommande
                 'beneficiaire',
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
@@ -96,7 +97,7 @@ class PdfDownloadController extends Controller
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
 
-            // États liés aux Ordonnances de paiement ← AJOUTER CES 2 LIGNES
+            // États liés aux Ordonnances de paiement
             'ordonnance_paiement' => OrdonnancePaiement::class,
             'ordonnance_paiement_impot' => OrdonnancePaiement::class,
         ];
@@ -129,10 +130,11 @@ class PdfDownloadController extends Controller
                 'lignes',
                 'engageable',
             ])->findOrFail($id);
-        } elseif ($model === OrdonnancePaiement::class) {  // ← AJOUTER CE BLOC
+        } elseif ($model === OrdonnancePaiement::class) {
+            // ✅ CORRECTION : Charger engageable au lieu de bonCommande
             $record = $model::with([
                 'engagement.nomenclaturePrincipale',
-                'engagement.bonCommande.fournisseur',
+                'engagement.engageable.fournisseur', // ✅ engageable au lieu de bonCommande
                 'beneficiaire',
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
@@ -149,3 +151,4 @@ class PdfDownloadController extends Controller
         return $this->generator->afficher($etat, $record);
     }
 }
+    

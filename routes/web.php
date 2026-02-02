@@ -8,6 +8,10 @@ use App\Http\Controllers\PdfDownloadController;
 use App\Http\Controllers\WelcomeController;
 use App\Http\Controllers\CompteDesactiveController;
 use App\Http\Controllers\SecureLogoutController;
+use App\Services\BonCommandePdfService;
+use App\Services\DecisionAdministrativePdfService;
+use App\Models\BonCommande;
+use App\Models\DecisionAdministrative;
 
 /*
 |--------------------------------------------------------------------------
@@ -62,6 +66,24 @@ Route::middleware(['web', 'auth'])->group(function () {
         Route::get('/afficher/{etat}/{id}', [PdfDownloadController::class, 'afficher'])
             ->name('pdf.afficher');
     });
+
+    // Bons de commande
+    Route::get('/bons-commande/{bonCommande}/pdf/preview', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::apercu($bonCommande);
+    })->name('bons-commande.pdf.preview');
+    // Téléchargement direct (AJOUTER)
+    Route::get('/bons-commande/{bonCommande}/pdf/download', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::telecharger($bonCommande);
+    })->name('bons-commande.pdf.download');
+
+    // Décisions administratives
+    Route::get('/decisions-administratives/{decision}/pdf/preview', function (DecisionAdministrative $decision) {
+        return DecisionAdministrativePdfService::apercu($decision);
+    })->name('decisions-administratives.pdf.preview');
+    // Téléchargement direct (AJOUTER)
+    Route::get('/decisions-administratives/{decision}/pdf/download', function (DecisionAdministrative $decision) {
+        return DecisionAdministrativePdfService::telecharger($decision);
+    })->name('decisions-administratives.pdf.download');
 });
 
 /*

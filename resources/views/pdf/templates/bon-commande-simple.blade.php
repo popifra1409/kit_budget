@@ -12,12 +12,12 @@
 @endsection
 
 @section('content')
-    {{-- Date et numéro de commande --}}
+    {{-- Date et numero de commande --}}
     <div style="text-align: right; margin: 15px 0; font-size: 10pt;">
         <div class="commande-box">
             COMMANDE {{ $parametres->sigle }} N° {{ $bonCommande->numero }}
         </div>
-        <strong>Yaoundé, le</strong> {{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
+        <strong>Yaounde, le</strong> {{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
     </div>
 
     {{-- Informations du bon de commande --}}
@@ -32,8 +32,8 @@
 
             <tr>
                 <td class="label">
-                    Livraison – Réception<br>
-                    de 7h30 à 12h du Lundi au Mercredi<br>
+                    Livraison - Reception<br>
+                    de 7h30 a 12h du Lundi au Mercredi<br>
                     (Sauf urgence)
                 </td>
                 <td class="value">
@@ -42,9 +42,9 @@
             </tr>
 
             <tr>
-                <td class="label">DÉLAI :</td>
+                <td class="label">DELAI :</td>
                 <td class="value">
-                    le plus court possible et à nous confirmer au plus tard le _____________
+                    le plus court possible et a nous confirmer au plus tard le _____________
                 </td>
             </tr>
 
@@ -52,7 +52,7 @@
                 <td class="label">IMPUTATION :</td>
                 <td class="value">
                     {{ $bonCommande->engagement->nomenclaturePrincipale->code ?? '' }}
-                    –
+                    -
                     {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
                 </td>
             </tr>
@@ -70,9 +70,10 @@
     <table>
         <thead>
             <tr>
-                <th>REF</th>
+                <th>N°</th>
+                <th>REFERENCE</th>
                 <th>DESIGNATION</th>
-                <th>QTÉS</th>
+                <th>QTES</th>
                 <th>P.U</th>
                 <th>Total</th>
             </tr>
@@ -81,6 +82,7 @@
             @foreach ($bonCommande->lignes as $i => $ligne)
                 <tr>
                     <td class="num">{{ $i + 1 }}</td>
+                    <td class="ref">{{ $ligne->reference ?? '-' }}</td>
                     <td class="designation">{{ $ligne->designation }}</td>
                     <td class="num">{{ $ligne->quantite }}</td>
                     <td class="money">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
@@ -106,7 +108,7 @@
                 <td class="money">{{ number_format($bonCommande->montant_ir, 0, ',', ' ') }}</td>
             </tr>
             <tr>
-                <td class="total-final">NET À PAYER</td>
+                <td class="total-final">NET A PAYER</td>
                 <td class="money total-final">
                     {{ number_format($bonCommande->net_a_percevoir, 0, ',', ' ') }}
                 </td>
@@ -121,7 +123,7 @@
     </div>
     {{-- Montant en lettres --}}
     <div class="montant-lettres">
-        Arrêté le présent bon de commande à la somme de
+        Arrete le present bon de commande a la somme de
         <strong>@yield('montant_lettres')</strong>
     </div>
 
