@@ -9,7 +9,7 @@
     $labelOPEn = $ordonnance && $ordonnance->type_ordonnance === 'impot' ? 'N° of OPT' : 'N° of OP';
 @endphp
 
-<table style="width: 100%; border: none; margin-bottom: 15px;">
+<table style="width: 100%; border: none; margin-bottom: 0px;">
     <tr>
         <td style="width: 25%; border-right: 1px solid #000; padding: 0; vertical-align: top;">
             {{-- Logo --}}
@@ -32,18 +32,18 @@
                 {{ strtoupper($parametres->nom_structure_en ?? 'YAOUNDE GENERAL HOSPITAL') }}
             </div>
 
-            <div style="font-size: 8pt; margin-bottom: 10px;">
+            <div style="font-size: 8pt; margin-bottom: 5px;">
                 B.P {{ $parametres->boite_postale ?? '5408' }} {{ $parametres->ville ?? 'YAOUNDE' }}.
                 Tel: {{ $parametres->telephone ?? '(237) 222 21 20 18' }}
                 Fax: {{ $parametres->fax ?? '(237) 222 21 20 15' }}
             </div>
 
-            <div style="margin-bottom: 10px;">
+            <div style="margin-bottom: 5px;">
                 <div style="font-weight: bold; font-size: 11pt;">ORDONNANCE DE PAIEMENT</div>
                 <div style="font-style: italic; font-size: 9pt;">PAYMENT ORDER</div>
             </div>
 
-            <div style="font-size: 8.5pt; line-height: 1.3;">
+            <div style="font-size: 8.5pt; line-height: 1.1;">
                 <div style="font-weight: bold;">
                     L'Agent comptable de l'{{ strtoupper($parametres->sigle ?? 'HGY') }} est autorisé à payer la
                 </div>
