@@ -1,12 +1,53 @@
 @extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
 
+@section('footer_override')
+    @include('pdf.partials.footer-engagement')
+@endsection
+
 @php
     $engagement = $donnees['_raw'];
+
+    $engagement->load(['nomenclaturePrincipale', 'beneficiaire', 'exercice']);
+
     $nomenclature = $engagement->nomenclaturePrincipale;
-    $tache = $nomenclature->tache ?? null;
-    $activite = $tache->activite ?? null;
-    $action = $activite->action ?? null;
-    $programme = $action->programme ?? null;
+
+    // ✅ Essayer de trouver une tâche liée à cette nomenclature
+    $tache = null;
+    $activite = null;
+    $action = null;
+    $programme = null;
+    $objectif = null;
+
+    if ($nomenclature) {
+        // Priorité : sous-tâche, sinon première tâche disponible
+        $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
+
+        if ($tache) {
+            $tache->load('activite.action.programme.objectifsPrincipaux');
+
+            $activite = $tache->activite;
+            $action = $activite?->action;
+            $programme = $action?->programme;
+            $objectif = $programme?->objectifsPrincipaux;
+        } else {
+            // ✅ FALLBACK : Logger l'absence de tâche
+        \Log::warning('Aucune tâche liée à la nomenclature (Fiche Performance)', [
+            'nomenclature_id' => $nomenclature->id,
+            'nomenclature_code' => $nomenclature->code,
+            'engagement_id' => $engagement->id,
+        ]);
+    }
+}
+
+// ✅ DEBUG (à retirer après)
+\Log::info('Hiérarchie Fiche Performance', [
+    'nomenclature' => $nomenclature?->code,
+    'tache' => $tache?->libelle,
+    'activite' => $activite?->libelle,
+    'action' => $action?->libelle,
+    'programme' => $programme?->libelle,
+    'objectif' => $objectif?->libelle,
+    ]);
 @endphp
 
 @section('title', 'Fiche de Performance')
@@ -59,6 +100,15 @@
             font-weight: bold;
             background-color: #f0f0f0;
         }
+
+        .warning-box {
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 8px;
+            margin: 10px 0;
+            font-size: 8pt;
+            color: #856404;
+        }
     </style>
 @endsection
 
@@ -68,50 +118,61 @@
         FICHE DE PERFORMANCE
     </div>
 
+    {{-- ✅ Avertissement si données incomplètes --}}
+    @if (!$tache)
+        <div class="warning-box">
+            ⚠️ Attention: La hiérarchie budgétaire complète n'est pas disponible pour cette nomenclature.
+            Veuillez compléter les données dans le module de gestion budgétaire.
+        </div>
+    @endif
+
     {{-- Exercice --}}
     <div class="info-line">
-        <strong>EXERCICE:</strong> {{ $engagement->exercice ?? now()->year }}
+        <strong>EXERCICE:</strong> {{ $engagement->exercice?->annee ?? now()->year }}
     </div>
 
     {{-- Programme --}}
     <div class="info-line">
-        <strong>PROGRAMME:</strong> {{ $programme->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}
+        <strong>PROGRAMME:</strong> {{ $programme?->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}
     </div>
 
     {{-- Objectif --}}
     <div class="info-line">
         <strong>OBJECTIF:</strong>
-        {{ $action->objectif ?? 'Améliorer la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
+        {{ $objectif?->libelle ?? 'Améliorer la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
     </div>
 
     {{-- Action --}}
     <div class="info-line">
-        <strong>ACTION:</strong> {{ $action->libelle ?? 'Gestion budgétaire et financière' }}
+        <strong>ACTION:</strong> {{ $action?->libelle ?? 'Gestion budgétaire et financière' }}
     </div>
 
     {{-- Activité --}}
     <div class="info-line">
-        <strong>ACTIVITÉ:</strong> {{ $activite->libelle ?? 'Appuyer les services en consommables médicaux' }}
+        <strong>ACTIVITÉ:</strong> {{ $activite?->libelle ?? 'Appuyer les services en consommables médicaux' }}
     </div>
 
     {{-- Tâche --}}
     <div class="info-line">
-        <strong>TACHE:</strong> {{ $tache->libelle ?? $nomenclature->libelle }}
+        <strong>TACHE:</strong> {{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}
     </div>
 
     {{-- Indicateur de résultats --}}
     <div class="info-line">
-        <strong>INDICATEUR DE RESULTATS:</strong> Disponibilité des consommables dans les services
+        <strong>INDICATEUR DE RESULTATS:</strong>
+        {{ $tache?->indicateur_resultat ?? ($activite?->indicateur_resultat ?? 'Disponibilité des consommables dans les services') }}
     </div>
 
     {{-- Valeur de référence --}}
     <div class="info-line">
-        <strong>VALEUR DE REFERENCE:</strong> {{ $tache->valeur_reference ?? 'Fourniture d\'Anatomopathologie' }}
+        <strong>VALEUR DE REFERENCE:</strong>
+        {{ $tache?->valeur_reference ?? ($activite?->valeur_reference ?? 'Fourniture d\'Anatomopathologie') }}
     </div>
 
     {{-- Niveau actuel d'avancement --}}
     <div class="info-line">
         <strong>NIVEAU ACTUEL D'AVANCEMENT:</strong>
+        {{ $tache?->niveau_avancement ?? ($activite?->niveau_avancement ?? '') }}
     </div>
 
     {{-- Section : Mise à disposition des moyens --}}
@@ -126,7 +187,7 @@
         </tr>
         <tr>
             <td class="label">Imputation:</td>
-            <td>{{ $nomenclature->code }}</td>
+            <td>{{ $nomenclature?->code ?? 'N/A' }}</td>
         </tr>
         <tr>
             <td class="label">N°BON:</td>
@@ -134,7 +195,7 @@
         </tr>
         <tr>
             <td class="label">Montant:</td>
-            <td>{{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa</td>
+            <td>{{ number_format($engagement->montant_engage ?? 0, 0, ',', ' ') }} F cfa</td>
         </tr>
         <tr>
             <td class="label">Date:</td>
@@ -143,7 +204,75 @@
         </tr>
         <tr>
             <td class="label">Objet de la dépense:</td>
-            <td>{{ $engagement->objet }}</td>
+            <td>{{ $engagement->objet ?? '' }}</td>
         </tr>
     </table>
+
+    {{-- ✅ Section optionnelle : Détails de la tâche (si disponible) --}}
+    @if ($tache)
+        <div class="section-title">
+            DÉTAILS DE LA TÂCHE
+        </div>
+
+        <table class="moyens-table">
+            <tr>
+                <td class="label">Code tâche:</td>
+                <td>{{ $tache->code ?? 'N/A' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Description:</td>
+                <td>{{ $tache->description ?? $tache->libelle }}</td>
+            </tr>
+            @if ($tache->date_debut)
+                <tr>
+                    <td class="label">Date début:</td>
+                    <td>{{ \Carbon\Carbon::parse($tache->date_debut)->format('d/m/Y') }}</td>
+                </tr>
+            @endif
+            @if ($tache->date_fin)
+                <tr>
+                    <td class="label">Date fin prévue:</td>
+                    <td>{{ \Carbon\Carbon::parse($tache->date_fin)->format('d/m/Y') }}</td>
+                </tr>
+            @endif
+            @if ($tache->responsable)
+                <tr>
+                    <td class="label">Responsable:</td>
+                    <td>{{ $tache->responsable }}</td>
+                </tr>
+            @endif
+        </table>
+    @endif
+
+    {{-- ✅ Section optionnelle : Suivi de performance (si données disponibles) --}}
+    @if ($activite)
+        <div class="section-title">
+            SUIVI DE PERFORMANCE
+        </div>
+
+        <table class="moyens-table">
+            <tr>
+                <td class="label">Objectif quantifié:</td>
+                <td>{{ $activite->objectif_quantifie ?? 'N/A' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Résultat attendu:</td>
+                <td>{{ $activite->resultat_attendu ?? 'N/A' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Résultat obtenu:</td>
+                <td>{{ $activite->resultat_obtenu ?? 'En cours' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Taux de réalisation:</td>
+                <td>
+                    @if ($activite->objectif_quantifie && $activite->resultat_obtenu)
+                        {{ round(($activite->resultat_obtenu / $activite->objectif_quantifie) * 100, 2) }}%
+                    @else
+                        N/A
+                    @endif
+                </td>
+            </tr>
+        </table>
+    @endif
 @endsection

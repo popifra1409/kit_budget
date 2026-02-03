@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -239,6 +240,30 @@ class Engagement extends Model
         $this->engage_par = $user->id;
         $this->date_validation = now();
         $this->save();
+    }
+
+    /**
+     * ✅ AJOUTER CETTE MÉTHODE
+     * Vérifier si peut être annulé
+     */
+    public function peutEtreAnnule(): bool
+    {
+        // Ne peut pas annuler si déjà annulé
+        if ($this->statut === 'annule') {
+            return false;
+        }
+
+        // Ne peut pas annuler si soldé
+        if ($this->statut === 'solde') {
+            return false;
+        }
+
+        // Ne peut pas annuler s'il y a des ordonnances de paiement
+        if ($this->ordonnancesPaiement()->exists()) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

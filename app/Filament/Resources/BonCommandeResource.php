@@ -859,7 +859,7 @@ class BonCommandeResource extends Resource
                     ->searchable()
                     ->toggleable()
                     ->placeholder('-'),
-                    
+
                 Tables\Columns\TextColumn::make('engagement.reference_document')
                     ->label('N° Engagement')
                     ->searchable()
@@ -934,6 +934,21 @@ class BonCommandeResource extends Resource
 
             ])
             ->filters([
+                Tables\Filters\Filter::make('mes_bons')
+                    ->label('Mes bons de commande')
+                    ->query(function ($query) {
+                        $user = auth()->user();
+
+                        if (!$user || $user->hasRole('super_admin')) {
+                            return $query;
+                        }
+
+                        return $query->where('created_by', $user->id);
+                    })
+                    ->toggle()
+                    ->default(fn() => !auth()->user()?->hasRole('super_admin'))
+                    ->indicateUsing(fn() => 'Mes bons uniquement'),
+
                 Tables\Filters\Filter::make('date_emission')
                     ->form([
                         Forms\Components\DatePicker::make('date_emission_from')

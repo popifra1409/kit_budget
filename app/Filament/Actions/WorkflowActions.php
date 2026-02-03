@@ -103,7 +103,7 @@ class WorkflowActions
             ->button()
             ->visible(fn($record) => !in_array($record->statut, ['brouillon']));
     }
-    
+
     /* =========================
      | ACTION : VALIDER
      ========================= */
@@ -126,8 +126,8 @@ class WorkflowActions
     }
 
     /* =========================
-     | ACTION : ENGAGER
-     ========================= */
+ | ACTION : ENGAGER
+ ========================= */
     private static function engager(): Tables\Actions\Action
     {
         return Tables\Actions\Action::make('engager')
@@ -140,29 +140,154 @@ class WorkflowActions
                     && !($record->engage ?? $record->engagee ?? false)
             )
             ->requiresConfirmation()
-            ->action(function ($record) {
-                try {
-                    // Compatible BC et Décision
-                    if (method_exists($record, 'engagerBudget')) {
-                        $record->engagerBudget();
+            ->modalHeading('Engager le budget')
+            ->modalDescription(fn($record) => "Créer un engagement budgétaire pour " . ($record->numero ?? 'ce document'))
+            ->form(function ($record) {
+                if ($record instanceof \App\Models\DecisionAdministrative) {
+                    return [
+                        Forms\Components\Select::make('nomenclature_id')
+                            ->label('Nomenclature budgétaire')
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->options(function () use ($record) {
+                                // ✅ CORRECTION : Utiliser map au lieu de pluck pour filtrer les null
+                                return \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
+                                    ->with('nomenclature')
+                                    ->get()
+                                    ->filter(fn($ligne) => $ligne->nomenclature) // Filtrer les null
+                                    ->mapWithKeys(function ($ligne) {
+                                        $nomenclature = $ligne->nomenclature;
+                                        $label = $nomenclature->code . ' - ' . $nomenclature->libelle;
 
-                        // Recharger pour avoir l'engagement
+                                        // Ajouter le disponible
+                                        $disponible = $ligne->disponible_engagement ?? 0;
+                                        $label .= ' (Dispo: ' . number_format($disponible, 0, ',', ' ') . ' FCFA)';
+
+                                        return [$nomenclature->id => $label];
+                                    })
+                                    ->toArray();
+                            })
+                            ->helperText('Sélectionnez la ligne budgétaire à engager')
+                            ->live()
+                            ->afterStateUpdated(function ($state, $set) use ($record) {
+                                // ✅ Afficher les détails de la ligne sélectionnée
+                                if ($state) {
+                                    $ligne = \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
+                                        ->where('nomenclature_id', $state)
+                                        ->with('nomenclature')
+                                        ->first();
+
+                                    if ($ligne) {
+                                        $set('ligne_details', [
+                                            'montant_vote' => $ligne->montant_vote,
+                                            'engage' => $ligne->engage,
+                                            'disponible' => $ligne->disponible_engagement,
+                                        ]);
+                                    }
+                                }
+                            }),
+
+                        Forms\Components\Placeholder::make('montant_info')
+                            ->label('Montants de la décision')
+                            ->content(fn() => new \Illuminate\Support\HtmlString(
+                                '<div style="font-family: monospace; line-height: 1.8;">' .
+                                    '<strong>Montant brut :</strong> ' . number_format($record->montant_brut, 0, ',', ' ') . ' FCFA<br>' .
+                                    '<strong>CNPS :</strong> ' . number_format($record->cnps, 0, ',', ' ') . ' FCFA<br>' .
+                                    '<strong>IR :</strong> ' . number_format($record->ir, 0, ',', ' ') . ' FCFA<br>' .
+                                    '<strong>Autres retenues :</strong> ' . number_format($record->autres_retenues ?? 0, 0, ',', ' ') . ' FCFA<br>' .
+                                    '<strong style="color: green;">Net à engager :</strong> <strong>' . number_format($record->montant_net, 0, ',', ' ') . ' FCFA</strong>' .
+                                    '</div>'
+                            )),
+
+                        Forms\Components\Placeholder::make('ligne_info')
+                            ->label('Crédit disponible')
+                            ->content(function ($get) use ($record) {
+                                $nomenclatureId = $get('nomenclature_id');
+
+                                if (!$nomenclatureId) {
+                                    return 'Sélectionnez une nomenclature pour voir le crédit disponible';
+                                }
+
+                                $ligne = \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
+                                    ->where('nomenclature_id', $nomenclatureId)
+                                    ->first();
+
+                                if (!$ligne) {
+                                    return 'Ligne budgétaire introuvable';
+                                }
+
+                                $peutEngager = $ligne->peutEngager($record->montant_net);
+                                $color = $peutEngager ? 'green' : 'red';
+                                $icon = $peutEngager ? '✅' : '❌';
+
+                                return new \Illuminate\Support\HtmlString(
+                                    '<div style="font-family: monospace; line-height: 1.8;">' .
+                                        '<strong>Montant voté :</strong> ' . number_format($ligne->montant_vote, 0, ',', ' ') . ' FCFA<br>' .
+                                        '<strong>Déjà engagé :</strong> ' . number_format($ligne->engage, 0, ',', ' ') . ' FCFA<br>' .
+                                        '<strong style="color: ' . $color . ';">' . $icon . ' Disponible :</strong> <strong>' . number_format($ligne->disponible_engagement, 0, ',', ' ') . ' FCFA</strong><br>' .
+                                        ($peutEngager
+                                            ? '<span style="color: green;">✅ Crédit suffisant</span>'
+                                            : '<span style="color: red;">❌ Crédit insuffisant (manque ' . number_format($record->montant_net - $ligne->disponible_engagement, 0, ',', ' ') . ' FCFA)</span>'
+                                        ) .
+                                        '</div>'
+                                );
+                            })
+                            ->hidden(fn($get) => !$get('nomenclature_id')),
+                    ];
+                } else {
+                    // Pour BonCommande ou autres
+                    return [
+                        Forms\Components\TextInput::make('montant_engage')
+                            ->label('Montant à engager')
+                            ->numeric()
+                            ->required()
+                            ->default(fn($record) => $record->montant_total ?? $record->montant_ht ?? 0)
+                            ->suffix('FCFA')
+                            ->helperText('Montant qui sera engagé sur le budget'),
+                    ];
+                }
+            })
+            ->action(function ($record, array $data) {
+                try {
+                    if (method_exists($record, 'engagerBudget')) {
+                        if ($record instanceof \App\Models\DecisionAdministrative) {
+                            if (empty($data['nomenclature_id'])) {
+                                throw new \Exception('Veuillez sélectionner une nomenclature budgétaire');
+                            }
+
+                            $record->engagerBudget($data['nomenclature_id']);
+                        } else {
+                            $montantEngage = $data['montant_engage'] ?? ($record->montant_total ?? $record->montant_ht ?? 0);
+
+                            try {
+                                $engagement = $record->engagerBudget($montantEngage);
+                            } catch (\ArgumentCountError $e) {
+                                $engagement = $record->engagerBudget();
+                            }
+                        }
+
                         $record->refresh();
 
-                        $numeroEngagement = $record->engagement?->reference_document ?? 'N/A';
+                        $numeroEngagement = $record->engagement?->numero ?? $record->engagement?->reference_document ?? 'N/A';
 
                         Notification::make()
                             ->title('Budget engagé avec succès')
                             ->success()
                             ->body("Engagement créé : {$numeroEngagement}")
                             ->send();
+                    } else {
+                        throw new \Exception('La méthode engagerBudget() n\'existe pas');
                     }
                 } catch (\Throwable $e) {
                     Notification::make()
                         ->title('Erreur lors de l\'engagement')
                         ->danger()
                         ->body($e->getMessage())
+                        ->persistent()
                         ->send();
+
+                    throw $e;
                 }
             });
     }
