@@ -11,7 +11,6 @@
 
     $nomenclature = $engagement->nomenclaturePrincipale;
 
-    // ✅ Essayer de trouver une tâche liée à cette nomenclature
     $tache = null;
     $activite = null;
     $action = null;
@@ -19,35 +18,44 @@
     $objectif = null;
 
     if ($nomenclature) {
-        // Priorité : sous-tâche, sinon première tâche disponible
+        // Essayer de récupérer une tâche liée
         $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
 
         if ($tache) {
-            $tache->load('activite.action.programme.objectifsPrincipaux');
+            // Charger toute la hiérarchie
+            $tache->load('activite.action.programme');
 
             $activite = $tache->activite;
             $action = $activite?->action;
             $programme = $action?->programme;
-            $objectif = $programme?->objectifsPrincipaux;
-        } else {
-            // ✅ FALLBACK : Logger l'absence de tâche
-        \Log::warning('Aucune tâche liée à la nomenclature (Autorisation)', [
-            'nomenclature_id' => $nomenclature->id,
-            'nomenclature_code' => $nomenclature->code,
-            'engagement_id' => $engagement->id,
-        ]);
-    }
-}
 
-// ✅ DEBUG (à retirer après)
-\Log::info('Hiérarchie Autorisation', [
-    'nomenclature' => $nomenclature?->code,
-    'tache' => $tache?->libelle,
-    'activite' => $activite?->libelle,
-    'action' => $action?->libelle,
-    'programme' => $programme?->libelle,
-    'objectif' => $objectif?->libelle,
-    ]);
+            // ✅ Récupérer l'objectif (gestion collection)
+        if ($programme) {
+            try {
+                // Tentative 1 : Relation HasOne au singulier
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                }
+                // Tentative 2 : Relation HasMany au pluriel
+                elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    // Si c'est une collection, prendre le premier
+                        if ($objectifs instanceof \Illuminate\Support\Collection) {
+                            $objectif = $objectifs->first();
+                        } else {
+                            $objectif = $objectifs;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Erreur récupération objectif (Autorisation)', [
+                        'programme_id' => $programme->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $objectif = null;
+                }
+            }
+        }
+    }
 @endphp
 
 @section('title', 'Autorisation d\'Engagement')
@@ -116,15 +124,6 @@
             font-weight: bold;
             font-size: 9pt;
         }
-
-        .warning-box {
-            background-color: #fff3cd;
-            border: 1px solid #ffc107;
-            padding: 8px;
-            margin: 10px 0;
-            font-size: 8pt;
-            color: #856404;
-        }
     </style>
 @endsection
 
@@ -133,14 +132,6 @@
     <div class="doc-title">
         AUTORISATION D'ENGAGEMENT
     </div>
-
-    {{-- ✅ Avertissement si données incomplètes --}}
-    @if (!$tache)
-        <div class="warning-box">
-            ⚠️ Attention: La hiérarchie budgétaire complète n'est pas disponible pour cette nomenclature.
-            Veuillez compléter les données dans le module de gestion budgétaire.
-        </div>
-    @endif
 
     {{-- Type et État --}}
     <table style="width: 100%; margin: 10px 0; border-collapse: collapse;">
@@ -178,7 +169,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Non défini' }}
+        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'N/A' }}
     </div>
 
     <div class="info-line">
@@ -217,23 +208,24 @@
     <table class="hierarchie-table">
         <tr>
             <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $programme?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'Non défini'
+            <td>{{ $objectif?->libelle ?? 'N/A' }}
+            </td>
         </tr>
         <tr>
             <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $action?->libelle ?? 'N/A'}}</td>
         </tr>
         <tr>
             <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $activite?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}</td>
+            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
         </tr>
     </table>
 @endsection

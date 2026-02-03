@@ -11,7 +11,6 @@
 
     $nomenclature = $engagement->nomenclaturePrincipale;
 
-    // Essayer de trouver une tâche
     $tache = null;
     $activite = null;
     $action = null;
@@ -22,21 +21,39 @@
         $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
 
         if ($tache) {
-            $tache->load('activite.action.programme.objectifsPrincipaux');
+            $tache->load('activite.action.programme');
 
             $activite = $tache->activite;
             $action = $activite?->action;
             $programme = $action?->programme;
-            $objectif = $programme?->objectifsPrincipaux;
-        } else {
-            // ✅ FALLBACK : Si pas de tâche, essayer de deviner depuis le code nomenclature
-            \Log::warning('Aucune tâche liée à la nomenclature', [
-                'nomenclature_id' => $nomenclature->id,
-                'nomenclature_code' => $nomenclature->code,
-            ]);
 
-            // Essayer de trouver un programme/action via une convention de nommage
-            // ou simplement utiliser les valeurs par défaut
+            if ($programme) {
+                // ✅ Essayer différentes façons de récupérer l'objectif
+            try {
+                // Tentative 1 : Relation HasOne au singulier
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                }
+                // Tentative 2 : Relation HasMany au pluriel, prendre le premier
+                elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    // Si c'est une collection
+                        if ($objectifs instanceof \Illuminate\Support\Collection) {
+                            $objectif = $objectifs->first();
+                        }
+                        // Si c'est déjà un modèle unique
+                    else {
+                        $objectif = $objectifs;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur récupération objectif', [
+                    'programme_id' => $programme->id,
+                    'error' => $e->getMessage(),
+                    ]);
+                    $objectif = null;
+                }
+            }
         }
     }
 @endphp
@@ -69,7 +86,7 @@
         .info-line {
             margin: 6px 0;
             font-size: 11pt;
-            line-height: 2.0;
+            line-height: 1.3;
         }
 
         .info-line strong {
@@ -96,15 +113,6 @@
             font-weight: bold;
             width: 20%;
         }
-
-        .warning-box {
-            background-color: #fff3cd;
-            border: 1px solid #ffc107;
-            padding: 8px;
-            margin: 10px 0;
-            font-size: 8pt;
-            color: #856404;
-        }
     </style>
 @endsection
 
@@ -113,14 +121,6 @@
     <div class="doc-title doc-title-wrapper">
         CERTIFICAT D'ENGAGEMENT
     </div>
-
-    {{-- ✅ Avertissement si données incomplètes --}}
-    @if (!$tache)
-        <div class="warning-box">
-            ⚠️ Attention: La hiérarchie budgétaire complète n'est pas disponible pour cette nomenclature.
-            Veuillez compléter les données dans le module de gestion budgétaire.
-        </div>
-    @endif
 
     {{-- Introduction --}}
     <div class="info-line">
@@ -150,7 +150,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Non défini' }}
+        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'N/A' }}
     </div>
 
     <div class="info-line">
@@ -185,22 +185,24 @@
     <table class="hierarchie-table">
         <tr>
             <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $programme?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'Non défini'
+            <td>{{ $objectif?->libelle ?? 'N/A' }}
+            </td>
+        </tr>
         <tr>
             <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $action?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $activite?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}</td>
+            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
         </tr>
     </table>
 @endsection
