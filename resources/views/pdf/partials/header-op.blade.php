@@ -9,7 +9,7 @@
     $labelOPEn = $ordonnance && $ordonnance->type_ordonnance === 'impot' ? 'N° of OPT' : 'N° of OP';
 @endphp
 
-<table style="width: 100%; border: none; margin-bottom: 0px;">
+<table style="width: 100%; border: none; margin-top: 10px;">
     <tr>
         <td style="width: 25%; border-right: 1px solid #000; padding: 0; vertical-align: top;">
             {{-- Logo --}}

@@ -13,8 +13,26 @@
 
         <td class="header-center">
             @if ($parametres && $parametres->logo)
-                <img src="{{ public_path('storage/' . $parametres->logo) }}" class="logo" alt="Logo">
+                @php
+                    // ✅ Solution 1 : Chemin absolu vers storage
+                    $logoPath = storage_path('app/public/' . $parametres->logo);
+
+                    // Vérifier si le fichier existe
+                    if (file_exists($logoPath)) {
+                        // Convertir en base64
+                        $imageData = base64_encode(file_get_contents($logoPath));
+                        $mimeType = mime_content_type($logoPath);
+                        $logoBase64 = "data:{$mimeType};base64,{$imageData}";
+                    } else {
+                        $logoBase64 = null;
+                    }
+                @endphp
+
+                @if (isset($logoBase64))
+                    <img src="{{ $logoBase64 }}" class="logo" alt="Logo">
+                @endif
             @endif
+
             <div class="structure">
                 {{ $parametres->nom_structure ?? 'HGY' }}
             </div>

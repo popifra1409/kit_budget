@@ -104,24 +104,24 @@ $detailImpots = $bonCommande
 @endsection
 
 @section('content')
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
+    <table style="width: 100%; border-collapse: collapse; margin: 0px;">
         <tr>
             <td style="border: none; padding: 0; vertical-align: top; width: 65%;">
-                <div style="font-size: 8.5pt; line-height: 1.1; margin-bottom: 2px;">
-                    <div style="font-weight: bold;">OBJET DE LA DEPENSE:</div>
-                    <div style="padding-left: 3px;">
-                        {{ $ordonnance->objet ?? ($bonCommande?->objet ?? 'Paiement fournisseur') }}</div>
+                <div style="font-size: 8pt; line-height: 1.1; margin-bottom: 2px;">
+                    <div style="font-weight: bold;">OBJET DE LA DEPENSE:<span
+                            style="padding-left: 26px;">{{ $ordonnance->objet ?? ($bonCommande?->objet ?? 'Paiement fournisseur') }}</span>
+                    </div>
                     <div style="font-style: italic; font-size: 8pt;">SUBJECT OF EXPENDITURE:</div>
                 </div>
                 <div style="font-weight: bold; font-size: 10pt; line-height: 1.2; margin-top: 4px;">
                     Paiement selon le bon <span
-                        style="font-size: 11pt;">{{ $bonCommande?->numero ?? ($engagement?->reference_document ?? 'N/A') }}</span>
+                        style="font-size: 10pt;">{{ $bonCommande?->numero ?? ($engagement?->numero ?? 'N/A') }}</span>
                 </div>
 
                 {{-- ✅ Détail des montants - SANS HT, TVA et TTC --}}
                 @if ($bonCommande && $detailImpots)
-                    <div style="margin-top: 8px; font-size: 8.5pt;">
-                        <div style="font-weight: bold; margin-bottom: 3px;">Detail du paiement:</div>
+                    <div style="margin-top: 8px; font-size: 7.5pt;">
+                        <div style="font-weight: bold; margin-bottom: 0px;">Detail du paiement:</div>
                         <table class="detail-montants">
                             <tr>
                                 <td colspan="2" style="padding: 4px 5px; font-weight: bold; background-color: #fff3e0;">A
@@ -167,10 +167,10 @@ $detailImpots = $bonCommande
                                 <td class="label">TOTAL A PRECOMPTER</td>
                                 <td class="montant">{{ number_format($montantTotalImpots, 0, ',', ' ') }} FCFA</td>
                             </tr>
-                            <tr class="net-row">
+                            {{-- <tr class="net-row">
                                 <td class="label">NET A PAYER AU FOURNISSEUR</td>
                                 <td class="montant">{{ number_format($montantNet, 0, ',', ' ') }} FCFA</td>
-                            </tr>
+                            </tr> --}}
                         </table>
                     </div>
                 @endif
@@ -203,7 +203,7 @@ $detailImpots = $bonCommande
         </tr>
     </table>
 
-    <table style="width: 100%; border: 1px solid #000; border-collapse: collapse; font-size: 9pt;">
+    <table style="width: 100%; border: 1px solid #000; border-collapse: collapse; font-size: 9pt; margin: 0px;">
         <tr>
             <td style="border-right: 1px solid #000; padding: 4px 6px; vertical-align: top; width: 55%;">
                 <div style="font-weight: bold; margin-bottom: 2px; line-height: 1.1;">
@@ -224,11 +224,16 @@ $detailImpots = $bonCommande
                 </div>
 
                 @if ($bonCommande)
-                    <div style="margin-top: 8px; font-size: 8.5pt;">
-                        - Bon de Commande N° {{ $bonCommande->numero }}<br>
-                        - Engagement Budgetaire N° {{ $engagement->reference_document ?? 'N/A' }}<br>
-                        - Facture Fournisseur<br>
-                        - Bon de Livraison
+                    <div style="margin-top: 5px; font-size: 7pt;">
+                        - Bon de Commande Administratif N° {{ $bonCommande->numero }}<br>
+                        - Engagement Budgetaire N° {{ $engagement->numero ?? 'N/A' }}<br>
+                        - Facture Proforma <br>
+                        - Expression de besoins <br>
+                        - Certificat d'engagement <br>
+                        - Facture définitive liquidée <br>
+                        - Procès verbal de réception <br>
+                        - Bordereau de Livraison<br>
+                        - Attestation de non Redevance<br>
                     </div>
                 @endif
 
@@ -306,7 +311,7 @@ $detailImpots = $bonCommande
                     </div>
 
                     <div style="text-align: left; margin-bottom: 3px; line-height: 1.1;">
-                        <span style="font-weight: bold;">emis a Yaounde le</span><br>
+                        <span style="font-weight: bold;">Emis a Yaounde le</span><br>
                         <span style="font-style: italic; font-size: 8pt;">Issued at Yaounde on</span><br>
                         <span style="text-decoration: underline; font-weight: bold;">
                             {{ $ordonnance->date_emission ? \Carbon\Carbon::parse($ordonnance->date_emission)->format('d/m/Y') : '................................' }}
@@ -321,7 +326,7 @@ $detailImpots = $bonCommande
             </td>
         </tr>
         <tr>
-            <td colspan="2" style="border-top: 1px solid #000; padding: 4px 5px;">
+            <td colspan="2" style="border-top: 1px solid #000; padding: 0px; margin: 0px;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
                         <td style="width: 40%; vertical-align: top; padding-right: 10px;">
@@ -355,7 +360,7 @@ $detailImpots = $bonCommande
         </tr>
         <tr>
             <td colspan="2"
-                style="border-top: 1px solid #000; padding: 3px; font-size: 8pt; background-color: #f9f9f9; line-height: 1.1;">
+                style="border-top: 1px solid #000; padding: 3px; font-size: 7.5pt; background-color: #f9f9f9; line-height: 1.1;">
                 <div style="font-weight: bold;">Note:</div>
                 <div>(1) Nom, Prenom, Adresse complete. Pour les societes: Raisons sociales exactes.</div>
                 <div style="font-style: italic;">(1) Surname, name and full address. Precise company name</div>
