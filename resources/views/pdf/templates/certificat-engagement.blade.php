@@ -27,15 +27,30 @@
             $action = $activite?->action;
             $programme = $action?->programme;
 
-            // ✅ CORRECTION : Récupérer le premier objectif de la collection
             if ($programme) {
-                try {
-                    // Si c'est une collection (HasMany)
-                $objectif = $programme->objectifsPrincipaux()->first();
-
-                // OU si c'est déjà chargé comme collection
-                    // $objectif = $programme->objectifsPrincipaux->first();
-                } catch (\Exception $e) {
+                // ✅ Essayer différentes façons de récupérer l'objectif
+            try {
+                // Tentative 1 : Relation HasOne au singulier
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                }
+                // Tentative 2 : Relation HasMany au pluriel, prendre le premier
+                elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    // Si c'est une collection
+                        if ($objectifs instanceof \Illuminate\Support\Collection) {
+                            $objectif = $objectifs->first();
+                        }
+                        // Si c'est déjà un modèle unique
+                    else {
+                        $objectif = $objectifs;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur récupération objectif', [
+                    'programme_id' => $programme->id,
+                    'error' => $e->getMessage(),
+                    ]);
                     $objectif = null;
                 }
             }
@@ -71,7 +86,7 @@
         .info-line {
             margin: 6px 0;
             font-size: 11pt;
-            line-height: 1.2;
+            line-height: 1.3;
         }
 
         .info-line strong {
@@ -135,7 +150,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Non défini' }}
+        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'N/A' }}
     </div>
 
     <div class="info-line">
@@ -170,22 +185,24 @@
     <table class="hierarchie-table">
         <tr>
             <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $programme?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'Non défini'
+            <td>{{ $objectif?->libelle ?? 'N/A' }}
+            </td>
+        </tr>
         <tr>
             <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $action?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $activite?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}</td>
+            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
         </tr>
     </table>
 @endsection

@@ -169,7 +169,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Non défini' }}
+        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'N/A' }}
     </div>
 
     <div class="info-line">
@@ -208,23 +208,24 @@
     <table class="hierarchie-table">
         <tr>
             <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $programme?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'Non défini'
+            <td>{{ $objectif?->libelle ?? 'N/A' }}
+            </td>
         </tr>
         <tr>
             <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $action?->libelle ?? 'N/A'}}</td>
         </tr>
         <tr>
             <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'Non défini' }}</td>
+            <td>{{ $activite?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}</td>
+            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
         </tr>
     </table>
 @endsection

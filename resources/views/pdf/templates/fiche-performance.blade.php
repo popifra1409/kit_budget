@@ -118,40 +118,40 @@
 
     {{-- Programme --}}
     <div class="info-line">
-        <strong>PROGRAMME:</strong> {{ $programme?->libelle ?? 'Non défini' }}
+        <strong>PROGRAMME:</strong> {{ $programme?->libelle ?? 'N/A' }}
     </div>
 
     {{-- Objectif --}}
     <div class="info-line">
         <strong>OBJECTIF:</strong>
-        {{ $objectif?->libelle ?? 'Non défini' }}
+        {{ $objectif?->libelle ?? 'N/A' }}
     </div>
 
     {{-- Action --}}
     <div class="info-line">
-        <strong>ACTION:</strong> {{ $action?->libelle ?? 'Non défini' }}
+        <strong>ACTION:</strong> {{ $action?->libelle ?? 'N/A' }}
     </div>
 
     {{-- Activité --}}
     <div class="info-line">
-        <strong>ACTIVITÉ:</strong> {{ $activite?->libelle ?? 'Non défini' }}
+        <strong>ACTIVITÉ:</strong> {{ $activite?->libelle ?? 'N/A' }}
     </div>
 
     {{-- Tâche --}}
     <div class="info-line">
-        <strong>TACHE:</strong> {{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}
+        <strong>TACHE:</strong> {{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}
     </div>
 
     {{-- Indicateur de résultats --}}
     <div class="info-line">
         <strong>INDICATEUR DE RESULTATS:</strong>
-        {{ $tache?->indicateur_resultat ?? ($activite?->indicateur_resultat ?? 'Non défini') }}
+        {{ $tache?->indicateur_resultat ?? ($activite?->indicateur_resultat ?? 'N/A') }}
     </div>
 
     {{-- Valeur de référence --}}
     <div class="info-line">
         <strong>VALEUR DE REFERENCE:</strong>
-        {{ $tache?->valeur_reference ?? ($activite?->valeur_reference ?? 'Non défini') }}
+        {{ $tache?->valeur_reference ?? ($activite?->valeur_reference ?? 'N/A') }}
     </div>
 
     {{-- Niveau actuel d'avancement --}}
@@ -172,7 +172,7 @@
         </tr>
         <tr>
             <td class="label">Imputation:</td>
-            <td>{{ $nomenclature?->code ?? 'Non défini' }}</td>
+            <td>{{ $nomenclature?->code ?? 'N/A' }}</td>
         </tr>
         <tr>
             <td class="label">N°BON:</td>
