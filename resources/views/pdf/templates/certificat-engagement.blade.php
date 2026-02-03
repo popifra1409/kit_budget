@@ -135,7 +135,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Pr. ESSOMBA NOEL EMMANUEL' }}
+        <strong>Signataire:</strong> {{ $parametres->nom_ordonnateur ?? 'Non défini' }}
     </div>
 
     <div class="info-line">
@@ -170,24 +170,22 @@
     <table class="hierarchie-table">
         <tr>
             <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}</td>
+            <td>{{ $programme?->libelle ?? 'Non défini' }}</td>
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'Améliorer la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
-            </td>
-        </tr>
+            <td>{{ $objectif?->libelle ?? 'Non défini'
         <tr>
             <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'Gestion budgétaire et financière' }}</td>
+            <td>{{ $action?->libelle ?? 'Non défini' }}</td>
         </tr>
         <tr>
             <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'Appuyer les services en consommables médicaux' }}</td>
+            <td>{{ $activite?->libelle ?? 'Non défini' }}</td>
         </tr>
         <tr>
             <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
+            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}</td>
         </tr>
     </table>
 @endsection
