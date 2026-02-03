@@ -74,27 +74,27 @@ class WorkflowActions
                 ->label('Aperçu BC')
                 ->icon('heroicon-o-eye')
                 ->color('info')
-                ->url(fn($record) => route('bons-commande.pdf.preview', ['bonCommande' => $record, 'type' => 'simple']))
+                ->url(fn($record) => route('bons-commande.pdf.preview.simple', ['bonCommande' => $record->id]))
                 ->openUrlInNewTab(),
 
             Tables\Actions\Action::make('apercu_pdf_complet')
                 ->label('Aperçu BCA')
                 ->icon('heroicon-o-eye')
-                ->color('info')
-                ->url(fn($record) => route('bons-commande.pdf.preview', ['bonCommande' => $record, 'type' => 'complet']))
+                ->color('warning')
+                ->url(fn($record) => route('bons-commande.pdf.preview.complet', ['bonCommande' => $record->id]))
                 ->openUrlInNewTab(),
 
             Tables\Actions\Action::make('telecharger_pdf_simple')
                 ->label('Télécharger BC')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('success')
-                ->url(fn($record) => route('bons-commande.pdf.download', ['bonCommande' => $record, 'type' => 'simple'])),
+                ->url(fn($record) => route('bons-commande.pdf.download.simple', ['bonCommande' => $record->id])),
 
             Tables\Actions\Action::make('telecharger_pdf_complet')
                 ->label('Télécharger BCA')
                 ->icon('heroicon-o-arrow-down-tray')
-                ->color('success')
-                ->url(fn($record) => route('bons-commande.pdf.download', ['bonCommande' => $record, 'type' => 'complet'])),
+                ->color('danger')
+                ->url(fn($record) => route('bons-commande.pdf.download.complet', ['bonCommande' => $record->id])),
         ])
             ->label('Télécharger')
             ->icon('heroicon-o-document')
@@ -103,7 +103,7 @@ class WorkflowActions
             ->button()
             ->visible(fn($record) => !in_array($record->statut, ['brouillon']));
     }
-
+    
     /* =========================
      | ACTION : VALIDER
      ========================= */

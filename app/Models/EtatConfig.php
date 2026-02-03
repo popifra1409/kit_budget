@@ -21,6 +21,8 @@ class EtatConfig extends Model
         'pied_page_config',
         'signature_config',
         'options_pdf',
+        'format_papier',      
+        'orientation',
         'actif',
         'ordre',
         'categorie',

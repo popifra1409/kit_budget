@@ -22,7 +22,61 @@ class RoleResource extends Resource
     protected static ?string $navigationGroup = 'Administration';
     protected static ?int $navigationSort = 1;
 
-    // ... vos méthodes can...() existantes
+    /**
+     * ✅ Badge dans la navigation - Nombre de rôles
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getModel()::count();
+    }
+
+    /**
+     * ✅ Couleur du badge (optionnel)
+     */
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'success'; // Options: primary, success, warning, danger, info, gray
+    }
+
+    /**
+     * ✅ Tooltip du badge (optionnel)
+     */
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        $count = static::getModel()::count();
+        return $count > 1 ? "{$count} rôles créés" : "{$count} rôle créé";
+    }
+
+    /**
+     * Permissions - Gestion des rôles
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_role') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_role') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_role') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_role') ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->user()?->can('delete_role')) {
+            return false;
+        }
+        return $record->users()->count() === 0;
+    }
 
     public static function form(Form $form): Form
     {
@@ -63,62 +117,264 @@ class RoleResource extends Resource
                     ])
                     ->columns(2),
 
-                // ✅ NOUVELLE SECTION : Permissions avec CheckboxList organisée
-                Forms\Components\Section::make('Permissions')
+                // ✅ NOUVELLE INTERFACE : Permissions organisées par ressources avec recherche
+                Forms\Components\Section::make('Gestion des Permissions')
                     ->description('Sélectionnez les permissions à attribuer à ce rôle')
                     ->schema([
-                        self::getPermissionsCheckboxList(),
+                        // Onglets par ressource
+                        Forms\Components\Tabs::make('permissions_tabs')
+                            ->tabs([
+                                // Onglet "Toutes les permissions" avec recherche
+                                Forms\Components\Tabs\Tab::make('Toutes')
+                                    ->icon('heroicon-o-list-bullet')
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('Rechercher et sélectionner')
+                                            ->relationship('permissions', 'name')
+                                            ->options(Permission::all()->pluck('name', 'id'))
+                                            ->descriptions(function () {
+                                                return Permission::all()->mapWithKeys(function ($perm) {
+                                                    return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                });
+                                            })
+                                            ->columns(3)
+                                            ->searchable()
+                                            ->bulkToggleable()
+                                            ->gridDirection('row'),
+                                    ]),
+
+                                // Onglet Budget
+                                Forms\Components\Tabs\Tab::make('Budget')
+                                    ->icon('heroicon-o-currency-dollar')
+                                    ->badge(fn() => Permission::where('name', 'like', '%budget%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%budget%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%budget%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Bon de Commande
+                                Forms\Components\Tabs\Tab::make('Bon de Commande')
+                                    ->icon('heroicon-o-shopping-cart')
+                                    ->badge(fn() => Permission::where('name', 'like', '%bon_commande%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%bon_commande%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%bon_commande%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Engagement
+                                Forms\Components\Tabs\Tab::make('Engagement')
+                                    ->icon('heroicon-o-document-check')
+                                    ->badge(fn() => Permission::where('name', 'like', '%engagement%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%engagement%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%engagement%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Ordonnance de Paiement
+                                Forms\Components\Tabs\Tab::make('Ordonnance de Paiement')
+                                    ->icon('heroicon-o-banknotes')
+                                    ->badge(fn() => Permission::where('name', 'like', '%ordonnance_paiement%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%ordonnance_paiement%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%ordonnance_paiement%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Fournisseur
+                                Forms\Components\Tabs\Tab::make('Fournisseur')
+                                    ->icon('heroicon-o-building-storefront')
+                                    ->badge(fn() => Permission::where('name', 'like', '%fournisseur%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%fournisseur%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%fournisseur%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Utilisateurs
+                                Forms\Components\Tabs\Tab::make('Utilisateurs')
+                                    ->icon('heroicon-o-users')
+                                    ->badge(fn() => Permission::where('name', 'like', '%user%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%user%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%user%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Rôles
+                                Forms\Components\Tabs\Tab::make('Rôles')
+                                    ->icon('heroicon-o-shield-check')
+                                    ->badge(fn() => Permission::where('name', 'like', '%role%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', '%role%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', '%role%')
+                                                    ->get()
+                                                    ->mapWithKeys(function ($perm) {
+                                                        return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                    });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+
+                                // Onglet Autres permissions
+                                Forms\Components\Tabs\Tab::make('Autres')
+                                    ->icon('heroicon-o-ellipsis-horizontal-circle')
+                                    ->badge(function () {
+                                        return Permission::whereNotIn('name', function ($query) {
+                                            $query->select('name')
+                                                ->from('permissions')
+                                                ->where(function ($q) {
+                                                    $q->where('name', 'like', '%budget%')
+                                                        ->orWhere('name', 'like', '%bon_commande%')
+                                                        ->orWhere('name', 'like', '%engagement%')
+                                                        ->orWhere('name', 'like', '%ordonnance_paiement%')
+                                                        ->orWhere('name', 'like', '%fournisseur%')
+                                                        ->orWhere('name', 'like', '%user%')
+                                                        ->orWhere('name', 'like', '%role%');
+                                                });
+                                        })->count();
+                                    })
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::whereNotIn('name', function ($query) {
+                                                    $query->select('name')
+                                                        ->from('permissions')
+                                                        ->where(function ($q) {
+                                                            $q->where('name', 'like', '%budget%')
+                                                                ->orWhere('name', 'like', '%bon_commande%')
+                                                                ->orWhere('name', 'like', '%engagement%')
+                                                                ->orWhere('name', 'like', '%ordonnance_paiement%')
+                                                                ->orWhere('name', 'like', '%fournisseur%')
+                                                                ->orWhere('name', 'like', '%user%')
+                                                                ->orWhere('name', 'like', '%role%');
+                                                        });
+                                                })->get()->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::whereNotIn('name', function ($query) {
+                                                    $query->select('name')
+                                                        ->from('permissions')
+                                                        ->where(function ($q) {
+                                                            $q->where('name', 'like', '%budget%')
+                                                                ->orWhere('name', 'like', '%bon_commande%')
+                                                                ->orWhere('name', 'like', '%engagement%')
+                                                                ->orWhere('name', 'like', '%ordonnance_paiement%')
+                                                                ->orWhere('name', 'like', '%fournisseur%')
+                                                                ->orWhere('name', 'like', '%user%')
+                                                                ->orWhere('name', 'like', '%role%');
+                                                        });
+                                                })->get()->mapWithKeys(function ($perm) {
+                                                    return [$perm->id => self::getPermissionDescription($perm->name)];
+                                                });
+                                            })
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ]),
+                            ])
+                            ->columnSpanFull()
+                            ->persistTabInQueryString(),
                     ])
                     ->collapsible()
-                    ->persistCollapsed()
-                    ->columnSpanFull()
-                    ->visible(fn($livewire) => $livewire instanceof Pages\EditRole || $livewire instanceof Pages\CreateRole),
+                    ->collapsed(false),
             ]);
-    }
-
-    /**
-     * ✅ Générer la liste de permissions organisée par catégories
-     */
-    protected static function getPermissionsCheckboxList(): Forms\Components\Component
-    {
-        $permissions = Permission::all();
-
-        // Grouper les permissions par ressource
-        $groupedPermissions = $permissions->groupBy(function ($permission) {
-            // Extraire le nom de la ressource (ex: "view_budget" -> "budget")
-            $parts = explode('_', $permission->name);
-            if (count($parts) > 1) {
-                array_shift($parts); // Enlever le verbe (view, create, etc.)
-                return implode('_', $parts);
-            }
-            return 'Autres';
-        });
-
-        // Créer des sections pour chaque groupe
-        $schema = [];
-
-        foreach ($groupedPermissions as $resource => $perms) {
-            $resourceLabel = ucfirst(str_replace('_', ' ', $resource));
-
-            $schema[] = Forms\Components\Section::make($resourceLabel)
-                ->schema([
-                    Forms\Components\CheckboxList::make('permissions')
-                        ->label('')
-                        ->options($perms->pluck('name', 'id'))
-                        ->descriptions($perms->mapWithKeys(function ($perm) {
-                            return [$perm->id => self::getPermissionDescription($perm->name)];
-                        }))
-                        ->columns(2)
-                        ->gridDirection('row')
-                        ->bulkToggleable()
-                        ->searchable(),
-                ])
-                ->collapsible()
-                ->compact()
-                ->columns(1);
-        }
-
-        return Forms\Components\Group::make($schema);
     }
 
     /**
@@ -128,58 +384,58 @@ class RoleResource extends Resource
     {
         $descriptions = [
             // Budget
-            'view_any_budget' => 'Voir la liste des budgets',
-            'view_budget' => 'Voir le détail d\'un budget',
-            'create_budget' => 'Créer un nouveau budget',
-            'update_budget' => 'Modifier un budget',
-            'delete_budget' => 'Supprimer un budget',
+            'view_any_budget' => '📋 Voir la liste des budgets',
+            'view_budget' => '👁️ Voir le détail d\'un budget',
+            'create_budget' => '➕ Créer un nouveau budget',
+            'update_budget' => '✏️ Modifier un budget',
+            'delete_budget' => '🗑️ Supprimer un budget',
 
             // Bon de commande
-            'view_any_bon_commande' => 'Voir la liste des bons de commande',
-            'view_bon_commande' => 'Voir le détail d\'un bon de commande',
-            'create_bon_commande' => 'Créer un bon de commande',
-            'update_bon_commande' => 'Modifier un bon de commande',
-            'delete_bon_commande' => 'Supprimer un bon de commande',
-            'engage_bon_commande' => 'Engager un bon de commande',
+            'view_any_bon_commande' => '📋 Voir la liste des bons de commande',
+            'view_bon_commande' => '👁️ Voir le détail d\'un bon de commande',
+            'create_bon_commande' => '➕ Créer un bon de commande',
+            'update_bon_commande' => '✏️ Modifier un bon de commande',
+            'delete_bon_commande' => '🗑️ Supprimer un bon de commande',
+            'engage_bon_commande' => '✅ Engager un bon de commande',
 
             // Engagement
-            'view_any_engagement' => 'Voir la liste des engagements',
-            'view_engagement' => 'Voir le détail d\'un engagement',
-            'create_engagement' => 'Créer un engagement',
-            'update_engagement' => 'Modifier un engagement',
-            'delete_engagement' => 'Supprimer un engagement',
-            'valider_engagement' => 'Valider un engagement',
+            'view_any_engagement' => '📋 Voir la liste des engagements',
+            'view_engagement' => '👁️ Voir le détail d\'un engagement',
+            'create_engagement' => '➕ Créer un engagement',
+            'update_engagement' => '✏️ Modifier un engagement',
+            'delete_engagement' => '🗑️ Supprimer un engagement',
+            'valider_engagement' => '✅ Valider un engagement',
 
             // Ordonnance de paiement
-            'view_any_ordonnance_paiement' => 'Voir la liste des OP',
-            'view_ordonnance_paiement' => 'Voir le détail d\'une OP',
-            'create_ordonnance_paiement' => 'Créer une OP',
-            'update_ordonnance_paiement' => 'Modifier une OP',
-            'delete_ordonnance_paiement' => 'Supprimer une OP',
-            'emettre_ordonnance_paiement' => 'Émettre une OP',
-            'viser_ordonnance_paiement' => 'Viser une OP',
-            'payer_ordonnance_paiement' => 'Marquer une OP comme payée',
+            'view_any_ordonnance_paiement' => '📋 Voir la liste des OP',
+            'view_ordonnance_paiement' => '👁️ Voir le détail d\'une OP',
+            'create_ordonnance_paiement' => '➕ Créer une OP',
+            'update_ordonnance_paiement' => '✏️ Modifier une OP',
+            'delete_ordonnance_paiement' => '🗑️ Supprimer une OP',
+            'emettre_ordonnance_paiement' => '📤 Émettre une OP',
+            'viser_ordonnance_paiement' => '✔️ Viser une OP',
+            'payer_ordonnance_paiement' => '💰 Marquer une OP comme payée',
 
             // Fournisseurs
-            'view_any_fournisseur' => 'Voir la liste des fournisseurs',
-            'view_fournisseur' => 'Voir le détail d\'un fournisseur',
-            'create_fournisseur' => 'Créer un fournisseur',
-            'update_fournisseur' => 'Modifier un fournisseur',
-            'delete_fournisseur' => 'Supprimer un fournisseur',
+            'view_any_fournisseur' => '📋 Voir la liste des fournisseurs',
+            'view_fournisseur' => '👁️ Voir le détail d\'un fournisseur',
+            'create_fournisseur' => '➕ Créer un fournisseur',
+            'update_fournisseur' => '✏️ Modifier un fournisseur',
+            'delete_fournisseur' => '🗑️ Supprimer un fournisseur',
 
             // Utilisateurs
-            'view_any_user' => 'Voir la liste des utilisateurs',
-            'view_user' => 'Voir le détail d\'un utilisateur',
-            'create_user' => 'Créer un utilisateur',
-            'update_user' => 'Modifier un utilisateur',
-            'delete_user' => 'Supprimer un utilisateur',
+            'view_any_user' => '📋 Voir la liste des utilisateurs',
+            'view_user' => '👁️ Voir le détail d\'un utilisateur',
+            'create_user' => '➕ Créer un utilisateur',
+            'update_user' => '✏️ Modifier un utilisateur',
+            'delete_user' => '🗑️ Supprimer un utilisateur',
 
             // Rôles
-            'view_any_role' => 'Voir la liste des rôles',
-            'view_role' => 'Voir le détail d\'un rôle',
-            'create_role' => 'Créer un rôle',
-            'update_role' => 'Modifier un rôle',
-            'delete_role' => 'Supprimer un rôle',
+            'view_any_role' => '📋 Voir la liste des rôles',
+            'view_role' => '👁️ Voir le détail d\'un rôle',
+            'create_role' => '➕ Créer un rôle',
+            'update_role' => '✏️ Modifier un rôle',
+            'delete_role' => '🗑️ Supprimer un rôle',
         ];
 
         return $descriptions[$permissionName] ?? ucfirst(str_replace('_', ' ', $permissionName));

@@ -67,14 +67,23 @@ Route::middleware(['web', 'auth'])->group(function () {
             ->name('pdf.afficher');
     });
 
-    // Bons de commande
-    Route::get('/bons-commande/{bonCommande}/pdf/preview', function (BonCommande $bonCommande) {
-        return BonCommandePdfService::apercu($bonCommande);
-    })->name('bons-commande.pdf.preview');
-    // Téléchargement direct (AJOUTER)
-    Route::get('/bons-commande/{bonCommande}/pdf/download', function (BonCommande $bonCommande) {
-        return BonCommandePdfService::telecharger($bonCommande);
-    })->name('bons-commande.pdf.download');
+    // BC Simple
+    Route::get('/bons-commande/{bonCommande}/pdf/preview-simple', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::apercu($bonCommande, 'simple');
+    })->name('bons-commande.pdf.preview.simple');
+
+    Route::get('/bons-commande/{bonCommande}/pdf/download-simple', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::telecharger($bonCommande, 'simple');
+    })->name('bons-commande.pdf.download.simple');
+
+    // BC Complet
+    Route::get('/bons-commande/{bonCommande}/pdf/preview-complet', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::apercu($bonCommande, 'complet');
+    })->name('bons-commande.pdf.preview.complet');
+
+    Route::get('/bons-commande/{bonCommande}/pdf/download-complet', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::telecharger($bonCommande, 'complet');
+    })->name('bons-commande.pdf.download.complet');
 
     // Décisions administratives
     Route::get('/decisions-administratives/{decision}/pdf/preview', function (DecisionAdministrative $decision) {

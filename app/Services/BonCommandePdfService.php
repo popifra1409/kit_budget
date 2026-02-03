@@ -8,105 +8,129 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class BonCommandePdfService
 {
-    /**
-     * Générer le PDF d'un bon de commande
-     *
-     * @param BonCommande $bonCommande
-     * @param string $typeEtat 'simple' ou 'complet'
-     * @return \Barryvdh\DomPDF\PDF
-     */
     public static function genererPdf(BonCommande $bonCommande, string $typeEtat = 'simple')
     {
-        // Déterminer le code d'état et le template
-        $codeEtat = $typeEtat === 'simple'
-            ? 'bon_commande_simple'
-            : 'bon_commande';
+        // ✅ DEBUG 1 : Voir ce qui arrive
+        \Log::info('=== DEBUT genererPdf ===');
+        \Log::info('Type État reçu', ['typeEtat' => $typeEtat]);
 
-        // Récupérer la configuration d'état
+        // Déterminer le code d'état
+        $codeEtat = match ($typeEtat) {
+            'simple' => 'bon-commande-simple',
+            'complet' => 'bon-commande',
+            default => 'bon-commande-simple',
+        };
+
+        \Log::info('Code État calculé', ['codeEtat' => $codeEtat]);
+
+        // Récupérer la configuration
         $etatConfig = EtatConfig::where('code', $codeEtat)
             ->where('actif', true)
             ->first();
 
-        if (!$etatConfig) {
-            // Fallback sur les templates par défaut
-            $template = $typeEtat === 'simple'
-                ? 'pdf.templates.bon-commande-simple'
-                : 'pdf.templates.bon-commande';
-        } else {
-            $template = $etatConfig->template;
-        }
-
-        // Charger toutes les relations nécessaires
-        $bonCommande->load([
-            'exercice',
-            'budget',
-            'fournisseur.regimeFiscal',
-            'serviceDemandeur',
-            'lignes.nomenclature',
-            'engagement.nomenclaturePrincipale',
-            'typeEngagement',
+        \Log::info('EtatConfig trouvé', [
+            'found' => $etatConfig ? 'OUI' : 'NON',
+            'template_db' => $etatConfig?->template,
         ]);
 
-        // Préparer les données dans le format attendu par le template
+        // ✅ Déterminer le template
+        if ($etatConfig && $etatConfig->template) {
+            $template = $etatConfig->template;
+            \Log::info('Template depuis DB', ['template' => $template]);
+        } else {
+            $template = match ($typeEtat) {
+                'simple' => 'pdf.templates.bon-commande-simple',
+                'complet' => 'pdf.templates.bon-commande',
+                default => 'pdf.templates.bon-commande-simple',
+            };
+            \Log::info('Template FALLBACK', ['template' => $template]);
+        }
+
+        // ✅ Vérifier si le template existe
+        $templateExists = view()->exists($template);
+        \Log::info('Template existe ?', ['exists' => $templateExists, 'template' => $template]);
+
+        if (!$templateExists) {
+            \Log::error('TEMPLATE INTROUVABLE', ['template' => $template]);
+            throw new \Exception("Template introuvable : {$template}");
+        }
+
+        \Log::info('Template final utilisé', ['template' => $template]);
+
+        // Charger les relations
+        if (!$bonCommande->relationLoaded('fournisseur')) {
+            $bonCommande->load([
+                'exercice',
+                'budget',
+                'fournisseur.regimeFiscal',
+                'serviceDemandeur',
+                'lignes.nomenclature',
+                'engagement.nomenclaturePrincipale',
+                'typeEngagement',
+            ]);
+        }
+
+        // Préparer les données
         $donnees = [
             '_raw' => $bonCommande,
+            'bon_commande' => $bonCommande,
+            'fournisseur' => $bonCommande->fournisseur,
+            'lignes' => $bonCommande->lignes,
+            'exercice' => $bonCommande->exercice,
         ];
 
-        // Générer le PDF avec les options d'encodage UTF-8
+        // Générer le PDF
         $pdf = Pdf::loadView($template, compact('donnees'));
 
-        // Ajouter les options d'encodage
         $pdf->setOptions([
             'isHtml5ParserEnabled' => true,
             'isRemoteEnabled' => false,
             'defaultFont' => 'DejaVu Sans',
         ]);
 
-        // Configuration du PDF
-        if ($etatConfig) {
+        if ($etatConfig && $etatConfig->options_pdf) {
             $pdf->setPaper(
-                $etatConfig->format_papier ?? 'A4',
-                $etatConfig->orientation ?? 'portrait'
+                $etatConfig->options_pdf['format_papier'] ?? 'A4',
+                $etatConfig->options_pdf['orientation'] ?? 'portrait'
             );
         } else {
             $pdf->setPaper('A4', 'portrait');
         }
 
+        \Log::info('=== FIN genererPdf ===');
+
         return $pdf;
     }
 
-    /**
-     * Télécharger le PDF
-     */
     public static function telecharger(BonCommande $bonCommande, string $typeEtat = 'simple')
     {
         $pdf = static::genererPdf($bonCommande, $typeEtat);
-        $suffix = $typeEtat === 'simple' ? '-simple' : '';
-        $filename = "BC-{$bonCommande->numero}{$suffix}.pdf";
+
+        $filename = match ($typeEtat) {
+            'simple' => "BC-{$bonCommande->numero}.pdf",
+            'complet' => "BCA-{$bonCommande->numero}.pdf",
+            default => "BC-{$bonCommande->numero}.pdf",
+        };
 
         return $pdf->download($filename);
     }
 
-    /**
-     * Afficher en aperçu dans le navigateur
-     */
     public static function apercu(BonCommande $bonCommande, string $typeEtat = 'simple')
     {
         $pdf = static::genererPdf($bonCommande, $typeEtat);
-        $suffix = $typeEtat === 'simple' ? '-simple' : '';
-        $filename = "BC-{$bonCommande->numero}{$suffix}.pdf";
+
+        $filename = match ($typeEtat) {
+            'simple' => "BC-{$bonCommande->numero}.pdf",
+            'complet' => "BCA-{$bonCommande->numero}.pdf",
+            default => "BC-{$bonCommande->numero}.pdf",
+        };
 
         return $pdf->stream($filename);
     }
 
-    /**
-     * Obtenir le contenu du PDF en tant que chaîne
-     * (Pour stockage ou envoi par email)
-     */
     public static function getOutput(BonCommande $bonCommande, string $typeEtat = 'simple'): string
     {
         $pdf = static::genererPdf($bonCommande, $typeEtat);
-
         return $pdf->output();
     }
 }
