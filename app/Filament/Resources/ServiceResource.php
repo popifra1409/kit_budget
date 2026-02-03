@@ -9,6 +9,10 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use App\Imports\ServicesImport;
+use App\Exports\ServicesTemplateExport;
+use Filament\Notifications\Notification;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ServiceResource extends Resource
 {
@@ -227,6 +231,67 @@ class ServiceResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
+            ])
+            ->headerActions([
+                // ✅ NOUVEAU : Télécharger le template
+                Tables\Actions\Action::make('telecharger_template')
+                    ->label('Télécharger le modèle')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->action(function () {
+                        return Excel::download(new ServicesTemplateExport(), 'template-services.xlsx');
+                    }),
+
+                // ✅ NOUVEAU : Importer
+                Tables\Actions\Action::make('importer')
+                    ->label('Importer des services')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('success')
+                    ->form([
+                        Forms\Components\FileUpload::make('fichier')
+                            ->label('Fichier Excel')
+                            ->required()
+                            ->acceptedFileTypes([
+                                'application/vnd.ms-excel',
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'text/csv',
+                            ])
+                            ->maxSize(5120) // 5MB
+                            ->helperText('Formats acceptés: .xlsx, .xls, .csv (max 5MB)'),
+                    ])
+                    ->action(function (array $data) {
+                        try {
+                            $import = new ServicesImport();
+
+                            Excel::import($import, $data['fichier']);
+
+                            $imported = $import->getImported();
+                            $updated = $import->getUpdated();
+                            $errors = count($import->failures());
+
+                            if ($errors > 0) {
+                                Notification::make()
+                                    ->warning()
+                                    ->title('Importation terminée avec des erreurs')
+                                    ->body("{$imported} service(s) créé(s), {$updated} mis à jour, {$errors} erreur(s)")
+                                    ->persistent()
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->success()
+                                    ->title('Importation réussie')
+                                    ->body("{$imported} service(s) créé(s), {$updated} mis à jour")
+                                    ->send();
+                            }
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Erreur d\'importation')
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
             ])
             ->defaultSort('code', 'asc');
     }
