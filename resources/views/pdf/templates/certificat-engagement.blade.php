@@ -11,7 +11,6 @@
 
     $nomenclature = $engagement->nomenclaturePrincipale;
 
-    // Essayer de trouver une tâche
     $tache = null;
     $activite = null;
     $action = null;
@@ -22,21 +21,24 @@
         $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
 
         if ($tache) {
-            $tache->load('activite.action.programme.objectifsPrincipaux');
+            $tache->load('activite.action.programme');
 
             $activite = $tache->activite;
             $action = $activite?->action;
             $programme = $action?->programme;
-            $objectif = $programme?->objectifsPrincipaux;
-        } else {
-            // ✅ FALLBACK : Si pas de tâche, essayer de deviner depuis le code nomenclature
-            \Log::warning('Aucune tâche liée à la nomenclature', [
-                'nomenclature_id' => $nomenclature->id,
-                'nomenclature_code' => $nomenclature->code,
-            ]);
 
-            // Essayer de trouver un programme/action via une convention de nommage
-            // ou simplement utiliser les valeurs par défaut
+            // ✅ CORRECTION : Récupérer le premier objectif de la collection
+            if ($programme) {
+                try {
+                    // Si c'est une collection (HasMany)
+                $objectif = $programme->objectifsPrincipaux()->first();
+
+                // OU si c'est déjà chargé comme collection
+                    // $objectif = $programme->objectifsPrincipaux->first();
+                } catch (\Exception $e) {
+                    $objectif = null;
+                }
+            }
         }
     }
 @endphp
@@ -69,7 +71,7 @@
         .info-line {
             margin: 6px 0;
             font-size: 11pt;
-            line-height: 2.0;
+            line-height: 1.2;
         }
 
         .info-line strong {
@@ -80,7 +82,7 @@
             width: 100%;
             margin: 10px 0;
             border-collapse: collapse;
-            font-size: 8.5pt;
+            font-size: 9.5pt;
         }
 
         .hierarchie-table th,
@@ -96,15 +98,6 @@
             font-weight: bold;
             width: 20%;
         }
-
-        .warning-box {
-            background-color: #fff3cd;
-            border: 1px solid #ffc107;
-            padding: 8px;
-            margin: 10px 0;
-            font-size: 8pt;
-            color: #856404;
-        }
     </style>
 @endsection
 
@@ -113,14 +106,6 @@
     <div class="doc-title doc-title-wrapper">
         CERTIFICAT D'ENGAGEMENT
     </div>
-
-    {{-- ✅ Avertissement si données incomplètes --}}
-    @if (!$tache)
-        <div class="warning-box">
-            ⚠️ Attention: La hiérarchie budgétaire complète n'est pas disponible pour cette nomenclature.
-            Veuillez compléter les données dans le module de gestion budgétaire.
-        </div>
-    @endif
 
     {{-- Introduction --}}
     <div class="info-line">

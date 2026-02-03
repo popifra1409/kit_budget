@@ -12,6 +12,7 @@ use App\Services\BonCommandePdfService;
 use App\Services\DecisionAdministrativePdfService;
 use App\Models\BonCommande;
 use App\Models\DecisionAdministrative;
+use App\Models\ParametresStructure;
 
 /*
 |--------------------------------------------------------------------------
