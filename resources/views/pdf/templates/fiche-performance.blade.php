@@ -133,40 +133,40 @@
 
     {{-- Programme --}}
     <div class="info-line">
-        <strong>PROGRAMME:</strong> {{ $programme?->libelle ?? 'GOUVERNANCE ET PILOTAGE STRATÉGIQUE DU SYSTÈME' }}
+        <strong>PROGRAMME:</strong> {{ $programme?->libelle ?? 'Non défini' }}
     </div>
 
     {{-- Objectif --}}
     <div class="info-line">
         <strong>OBJECTIF:</strong>
-        {{ $objectif?->libelle ?? 'Améliorer la coordination des services et assurer la bonne mise en œuvre des programmes au ministère' }}
+        {{ $objectif?->libelle ?? 'Non défini' }}
     </div>
 
     {{-- Action --}}
     <div class="info-line">
-        <strong>ACTION:</strong> {{ $action?->libelle ?? 'Gestion budgétaire et financière' }}
+        <strong>ACTION:</strong> {{ $action?->libelle ?? 'Non défini' }}
     </div>
 
     {{-- Activité --}}
     <div class="info-line">
-        <strong>ACTIVITÉ:</strong> {{ $activite?->libelle ?? 'Appuyer les services en consommables médicaux' }}
+        <strong>ACTIVITÉ:</strong> {{ $activite?->libelle ?? 'Non défini' }}
     </div>
 
     {{-- Tâche --}}
     <div class="info-line">
-        <strong>TACHE:</strong> {{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}
+        <strong>TACHE:</strong> {{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'Non défini') }}
     </div>
 
     {{-- Indicateur de résultats --}}
     <div class="info-line">
         <strong>INDICATEUR DE RESULTATS:</strong>
-        {{ $tache?->indicateur_resultat ?? ($activite?->indicateur_resultat ?? 'Disponibilité des consommables dans les services') }}
+        {{ $tache?->indicateur_resultat ?? ($activite?->indicateur_resultat ?? 'Non défini') }}
     </div>
 
     {{-- Valeur de référence --}}
     <div class="info-line">
         <strong>VALEUR DE REFERENCE:</strong>
-        {{ $tache?->valeur_reference ?? ($activite?->valeur_reference ?? 'Fourniture d\'Anatomopathologie') }}
+        {{ $tache?->valeur_reference ?? ($activite?->valeur_reference ?? 'Non défini') }}
     </div>
 
     {{-- Niveau actuel d'avancement --}}
@@ -187,7 +187,7 @@
         </tr>
         <tr>
             <td class="label">Imputation:</td>
-            <td>{{ $nomenclature?->code ?? 'N/A' }}</td>
+            <td>{{ $nomenclature?->code ?? 'Non défini' }}</td>
         </tr>
         <tr>
             <td class="label">N°BON:</td>
