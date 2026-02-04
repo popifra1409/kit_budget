@@ -601,6 +601,21 @@ class DecisionAdministrativeResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
+                Tables\Filters\Filter::make('mes_decisions')
+                    ->label('Mes décisions uniquement')
+                    ->query(function (Builder $query) {
+                        $userId = auth()->id();
+
+                        if (!$userId) {
+                            return $query->whereRaw('1 = 0');
+                        }
+
+                        return $query->where('created_by', $userId);
+                    })
+                    ->toggle()
+                    ->default(fn() => false)
+                    ->indicateUsing(fn() => 'Créées par moi'),
+
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
@@ -676,13 +691,13 @@ class DecisionAdministrativeResource extends Resource
                         });
                     })
                     ->toggle()
-                    ->default(), // Activé par défaut
+                    ->default(false), // Activé par défaut
             ])
             ->actions(
                 WorkflowActions::make(
                     avecEngagement: true,
-                    pdfServiceClass: DecisionAdministrativePdfService::class,
-                    pdfRouteName: 'decisions-administratives.pdf.preview'
+                    // pdfServiceClass: DecisionAdministrativePdfService::class,
+                    // pdfRouteName: 'decisions-administratives.pdf.preview'
                 )
             )
             ->bulkActions([

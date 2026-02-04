@@ -151,7 +151,7 @@
     {{-- Valeur de référence --}}
     <div class="info-line">
         <strong>VALEUR DE REFERENCE:</strong>
-        {{ $tache?->valeur_reference ?? ($activite?->valeur_reference ?? 'N/A') }}
+        {{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}
     </div>
 
     {{-- Niveau actuel d'avancement --}}
