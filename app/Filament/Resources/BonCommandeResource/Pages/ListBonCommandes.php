@@ -10,6 +10,13 @@ class ListBonCommandes extends ListRecords
 {
     protected static string $resource = BonCommandeResource::class;
 
+    public function mount(): void
+    {
+        // Assurez-vous que la propriété est un tableau
+        $this->toggledTableColumns = (array) $this->toggledTableColumns;
+        parent::mount();
+    }
+
     protected function getHeaderActions(): array
     {
         return [

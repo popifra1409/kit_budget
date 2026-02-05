@@ -356,6 +356,51 @@ class BonCommandeResource extends Resource
                     ->columns(2)
                     ->collapsible(),
 
+                Forms\Components\Toggle::make('exonere_tva')
+                    ->label('Exonération de TVA')
+                    ->live()
+                    ->reactive()
+                    ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                        // Forcer l'état booléen
+                        $set('exonere_tva', (bool) $state);
+
+                        // Recalculer toutes les lignes lors du chargement
+                        if ($state) {
+                            $lignes = $get('lignes') ?? [];
+                            foreach ($lignes as $index => $ligne) {
+                                $set("lignes.$index.taux_tva", 0);
+                                // Recalculer la ligne
+                                static::recalculerLigne(
+                                    function ($key, $value) use ($set, $index) {
+                                        $set("lignes.$index.$key", $value);
+                                    },
+                                    function ($key) use ($get, $index) {
+                                        return $get("lignes.$index.$key");
+                                    }
+                                );
+                            }
+                        }
+                    })
+                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                        $lignes = $get('lignes') ?? [];
+
+                        foreach ($lignes as $index => $ligne) {
+                            $set("lignes.$index.taux_tva", $state ? 0 : 19.25);
+                            // Recalculer immédiatement chaque ligne
+                            static::recalculerLigne(
+                                function ($key, $value) use ($set, $index) {
+                                    $set("lignes.$index.$key", $value);
+                                },
+                                function ($key) use ($get, $index) {
+                                    return $get("lignes.$index.$key");
+                                }
+                            );
+                        }
+
+                        // Recalculer les totaux
+                        static::recalculerTotaux($lignes, $set);
+                    }),
+
                 Forms\Components\Section::make('Référence')
                     ->schema([
                         Forms\Components\TextInput::make('reference')
@@ -508,15 +553,24 @@ class BonCommandeResource extends Resource
                                             ->numeric()
                                             ->default(19.25)
                                             ->suffix('%')
+                                            ->default(fn(callable $get) => $get('../../exonere_tva') ? 0 : 19.25)
+                                            ->disabled(fn(callable $get) => (bool) $get('../../exonere_tva'))
+                                            ->dehydrated(true)
                                             ->minValue(0)
                                             ->maxValue(100)
                                             ->live(onBlur: true)
-                                            ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get)),
+                                            ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get))
+                                            ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                                // Forcer le taux à 0 si exonéré lors du chargement
+                                                if ($get('../../exonere_tva')) {
+                                                    $set('taux_tva', 0);
+                                                }
+                                            }),
 
                                         Forms\Components\TextInput::make('taux_ir')
                                             ->label('IR %')
                                             ->numeric()
-                                            ->default(0)
+                                            ->default(5.5)
                                             ->suffix('%')
                                             ->minValue(0)
                                             ->maxValue(100)
@@ -524,11 +578,11 @@ class BonCommandeResource extends Resource
                                             ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get))
                                             ->helperText('IR spécifique (0 = auto)'),
 
-                                        Forms\Components\Placeholder::make('net_display')
+                                        Forms\Components\Placeholder::make('net_a_payer')
                                             ->label('Net à payer')
                                             ->content(function (callable $get) {
-                                                $netAPayer = (float) ($get('net_a_payer') ?? 0);
-                                                return number_format($netAPayer, 0, ',', ' ') . ' FCFA';
+                                                $netAPercevoir = (float) ($get('net_a_payer') ?? 0); // ← CHANGÉ
+                                                return number_format($netAPercevoir, 0, ',', ' ') . ' FCFA';
                                             }),
                                     ]),
 
@@ -551,7 +605,7 @@ class BonCommandeResource extends Resource
                                         $montantTVA = (float) ($get('montant_tva') ?? 0);
                                         $montantIR = (float) ($get('montant_ir') ?? 0);
                                         $montantTTC = (float) ($get('montant_ttc') ?? 0);
-                                        $netAPayer = (float) ($get('net_a_payer') ?? 0);
+                                        $netAPercevoir = (float) ($get('net_a_payer') ?? 0);
 
                                         return sprintf(
                                             "HT: %s | TVA: %s | TTC: %s | IR: %s | Net: %s",
@@ -559,7 +613,7 @@ class BonCommandeResource extends Resource
                                             number_format($montantTVA, 0, ',', ' '),
                                             number_format($montantTTC, 0, ',', ' '),
                                             number_format($montantIR, 0, ',', ' '),
-                                            number_format($netAPayer, 0, ',', ' ')
+                                            number_format($netAPercevoir, 0, ',', ' ')
                                         );
                                     })
                                     ->columnSpan(3),
@@ -759,8 +813,8 @@ class BonCommandeResource extends Resource
                         $record->exercice instanceof \App\Models\Exercice
                             ? $record->exercice->libelle
                             : null
-                    )
-                    ->toggleable(),
+                    ),
+                // ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° BC')
@@ -783,8 +837,8 @@ class BonCommandeResource extends Resource
 
                 Tables\Columns\TextColumn::make('serviceDemandeur.nom')
                     ->label('Service')
-                    ->searchable()
-                    ->toggleable(),
+                    ->searchable(),
+                // ->toggleable(),
 
                 Tables\Columns\TextColumn::make('date_emission')
                     ->label('Date')
@@ -802,17 +856,17 @@ class BonCommandeResource extends Resource
                     ->label('IR')
                     ->money('XAF')
                     ->sortable()
-                    ->color('warning')
-                    ->toggleable(),
+                    ->color('warning'),
+                // ->toggleable(),
 
-                Tables\Columns\TextColumn::make('net_a_percevoir')
+                Tables\Columns\TextColumn::make('   ')
                     ->label('Net à Percevoir')
                     ->money('XAF')
                     ->sortable()
                     ->weight('bold')
                     ->color('primary')
-                    ->description(fn($record) => "HT: " . number_format($record->montant_ht, 0, ',', ' ') . " - IR: " . number_format($record->montant_ir, 0, ',', ' '))
-                    ->toggleable(),
+                    ->description(fn($record) => "HT: " . number_format($record->montant_ht, 0, ',', ' ') . " - IR: " . number_format($record->montant_ir, 0, ',', ' ')),
+                // ->toggleable(),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
@@ -851,13 +905,13 @@ class BonCommandeResource extends Resource
                         'DECOMPTE_LC', 'DECOMPTE_MARCHE' => 'info',
                         default => 'gray',
                     })
-                    ->searchable()
-                    ->toggleable(),
+                    ->searchable(),
+                // ->toggleable(),
 
                 Tables\Columns\TextColumn::make('reference')
                     ->label('Référence')
                     ->searchable()
-                    ->toggleable()
+                    // ->toggleable()
                     ->placeholder('-'),
 
                 Tables\Columns\TextColumn::make('engagement.reference_document')
@@ -890,8 +944,8 @@ class BonCommandeResource extends Resource
                         if ($record->montant_cnps > 0) $details[] = "CNPS: " . number_format($record->montant_cnps, 0, ',', ' ');
 
                         return implode(' | ', $details);
-                    })
-                    ->toggleable(),
+                    }),
+                // ->toggleable(),
 
                 Tables\Columns\TextColumn::make('transmission_status')
                     ->label('Transmission')
@@ -929,8 +983,8 @@ class BonCommandeResource extends Resource
                         str_starts_with($state ?? '', 'En attente') => 'heroicon-o-clock',
                         default => 'heroicon-o-paper-airplane'
                     })
-                    ->placeholder('-')
-                    ->toggleable(),
+                    ->placeholder('-'),
+                // ->toggleable(),
 
             ])
             ->filters([

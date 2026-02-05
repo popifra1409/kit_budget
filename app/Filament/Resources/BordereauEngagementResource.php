@@ -25,11 +25,11 @@ class BordereauEngagementResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    protected static ?string $navigationLabel = 'Bordereaux d\'Engagement';
+    protected static ?string $navigationLabel = 'Bordereaux de transmission';
 
-    protected static ?string $modelLabel = 'Bordereau d\'Engagement';
+    protected static ?string $modelLabel = 'Bordereau de transmission';
 
-    protected static ?string $pluralModelLabel = 'Bordereaux d\'Engagement';
+    protected static ?string $pluralModelLabel = 'Bordereaux de transmission';
 
     protected static ?string $navigationGroup = 'Commandes & Engagement';
 

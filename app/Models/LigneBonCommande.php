@@ -44,7 +44,7 @@ class LigneBonCommande extends Model
         'montant_ir' => 'decimal:2',
         'taux_ir' => 'decimal:2',
         'montant_ttc' => 'decimal:2',
-        'net_a_payer' => 'decimal:2',
+        'net_a_payer' => 'decimal:2', // ← CHANGÉ
         'quantite_livree' => 'decimal:3',
         'quantite_restante' => 'decimal:3',
         'numero_ligne' => 'integer',
@@ -68,10 +68,10 @@ class LigneBonCommande extends Model
         });
 
         static::saved(function ($ligne) {
-            // Recalculer les montants du BC parent
-            if ($ligne->bonCommande) {
+            // Recalculer les montants du BC parent (sans déclencher une boucle)
+            if ($ligne->bonCommande && !$ligne->bonCommande->isDirty()) {
                 $ligne->bonCommande->calculerMontants();
-                $ligne->bonCommande->save();
+                $ligne->bonCommande->saveQuietly();
             }
         });
 
@@ -79,7 +79,7 @@ class LigneBonCommande extends Model
             // Recalculer les montants du BC parent
             if ($ligne->bonCommande) {
                 $ligne->bonCommande->calculerMontants();
-                $ligne->bonCommande->save();
+                $ligne->bonCommande->saveQuietly();
             }
         });
     }
@@ -100,12 +100,15 @@ class LigneBonCommande extends Model
         return $this->belongsTo(NomenclatureBudgetaire::class, 'nomenclature_id');
     }
 
+    /**
+     * Relation : Référence mercuriale
+     */
     public function referenceMercuriale(): BelongsTo
     {
         return $this->belongsTo(ReferenceMercuriale::class, 'reference_mercuriale_id');
     }
 
-     // ===== ACCESSEURS =====
+    // ===== ACCESSEURS =====
 
     /**
      * Obtenir la référence à afficher (mercuriale ou personnalisée)
@@ -123,47 +126,101 @@ class LigneBonCommande extends Model
 
     /**
      * Calculer les montants automatiquement
+     * MÉTHODE PRINCIPALE appelée par les événements du modèle
      */
     public function calculerMontants(): void
     {
         // S'assurer que les valeurs sont des nombres
         $this->quantite = floatval($this->quantite ?? 0);
         $this->prix_unitaire_ht = floatval($this->prix_unitaire_ht ?? 0);
-        $this->taux_tva = floatval($this->taux_tva ?? 19.25);
         $this->quantite_livree = floatval($this->quantite_livree ?? 0);
 
         // Montant HT = Quantité × Prix Unitaire HT
         $this->montant_ht = round($this->quantite * $this->prix_unitaire_ht, 2);
 
-        // Montant TVA = Montant HT × (Taux TVA / 100)
-        $this->montant_tva = round($this->montant_ht * ($this->taux_tva / 100), 2);
+        // ===== GESTION DE LA TVA =====
+        // Vérifier si le BC parent est exonéré de TVA
+        $bonCommande = $this->bonCommande;
+        if ($bonCommande && $bonCommande->exonere_tva) {
+            // Forcer le taux TVA à 0 si le BC est exonéré
+            $this->taux_tva = 0;
+            $this->montant_tva = 0;
+        } else {
+            // Utiliser le taux TVA défini ou le taux par défaut
+            $this->taux_tva = floatval($this->taux_tva ?? 19.25);
+            $this->montant_tva = round($this->montant_ht * ($this->taux_tva / 100), 2);
+        }
 
         // Montant TTC = Montant HT + Montant TVA
         $this->montant_ttc = round($this->montant_ht + $this->montant_tva, 2);
 
-        // Calculer l'IR selon le barème (si taux_ir n'est pas défini ou est strictement null)
-        // Important: si taux_ir = 0, c'est une exonération manuelle, on garde 0
+        // ===== GESTION DE L'IR =====
+        // Calculer l'IR selon le type d'engagement et le régime fiscal
         if ($this->taux_ir === null || $this->taux_ir === '') {
-            $this->taux_ir = $this->calculerTauxIR();
+            // Calcul automatique de l'IR
+            $this->taux_ir = $this->calculerTauxIRAutomatique();
         } else {
-            // Conserver le taux saisi (peut être 0 pour exonération)
+            // Conserver le taux saisi (peut être 0 pour exonération manuelle)
             $this->taux_ir = floatval($this->taux_ir);
         }
 
         $this->montant_ir = round($this->montant_ht * ($this->taux_ir / 100), 2);
 
-        // Net à payer = TTC - IR
-        $this->net_a_payer = round($this->montant_ttc - $this->montant_ir, 2);
+        // ===== NET À PERCEVOIR =====
+        // Net à percevoir = Montant HT - IR (ou TTC - IR selon votre logique métier)
+        // Option 1 : Net = HT - IR (montant sans TVA après retenue IR)
+        $this->net_a_payer = round($this->montant_ht - $this->montant_ir, 2); // ← CHANGÉ
+
+        // Option 2 : Net = TTC - IR (si l'IR doit être déduit du TTC)
+        // $this->net_a_payer = round($this->montant_ttc - $this->montant_ir, 2);
 
         // Quantité restante = Quantité - Quantité livrée
         $this->quantite_restante = $this->quantite - $this->quantite_livree;
     }
 
     /**
-     * Calculer le taux IR selon le barème camerounais
-     * Par défaut : barème services (à adapter selon le type)
+     * Recalculer les montants de la ligne
+     * MÉTHODE PUBLIQUE pour recalcul manuel (utilisée par l'Observer)
      */
-    protected function calculerTauxIR(): float
+    public function recalculerMontants(): void
+    {
+        $this->calculerMontants();
+    }
+
+    /**
+     * Calculer le taux IR automatiquement selon le type d'engagement et le régime fiscal
+     */
+    protected function calculerTauxIRAutomatique(): float
+    {
+        $bonCommande = $this->bonCommande;
+
+        // Si pas de BC ou pas de type d'engagement, utiliser le barème par défaut
+        if (!$bonCommande || !$bonCommande->typeEngagement || !$bonCommande->fournisseur) {
+            return $this->calculerTauxIRParDefaut();
+        }
+
+        $typeEngagement = $bonCommande->typeEngagement;
+        $fournisseur = $bonCommande->fournisseur;
+
+        // Charger le régime fiscal si nécessaire
+        if (!$fournisseur->relationLoaded('regimeFiscal')) {
+            $fournisseur->load('regimeFiscal');
+        }
+
+        // Utiliser la méthode du type d'engagement pour calculer le taux IR
+        if ($fournisseur->regimeFiscal) {
+            return $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
+        }
+
+        // Fallback : barème par défaut
+        return $this->calculerTauxIRParDefaut();
+    }
+
+    /**
+     * Calculer le taux IR selon le barème camerounais par défaut
+     * Barème services (à adapter selon le type de prestation)
+     */
+    protected function calculerTauxIRParDefaut(): float
     {
         // Barème IR Services (défaut)
         if ($this->montant_ht < 500000) {
@@ -173,11 +230,6 @@ class LigneBonCommande extends Model
         } else {
             return 15.0;
         }
-
-        // Note : Pour fournitures/travaux, utiliser :
-        // < 1M : 2.2%
-        // 1M-5M : 5.5%
-        // > 5M : 11%
     }
 
     /**
@@ -214,17 +266,17 @@ class LigneBonCommande extends Model
             // Aucune livraison
             if ($bc->statut == 'engage') {
                 $bc->statut = 'en_cours';
-                $bc->save();
+                $bc->saveQuietly();
             }
         } elseif ($totalLivree < $totalQuantite) {
             // Livraison partielle
             $bc->statut = 'livre_partiellement';
-            $bc->save();
+            $bc->saveQuietly();
         } else {
             // Livraison complète
             $bc->statut = 'livre';
             $bc->date_livraison_effective = now();
-            $bc->save();
+            $bc->saveQuietly();
         }
     }
 
@@ -246,5 +298,25 @@ class LigneBonCommande extends Model
     public function estLivree(): bool
     {
         return $this->quantite_livree >= $this->quantite;
+    }
+
+    /**
+     * Forcer le recalcul avec exonération de TVA
+     * Utilisé par l'Observer du BonCommande
+     */
+    public function appliquerExonerationTVA(): void
+    {
+        $this->taux_tva = 0;
+        $this->montant_tva = 0;
+        $this->recalculerMontants();
+    }
+
+    /**
+     * Restaurer le taux de TVA normal
+     */
+    public function restaurerTVA(float $tauxTVA = 19.25): void
+    {
+        $this->taux_tva = $tauxTVA;
+        $this->recalculerMontants();
     }
 }

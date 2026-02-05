@@ -51,6 +51,7 @@ class BonCommande extends Model
         'produit_importe',
         'created_by',
         'updated_by',
+        'net_a_payer',
     ];
 
     protected $casts = [
@@ -217,6 +218,18 @@ class BonCommande extends Model
 
     protected static function booted(): void
     {
+        /**
+         * ========================================
+         * AVANT SAUVEGARDE (CREATE + UPDATE)
+         * ========================================
+         */
+        static::saving(function ($bonCommande) {
+            // 🔒 Forcer exonération TVA au niveau métier
+            if ($bonCommande->exonere_tva) {
+                $bonCommande->montant_tva = 0;
+            }
+        });
+
         // ========================================
         // ÉVÉNEMENT : AVANT CRÉATION
         // ========================================
@@ -278,6 +291,24 @@ class BonCommande extends Model
                 throw new \Exception(
                     'Suppression interdite : ce bon de commande est déjà engagé. Annulez-le d\'abord.'
                 );
+            }
+        });
+
+        /**
+         * ========================================
+         * APRÈS CHARGEMENT (POST-RETRIEVE)
+         * ========================================
+         */
+        static::retrieved(function ($bonCommande) {
+            // 🔁 Correction silencieuse des lignes si exonéré
+            if ($bonCommande->exonere_tva) {
+                foreach ($bonCommande->lignes as $ligne) {
+                    if ((float) $ligne->taux_tva !== 0.0) {
+                        $ligne->taux_tva = 0;
+                        $ligne->recalculerMontants();
+                        $ligne->saveQuietly(); // ⚠️ évite boucle d'événements
+                    }
+                }
             }
         });
     }
@@ -410,21 +441,84 @@ class BonCommande extends Model
     }
 
     /**
-     * Calculer les montants à partir des lignes
+     * Calculer les montants (appelé par l'Observer LigneBonCommande)
      */
     public function calculerMontants(): void
     {
-        if ($this->exists) {
-            $this->montant_ht = $this->lignes()->sum('montant_ht');
-            $this->montant_tva = $this->lignes()->sum('montant_tva');
-            $this->montant_ir = $this->lignes()->sum('montant_ir');
-            $this->montant_ttc = $this->lignes()->sum('montant_ttc');
+        $totalHT = 0;
+        $totalTVA = 0;
+        $totalIR = 0;
+        $totalTTC = 0;
+        $totalNetAPayer = 0;
 
-            // Calculer le taux IR moyen si applicable
-            if ($this->montant_ht > 0) {
-                $this->taux_ir = ($this->montant_ir / $this->montant_ht) * 100;
-            }
+        // Charger les lignes si nécessaire
+        if (!$this->relationLoaded('lignes')) {
+            $this->load('lignes');
         }
+
+        foreach ($this->lignes as $ligne) {
+            $totalHT += $ligne->montant_ht ?? 0;
+            $totalTVA += $ligne->montant_tva ?? 0;
+            $totalIR += $ligne->montant_ir ?? 0;
+            $totalTTC += $ligne->montant_ttc ?? 0;
+            $totalNetAPayer += $ligne->net_a_payer ?? 0;
+        }
+
+        // Mettre à jour les totaux
+        $this->montant_ht = round($totalHT, 2);
+        $this->montant_tva = round($totalTVA, 2);
+        $this->montant_ir = round($totalIR, 2);
+        $this->montant_ttc = round($totalTTC, 2);
+        $this->net_a_payer = round($totalNetAPayer, 2);
+    }
+    /**
+     * Recalculer tous les montants du bon de commande
+     */
+    public function recalculerTousLesMontants(): void
+    {
+        $totalHT = 0;
+        $totalTVA = 0;
+        $totalIR = 0;
+        $totalTTC = 0;
+        $totalNetAPayer = 0;
+
+        // Charger les lignes si nécessaire
+        if (!$this->relationLoaded('lignes')) {
+            $this->load('lignes');
+        }
+
+        foreach ($this->lignes as $ligne) {
+            // Forcer le taux TVA à 0 si exonéré
+            if ($this->exonere_tva && $ligne->taux_tva != 0) {
+                $ligne->appliquerExonerationTVA();
+                $ligne->saveQuietly();
+            } else if (!$this->exonere_tva && $ligne->taux_tva == 0) {
+                // Restaurer la TVA si le BC n'est plus exonéré
+                $ligne->restaurerTVA(19.25);
+                $ligne->saveQuietly();
+            } else {
+                // Recalculer normalement
+                $ligne->recalculerMontants();
+                $ligne->saveQuietly();
+            }
+
+            // Cumuler les totaux
+            $totalHT += $ligne->montant_ht;
+            $totalTVA += $ligne->montant_tva;
+            $totalIR += $ligne->montant_ir;
+            $totalTTC += $ligne->montant_ttc;
+            $totalNetAPayer += $ligne->net_a_payer; // ← CHANGÉ
+        }
+
+        // Mettre à jour les totaux du BC
+        $this->montant_ht = round($totalHT, 2);
+        $this->montant_tva = round($totalTVA, 2);
+        $this->montant_ir = round($totalIR, 2);
+        $this->montant_ttc = round($totalTTC, 2);
+        $this->net_a_payer = round($totalNetAPayer, 2); // ← CHANGÉ
+
+        // Sauvegarder sans déclencher les événements (éviter boucle infinie)
+        $this->saveQuietly();
     }
 
     /**
@@ -801,7 +895,7 @@ class BonCommande extends Model
      */
     public function getNetAPercevoirFormatteAttribute(): string
     {
-        return number_format($this->net_a_percevoir, 0, ',', ' ') . ' FCFA';
+        return number_format($this->net_a_payer, 0, ',', ' ') . ' FCFA';
     }
 
     /**

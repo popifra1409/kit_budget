@@ -17,6 +17,23 @@ class CreateBonCommande extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['statut'] = 'brouillon';
+
+        // ✅ Forcer l’exonération TVA AVANT enregistrement
+        return self::forcerExonerationTVA($data);
+    }
+
+    protected static function forcerExonerationTVA(array $data): array
+    {
+        if (!empty($data['exonere_tva'])) {
+            $data['montant_tva'] = 0;
+
+            foreach ($data['lignes'] ?? [] as &$ligne) {
+                $ligne['taux_tva'] = 0;
+                $ligne['montant_tva'] = 0;
+                $ligne['montant_ttc'] = $ligne['montant_ht'] ?? 0;
+            }
+        }
+
         return $data;
     }
 }

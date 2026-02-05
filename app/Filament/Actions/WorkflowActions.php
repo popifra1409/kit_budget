@@ -113,7 +113,12 @@ class WorkflowActions
             ->label('Valider')
             ->icon('heroicon-o-check-circle')
             ->color('warning')
-            ->visible(fn($record) => in_array($record->statut, ['brouillon']))
+            ->visible(function ($record) {
+                // Vérifier la permission ET l'état du document
+                return auth()->user()?->can('valider_bon_commande')
+                    && $record->statut === 'brouillon'
+                    && !$record->estEnCoursDeTransmission();
+            })
             ->requiresConfirmation()
             ->action(function ($record) {
                 $record->valider(auth()->user());
