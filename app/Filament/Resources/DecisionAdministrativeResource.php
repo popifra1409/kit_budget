@@ -25,11 +25,11 @@ class DecisionAdministrativeResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
 
-    protected static ?string $navigationLabel = 'Décisions Administratives';
+    protected static ?string $navigationLabel = 'Décisions';
 
-    protected static ?string $modelLabel = 'Décision Administrative';
+    protected static ?string $modelLabel = 'Décision';
 
-    protected static ?string $pluralModelLabel = 'Décisions Administratives';
+    protected static ?string $pluralModelLabel = 'Décisions';
 
     protected static ?string $navigationGroup = 'Commandes & Engagement';
 
@@ -373,53 +373,62 @@ class DecisionAdministrativeResource extends Resource
                     ])
                     ->columns(4),
 
-                Forms\Components\Section::make('Montants')
+                Forms\Components\Section::make('Montants et retenues')
                     ->schema([
                         Forms\Components\TextInput::make('montant_brut')
                             ->label('Montant Brut')
-                            ->required()
                             ->numeric()
+                            ->required()
                             ->prefix('FCFA')
-                            ->default(0)
-                            ->live(onBlur: true)
-                            ->helperText('Les calculs CNPS et IR seront automatiques'),
+                            ->live(onBlur: true),
+
+                        Forms\Components\TextInput::make('taux_cnps')
+                            ->label('CNPS (%)')
+                            ->numeric()
+                            ->default(4.2)
+                            ->step(0.01)
+                            ->live(onBlur: true),
+
+                        Forms\Components\TextInput::make('taux_irnc')
+                            ->label('IRNC (%)')
+                            ->numeric()
+                            ->default(11)
+                            ->step(0.01)
+                            ->live(onBlur: true),
 
                         Forms\Components\TextInput::make('autres_retenues')
                             ->label('Autres retenues')
                             ->numeric()
-                            ->prefix('FCFA')
                             ->default(0)
+                            ->prefix('FCFA')
                             ->live(onBlur: true),
 
-                        Forms\Components\Placeholder::make('calculs_auto')
-                            ->label('Calculs automatiques')
+                        Forms\Components\Placeholder::make('resume_taxes')
+                            ->label('Résumé des taxes')
                             ->content(function (callable $get) {
+
                                 $brut = (float) ($get('montant_brut') ?? 0);
-                                $autresRetenues = (float) ($get('autres_retenues') ?? 0);
+                                $tauxCnps = (float) ($get('taux_cnps') ?? 0);
+                                $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
+                                $autres = (float) ($get('autres_retenues') ?? 0);
 
-                                // CNPS 4.2%
-                                $cnps = $brut * 0.042;
+                                $montantCnps = $brut * ($tauxCnps / 100);
+                                $montantIrnc = $brut * ($tauxIrnc / 100);
 
-                                // IR selon barème (simplifié)
-                                if ($brut <= 62000) {
-                                    $ir = 0;
-                                } elseif ($brut <= 130000) {
-                                    $ir = ($brut - 62000) * 0.10;
-                                } elseif ($brut <= 200000) {
-                                    $ir = 6800 + ($brut - 130000) * 0.15;
-                                } elseif ($brut <= 333000) {
-                                    $ir = 17300 + ($brut - 200000) * 0.25;
-                                } else {
-                                    $ir = 50550 + ($brut - 333000) * 0.35;
-                                }
+                                $totalTaxes = $montantCnps + $montantIrnc + $autres;
+                                $net = $brut - $totalTaxes;
 
-                                $net = $brut - $cnps - $ir - $autresRetenues;
-
-                                return "CNPS (4.2%): " . number_format($cnps, 0, ',', ' ') . " FCFA\n" .
-                                    "IR: " . number_format($ir, 0, ',', ' ') . " FCFA\n" .
-                                    "Net à payer: " . number_format($net, 0, ',', ' ') . " FCFA";
+                                return collect([
+                                    "CNPS ({$tauxCnps}%) : " . number_format($montantCnps, 0, ',', ' ') . " FCFA",
+                                    "IRNC ({$tauxIrnc}%) : " . number_format($montantIrnc, 0, ',', ' ') . " FCFA",
+                                    "Autres retenues : " . number_format($autres, 0, ',', ' ') . " FCFA",
+                                    "----------------------------",
+                                    "Total taxes : " . number_format($totalTaxes, 0, ',', ' ') . " FCFA",
+                                    "Net à payer : " . number_format($net, 0, ',', ' ') . " FCFA",
+                                ])->implode("\n");
                             })
                             ->columnSpanFull(),
+
                     ])
                     ->columns(2),
 

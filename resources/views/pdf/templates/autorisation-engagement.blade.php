@@ -7,6 +7,8 @@
 @php
     $engagement = $donnees['_raw'];
 
+    $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+
     $engagement->load(['nomenclaturePrincipale', 'beneficiaire', 'exercice']);
 
     $nomenclature = $engagement->nomenclaturePrincipale;
@@ -217,7 +219,7 @@
         </tr>
         <tr>
             <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'N/A'}}</td>
+            <td>{{ $action?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>ACTIVITÉ:</th>

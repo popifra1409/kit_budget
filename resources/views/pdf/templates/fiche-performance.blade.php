@@ -176,7 +176,7 @@
         </tr>
         <tr>
             <td class="label">N°BON:</td>
-            <td>{{ $engagement->reference_document ?? '' }}</td>
+            <td>{{ $engagement->numero ?? '' }}</td>
         </tr>
         <tr>
             <td class="label">Montant:</td>

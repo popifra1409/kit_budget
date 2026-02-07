@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Exceptions\CreditBudgetaireInsuffisantException;
 
 class DecisionAdministrative extends Model
 {
@@ -31,9 +32,12 @@ class DecisionAdministrative extends Model
         'date_fin',
         'objet',
         'montant_brut',
-        'cnps',
-        'ir',
+        'taux_cnps',
+        'taux_irnc',
+        'montant_cnps',
+        'montant_irnc',
         'autres_retenues',
+        'total_taxes',
         'montant_net',
         'reference_decision',
         'signataire',
@@ -55,11 +59,13 @@ class DecisionAdministrative extends Model
         'date_validation' => 'datetime',
         'date_engagement' => 'datetime',
         'montant_brut' => 'decimal:2',
-        'cnps' => 'decimal:2',
-        'ir' => 'decimal:2',
+        'taux_cnps' => 'decimal:2',
+        'taux_irnc' => 'decimal:2',
+        'montant_cnps' => 'decimal:2',
+        'montant_irnc' => 'decimal:2',
         'autres_retenues' => 'decimal:2',
+        'total_taxes' => 'decimal:2',
         'montant_net' => 'decimal:2',
-        'montant_engage' => 'decimal:2',
         'engagee' => 'boolean',
     ];
 
@@ -201,38 +207,21 @@ class DecisionAdministrative extends Model
         return sprintf('DA-%d-%05d', $annee, $nouveauNumero);
     }
 
+
     /**
-     * Calculer CNPS, IR et montant net automatiquement
+     * Calculer les montants (CNPS, IRNC, autres retenues, net)
      */
     public function calculerMontants(): void
     {
-        // CNPS (4.2% du brut)
-        $this->cnps = $this->montant_brut * 0.042;
+        $brut = $this->montant_brut ?? 0;
+        $tauxCnps = $this->taux_cnps ?? 4.2;
+        $tauxIrnc = $this->taux_irnc ?? 11;
+        $autresRetenues = $this->autres_retenues ?? 0;
 
-        // IR selon barème camerounais (simplifié)
-        $this->ir = $this->calculerIR($this->montant_brut);
-
-        // Montant net = Brut - CNPS - IR - Autres retenues
-        $this->montant_net = $this->montant_brut - $this->cnps - $this->ir - $this->autres_retenues;
-    }
-
-    /**
-     * Calculer l'IR selon le barème camerounais
-     */
-    protected function calculerIR(float $montantBrut): float
-    {
-        // Barème IR Cameroun (simplifié - à adapter selon besoins)
-        if ($montantBrut <= 62000) {
-            return 0; // Exonéré
-        } elseif ($montantBrut <= 130000) {
-            return ($montantBrut - 62000) * 0.10; // 10%
-        } elseif ($montantBrut <= 200000) {
-            return 6800 + ($montantBrut - 130000) * 0.15; // 15%
-        } elseif ($montantBrut <= 333000) {
-            return 17300 + ($montantBrut - 200000) * 0.25; // 25%
-        } else {
-            return 50550 + ($montantBrut - 333000) * 0.35; // 35%
-        }
+        $this->montant_cnps = $brut * ($tauxCnps / 100);
+        $this->montant_irnc = $brut * ($tauxIrnc / 100);
+        $this->total_taxes = $this->montant_cnps + $this->montant_irnc + $autresRetenues;
+        $this->montant_net = $brut - $this->total_taxes;
     }
 
     /**
@@ -270,7 +259,7 @@ class DecisionAdministrative extends Model
                 $nomenclature = $ligneBudgetaire->nomenclature;
                 $manque = $this->montant_net - $ligneBudgetaire->disponible_engagement;
 
-                throw new \Exception(
+                throw new CreditBudgetaireInsuffisantException(
                     "❌ CRÉDIT INSUFFISANT\n\n" .
                         "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
                         "📊 DÉTAILS:\n" .

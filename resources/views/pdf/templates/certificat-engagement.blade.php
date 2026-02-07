@@ -7,6 +7,8 @@
 @php
     $engagement = $donnees['_raw'];
 
+    $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+
     $engagement->load(['nomenclaturePrincipale', 'beneficiaire', 'exercice']);
 
     $nomenclature = $engagement->nomenclaturePrincipale;
@@ -141,7 +143,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Référence:</strong> {{ $engagement->reference_document ?? 'BON DE COMMANDE' }}
+        <strong>Référence:</strong> {{ $engagement->numero ?? 'BON DE COMMANDE' }}
     </div>
 
     <div class="info-line">

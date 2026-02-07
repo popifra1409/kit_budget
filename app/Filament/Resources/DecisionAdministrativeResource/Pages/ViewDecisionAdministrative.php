@@ -200,29 +200,61 @@ class ViewDecisionAdministrative extends ViewRecord
                 Infolists\Components\Section::make('Montants')
                     ->schema([
                         Infolists\Components\TextEntry::make('montant_brut')
-                            ->label('Montant Brut')
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                            ->label('Montant brut')
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
+                            )
                             ->color('info')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                            ->weight('bold'),
 
-                        Infolists\Components\TextEntry::make('cnps')
-                            ->label('CNPS (4.2%)')
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
-                            ->color('warning'),
+                        Infolists\Components\TextEntry::make('montant_cnps')
+                            ->label(
+                                fn($record) =>
+                                'CNPS (' . number_format($record->taux_cnps ?? 0, 2) . '%)'
+                            )
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('warning')
+                            ->visible(fn($record) => ($record->montant_cnps ?? 0) > 0),
 
-                        Infolists\Components\TextEntry::make('ir')
-                            ->label('IR')
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
-                            ->color('warning'),
+                        Infolists\Components\TextEntry::make('montant_irnc')
+                            ->label(
+                                fn($record) =>
+                                'IRNC (' . number_format($record->taux_irnc ?? 0, 2) . '%)'
+                            )
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('warning')
+                            ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
                         Infolists\Components\TextEntry::make('autres_retenues')
                             ->label('Autres retenues')
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
-                            ->visible(fn($record) => $record->autres_retenues > 0),
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA'
+                            )
+                            ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
+
+                        Infolists\Components\TextEntry::make('total_taxes')
+                            ->label('Total retenues')
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('danger'),
 
                         Infolists\Components\TextEntry::make('montant_net')
-                            ->label('Montant Net à payer')
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                            ->label('Montant net à payer')
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
+                            )
                             ->color('success')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold'),

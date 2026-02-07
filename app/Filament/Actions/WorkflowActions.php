@@ -144,6 +144,7 @@ class WorkflowActions
                 in_array($record->statut, ['valide', 'validee'])
                     && !($record->engage ?? $record->engagee ?? false)
             )
+            // ->disabled(fn(Get $get) => ! ($get('peut_engager') ?? false))
             ->requiresConfirmation()
             ->modalHeading('Engager le budget')
             ->modalDescription(fn($record) => "Créer un engagement budgétaire pour " . ($record->numero ?? 'ce document'))
@@ -195,13 +196,25 @@ class WorkflowActions
 
                         Forms\Components\Placeholder::make('montant_info')
                             ->label('Montants de la décision')
-                            ->content(fn() => new \Illuminate\Support\HtmlString(
+                            ->content(fn($record) => new \Illuminate\Support\HtmlString(
                                 '<div style="font-family: monospace; line-height: 1.8;">' .
-                                    '<strong>Montant brut :</strong> ' . number_format($record->montant_brut, 0, ',', ' ') . ' FCFA<br>' .
-                                    '<strong>CNPS :</strong> ' . number_format($record->cnps, 0, ',', ' ') . ' FCFA<br>' .
-                                    '<strong>IR :</strong> ' . number_format($record->ir, 0, ',', ' ') . ' FCFA<br>' .
-                                    '<strong>Autres retenues :</strong> ' . number_format($record->autres_retenues ?? 0, 0, ',', ' ') . ' FCFA<br>' .
-                                    '<strong style="color: green;">Net à engager :</strong> <strong>' . number_format($record->montant_net, 0, ',', ' ') . ' FCFA</strong>' .
+                                    '<strong>Montant brut :</strong> ' .
+                                    number_format($record->montant_brut ?? 0, 0, ',', ' ') . ' FCFA<br>' .
+
+                                    '<strong>CNPS (' . number_format($record->taux_cnps ?? 0, 2) . '%) :</strong> ' .
+                                    number_format($record->montant_cnps ?? 0, 0, ',', ' ') . ' FCFA<br>' .
+
+                                    '<strong>IRNC (' . number_format($record->taux_irnc ?? 0, 2) . '%) :</strong> ' .
+                                    number_format($record->montant_irnc ?? 0, 0, ',', ' ') . ' FCFA<br>' .
+
+                                    '<strong>Autres retenues :</strong> ' .
+                                    number_format($record->autres_retenues ?? 0, 0, ',', ' ') . ' FCFA<br>' .
+
+                                    '<strong>Total taxes :</strong> ' .
+                                    number_format($record->total_taxes ?? 0, 0, ',', ' ') . ' FCFA<br>' .
+
+                                    '<strong style="color: green;">Net à engager :</strong> ' .
+                                    '<strong>' . number_format($record->montant_net ?? 0, 0, ',', ' ') . ' FCFA</strong>' .
                                     '</div>'
                             )),
 
