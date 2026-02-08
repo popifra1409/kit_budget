@@ -11,7 +11,7 @@ class CreateBonCommande extends CreateRecord
 {
     protected static string $resource = BonCommandeResource::class;
 
-    protected ?BonCommande $draft = null;
+    public ?int $draftId = null;
 
     /**
      * ===============================
@@ -22,92 +22,89 @@ class CreateBonCommande extends CreateRecord
     {
         parent::mount();
 
-        // Chercher un brouillon existant
-        $this->draft = BonCommande::query()
-            ->where('statut', 'brouillon')
-            ->where('created_by', auth()->id())
-            ->whereNull('numero') // Brouillons sans numéro définitif
-            ->latest()
-            ->first();
+        try {
+            // Chercher un brouillon existant
+            $draft = BonCommande::query()
+                ->where('statut', 'brouillon')
+                ->where('created_by', auth()->id())
+                ->whereNull('numero')
+                ->latest()
+                ->first();
 
-        // Créer un nouveau brouillon si aucun n'existe
-        if (!$this->draft) {
-            // ✅ OBTENIR DES VALEURS PAR DÉFAUT
-            $exerciceActif = \App\Models\Exercice::getActif();
-            $premierBudget = \App\Models\Budget::where('actif', true)->first();
+            // Créer un nouveau brouillon si aucun n'existe
+            if (!$draft) {
+                $exerciceActif = \App\Models\Exercice::getActif();
+                $premierBudget = \App\Models\Budget::where('actif', true)->first();
 
-            $this->draft = BonCommande::create([
-                'exercice_id' => $exerciceActif?->id,
-                'budget_id' => $premierBudget?->id, // ✅ VALEUR PAR DÉFAUT
-                'statut' => 'brouillon',
-                'created_by' => auth()->id(),
-                'date_emission' => now(),
-                'exonere_tva' => false,
-                'objet' => 'Brouillon', // ✅ VALEUR TEMPORAIRE
-            ]);
+                $draft = BonCommande::create([
+                    'exercice_id' => $exerciceActif?->id,
+                    'budget_id' => $premierBudget?->id,
+                    'statut' => 'brouillon',
+                    'created_by' => auth()->id(),
+                    'date_emission' => now(),
+                    'exonere_tva' => false,
+                    'objet' => 'Brouillon',
+                ]);
+            }
+
+            // ✅ Sauvegarder l'ID du brouillon
+            $this->draftId = $draft->id;
+
+            // Lier le formulaire au brouillon
+            $this->form->model($draft)->fill();
+        } catch (\Exception $e) {
+            \Log::error("Erreur mount CreateBonCommande : " . $e->getMessage());
+
+            Notification::make()
+                ->title('❌ Erreur')
+                ->danger()
+                ->body('Impossible de charger le formulaire. Veuillez réessayer.')
+                ->persistent()
+                ->send();
+
+            $this->redirect($this->getResource()::getUrl('index'));
         }
-
-        // Lier le formulaire au brouillon
-        $this->form->model($this->draft)->fill();
-    }
-
-    /**
-     * =====================================
-     * AUTO-SAUVEGARDE À CHAQUE MODIFICATION
-     * =====================================
-     */
-    protected function getFormSchema(): array
-    {
-        return array_map(function ($component) {
-            return $component->afterStateUpdated(function () {
-                try {
-                    $data = $this->form->getState();
-
-                    // Appliquer la règle d'exonération TVA
-                    $data = self::forcerExonerationTVA($data);
-
-                    // Sauvegarder sans déclencher les événements
-                    $this->draft->updateQuietly($data);
-                } catch (\Exception $e) {
-                    \Log::warning("Erreur auto-sauvegarde BC : " . $e->getMessage());
-                }
-            });
-        }, parent::getFormSchema());
     }
 
     /**
      * ===============================
-     * VALIDATION FINALE
+     * CRÉATION DU RECORD
      * ===============================
      */
     protected function handleRecordCreation(array $data): BonCommande
     {
-        // Passer en statut 'valide'
-        $data['statut'] = 'valide';
+        $draft = BonCommande::findOrFail($this->draftId);
 
-        // Appliquer la règle d'exonération TVA
-        $data = self::forcerExonerationTVA($data);
+        // 🔒 Forcer le statut brouillon
+        $data['statut'] = 'brouillon';
 
-        // Mettre à jour le brouillon
-        $this->draft->update($data);
+        // Règle TVA
+        $data = $this->forcerExonerationTVA($data);
 
-        // Notification de succès
+        $draft->update($data);
+        $draft->refresh();
+
         Notification::make()
-            ->title('Bon de commande créé')
+            ->title('✅ Brouillon enregistré')
             ->success()
-            ->body("Le bon de commande {$this->draft->numero} a été créé avec succès.")
+            ->body("Le bon de commande a été enregistré en brouillon.")
             ->send();
 
-        return $this->draft;
+        return $draft;
     }
+
 
     /**
      * Redirection après création
      */
     protected function getRedirectUrl(): string
     {
+        if (!$this->record || !$this->record->id) {
+            return $this->getResource()::getUrl('index');
+        }
+
         return $this->getResource()::getUrl('view', [
-            'record' => $this->draft,
+            'record' => $this->record,
         ]);
     }
 
@@ -116,7 +113,7 @@ class CreateBonCommande extends CreateRecord
      * RÈGLE MÉTIER : EXONÉRATION TVA
      * ===============================
      */
-    protected static function forcerExonerationTVA(array $data): array
+    protected function forcerExonerationTVA(array $data): array
     {
         if (!empty($data['exonere_tva'])) {
             $data['montant_tva'] = 0;
@@ -135,5 +132,22 @@ class CreateBonCommande extends CreateRecord
         }
 
         return $data;
+    }
+
+    /**
+     * ===============================
+     * NETTOYAGE : Supprimer les vieux brouillons
+     * ===============================
+     */
+    public function __destruct()
+    {
+        try {
+            BonCommande::where('statut', 'brouillon')
+                ->whereNull('numero')
+                ->where('created_at', '<', now()->subDay())
+                ->delete();
+        } catch (\Exception $e) {
+            // Ignorer
+        }
     }
 }

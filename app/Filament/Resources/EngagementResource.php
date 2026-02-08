@@ -451,7 +451,6 @@ class EngagementResource extends Resource
                         return $indicators;
                     }),
 
-                // FILTRE PAR PÉRIODE PRÉDÉFINIE
                 Tables\Filters\Filter::make('periode')
                     ->form([
                         Forms\Components\Select::make('periode')
@@ -562,7 +561,7 @@ class EngagementResource extends Resource
             ])
             ->actions([
                 // =============================================
-                // ✅ ACTION : VALIDER (Passer en définitif)
+                // ✅ ACTION 1 : VALIDER (Passer définitif)
                 // =============================================
                 Tables\Actions\Action::make('valider')
                     ->label('Passer définitif')
@@ -594,7 +593,7 @@ class EngagementResource extends Resource
                     }),
 
                 // =============================================
-                // ✅ ACTION : CRÉER ORDONNANCES
+                // ✅ ACTION 2 : CRÉER ORDONNANCES
                 // =============================================
                 Tables\Actions\Action::make('creer_ordonnances')
                     ->label('Créer OP')
@@ -658,7 +657,7 @@ class EngagementResource extends Resource
                     }),
 
                 // =============================================
-                // ✅ ACTION : VOIR ORDONNANCES (MODAL)
+                // ✅ ACTION 3 : VOIR ORDONNANCES (MODAL)
                 // =============================================
                 Tables\Actions\Action::make('voir_ordonnances')
                     ->label('Voir OP')
@@ -683,10 +682,8 @@ class EngagementResource extends Resource
                     ->modalCancelActionLabel('Fermer'),
 
                 // =============================================
-                // ✅ ACTION : ANNULER (Seulement si possible)
+                // ✅ ACTION 4 : ANNULER (Seulement si provisoire)
                 // =============================================
-                // Dans App\Filament\Resources\EngagementResource.php
-
                 Tables\Actions\Action::make('annuler')
                     ->label('Annuler')
                     ->icon('heroicon-o-x-circle')
@@ -707,7 +704,7 @@ class EngagementResource extends Resource
                             ->rows(3),
                     ])
                     ->action(function ($record, array $data) {
-                        // ✅ Vérification supplémentaire avant annulation
+                        // ✅ Vérification supplémentaire
                         if ($record->statut !== 'provisoire') {
                             Notification::make()
                                 ->title('❌ Impossible d\'annuler')
@@ -746,7 +743,7 @@ class EngagementResource extends Resource
                     }),
 
                 // =============================================
-                // ✅ ACTIONS STANDARD (UN SEUL "Voir")
+                // ✅ ACTIONS STANDARD
                 // =============================================
                 Tables\Actions\ViewAction::make()
                     ->label('Voir'),
@@ -840,7 +837,7 @@ class EngagementResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //  RelationManagers\OrdonnancesPaiementRelationManager::class,
+            //
         ];
     }
 
