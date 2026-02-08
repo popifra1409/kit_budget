@@ -249,31 +249,43 @@ class DossierFournisseur extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Générer un numéro de dossier unique
-     */
-    public static function genererNumeroDossier(string $typeDossier): string
-    {
-        $year = now()->year;
-        $prefix = match ($typeDossier) {
-            'bon_commande' => 'DF-BC',
-            'marche' => 'DF-MR',
-            'decision_administrative' => 'DF-DA',
-            'prestation' => 'DF-PS',
-            default => 'DF',
-        };
+   // Dans App\Models\DossierFournisseur.php
 
-        $lastDossier = static::where('numero_dossier', 'like', "{$prefix}-{$year}-%")
-            ->latest('id')
+    /**
+     * Générer un numéro de dossier fournisseur
+     * Format : DF26-00001
+     */
+    public static function genererNumeroDossier(?int $exerciceId = null): string
+    {
+        $exercice = $exerciceId
+            ? \App\Models\Exercice::find($exerciceId)
+            : \App\Models\Exercice::getActif();
+
+        if (!$exercice) {
+            throw new \Exception("Aucun exercice disponible pour générer le numéro de dossier");
+        }
+
+        // ✅ Prendre les 2 derniers chiffres de l'année
+        $annee = substr($exercice->annee, -2); // 2026 → 26
+
+        // Chercher le dernier dossier de cet exercice
+        $dernier = self::where('exercice_id', $exercice->id)
+            ->where('numero_dossier', 'like', "DF{$annee}-%")
+            ->orderBy('numero_dossier', 'desc')
             ->first();
 
-        $numero = $lastDossier
-            ? ((int) substr($lastDossier->numero_dossier, -4)) + 1
-            : 1;
+        if ($dernier) {
+            // Extraire le numéro séquentiel (les 5 derniers chiffres)
+            $dernierNumero = intval(substr($dernier->numero_dossier, -5));
+            $nouveauNumero = $dernierNumero + 1;
+        } else {
+            $nouveauNumero = 1;
+        }
 
-        return sprintf('%s-%s-%04d', $prefix, $year, $numero);
+        // ✅ Format : DF26-00001
+        return sprintf('DF%s-%05d', $annee, $nouveauNumero);
     }
-
+    
     /**
      * Clôturer le dossier
      */

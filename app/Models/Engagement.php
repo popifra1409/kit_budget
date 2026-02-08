@@ -269,7 +269,8 @@ class Engagement extends Model
      */
     public function peutCreerOrdonnances(): bool
     {
-        return $this->statut === 'definitif';
+        return in_array($this->statut, ['definitif'])
+            && $this->hasOrdonnancesPaiement();
     }
 
     /**

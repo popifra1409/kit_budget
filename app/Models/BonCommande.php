@@ -77,7 +77,7 @@ class BonCommande extends Model
         'produit_importe' => 'boolean',
         'net_a_payer' => 'decimal:2',
         'net_a_percevoir' => 'decimal:2',
-        'exonere_tva' => 'boolean', 
+        'exonere_tva' => 'boolean',
     ];
 
     /**
@@ -483,26 +483,41 @@ class BonCommande extends Model
 
     /**
      * Générer le numéro de BC
+     * Format : BC26-00001 (au lieu de BC-2026-00001)
      */
     public function genererNumero(): string
     {
-        $annee = now()->year;
-        $dernier = self::where('numero', 'like', "BC-{$annee}-%")
+        // ✅ Utiliser l'exercice du BC, ou l'exercice actif
+        $exercice = $this->exercice ?? \App\Models\Exercice::getActif();
+
+        if (!$exercice) {
+            throw new \Exception("Aucun exercice disponible pour générer le numéro");
+        }
+
+        // ✅ Prendre les 2 derniers chiffres de l'année
+        $annee = substr($exercice->annee, -2); // 2026 → 26
+
+        // Chercher le dernier BC de cet exercice
+        $dernier = self::where('exercice_id', $exercice->id)
+            ->where('numero', 'like', "BC{$annee}-%")
             ->orderBy('numero', 'desc')
             ->first();
 
         if ($dernier) {
-            $dernierNumero = intval(substr($dernier->numero, -4));
+            // Extraire le numéro séquentiel (les 5 derniers chiffres)
+            $dernierNumero = intval(substr($dernier->numero, -5));
             $nouveauNumero = $dernierNumero + 1;
         } else {
             $nouveauNumero = 1;
         }
 
-        return sprintf('BC-%d-%04d', $annee, $nouveauNumero);
+        // ✅ Format : BC26-00001
+        return sprintf('BC%s-%05d', $annee, $nouveauNumero);
     }
 
     /**
      * Générer le numéro d'engagement
+     * Format : ENG26-00001 (adapté du BC26-00001)
      */
     protected function genererNumeroEngagement(): string
     {
@@ -510,19 +525,19 @@ class BonCommande extends Model
             throw new \Exception('Le bon de commande n\'a pas de numéro');
         }
 
-        $numeroEngagement = str_replace('BC-', 'BE-', $this->numero);
+        // ✅ Remplacer BC par ENG dans le numéro
+        // BC26-00001 → ENG26-00001
+        $numeroEngagement = str_replace('BC', 'ENG', $this->numero);
 
+        // Si le remplacement n'a pas fonctionné (cas improbable)
         if ($numeroEngagement === $this->numero) {
-            $numeroEngagement = preg_replace('/^BC([\/\-_])/', 'BE$1', $this->numero);
+            $numeroEngagement = 'ENG-' . $this->numero;
         }
 
-        if ($numeroEngagement === $this->numero) {
-            $numeroEngagement = 'BE-' . $this->numero;
-        }
-
+        // Vérifier l'unicité et ajouter un suffixe si nécessaire
         $count = 1;
         $numeroBase = $numeroEngagement;
-        while (Engagement::where('reference_document', $numeroEngagement)->exists()) {
+        while (Engagement::where('numero', $numeroEngagement)->exists()) {
             $numeroEngagement = $numeroBase . '-' . $count;
             $count++;
         }
@@ -759,10 +774,18 @@ class BonCommande extends Model
     }
 
     /**
-     * ✅ CRÉER OU METTRE À JOUR LE DOSSIER - VERSION CORRIGÉE AVEC VÉRIFICATIONS
+     * ✅ CRÉER OU METTRE À JOUR LE DOSSIER - VERSION CORRIGÉE
+     * - Ne crée pas de dossier si le BC est en brouillon
+     * - Format numéro : DF26-00001
      */
     public function creerOuMettreAJourDossier(): ?DossierFournisseur
     {
+        // ✅ NE PAS CRÉER DE DOSSIER POUR UN BROUILLON
+        if ($this->statut === 'brouillon') {
+            \Log::info("BC {$this->numero} : Pas de dossier pour un brouillon");
+            return null;
+        }
+
         // ✅ VÉRIFICATIONS PRÉALABLES
         if (!$this->fournisseur_id) {
             \Log::warning("BC {$this->numero} : Impossible de créer le dossier sans fournisseur");
@@ -783,7 +806,7 @@ class BonCommande extends Model
             if (!$dossier) {
                 // Créer un nouveau dossier
                 $dossier = DossierFournisseur::create([
-                    'numero_dossier' => DossierFournisseur::genererNumeroDossier('bon_commande'),
+                    'numero_dossier' => DossierFournisseur::genererNumeroDossier($this->exercice_id),
                     'fournisseur_id' => $this->fournisseur_id,
                     'exercice_id' => $this->exercice_id,
                     'type_dossier' => 'bon_commande',
@@ -826,7 +849,9 @@ class BonCommande extends Model
 
             return $dossier;
         } catch (\Exception $e) {
-            \Log::error("Erreur création/MAJ dossier pour BC {$this->numero} : " . $e->getMessage());
+            \Log::error("Erreur création/MAJ dossier pour BC {$this->numero} : " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
             return null;
         }
     }

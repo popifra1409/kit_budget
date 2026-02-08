@@ -824,7 +824,7 @@ class EngagementResource extends Resource
                     ->size('sm')
                     ->color('success')
                     ->button()
-                    ->visible(fn($record) => $record->statut === 'definitif'),
+                    ->visible(fn($record) => $record->statut === 'definitif')
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

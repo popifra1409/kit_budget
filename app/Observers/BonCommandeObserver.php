@@ -3,6 +3,8 @@
 namespace App\Observers;
 
 use App\Models\BonCommande;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;   
 
 class BonCommandeObserver
 {
@@ -59,20 +61,44 @@ class BonCommandeObserver
      */
     public function created(BonCommande $bonCommande): void
     {
+        // ✅ Ne rien faire si brouillon
+        if ($bonCommande->statut === 'brouillon') {
+            \Log::info("BC {$bonCommande->numero} : Créé en brouillon, pas de dossier");
+            return;
+        }
+
+        // ✅ Créer le dossier seulement si validé dès la création
         if ($bonCommande->statut === 'valide') {
-            $dossier = $bonCommande->creerOuMettreAJourDossier();
+            try {
+                $dossier = $bonCommande->creerOuMettreAJourDossier();
 
-            // ✅ Vérifier si le dossier existe avant de faire update()
-            if (!$dossier) {
-                \Log::warning("BC {$bonCommande->numero} : Impossible de créer le dossier");
-                return;
+                if (!$dossier || !$dossier->id) {
+                    \Log::warning("BC {$bonCommande->numero} : Impossible de créer le dossier");
+                    return;
+                }
+
+                // Générer et attacher le PDF
+                $pdfPath = $this->genererEtSauvegarderPdf($bonCommande, 'bon_commande');
+
+                if ($pdfPath && Storage::exists($pdfPath)) {
+                    $dossier->ajouterPiece([
+                        'type_piece' => 'bon_commande',
+                        'document_type' => get_class($bonCommande),
+                        'document_id' => $bonCommande->id,
+                        'nom_fichier' => "BC-{$bonCommande->numero}.pdf",
+                        'chemin_fichier' => $pdfPath,
+                        'type_mime' => 'application/pdf',
+                        'taille' => Storage::size($pdfPath),
+                        'valide' => true,
+                        'valide_par' => auth()->id(),
+                        'date_validation' => now(),
+                    ]);
+
+                    \Log::info("Dossier {$dossier->numero_dossier} créé avec PDF pour BC {$bonCommande->numero}");
+                }
+            } catch (\Exception $e) {
+                \Log::error("Erreur création dossier pour BC {$bonCommande->numero} : " . $e->getMessage());
             }
-
-            // Suite du traitement seulement si le dossier existe
-            $dossier->update([
-                'montant_total' => $bonCommande->montant_ttc,
-                // ... autres champs
-            ]);
         }
     }
 
@@ -82,29 +108,25 @@ class BonCommandeObserver
     public function updated(BonCommande $bonCommande): void
     {
         // ===== GESTION DE L'EXONÉRATION TVA =====
-        // Si l'état d'exonération TVA vient de changer
         if ($bonCommande->isDirty('exonere_tva')) {
             try {
-                // Recalculer tous les montants
                 $bonCommande->recalculerTousLesMontants();
             } catch (\Exception $e) {
                 \Log::error("Erreur recalcul montants BC {$bonCommande->numero} : " . $e->getMessage());
             }
         }
 
-        // ===== GESTION DU DOSSIER =====
-        // Si le BC vient d'être validé
+        // ===== GESTION DU DOSSIER - PASSAGE DE BROUILLON À VALIDE =====
         if ($bonCommande->isDirty('statut') && $bonCommande->statut === 'valide') {
             try {
                 $dossier = $bonCommande->creerOuMettreAJourDossier();
 
-                // ✅ VÉRIFICATION CRITIQUE : Dossier peut être null
+                // ✅ VÉRIFICATION CRITIQUE
                 if (!$dossier) {
                     \Log::warning("BC {$bonCommande->numero} : Impossible de créer le dossier (fournisseur ou exercice manquant)");
                     return;
                 }
 
-                // ✅ VÉRIFICATION : Dossier doit avoir un ID
                 if (!$dossier->id) {
                     \Log::error("BC {$bonCommande->numero} : Dossier créé mais sans ID");
                     return;
@@ -114,12 +136,12 @@ class BonCommandeObserver
                 $pdfPath = $this->genererEtSauvegarderPdf($bonCommande, 'bon_commande');
 
                 // ✅ VÉRIFICATION : PDF généré avec succès
-                if (!$pdfPath || !\Storage::exists($pdfPath)) {
+                if (!$pdfPath || !Storage::exists($pdfPath)) {
                     \Log::warning("BC {$bonCommande->numero} : PDF BC non généré, pas d'ajout au dossier");
                     return;
                 }
 
-                // ✅ RE-VÉRIFIER que le dossier existe toujours avant ajouterPiece
+                // ✅ RE-VÉRIFIER que le dossier existe toujours
                 if (!$dossier->exists) {
                     \Log::error("BC {$bonCommande->numero} : Dossier n'existe plus avant ajout pièce");
                     return;
@@ -132,13 +154,13 @@ class BonCommandeObserver
                     'nom_fichier' => "BC-{$bonCommande->numero}.pdf",
                     'chemin_fichier' => $pdfPath,
                     'type_mime' => 'application/pdf',
-                    'taille' => \Storage::size($pdfPath),
+                    'taille' => Storage::size($pdfPath),
                     'valide' => true,
                     'valide_par' => auth()->id(),
                     'date_validation' => now(),
                 ]);
 
-                \Log::info("PDF BC ajouté au dossier {$dossier->numero}");
+                \Log::info("PDF BC ajouté au dossier {$dossier->numero_dossier}");
             } catch (\Exception $e) {
                 \Log::error('Erreur génération PDF BC pour dossier : ' . $e->getMessage(), [
                     'bc_id' => $bonCommande->id,
@@ -241,6 +263,7 @@ class BonCommandeObserver
             }
         }
     }
+
     /**
      * Générer et sauvegarder un PDF dans le dossier
      */
