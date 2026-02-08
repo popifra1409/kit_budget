@@ -137,6 +137,7 @@ class WorkflowActions
     /* =========================
      | ACTION : ENGAGER AVEC MODAL DE VÉRIFICATION
      ========================= */
+
     private static function engagerAvecModal(): Tables\Actions\Action
     {
         return Tables\Actions\Action::make('engager')
@@ -144,29 +145,33 @@ class WorkflowActions
             ->icon('heroicon-o-currency-dollar')
             ->color('success')
             ->visible(function ($record) {
-                // Uniquement pour BonCommande avec le modal
                 if ($record instanceof \App\Models\BonCommande) {
                     return $record->statut === 'valide'
-                        && !$record->engage
+                        && !$record->engagement_id
                         && auth()->user()?->can('engager_bon_commande');
                 }
-
-                // Pour les autres types, utiliser engagerSimple
                 return false;
             })
-            ->requiresConfirmation()
+            // ❌ RETIRER CETTE LIGNE
+            // ->requiresConfirmation()
+
             ->modalHeading(fn($record) => "Engagement budgétaire - BC N° {$record->numero}")
             ->modalDescription('Vérification de la disponibilité budgétaire')
             ->modalWidth('5xl')
             ->modalContent(function ($record) {
+                $verifications = $record->verifierDisponibiliteBudgetaire();
+
                 return view('filament.modals.engagement-budget-verification', [
                     'bonCommande' => $record,
-                    'verifications' => $record->verifierDisponibiliteBudgetaire(),
+                    'verifications' => $verifications,
                 ]);
             })
             ->modalSubmitActionLabel(function ($record) {
                 $verifications = $record->verifierDisponibiliteBudgetaire();
-                return $verifications['peut_engager'] ? '✅ Confirmer l\'engagement' : '❌ Crédit insuffisant';
+
+                return $verifications['peut_engager']
+                    ? '✅ Confirmer l\'engagement'
+                    : '❌ Crédit insuffisant';
             })
             ->modalCancelActionLabel('Annuler')
             ->disabled(function ($record) {
@@ -175,25 +180,52 @@ class WorkflowActions
             })
             ->action(function ($record) {
                 try {
-                    $record->engagerBudget();
+                    // ✅ VÉRIFICATION CRITIQUE
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
 
-                    $numeroEngagement = $record->engagement?->numero ?? $record->engagement?->reference_document ?? 'N/A';
+                    if (!$verifications['peut_engager']) {
+                        $details = [];
+                        foreach ($verifications['lignes_budgetaires'] as $ligne) {
+                            if (!$ligne['suffisant']) {
+                                $details[] = "• {$ligne['nomenclature']->code} : manque " .
+                                    number_format($ligne['manque'], 0, ',', ' ') . " FCFA";
+                            }
+                        }
+
+                        Notification::make()
+                            ->title('❌ Crédit budgétaire insuffisant')
+                            ->danger()
+                            ->body(
+                                "L'engagement ne peut pas être créé :\n\n" .
+                                    implode("\n", $details) .
+                                    "\n\n💡 Actions possibles :\n" .
+                                    "• Réduire le montant du bon de commande\n" .
+                                    "• Effectuer un virement budgétaire\n" .
+                                    "• Utiliser une autre nomenclature"
+                            )
+                            ->persistent()
+                            ->send();
+
+                        return;
+                    }
+
+                    $engagement = $record->engagerBudget($verifications);
 
                     Notification::make()
                         ->title('✅ Budget engagé avec succès')
                         ->success()
-                        ->body("Le bon de commande {$record->numero} a été engagé. Engagement créé : {$numeroEngagement}")
+                        ->body("Le bon de commande {$record->numero} a été engagé. Engagement créé : {$engagement->numero}")
                         ->duration(5000)
                         ->send();
                 } catch (\Exception $e) {
+                    \Log::error("Erreur engagement BC {$record->numero} : " . $e->getMessage());
+
                     Notification::make()
                         ->title('❌ Erreur lors de l\'engagement')
                         ->danger()
                         ->body($e->getMessage())
                         ->persistent()
                         ->send();
-
-                    throw $e;
                 }
             });
     }

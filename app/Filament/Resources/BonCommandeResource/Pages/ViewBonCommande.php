@@ -13,6 +13,16 @@ class ViewBonCommande extends ViewRecord
 {
     protected static string $resource = BonCommandeResource::class;
 
+    protected ?array $verificationsCache = null;
+
+    protected function getVerifications(): array
+    {
+        if ($this->verificationsCache === null) {
+            $this->verificationsCache = $this->record->verifierDisponibiliteBudgetaire();
+        }
+        return $this->verificationsCache;
+    }
+
     protected function getHeaderActions(): array
     {
         // Afficher un message si en cours de transmission
@@ -55,12 +65,90 @@ class ViewBonCommande extends ViewRecord
                 }),
 
             Actions\Action::make('engager')
-                ->label('Engager le Budget')
-                ->icon('heroicon-o-banknotes')
-                ->color('primary')
-                ->visible(fn($record) => $record->statut === 'valide' && ! $record->engage)
-                ->requiresConfirmation()
-                ->action(fn($record) => $record->engagerBudget()),
+                ->label(function ($record) {
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
+                    return $verifications['peut_engager']
+                        ? 'Engager le Budget'
+                        : '⚠️ Crédit insuffisant';
+                })
+                ->icon('heroicon-o-currency-dollar')
+                ->color(function ($record) {
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
+                    return $verifications['peut_engager'] ? 'success' : 'danger';
+                })
+                ->visible(fn($record) => $record->statut === 'valide' && !$record->engagement_id)
+                ->tooltip(function ($record) {
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
+                    if (!$verifications['peut_engager']) {
+                        $details = [];
+                        foreach ($verifications['lignes_budgetaires'] as $ligne) {
+                            if (!$ligne['suffisant']) {
+                                $details[] = "{$ligne['nomenclature']->code} : manque " .
+                                    number_format($ligne['manque'], 0, ',', ' ') . " FCFA";
+                            }
+                        }
+                        return "Crédit budgétaire insuffisant :\n" . implode("\n", $details);
+                    }
+                    return "Cliquez pour engager le budget";
+                })
+                ->modalHeading(fn($record) => "Engagement budgétaire - BC N° {$record->numero}")
+                ->modalDescription('Vérification de la disponibilité budgétaire')
+                ->modalWidth('5xl')
+                ->modalContent(function ($record) {
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
+                    return view('filament.modals.engagement-budget-verification', [
+                        'bonCommande' => $record,
+                        'verifications' => $verifications,
+                    ]);
+                })
+                ->modalSubmitActionLabel(function ($record) {
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
+                    return $verifications['peut_engager'] ? '✅ Confirmer l\'engagement' : '❌ Crédit insuffisant';
+                })
+                ->modalCancelActionLabel('Annuler')
+                ->disabled(function ($record) {
+                    $verifications = $record->verifierDisponibiliteBudgetaire();
+                    return !$verifications['peut_engager'];
+                })
+                ->action(function ($record) {
+                    try {
+                        $verifications = $record->verifierDisponibiliteBudgetaire();
+
+                        if (!$verifications['peut_engager']) {
+                            $details = [];
+                            foreach ($verifications['lignes_budgetaires'] as $ligne) {
+                                if (!$ligne['suffisant']) {
+                                    $details[] = "• {$ligne['nomenclature']->code} : manque " .
+                                        number_format($ligne['manque'], 0, ',', ' ') . " FCFA";
+                                }
+                            }
+
+                            Notification::make()
+                                ->title('❌ Crédit budgétaire insuffisant')
+                                ->danger()
+                                ->body("L'engagement ne peut pas être créé :\n\n" . implode("\n", $details))
+                                ->persistent()
+                                ->send();
+                            return;
+                        }
+
+                        $engagement = $record->engagerBudget($verifications);
+
+                        Notification::make()
+                            ->title('✅ Budget engagé avec succès')
+                            ->success()
+                            ->body("Le bon de commande {$record->numero} a été engagé. Engagement créé : {$engagement->numero}")
+                            ->duration(5000)
+                            ->send();
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Erreur lors de l\'engagement')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
 
             Actions\Action::make('annuler')
                 ->label('Annuler')
@@ -76,6 +164,51 @@ class ViewBonCommande extends ViewRecord
     {
         return $infolist
             ->schema([
+                Infolists\Components\Section::make('Vérification budgétaire')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('credit_disponible')
+                            ->label('Statut du crédit')
+                            ->state(function ($record) {
+                                if ($record->engagement_id) {
+                                    return '✅ Budget déjà engagé';
+                                }
+
+                                if ($record->statut !== 'valide') {
+                                    return 'Bon de commande non validé';
+                                }
+
+                                $verifications = $record->verifierDisponibiliteBudgetaire();
+
+                                if ($verifications['peut_engager']) {
+                                    return '✅ Crédit suffisant - Engagement possible';
+                                }
+
+                                $details = [];
+                                foreach ($verifications['lignes_budgetaires'] as $ligne) {
+                                    if (!$ligne['suffisant']) {
+                                        $details[] = "{$ligne['nomenclature']->code} : manque " .
+                                            number_format($ligne['manque'], 0, ',', ' ') . " FCFA";
+                                    }
+                                }
+
+                                return '⚠️ Crédit insuffisant : ' . implode(' | ', $details);
+                            })
+                            ->badge()
+                            ->color(function ($record) {
+                                if ($record->engagement_id) {
+                                    return 'success';
+                                }
+
+                                if ($record->statut !== 'valide') {
+                                    return 'gray';
+                                }
+
+                                $verifications = $record->verifierDisponibiliteBudgetaire();
+                                return $verifications['peut_engager'] ? 'success' : 'danger';
+                            })
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn($record) => $record->statut === 'valide'),
                 Infolists\Components\Section::make('Informations générales')
                     ->schema([
                         Infolists\Components\TextEntry::make('verrou')

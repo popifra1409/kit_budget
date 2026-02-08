@@ -12,6 +12,7 @@ use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Traits\HasWorkflow;
+use Illuminate\Support\Facades\DB;
 
 class BonCommande extends Model
 {
@@ -632,143 +633,106 @@ class BonCommande extends Model
     }
 
     /**
-     * Engager le budget
+     * Engager le bon de commande sur le budget
      */
-    public function engagerBudget(): void
+    public function engagerBudget(?array $verifications = null): Engagement
     {
+        // ✅ Vérifications préalables simples
         if ($this->statut !== 'valide') {
-            throw new \Exception("Le BC doit être validé avant d'engager le budget");
+            throw new \Exception("Le bon de commande doit être validé avant d'être engagé.");
         }
 
-        if ($this->engage) {
-            throw new \Exception("Le budget est déjà engagé pour ce BC");
+        if ($this->engagement) {
+            throw new \Exception("Ce bon de commande est déjà engagé (Engagement n°{$this->engagement->numero}).");
         }
 
-        if ($this->lignes()->count() === 0) {
-            throw new \Exception("Le BC doit avoir au moins une ligne");
+        if (!$this->budget_id) {
+            throw new \Exception("Aucun budget associé à ce bon de commande.");
         }
 
-        $lignesCalculees = collect();
-        foreach ($this->lignes()->get() as $ligne) {
-            if ($ligne->taux_tva === null || $ligne->taux_tva === '') {
-                $ligne->setAttribute('taux_tva', 19.25);
+        try {
+            \DB::beginTransaction();
+
+            // ✅ Obtenir les vérifications si non fournies
+            if (!$verifications) {
+                $verifications = $this->verifierDisponibiliteBudgetaire();
             }
 
-            $ligne->calculerMontants();
-            $ligne->save();
-            $ligne->refresh();
-            $lignesCalculees->push($ligne);
-        }
+            // ✅ CETTE VÉRIFICATION EST MAINTENANT FAITE DANS L'ACTION
+            // On suppose que si on arrive ici, c'est validé
+            // Mais on garde quand même une sécurité
+            if (!$verifications['peut_engager']) {
+                $details = [];
+                foreach ($verifications['lignes_budgetaires'] as $ligne) {
+                    if (!$ligne['suffisant']) {
+                        $details[] = "{$ligne['nomenclature']->code} : manque " .
+                            number_format($ligne['manque'], 0, ',', ' ') . " FCFA";
+                    }
+                }
 
-        $this->refresh();
-
-        \DB::beginTransaction();
-        try {
-            $numeroEngagement = $this->genererNumeroEngagement();
-            $netAPayer = $this->montant_ht - $this->montant_ir;
-
-            if ($netAPayer <= 0) {
                 throw new \Exception(
-                    "❌ MONTANT INVALIDE\n\n" .
-                        "Le montant net à payer du BC est invalide.\n\n" .
-                        "Montant HT: " . number_format($this->montant_ht, 0, ',', ' ') . " FCFA\n" .
-                        "Montant IR: " . number_format($this->montant_ir, 0, ',', ' ') . " FCFA\n" .
-                        "Net à percevoir: " . number_format($netAPayer, 0, ',', ' ') . " FCFA"
+                    "Crédit budgétaire insuffisant :\n\n" .
+                        implode("\n", $details) .
+                        "\n\nVeuillez augmenter le crédit ou réduire le montant du bon de commande."
                 );
             }
 
-            $premiereLigne = $lignesCalculees->first();
-            $nomenclaturePrincipaleId = $premiereLigne ? $premiereLigne->nomenclature_id : null;
-
-            if (!$nomenclaturePrincipaleId) {
-                throw new \Exception("Impossible de déterminer la nomenclature principale");
-            }
-
-            $engagement = Engagement::create([
-                'exercice_id' => $this->exercice_id, // ✅ AJOUTÉ
+            // ✅ Créer l'engagement
+            $engagement = \App\Models\Engagement::create([
+                'numero' => $this->genererNumeroEngagement(),
+                'exercice_id' => $this->exercice_id,
                 'budget_id' => $this->budget_id,
+                'nomenclature_principale_id' => $this->lignes->first()->nomenclature_id ?? null,
                 'type_engagement' => 'BC',
-                'nomenclature_principale_id' => $nomenclaturePrincipaleId,
-                'reference_document' => $this->numero,
-                'engageable_type' => self::class,
+                'engageable_type' => get_class($this),
                 'engageable_id' => $this->id,
-                'beneficiaire_type' => Fournisseur::class,
-                'beneficiaire_id' => $this->fournisseur_id,
                 'date_engagement' => now(),
-                'exercice' => now()->year,
-                'objet' => $this->objet,
                 'montant_engage' => $this->montant_ttc,
+                'objet' => $this->objet,
+                'reference_document' => $this->numero,
                 'statut' => 'provisoire',
+                'created_by' => auth()->id(),
             ]);
 
-            $lignesParNomenclature = [];
-            foreach ($lignesCalculees as $ligne) {
-                $nomenclatureId = $ligne->nomenclature_id;
-
-                if ($ligne->net_a_payer <= 0) {
-                    throw new \Exception(
-                        "❌ MONTANT INVALIDE\n\n" .
-                            "Ligne: {$ligne->designation}\n" .
-                            "Net à payer: " . number_format($ligne->net_a_payer, 0, ',', ' ') . " FCFA"
-                    );
-                }
-
-                if (!isset($lignesParNomenclature[$nomenclatureId])) {
-                    $lignesParNomenclature[$nomenclatureId] = [
-                        'montant' => 0,
-                        'libelles' => []
-                    ];
-                }
-
-                $lignesParNomenclature[$nomenclatureId]['montant'] += $ligne->net_a_payer;
-                $lignesParNomenclature[$nomenclatureId]['libelles'][] = $ligne->designation;
+            // ✅ Déterminer le bénéficiaire
+            if ($this->fournisseur_id) {
+                $engagement->beneficiaire_fournisseur_id = $this->fournisseur_id;
+                $engagement->type_beneficiaire = 'fournisseur';
             }
 
-            $numeroLigne = 1;
-            foreach ($lignesParNomenclature as $nomenclatureId => $data) {
-                $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                    ->where('nomenclature_id', $nomenclatureId)
-                    ->firstOrFail();
+            $engagement->save();
 
-                if (!$ligneBudgetaire->peutEngager($data['montant'])) {
-                    $nomenclature = $ligneBudgetaire->nomenclature;
-                    $manque = $data['montant'] - $ligneBudgetaire->disponible_engagement;
+            // ✅ Engager les crédits sur chaque ligne budgétaire
+            foreach ($verifications['lignes_budgetaires'] as $verification) {
+                $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+                    ->where('nomenclature_id', $verification['nomenclature']->id)
+                    ->first();
 
-                    throw new \Exception(
-                        "❌ CRÉDIT INSUFFISANT\n\n" .
-                            "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n" .
-                            "Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n" .
-                            "Demandé: " . number_format($data['montant'], 0, ',', ' ') . " FCFA\n" .
-                            "Manque: " . number_format($manque, 0, ',', ' ') . " FCFA"
-                    );
+                if ($ligneBudgetaire) {
+                    $ligneBudgetaire->engage += $verification['montant_a_engager'];
+                    $ligneBudgetaire->save();
+
+                    \Log::info("Crédit engagé sur {$verification['nomenclature']->code}", [
+                        'montant' => $verification['montant_a_engager'],
+                        'nouveau_engage' => $ligneBudgetaire->engage,
+                    ]);
                 }
-
-                LigneEngagement::create([
-                    'engagement_id' => $engagement->id,
-                    'nomenclature_id' => $nomenclatureId,
-                    'numero_ligne' => $numeroLigne++,
-                    'libelle' => implode(', ', $data['libelles']),
-                    'montant' => $data['montant'],
-                ]);
-
-                $ligneBudgetaire->enregistrerEngagement($data['montant']);
             }
 
-            $this->engage = true;
-            $this->montant_engage = $netAPayer;
-            $this->date_engagement = now();
+            // ✅ Lier l'engagement au BC
+            $this->engagement_id = $engagement->id;
             $this->save();
 
             \DB::commit();
 
-            \Log::info("Engagement créé", [
-                'bc_numero' => $this->numero,
-                'engagement_numero' => $numeroEngagement,
-                'engagement_id' => $engagement->id,
-                'montant' => $netAPayer,
-            ]);
+            \Log::info("BC {$this->numero} engagé → Engagement {$engagement->numero} créé");
+
+            return $engagement;
         } catch (\Exception $e) {
             \DB::rollBack();
+
+            \Log::error("Erreur engagement BC {$this->numero} : " . $e->getMessage());
+
             throw $e;
         }
     }
@@ -854,6 +818,15 @@ class BonCommande extends Model
             ]);
             return null;
         }
+    }
+
+    /**
+     * Vérifier si le BC peut être engagé
+     */
+    public function peutEtreEngage(): bool
+    {
+        return $this->statut === 'valide'
+            && !$this->engagement_id;
     }
 
     /**
