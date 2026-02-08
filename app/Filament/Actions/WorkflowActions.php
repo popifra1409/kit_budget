@@ -16,6 +16,7 @@ class WorkflowActions
      * @param bool $avecEngagement  Active l'action "Engager"
      * @param string|null $pdfServiceClass  Classe du service PDF (ex: BonCommandePdfService::class)
      * @param string|null $pdfRouteName  Nom de la route pour l'aperçu PDF
+     * @param bool $avecModalEngagement  Active le modal de vérification budgétaire (uniquement pour BonCommande)
      */
 
     /**
@@ -29,7 +30,8 @@ class WorkflowActions
     public static function make(
         bool $avecEngagement = false,
         ?string $pdfServiceClass = null,
-        ?string $pdfRouteName = null
+        ?string $pdfRouteName = null,
+        bool $avecModalEngagement = true // ✅ NOUVEAU PARAMÈTRE
     ): array {
         $actions = [
             Tables\Actions\ViewAction::make(),
@@ -48,7 +50,10 @@ class WorkflowActions
         ]);
 
         if ($avecEngagement) {
-            $actions[] = self::engager();
+            // ✅ Choisir entre modal avancé ou simple selon le paramètre
+            $actions[] = $avecModalEngagement
+                ? self::engagerAvecModal()
+                : self::engagerSimple();
         }
 
         $actions = array_merge($actions, [
@@ -114,7 +119,6 @@ class WorkflowActions
             ->icon('heroicon-o-check-circle')
             ->color('warning')
             ->visible(function ($record) {
-                // Vérifier la permission ET l'état du document
                 return auth()->user()?->can('valider_bon_commande')
                     && $record->statut === 'brouillon'
                     && !$record->estEnCoursDeTransmission();
@@ -131,9 +135,73 @@ class WorkflowActions
     }
 
     /* =========================
- | ACTION : ENGAGER
- ========================= */
-    private static function engager(): Tables\Actions\Action
+     | ACTION : ENGAGER AVEC MODAL DE VÉRIFICATION
+     ========================= */
+    private static function engagerAvecModal(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('engager')
+            ->label('Engager')
+            ->icon('heroicon-o-currency-dollar')
+            ->color('success')
+            ->visible(function ($record) {
+                // Uniquement pour BonCommande avec le modal
+                if ($record instanceof \App\Models\BonCommande) {
+                    return $record->statut === 'valide'
+                        && !$record->engage
+                        && auth()->user()?->can('engager_bon_commande');
+                }
+
+                // Pour les autres types, utiliser engagerSimple
+                return false;
+            })
+            ->requiresConfirmation()
+            ->modalHeading(fn($record) => "Engagement budgétaire - BC N° {$record->numero}")
+            ->modalDescription('Vérification de la disponibilité budgétaire')
+            ->modalWidth('5xl')
+            ->modalContent(function ($record) {
+                return view('filament.modals.engagement-budget-verification', [
+                    'bonCommande' => $record,
+                    'verifications' => $record->verifierDisponibiliteBudgetaire(),
+                ]);
+            })
+            ->modalSubmitActionLabel(function ($record) {
+                $verifications = $record->verifierDisponibiliteBudgetaire();
+                return $verifications['peut_engager'] ? '✅ Confirmer l\'engagement' : '❌ Crédit insuffisant';
+            })
+            ->modalCancelActionLabel('Annuler')
+            ->disabled(function ($record) {
+                $verifications = $record->verifierDisponibiliteBudgetaire();
+                return !$verifications['peut_engager'];
+            })
+            ->action(function ($record) {
+                try {
+                    $record->engagerBudget();
+
+                    $numeroEngagement = $record->engagement?->numero ?? $record->engagement?->reference_document ?? 'N/A';
+
+                    Notification::make()
+                        ->title('✅ Budget engagé avec succès')
+                        ->success()
+                        ->body("Le bon de commande {$record->numero} a été engagé. Engagement créé : {$numeroEngagement}")
+                        ->duration(5000)
+                        ->send();
+                } catch (\Exception $e) {
+                    Notification::make()
+                        ->title('❌ Erreur lors de l\'engagement')
+                        ->danger()
+                        ->body($e->getMessage())
+                        ->persistent()
+                        ->send();
+
+                    throw $e;
+                }
+            });
+    }
+
+    /* =========================
+     | ACTION : ENGAGER SIMPLE (ANCIEN MODE)
+     ========================= */
+    private static function engagerSimple(): Tables\Actions\Action
     {
         return Tables\Actions\Action::make('engager')
             ->label('Engager')
@@ -144,7 +212,6 @@ class WorkflowActions
                 in_array($record->statut, ['valide', 'validee'])
                     && !($record->engage ?? $record->engagee ?? false)
             )
-            // ->disabled(fn(Get $get) => ! ($get('peut_engager') ?? false))
             ->requiresConfirmation()
             ->modalHeading('Engager le budget')
             ->modalDescription(fn($record) => "Créer un engagement budgétaire pour " . ($record->numero ?? 'ce document'))
@@ -157,19 +224,15 @@ class WorkflowActions
                             ->searchable()
                             ->preload()
                             ->options(function () use ($record) {
-                                // ✅ CORRECTION : Utiliser map au lieu de pluck pour filtrer les null
                                 return \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
                                     ->with('nomenclature')
                                     ->get()
-                                    ->filter(fn($ligne) => $ligne->nomenclature) // Filtrer les null
+                                    ->filter(fn($ligne) => $ligne->nomenclature)
                                     ->mapWithKeys(function ($ligne) {
                                         $nomenclature = $ligne->nomenclature;
                                         $label = $nomenclature->code . ' - ' . $nomenclature->libelle;
-
-                                        // Ajouter le disponible
                                         $disponible = $ligne->disponible_engagement ?? 0;
                                         $label .= ' (Dispo: ' . number_format($disponible, 0, ',', ' ') . ' FCFA)';
-
                                         return [$nomenclature->id => $label];
                                     })
                                     ->toArray();
@@ -177,7 +240,6 @@ class WorkflowActions
                             ->helperText('Sélectionnez la ligne budgétaire à engager')
                             ->live()
                             ->afterStateUpdated(function ($state, $set) use ($record) {
-                                // ✅ Afficher les détails de la ligne sélectionnée
                                 if ($state) {
                                     $ligne = \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
                                         ->where('nomenclature_id', $state)
@@ -254,7 +316,7 @@ class WorkflowActions
                             ->hidden(fn($get) => !$get('nomenclature_id')),
                     ];
                 } else {
-                    // Pour BonCommande ou autres
+                    // Pour BonCommande ou autres (mode simple)
                     return [
                         Forms\Components\TextInput::make('montant_engage')
                             ->label('Montant à engager')

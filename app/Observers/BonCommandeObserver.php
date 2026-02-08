@@ -61,7 +61,19 @@ class BonCommandeObserver
     {
         // Créer le dossier uniquement si le BC est validé
         if ($bonCommande->statut === 'valide') {
-            $bonCommande->creerOuMettreAJourDossier();
+            try {
+                $dossier = $bonCommande->creerOuMettreAJourDossier();
+
+                // ✅ VÉRIFICATION CRITIQUE
+                if (!$dossier) {
+                    \Log::warning("BC {$bonCommande->numero} : Impossible de créer le dossier (fournisseur ou exercice manquant)");
+                    return;
+                }
+
+                \Log::info("Dossier {$dossier->numero} créé pour BC {$bonCommande->numero}");
+            } catch (\Exception $e) {
+                \Log::error("Erreur création dossier pour BC {$bonCommande->numero} : " . $e->getMessage());
+            }
         }
     }
 
@@ -73,17 +85,27 @@ class BonCommandeObserver
         // ===== GESTION DE L'EXONÉRATION TVA =====
         // Si l'état d'exonération TVA vient de changer
         if ($bonCommande->isDirty('exonere_tva')) {
-            // Recalculer tous les montants
-            $bonCommande->recalculerTousLesMontants();
+            try {
+                // Recalculer tous les montants
+                $bonCommande->recalculerTousLesMontants();
+            } catch (\Exception $e) {
+                \Log::error("Erreur recalcul montants BC {$bonCommande->numero} : " . $e->getMessage());
+            }
         }
 
         // ===== GESTION DU DOSSIER =====
         // Si le BC vient d'être validé
         if ($bonCommande->isDirty('statut') && $bonCommande->statut === 'valide') {
-            $dossier = $bonCommande->creerOuMettreAJourDossier();
-
-            // Générer et attacher le PDF du BC
             try {
+                $dossier = $bonCommande->creerOuMettreAJourDossier();
+
+                // ✅ VÉRIFICATION CRITIQUE : Dossier peut être null
+                if (!$dossier) {
+                    \Log::warning("BC {$bonCommande->numero} : Impossible de créer le dossier (fournisseur ou exercice manquant)");
+                    return;
+                }
+
+                // Générer et attacher le PDF du BC
                 $pdfPath = $this->genererEtSauvegarderPdf($bonCommande, 'bon_commande');
 
                 $dossier->ajouterPiece([
@@ -98,6 +120,8 @@ class BonCommandeObserver
                     'valide_par' => auth()->id(),
                     'date_validation' => now(),
                 ]);
+
+                \Log::info("PDF BC ajouté au dossier {$dossier->numero}");
             } catch (\Exception $e) {
                 \Log::error('Erreur génération PDF BC pour dossier : ' . $e->getMessage());
             }
@@ -105,10 +129,16 @@ class BonCommandeObserver
 
         // Si un engagement vient d'être créé
         if ($bonCommande->engagement && $bonCommande->isDirty('engagement_id')) {
-            $dossier = $bonCommande->creerOuMettreAJourDossier();
-
-            // Générer et attacher le PDF de l'engagement
             try {
+                $dossier = $bonCommande->creerOuMettreAJourDossier();
+
+                // ✅ VÉRIFICATION CRITIQUE : Dossier peut être null
+                if (!$dossier) {
+                    \Log::warning("BC {$bonCommande->numero} : Impossible de mettre à jour le dossier (fournisseur ou exercice manquant)");
+                    return;
+                }
+
+                // Générer et attacher le PDF de l'engagement
                 $engagement = $bonCommande->engagement;
                 $pdfPath = $this->genererEtSauvegarderPdf($engagement, 'certificat_engagement');
 
@@ -130,6 +160,8 @@ class BonCommandeObserver
                     'montant_engage' => $bonCommande->montant_ttc,
                     'statut' => 'en_cours',
                 ]);
+
+                \Log::info("PDF Engagement ajouté au dossier {$dossier->numero}");
             } catch (\Exception $e) {
                 \Log::error('Erreur génération PDF engagement pour dossier : ' . $e->getMessage());
             }

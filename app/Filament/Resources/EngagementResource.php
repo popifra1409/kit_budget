@@ -561,73 +561,204 @@ class EngagementResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
-
+                // =============================================
+                // ✅ ACTION : VALIDER (Passer en définitif)
+                // =============================================
                 Tables\Actions\Action::make('valider')
-                    ->label('Valider')
+                    ->label('Passer définitif')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn($record) => $record->statut === 'provisoire')
+                    ->visible(function ($record) {
+                        return $record->statut === 'provisoire'
+                            && auth()->user()?->can('valider_engagement');
+                    })
                     ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->statut = 'definitif';
-                        $record->save();
-
-                        Notification::make()
-                            ->title('Engagement validé')
-                            ->success()
-                            ->send();
-                    }),
-                Tables\Actions\Action::make('creer_ordonnances')
-                    ->label('Créer OP')
-                    ->icon('heroicon-o-banknotes')
-                    ->color('success')
-                    ->visible(fn($record) => !$record->hasOrdonnancesPaiement())
-                    ->requiresConfirmation()
-                    ->modalHeading('Créer les Ordonnances de Paiement')
-                    ->modalDescription('Cela va créer automatiquement l\'OP Standard (fournisseur) et l\'OP Impôt (si applicable)')
+                    ->modalHeading('Confirmer le passage en définitif')
+                    ->modalDescription(fn($record) => "L'engagement {$record->numero} sera marqué comme définitif et pourra recevoir des ordonnances de paiement.")
                     ->action(function ($record) {
                         try {
-                            $ordonnances = $record->creerOrdonnancesPaiement();
-
-                            $message = "OP créées : ";
-                            if (isset($ordonnances['standard'])) {
-                                $message .= "Standard ({$ordonnances['standard']->numero})";
-                            }
-                            if (isset($ordonnances['impot'])) {
-                                $message .= ", Impôt ({$ordonnances['impot']->numero})";
-                            }
+                            $record->passerDefinitif(auth()->user());
 
                             Notification::make()
-                                ->title('Ordonnances créées')
+                                ->title('✅ Engagement passé en définitif')
                                 ->success()
-                                ->body($message)
+                                ->body("L'engagement {$record->numero} est maintenant définitif. Vous pouvez créer les ordonnances de paiement.")
                                 ->send();
                         } catch (\Exception $e) {
                             Notification::make()
-                                ->title('Erreur')
+                                ->title('❌ Erreur')
                                 ->danger()
                                 ->body($e->getMessage())
                                 ->send();
                         }
                     }),
 
+                // =============================================
+                // ✅ ACTION : CRÉER ORDONNANCES
+                // =============================================
+                Tables\Actions\Action::make('creer_ordonnances')
+                    ->label('Créer OP')
+                    ->icon('heroicon-o-document-currency-dollar')
+                    ->color('success')
+                    ->visible(function ($record) {
+                        return $record->statut === 'definitif'
+                            && !$record->hasOrdonnancesPaiement()
+                            && auth()->user()?->can('creer_ordonnance_paiement');
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Créer les ordonnances de paiement')
+                    ->modalDescription(fn($record) => "Voulez-vous créer les ordonnances de paiement pour l'engagement {$record->numero} ?")
+                    ->modalContent(function ($record) {
+                        $montantTotal = $record->montant_engage;
+                        $montantIR = 0;
+
+                        if ($record->estBonCommande() && $record->engageable) {
+                            $bc = $record->engageable;
+                            $montantIR = $bc->montant_ir ?? 0;
+                        } elseif ($record->estDecision() && $record->engageable) {
+                            $da = $record->engageable;
+                            $montantIR = $da->montant_ir ?? 0;
+                        }
+
+                        $montantNet = $montantTotal - $montantIR;
+
+                        return view('filament.modals.recap-ordonnances', [
+                            'engagement' => $record,
+                            'montant_total' => $montantTotal,
+                            'montant_ir' => $montantIR,
+                            'montant_net' => $montantNet,
+                        ]);
+                    })
+                    ->action(function ($record) {
+                        try {
+                            $ordonnances = $record->creerOrdonnancesPaiement();
+
+                            $message = "Ordonnances créées avec succès :\n";
+                            if (isset($ordonnances['standard'])) {
+                                $message .= "• OP Standard : {$ordonnances['standard']->numero}\n";
+                            }
+                            if (isset($ordonnances['impot'])) {
+                                $message .= "• OP Impôt : {$ordonnances['impot']->numero}";
+                            }
+
+                            Notification::make()
+                                ->title('✅ Ordonnances créées')
+                                ->success()
+                                ->body($message)
+                                ->duration(8000)
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('❌ Erreur lors de la création des ordonnances')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                // =============================================
+                // ✅ ACTION : VOIR ORDONNANCES (MODAL)
+                // =============================================
                 Tables\Actions\Action::make('voir_ordonnances')
                     ->label('Voir OP')
                     ->icon('heroicon-o-eye')
                     ->color('info')
-                    ->visible(fn($record) => $record->hasOrdonnancesPaiement())
-                    ->url(fn($record) => route('filament.admin.resources.ordonnance-paiements.index', [
-                        'tableFilters' => [
-                            'engagement_id' => ['value' => $record->id]
-                        ]
-                    ])),
-                    
-                // Groupe d'actions pour télécharger/aperçu
+                    ->visible(function ($record) {
+                        return $record->ordonnancesPaiement()->exists();
+                    })
+                    ->badge(fn($record) => $record->ordonnancesPaiement()->count())
+                    ->badgeColor('success')
+                    ->modalHeading(fn($record) => "Ordonnances de paiement - {$record->numero}")
+                    ->modalContent(function ($record) {
+                        $ordonnances = $record->ordonnancesPaiement()->with('beneficiaire')->get();
+
+                        return view('filament.modals.ordonnances-list', [
+                            'ordonnances' => $ordonnances,
+                            'engagement' => $record,
+                        ]);
+                    })
+                    ->modalWidth('5xl')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Fermer'),
+
+                // =============================================
+                // ✅ ACTION : ANNULER (Seulement si possible)
+                // =============================================
+                // Dans App\Filament\Resources\EngagementResource.php
+
+                Tables\Actions\Action::make('annuler')
+                    ->label('Annuler')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->visible(function ($record) {
+                        // ✅ Visible uniquement si provisoire
+                        return $record->statut === 'provisoire'
+                            && $record->peutEtreAnnule()
+                            && auth()->user()?->can('annuler_engagement');
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Confirmer l\'annulation')
+                    ->modalDescription(fn($record) => "L'engagement {$record->numero} sera annulé et les crédits seront libérés.")
+                    ->form([
+                        Forms\Components\Textarea::make('motif')
+                            ->label('Motif de l\'annulation')
+                            ->required()
+                            ->rows(3),
+                    ])
+                    ->action(function ($record, array $data) {
+                        // ✅ Vérification supplémentaire avant annulation
+                        if ($record->statut !== 'provisoire') {
+                            Notification::make()
+                                ->title('❌ Impossible d\'annuler')
+                                ->danger()
+                                ->body("Seuls les engagements provisoires peuvent être annulés. Statut actuel : {$record->statut}")
+                                ->persistent()
+                                ->send();
+                            return;
+                        }
+
+                        if ($record->ordonnancesPaiement()->exists()) {
+                            Notification::make()
+                                ->title('❌ Impossible d\'annuler')
+                                ->danger()
+                                ->body("Cet engagement a déjà des ordonnances de paiement.")
+                                ->persistent()
+                                ->send();
+                            return;
+                        }
+
+                        try {
+                            $record->annuler();
+
+                            Notification::make()
+                                ->title('✅ Engagement annulé')
+                                ->warning()
+                                ->body("L'engagement {$record->numero} a été annulé.")
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('❌ Erreur')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+
+                // =============================================
+                // ✅ ACTIONS STANDARD (UN SEUL "Voir")
+                // =============================================
+                Tables\Actions\ViewAction::make()
+                    ->label('Voir'),
+
+                Tables\Actions\EditAction::make()
+                    ->label('Modifier')
+                    ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
+
+                // =============================================
+                // ✅ GROUPE : TÉLÉCHARGEMENTS PDF
+                // =============================================
                 Tables\Actions\ActionGroup::make([
-                    // Certificat d'engagement
                     Tables\Actions\Action::make('telecharger_certificat')
                         ->label('Certificat (PDF)')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -635,7 +766,8 @@ class EngagementResource extends Resource
                         ->url(fn($record) => route('pdf.telecharger', [
                             'etat' => 'certificat_engagement',
                             'id' => $record->id
-                        ])),
+                        ]))
+                        ->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('afficher_certificat')
                         ->label('Certificat (Aperçu)')
@@ -645,9 +777,9 @@ class EngagementResource extends Resource
                             'etat' => 'certificat_engagement',
                             'id' => $record->id
                         ]))
-                        ->openUrlInNewTab(),
+                        ->openUrlInNewTab()
+                        ->disabled(fn($record) => $record->statut !== 'definitif'),
 
-                    // Autorisation d'engagement
                     Tables\Actions\Action::make('telecharger_autorisation')
                         ->label('Autorisation (PDF)')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -655,7 +787,8 @@ class EngagementResource extends Resource
                         ->url(fn($record) => route('pdf.telecharger', [
                             'etat' => 'autorisation_engagement',
                             'id' => $record->id
-                        ])),
+                        ]))
+                        ->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('afficher_autorisation')
                         ->label('Autorisation (Aperçu)')
@@ -665,9 +798,9 @@ class EngagementResource extends Resource
                             'etat' => 'autorisation_engagement',
                             'id' => $record->id
                         ]))
-                        ->openUrlInNewTab(),
+                        ->openUrlInNewTab()
+                        ->disabled(fn($record) => $record->statut !== 'definitif'),
 
-                    // Fiche de performance
                     Tables\Actions\Action::make('telecharger_fiche')
                         ->label('Fiche Perf. (PDF)')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -675,7 +808,8 @@ class EngagementResource extends Resource
                         ->url(fn($record) => route('pdf.telecharger', [
                             'etat' => 'fiche_performance',
                             'id' => $record->id
-                        ])),
+                        ]))
+                        ->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('afficher_fiche')
                         ->label('Fiche Perf. (Aperçu)')
@@ -685,13 +819,15 @@ class EngagementResource extends Resource
                             'etat' => 'fiche_performance',
                             'id' => $record->id
                         ]))
-                        ->openUrlInNewTab(),
+                        ->openUrlInNewTab()
+                        ->disabled(fn($record) => $record->statut !== 'definitif'),
                 ])
-                    ->label('Télécharger / Aperçu')
+                    ->label('Télécharger')
                     ->icon('heroicon-m-document-arrow-down')
                     ->size('sm')
                     ->color('success')
-                    ->button(),
+                    ->button()
+                    ->visible(fn($record) => $record->statut === 'definitif'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -704,7 +840,7 @@ class EngagementResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            //  RelationManagers\OrdonnancesPaiementRelationManager::class,
         ];
     }
 

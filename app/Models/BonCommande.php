@@ -52,6 +52,8 @@ class BonCommande extends Model
         'created_by',
         'updated_by',
         'net_a_payer',
+        'net_a_percevoir', // ✅ AJOUTÉ
+        'exonere_tva', // ✅ AJOUTÉ - TRÈS IMPORTANT
     ];
 
     protected $casts = [
@@ -67,14 +69,15 @@ class BonCommande extends Model
         'montant_ttc' => 'decimal:2',
         'montant_engage' => 'decimal:2',
         'engage' => 'boolean',
-        'type_engagement_id',
-        'reference',
-        'montant_tsr',
-        'montant_cnps',
-        'montant_irnc',
-        'montant_autres_taxes',
-        'produit_importe',
+        'type_engagement_id' => 'integer',
+        'montant_tsr' => 'decimal:2',
+        'montant_cnps' => 'decimal:2',
+        'montant_irnc' => 'decimal:2',
+        'montant_autres_taxes' => 'decimal:2',
+        'produit_importe' => 'boolean',
         'net_a_payer' => 'decimal:2',
+        'net_a_percevoir' => 'decimal:2',
+        'exonere_tva' => 'boolean', 
     ];
 
     /**
@@ -85,9 +88,123 @@ class BonCommande extends Model
         return $this->belongsTo(TypeEngagement::class);
     }
 
+
+    // Dans App\Models\BonCommande.php
+
+    /**
+     * Vérifier la disponibilité budgétaire avant engagement
+     */
+    public function verifierDisponibiliteBudgetaire(): array
+    {
+        $lignes = $this->lignes()->with('nomenclature')->get();
+
+        if ($lignes->isEmpty()) {
+            return [
+                'peut_engager' => false,
+                'montant_total' => 0,
+                'lignes_budgetaires' => [],
+                'message' => 'Aucune ligne de commande',
+            ];
+        }
+
+        // Grouper par nomenclature
+        $lignesParNomenclature = [];
+        foreach ($lignes as $ligne) {
+            $nomenclatureId = $ligne->nomenclature_id;
+
+            if (!isset($lignesParNomenclature[$nomenclatureId])) {
+                $lignesParNomenclature[$nomenclatureId] = [
+                    'nomenclature' => $ligne->nomenclature,
+                    'montant_a_engager' => 0,
+                    'lignes' => [],
+                ];
+            }
+
+            $lignesParNomenclature[$nomenclatureId]['montant_a_engager'] += $ligne->net_a_payer;
+            $lignesParNomenclature[$nomenclatureId]['lignes'][] = $ligne->designation;
+        }
+
+        // Vérifier chaque ligne budgétaire
+        $verifications = [];
+        $peutEngager = true;
+        $montantTotal = 0;
+
+        foreach ($lignesParNomenclature as $nomenclatureId => $data) {
+            $nomenclature = $data['nomenclature'];
+            $montantAEngager = $data['montant_a_engager'];
+            $montantTotal += $montantAEngager;
+
+            // Récupérer la ligne budgétaire
+            $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+                ->where('nomenclature_id', $nomenclatureId)
+                ->first();
+
+            if (!$ligneBudgetaire) {
+                $verifications[] = [
+                    'nomenclature' => $nomenclature,
+                    'montant_a_engager' => $montantAEngager,
+                    'disponible_avant' => 0,
+                    'disponible_apres' => 0,
+                    'suffisant' => false,
+                    'manque' => $montantAEngager,
+                    'taux_utilisation' => 100,
+                    'taux_utilisation_avant' => 0,
+                    'lignes_designation' => $data['lignes'],
+                    'provision_totale' => 0,
+                    'deja_engage' => 0,
+                    'message' => 'Ligne budgétaire introuvable',
+                ];
+                $peutEngager = false;
+                continue;
+            }
+
+            $disponibleAvant = $ligneBudgetaire->disponible_engagement;
+            $disponibleApres = $disponibleAvant - $montantAEngager;
+            $suffisant = $disponibleAvant >= $montantAEngager;
+            $manque = $suffisant ? 0 : ($montantAEngager - $disponibleAvant);
+
+            // Calcul du taux d'utilisation
+            $tauxUtilisationAvant = $ligneBudgetaire->montant_vote > 0
+                ? (($ligneBudgetaire->engage) / $ligneBudgetaire->montant_vote) * 100
+                : 0;
+
+            $tauxUtilisationApres = $ligneBudgetaire->montant_vote > 0
+                ? (($ligneBudgetaire->engage + $montantAEngager) / $ligneBudgetaire->montant_vote) * 100
+                : 0;
+
+            $verifications[] = [
+                'nomenclature' => $nomenclature,
+                'ligne_budgetaire' => $ligneBudgetaire,
+                'montant_a_engager' => $montantAEngager,
+                'disponible_avant' => $disponibleAvant,
+                'disponible_apres' => $disponibleApres,
+                'suffisant' => $suffisant,
+                'manque' => $manque,
+                'taux_utilisation' => round($tauxUtilisationApres, 2),
+                'taux_utilisation_avant' => round($tauxUtilisationAvant, 2),
+                'lignes_designation' => $data['lignes'],
+                'provision_totale' => $ligneBudgetaire->montant_vote,
+                'deja_engage' => $ligneBudgetaire->engage,
+            ];
+
+            if (!$suffisant) {
+                $peutEngager = false;
+            }
+        }
+
+        return [
+            'peut_engager' => $peutEngager,
+            'montant_total' => $montantTotal,
+            'nombre_nomenclatures' => count($verifications),
+            'lignes_budgetaires' => $verifications,
+            'message' => $peutEngager
+                ? 'Toutes les lignes budgétaires ont un crédit suffisant'
+                : 'Crédit insuffisant sur une ou plusieurs lignes budgétaires',
+        ];
+    }
+
     /**
      * Calculer le montant total des impôts et taxes
-     * (TVA + IR + TSR + CNPS + IRNC + Autres)
      */
     public function calculerMontantTotalImpots(): float
     {
@@ -101,7 +218,6 @@ class BonCommande extends Model
 
     /**
      * Obtenir le montant net à percevoir
-     * Pour OP : Montant Brut (TTC) - Total Impôts
      */
     public function getMontantNetPercevoir(): float
     {
@@ -141,7 +257,7 @@ class BonCommande extends Model
     }
 
     /**
-     * Vérifier si le BC est en cours de transmission (pas clôturé, pas retourné)
+     * Vérifier si le BC est en cours de transmission
      */
     public function estEnCoursDeTransmission(): bool
     {
@@ -169,8 +285,6 @@ class BonCommande extends Model
      */
     public function estAuteur(): bool
     {
-        // Vous pouvez ajuster cette logique selon votre modèle
-        // Par exemple, si vous avez un champ created_by
         return $this->created_by === auth()->id();
     }
 
@@ -181,17 +295,14 @@ class BonCommande extends Model
     {
         $userId = $userId ?? auth()->id();
 
-        // Super admin peut tout voir
         if (auth()->user()?->hasRole('super_admin')) {
             return true;
         }
 
-        // Si pas de transmission en cours, tout le monde peut voir
         if (!$this->estEnCoursDeTransmission()) {
             return true;
         }
 
-        // Si en cours de transmission, seul le destinataire actuel peut voir
         return $this->estDestinataireActuel();
     }
 
@@ -202,44 +313,37 @@ class BonCommande extends Model
     {
         $userId = $userId ?? auth()->id();
 
-        // Super admin peut tout modifier
         if (auth()->user()?->hasRole('super_admin')) {
             return true;
         }
 
-        // Si en cours de transmission, seul le destinataire peut "agir" (pas modifier, mais traiter)
         if ($this->estEnCoursDeTransmission()) {
-            return false; // Personne ne peut modifier pendant une transmission
+            return false;
         }
 
-        // Si brouillon, vérifier les permissions normales
         return $this->estModifiable();
     }
 
     protected static function booted(): void
     {
         /**
-         * ========================================
-         * AVANT SAUVEGARDE (CREATE + UPDATE)
-         * ========================================
+         * AVANT SAUVEGARDE
          */
         static::saving(function ($bonCommande) {
-            // 🔒 Forcer exonération TVA au niveau métier
+            // Forcer exonération TVA
             if ($bonCommande->exonere_tva) {
                 $bonCommande->montant_tva = 0;
             }
         });
 
-        // ========================================
-        // ÉVÉNEMENT : AVANT CRÉATION
-        // ========================================
+        /**
+         * AVANT CRÉATION
+         */
         static::creating(function ($bonCommande) {
-            // 1. Générer le numéro si pas défini
             if (!$bonCommande->numero) {
                 $bonCommande->numero = $bonCommande->genererNumero();
             }
 
-            // 2. Déterminer le type d'engagement automatiquement si non défini
             if (!$bonCommande->type_engagement_id && $bonCommande->montant_ttc > 0) {
                 $type = \App\Models\TypeEngagement::determinerParMontant($bonCommande->montant_ttc);
                 if ($type) {
@@ -248,11 +352,10 @@ class BonCommande extends Model
             }
         });
 
-        // ========================================
-        // ÉVÉNEMENT : AVANT MISE À JOUR
-        // ========================================
+        /**
+         * AVANT MISE À JOUR
+         */
         static::updating(function ($bonCommande) {
-            // 1. CONTRÔLE DE SÉCURITÉ : Vérifier les permissions
             if (
                 $bonCommande->isDirty() &&
                 $bonCommande->getOriginal('statut') !== 'brouillon' &&
@@ -263,8 +366,6 @@ class BonCommande extends Model
                 );
             }
 
-            // 2. Recalculer le type d'engagement si le montant change
-            // (mais uniquement si l'utilisateur n'a pas manuellement changé le type)
             if ($bonCommande->isDirty('montant_ttc') && !$bonCommande->isDirty('type_engagement_id')) {
                 if ($bonCommande->montant_ttc > 0) {
                     $type = \App\Models\TypeEngagement::determinerParMontant($bonCommande->montant_ttc);
@@ -275,18 +376,16 @@ class BonCommande extends Model
             }
         });
 
-        // ========================================
-        // ÉVÉNEMENT : AVANT SUPPRESSION
-        // ========================================
+        /**
+         * AVANT SUPPRESSION
+         */
         static::deleting(function ($bonCommande) {
-            // CONTRÔLE DE SÉCURITÉ : Seul le super admin peut supprimer
             if (!auth()->user()?->hasRole('super_admin')) {
                 throw new \Exception(
                     'Suppression interdite : réservé au super administrateur.'
                 );
             }
 
-            // Note : Si le BC est engagé, vous pourriez ajouter un contrôle supplémentaire
             if ($bonCommande->engage) {
                 throw new \Exception(
                     'Suppression interdite : ce bon de commande est déjà engagé. Annulez-le d\'abord.'
@@ -295,18 +394,15 @@ class BonCommande extends Model
         });
 
         /**
-         * ========================================
-         * APRÈS CHARGEMENT (POST-RETRIEVE)
-         * ========================================
+         * APRÈS CHARGEMENT
          */
         static::retrieved(function ($bonCommande) {
-            // 🔁 Correction silencieuse des lignes si exonéré
             if ($bonCommande->exonere_tva) {
                 foreach ($bonCommande->lignes as $ligne) {
                     if ((float) $ligne->taux_tva !== 0.0) {
                         $ligne->taux_tva = 0;
                         $ligne->recalculerMontants();
-                        $ligne->saveQuietly(); // ⚠️ évite boucle d'événements
+                        $ligne->saveQuietly();
                     }
                 }
             }
@@ -336,9 +432,9 @@ class BonCommande extends Model
     {
         return $this->belongsTo(Service::class, 'service_demandeur_id');
     }
+
     /**
-     * Service bénéficiaire (celui qui reçoit les biens/services)
-     * Si c'est le même que le demandeur, ajoutez cette relation
+     * Service bénéficiaire
      */
     public function serviceBeneficiaire(): BelongsTo
     {
@@ -406,8 +502,7 @@ class BonCommande extends Model
     }
 
     /**
-     * Générer le numéro d'engagement à partir du numéro du BC
-     * BC-2025-001 devient BE-2025-001
+     * Générer le numéro d'engagement
      */
     protected function genererNumeroEngagement(): string
     {
@@ -415,21 +510,16 @@ class BonCommande extends Model
             throw new \Exception('Le bon de commande n\'a pas de numéro');
         }
 
-        // Remplacer BC par BE
         $numeroEngagement = str_replace('BC-', 'BE-', $this->numero);
 
-        // Si le numéro ne commence pas par BC-, essayer d'autres patterns
         if ($numeroEngagement === $this->numero) {
-            // Pattern alternatif : BC/2025/001 -> BE/2025/001
             $numeroEngagement = preg_replace('/^BC([\/\-_])/', 'BE$1', $this->numero);
         }
 
-        // Si aucun pattern n'a matché, ajouter simplement BE- au début
         if ($numeroEngagement === $this->numero) {
             $numeroEngagement = 'BE-' . $this->numero;
         }
 
-        // Vérifier l'unicité du numéro d'engagement
         $count = 1;
         $numeroBase = $numeroEngagement;
         while (Engagement::where('reference_document', $numeroEngagement)->exists()) {
@@ -441,7 +531,7 @@ class BonCommande extends Model
     }
 
     /**
-     * Calculer les montants (appelé par l'Observer LigneBonCommande)
+     * Calculer les montants
      */
     public function calculerMontants(): void
     {
@@ -451,7 +541,6 @@ class BonCommande extends Model
         $totalTTC = 0;
         $totalNetAPayer = 0;
 
-        // Charger les lignes si nécessaire
         if (!$this->relationLoaded('lignes')) {
             $this->load('lignes');
         }
@@ -464,15 +553,16 @@ class BonCommande extends Model
             $totalNetAPayer += $ligne->net_a_payer ?? 0;
         }
 
-        // Mettre à jour les totaux
         $this->montant_ht = round($totalHT, 2);
         $this->montant_tva = round($totalTVA, 2);
         $this->montant_ir = round($totalIR, 2);
         $this->montant_ttc = round($totalTTC, 2);
         $this->net_a_payer = round($totalNetAPayer, 2);
+        $this->net_a_percevoir = round($totalNetAPayer, 2); // ✅ AJOUTÉ
     }
+
     /**
-     * Recalculer tous les montants du bon de commande
+     * ✅ RECALCULER TOUS LES MONTANTS - VERSION CORRIGÉE
      */
     public function recalculerTousLesMontants(): void
     {
@@ -482,42 +572,36 @@ class BonCommande extends Model
         $totalTTC = 0;
         $totalNetAPayer = 0;
 
-        // Charger les lignes si nécessaire
         if (!$this->relationLoaded('lignes')) {
             $this->load('lignes');
         }
 
         foreach ($this->lignes as $ligne) {
-            // Forcer le taux TVA à 0 si exonéré
             if ($this->exonere_tva && $ligne->taux_tva != 0) {
                 $ligne->appliquerExonerationTVA();
                 $ligne->saveQuietly();
-            } else if (!$this->exonere_tva && $ligne->taux_tva == 0) {
-                // Restaurer la TVA si le BC n'est plus exonéré
+            } else if (!$this->exonere_tva && $ligne->taux_tva == 0 && !$this->isDirty('exonere_tva')) {
                 $ligne->restaurerTVA(19.25);
                 $ligne->saveQuietly();
             } else {
-                // Recalculer normalement
                 $ligne->recalculerMontants();
                 $ligne->saveQuietly();
             }
 
-            // Cumuler les totaux
             $totalHT += $ligne->montant_ht;
             $totalTVA += $ligne->montant_tva;
             $totalIR += $ligne->montant_ir;
             $totalTTC += $ligne->montant_ttc;
-            $totalNetAPayer += $ligne->net_a_payer; // ← CHANGÉ
+            $totalNetAPayer += $ligne->net_a_payer;
         }
 
-        // Mettre à jour les totaux du BC
         $this->montant_ht = round($totalHT, 2);
         $this->montant_tva = round($totalTVA, 2);
         $this->montant_ir = round($totalIR, 2);
         $this->montant_ttc = round($totalTTC, 2);
-        $this->net_a_payer = round($totalNetAPayer, 2); // ← CHANGÉ
+        $this->net_a_payer = round($totalNetAPayer, 2);
+        $this->net_a_percevoir = round($totalNetAPayer, 2); // ✅ AJOUTÉ
 
-        // Sauvegarder sans déclencher les événements (éviter boucle infinie)
         $this->saveQuietly();
     }
 
@@ -535,9 +619,6 @@ class BonCommande extends Model
     /**
      * Engager le budget
      */
-    /**
-     * Engager le budget
-     */
     public function engagerBudget(): void
     {
         if ($this->statut !== 'valide') {
@@ -548,75 +629,39 @@ class BonCommande extends Model
             throw new \Exception("Le budget est déjà engagé pour ce BC");
         }
 
-        // Vérifier qu'il y a des lignes
         if ($this->lignes()->count() === 0) {
             throw new \Exception("Le BC doit avoir au moins une ligne");
         }
 
-        // Forcer le recalcul et sauvegarder les lignes
         $lignesCalculees = collect();
         foreach ($this->lignes()->get() as $ligne) {
-            // IMPORTANT : Définir taux_tva AVANT tout calcul
-            // Car le hook `saving` va aussi appeler calculerMontants()
             if ($ligne->taux_tva === null || $ligne->taux_tva === '') {
                 $ligne->setAttribute('taux_tva', 19.25);
             }
 
-            // Forcer le recalcul des montants
             $ligne->calculerMontants();
-
-            // Vérifier que les montants sont bien calculés
-            if ($ligne->net_a_payer <= 0 && $ligne->montant_ht > 0) {
-                // Debug: afficher les valeurs avant save
-                \Log::error("Ligne avant save", [
-                    'designation' => $ligne->designation,
-                    'montant_ht' => $ligne->montant_ht,
-                    'taux_tva' => $ligne->taux_tva,
-                    'montant_tva' => $ligne->montant_tva,
-                    'montant_ttc' => $ligne->montant_ttc,
-                    'taux_ir' => $ligne->taux_ir,
-                    'montant_ir' => $ligne->montant_ir,
-                    'net_a_payer' => $ligne->net_a_payer,
-                ]);
-            }
-
-            // Sauvegarder AVEC les événements
-            // Le hook `saving` va recalculer avec taux_tva = 19.25
             $ligne->save();
-
-            // Recharger pour vérifier les valeurs en BD
             $ligne->refresh();
-
-            // Garder en mémoire
             $lignesCalculees->push($ligne);
         }
 
-        // Recharger le BC pour avoir les montants totaux à jour
         $this->refresh();
 
         \DB::beginTransaction();
         try {
-            // ✅ GÉNÉRATION DU NUMÉRO D'ENGAGEMENT
             $numeroEngagement = $this->genererNumeroEngagement();
-            // Net à payer = TTC - IR
-            // Net à payer = HT - IR (montant effectivement perçu par le fournisseur)
             $netAPayer = $this->montant_ht - $this->montant_ir;
 
-            // Vérification finale du montant total
             if ($netAPayer <= 0) {
                 throw new \Exception(
                     "❌ MONTANT INVALIDE\n\n" .
                         "Le montant net à payer du BC est invalide.\n\n" .
                         "Montant HT: " . number_format($this->montant_ht, 0, ',', ' ') . " FCFA\n" .
                         "Montant IR: " . number_format($this->montant_ir, 0, ',', ' ') . " FCFA\n" .
-                        "Net à percevoir: " . number_format($netAPayer, 0, ',', ' ') . " FCFA\n" .
-                        "TVA: " . number_format($this->montant_tva, 0, ',', ' ') . " FCFA\n" .
-                        "TTC: " . number_format($this->montant_ttc, 0, ',', ' ') . " FCFA\n\n" .
-                        "Vérifiez les montants des lignes du BC."
+                        "Net à percevoir: " . number_format($netAPayer, 0, ',', ' ') . " FCFA"
                 );
             }
 
-            // Récupérer la première nomenclature (principale)
             $premiereLigne = $lignesCalculees->first();
             $nomenclaturePrincipaleId = $premiereLigne ? $premiereLigne->nomenclature_id : null;
 
@@ -624,12 +669,11 @@ class BonCommande extends Model
                 throw new \Exception("Impossible de déterminer la nomenclature principale");
             }
 
-            // Créer l'engagement
             $engagement = Engagement::create([
+                'exercice_id' => $this->exercice_id, // ✅ AJOUTÉ
                 'budget_id' => $this->budget_id,
                 'type_engagement' => 'BC',
                 'nomenclature_principale_id' => $nomenclaturePrincipaleId,
-                'reference_document' => $numeroEngagement,
                 'reference_document' => $this->numero,
                 'engageable_type' => self::class,
                 'engageable_id' => $this->id,
@@ -642,32 +686,18 @@ class BonCommande extends Model
                 'statut' => 'provisoire',
             ]);
 
-            // Utiliser les lignes calculées en mémoire (PAS de rechargement BD)
             $lignesParNomenclature = [];
             foreach ($lignesCalculees as $ligne) {
                 $nomenclatureId = $ligne->nomenclature_id;
 
-                // Vérifier que le montant est valide
                 if ($ligne->net_a_payer <= 0) {
                     throw new \Exception(
                         "❌ MONTANT INVALIDE\n\n" .
-                            "Ligne: {$ligne->designation}\n\n" .
-                            "📊 DÉTAILS:\n" .
-                            "• Quantité: {$ligne->quantite}\n" .
-                            "• Prix unitaire HT: " . number_format($ligne->prix_unitaire_ht, 0, ',', ' ') . " FCFA\n" .
-                            "• Montant HT: " . number_format($ligne->montant_ht, 0, ',', ' ') . " FCFA\n" .
-                            "• Taux TVA: {$ligne->taux_tva}%\n" .
-                            "• Montant TVA: " . number_format($ligne->montant_tva, 0, ',', ' ') . " FCFA\n" .
-                            "• TTC: " . number_format($ligne->montant_ttc, 0, ',', ' ') . " FCFA\n" .
-                            "• Taux IR: {$ligne->taux_ir}%\n" .
-                            "• Montant IR: " . number_format($ligne->montant_ir, 0, ',', ' ') . " FCFA\n" .
-                            "• Net à payer: " . number_format($ligne->net_a_payer, 0, ',', ' ') . " FCFA\n\n" .
-                            "✅ SOLUTION:\n" .
-                            "Vérifiez que tous les montants sont corrects dans le formulaire."
+                            "Ligne: {$ligne->designation}\n" .
+                            "Net à payer: " . number_format($ligne->net_a_payer, 0, ',', ' ') . " FCFA"
                     );
                 }
 
-                // Regrouper par nomenclature
                 if (!isset($lignesParNomenclature[$nomenclatureId])) {
                     $lignesParNomenclature[$nomenclatureId] = [
                         'montant' => 0,
@@ -679,36 +709,25 @@ class BonCommande extends Model
                 $lignesParNomenclature[$nomenclatureId]['libelles'][] = $ligne->designation;
             }
 
-            // Créer les lignes d'engagement et engager le budget
             $numeroLigne = 1;
             foreach ($lignesParNomenclature as $nomenclatureId => $data) {
                 $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
                     ->where('nomenclature_id', $nomenclatureId)
                     ->firstOrFail();
 
-                // Vérifier le crédit disponible
                 if (!$ligneBudgetaire->peutEngager($data['montant'])) {
                     $nomenclature = $ligneBudgetaire->nomenclature;
                     $manque = $data['montant'] - $ligneBudgetaire->disponible_engagement;
 
                     throw new \Exception(
                         "❌ CRÉDIT INSUFFISANT\n\n" .
-                            "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
-                            "📊 DÉTAILS:\n" .
-                            "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
-                            "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
-                            "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
-                            "💰 ENGAGEMENT DEMANDÉ:\n" .
-                            "• Montant à engager: " . number_format($data['montant'], 0, ',', ' ') . " FCFA\n" .
-                            "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
-                            "✅ SOLUTIONS:\n" .
-                            "1. Réduire le montant de la commande\n" .
-                            "2. Demander un virement budgétaire vers cette ligne\n" .
-                            "3. Utiliser une autre nomenclature budgétaire"
+                            "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n" .
+                            "Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n" .
+                            "Demandé: " . number_format($data['montant'], 0, ',', ' ') . " FCFA\n" .
+                            "Manque: " . number_format($manque, 0, ',', ' ') . " FCFA"
                     );
                 }
 
-                // Créer la ligne d'engagement
                 LigneEngagement::create([
                     'engagement_id' => $engagement->id,
                     'nomenclature_id' => $nomenclatureId,
@@ -717,11 +736,9 @@ class BonCommande extends Model
                     'montant' => $data['montant'],
                 ]);
 
-                // Engager
                 $ligneBudgetaire->enregistrerEngagement($data['montant']);
             }
 
-            // Marquer le BC comme engagé
             $this->engage = true;
             $this->montant_engage = $netAPayer;
             $this->date_engagement = now();
@@ -729,7 +746,6 @@ class BonCommande extends Model
 
             \DB::commit();
 
-            // ✅ LOG POUR CONFIRMATION
             \Log::info("Engagement créé", [
                 'bc_numero' => $this->numero,
                 'engagement_numero' => $numeroEngagement,
@@ -743,77 +759,95 @@ class BonCommande extends Model
     }
 
     /**
-     * Créer ou mettre à jour le dossier fournisseur
+     * ✅ CRÉER OU METTRE À JOUR LE DOSSIER - VERSION CORRIGÉE AVEC VÉRIFICATIONS
      */
-    public function creerOuMettreAJourDossier(): DossierFournisseur
+    public function creerOuMettreAJourDossier(): ?DossierFournisseur
     {
-        // Chercher un dossier existant
-        $dossier = DossierFournisseur::where('document_principal_type', get_class($this))
-            ->where('document_principal_id', $this->id)
-            ->first();
-
-        if (!$dossier) {
-            // Créer un nouveau dossier
-            $dossier = DossierFournisseur::create([
-                'numero_dossier' => DossierFournisseur::genererNumeroDossier('bon_commande'),
-                'fournisseur_id' => $this->fournisseur_id,
-                'exercice_id' => $this->exercice_id,
-                'type_dossier' => 'bon_commande',
-                'document_principal_type' => get_class($this),
-                'document_principal_id' => $this->id,
-                'reference_principale' => $this->numero,
-                'objet' => $this->objet ?? 'Bon de commande ' . $this->numero,
-                'montant_total' => $this->montant_ttc,
-                'montant_engage' => $this->engagement ? $this->montant_ttc : 0,
-                'date_ouverture' => $this->date_emission ?? now(),
-                'date_limite_livraison' => $this->date_livraison_prevue,
-                'responsable_id' => $this->created_by ?? auth()->id(),
-                'createur_id' => $this->created_by ?? auth()->id(),
-                'statut' => 'ouvert',
-            ]);
-
-            // Ajouter automatiquement le BC comme pièce
-            $dossier->ajouterPiece([
-                'type_piece' => 'bon_commande',
-                'document_type' => get_class($this),
-                'document_id' => $this->id,
-                'nom_fichier' => "BC-{$this->numero}.pdf",
-                'chemin_fichier' => '', // Sera rempli lors de la génération PDF
-                'valide' => true,
-                'valide_par' => auth()->id(),
-                'date_validation' => now(),
-            ]);
-        } else {
-            // Mettre à jour le dossier existant
-            $dossier->update([
-                'montant_total' => $this->montant_ttc,
-                'montant_engage' => $this->engagement ? $this->montant_ttc : 0,
-                'date_limite_livraison' => $this->date_livraison_prevue,
-            ]);
+        // ✅ VÉRIFICATIONS PRÉALABLES
+        if (!$this->fournisseur_id) {
+            \Log::warning("BC {$this->numero} : Impossible de créer le dossier sans fournisseur");
+            return null;
         }
 
-        return $dossier;
+        if (!$this->exercice_id) {
+            \Log::warning("BC {$this->numero} : Impossible de créer le dossier sans exercice");
+            return null;
+        }
+
+        try {
+            // Chercher un dossier existant
+            $dossier = DossierFournisseur::where('document_principal_type', get_class($this))
+                ->where('document_principal_id', $this->id)
+                ->first();
+
+            if (!$dossier) {
+                // Créer un nouveau dossier
+                $dossier = DossierFournisseur::create([
+                    'numero_dossier' => DossierFournisseur::genererNumeroDossier('bon_commande'),
+                    'fournisseur_id' => $this->fournisseur_id,
+                    'exercice_id' => $this->exercice_id,
+                    'type_dossier' => 'bon_commande',
+                    'document_principal_type' => get_class($this),
+                    'document_principal_id' => $this->id,
+                    'reference_principale' => $this->numero,
+                    'objet' => $this->objet ?? 'Bon de commande ' . $this->numero,
+                    'montant_total' => $this->montant_ttc,
+                    'montant_engage' => $this->engagement ? $this->montant_ttc : 0,
+                    'date_ouverture' => $this->date_emission ?? now(),
+                    'date_limite_livraison' => $this->date_livraison_prevue,
+                    'responsable_id' => $this->created_by ?? auth()->id(),
+                    'createur_id' => $this->created_by ?? auth()->id(),
+                    'statut' => 'ouvert',
+                ]);
+
+                \Log::info("Dossier {$dossier->numero_dossier} créé pour BC {$this->numero}");
+
+                // Ajouter automatiquement le BC comme pièce
+                $dossier->ajouterPiece([
+                    'type_piece' => 'bon_commande',
+                    'document_type' => get_class($this),
+                    'document_id' => $this->id,
+                    'nom_fichier' => "BC-{$this->numero}.pdf",
+                    'chemin_fichier' => '',
+                    'valide' => true,
+                    'valide_par' => auth()->id(),
+                    'date_validation' => now(),
+                ]);
+            } else {
+                // Mettre à jour le dossier existant
+                $dossier->update([
+                    'montant_total' => $this->montant_ttc,
+                    'montant_engage' => $this->engagement ? $this->montant_ttc : 0,
+                    'date_limite_livraison' => $this->date_livraison_prevue,
+                ]);
+
+                \Log::info("Dossier {$dossier->numero_dossier} mis à jour pour BC {$this->numero}");
+            }
+
+            return $dossier;
+        } catch (\Exception $e) {
+            \Log::error("Erreur création/MAJ dossier pour BC {$this->numero} : " . $e->getMessage());
+            return null;
+        }
     }
 
     /**
-     * Désengager le budget (en cas d'annulation)
+     * Désengager le budget
      */
     public function desengagerBudget(): void
     {
         if (!$this->engage) {
-            return; // Déjà désengagé
+            return;
         }
 
         \DB::beginTransaction();
         try {
-            // Récupérer l'engagement et l'annuler
             $engagement = $this->engagement;
 
             if ($engagement) {
                 $engagement->annuler();
             }
 
-            // Marquer le BC comme désengagé
             $this->engage = false;
             $this->montant_engage = 0;
             $this->save();
@@ -830,7 +864,6 @@ class BonCommande extends Model
      */
     public function annuler(): void
     {
-        // Désengager le budget si engagé
         if ($this->engage) {
             $this->desengagerBudget();
         }
@@ -852,12 +885,10 @@ class BonCommande extends Model
      */
     public function getNombreLignesAttribute(): int
     {
-        // Si la relation est déjà chargée, utiliser la collection
         if ($this->relationLoaded('lignes')) {
             return $this->lignes->count();
         }
 
-        // Sinon faire une requête
         return $this->lignes()->count();
     }
 
@@ -875,19 +906,12 @@ class BonCommande extends Model
         return ($totalLivree / $totalQuantite) * 100;
     }
 
-    // /**
-    //  * Calcule le Net à Percevoir (HT - IR)
-    //  */
-    // public function getNetAPercevoirAttribute(): float
-    // {
-    //     return $this->montant_ht - $this->montant_ir;
-    // }
     /**
      * Accesseur : Net à percevoir
      */
     public function getNetAPercevoirAttribute(): float
     {
-        return $this->getMontantNetPercevoir();
+        return $this->net_a_percevoir ?? $this->getMontantNetPercevoir();
     }
 
     /**
@@ -895,7 +919,7 @@ class BonCommande extends Model
      */
     public function getNetAPercevoirFormatteAttribute(): string
     {
-        return number_format($this->net_a_payer, 0, ',', ' ') . ' FCFA';
+        return number_format($this->net_a_percevoir ?? 0, 0, ',', ' ') . ' FCFA';
     }
 
     /**

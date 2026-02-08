@@ -30,6 +30,8 @@ class Engagement extends Model
         'engageable_id',
         'beneficiaire_type',
         'beneficiaire_id',
+        'beneficiaire_fournisseur_id', // Ajouté pour compatibilité
+        'beneficiaire_personnel_id',   // Ajouté pour compatibilité
         'date_engagement',
         'exercice',
         'objet',
@@ -95,12 +97,10 @@ class Engagement extends Model
      */
     public function getBonCommandeAttribute()
     {
-        // Charger la relation si nécessaire
         if (!$this->relationLoaded('engageable')) {
             $this->load('engageable');
         }
 
-        // Vérifier le type
         if ($this->engageable instanceof \App\Models\BonCommande) {
             return $this->engageable;
         }
@@ -110,7 +110,6 @@ class Engagement extends Model
 
     /**
      * ✅ MÉTHODE ALTERNATIVE : Obtenir le bon de commande
-     * Plus explicite et peut être appelée comme méthode
      */
     public function obtenirBonCommande(): ?\App\Models\BonCommande
     {
@@ -141,11 +140,26 @@ class Engagement extends Model
 
     /**
      * Relation : Bénéficiaire (polymorphique)
-     * Fournisseur, User, etc.
      */
     public function beneficiaire(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Relation : Bénéficiaire fournisseur (pour engagements manuels)
+     */
+    public function beneficiaireFournisseur(): BelongsTo
+    {
+        return $this->belongsTo(Fournisseur::class, 'beneficiaire_fournisseur_id');
+    }
+
+    /**
+     * Relation : Bénéficiaire personnel (pour engagements manuels)
+     */
+    public function beneficiairePersonnel(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'beneficiaire_personnel_id');
     }
 
     /**
@@ -179,11 +193,19 @@ class Engagement extends Model
     }
 
     /**
-     * Alias pour bordereaux() - Compatibilité avec bordereauEngagements()
+     * Alias pour bordereaux()
      */
     public function bordereauEngagements(): BelongsToMany
     {
         return $this->bordereaux();
+    }
+
+    /**
+     * Relation : Ordonnances de paiement
+     */
+    public function ordonnancesPaiement(): HasMany
+    {
+        return $this->hasMany(\App\Models\OrdonnancePaiement::class, 'engagement_id');
     }
 
     /**
@@ -243,27 +265,54 @@ class Engagement extends Model
     }
 
     /**
-     * ✅ AJOUTER CETTE MÉTHODE
+     * Vérifier si peut créer des ordonnances
+     */
+    public function peutCreerOrdonnances(): bool
+    {
+        return $this->statut === 'definitif';
+    }
+
+    /**
+     * Vérifier si peut voir les OP
+     */
+    public function peutVoirOP(): bool
+    {
+        return in_array($this->statut, ['definitif'])
+            && $this->hasOrdonnancesPaiement();
+    }
+
+    /**
      * Vérifier si peut être annulé
+     */
+   // Dans App\Models\Engagement.php
+
+    /**
+     * ✅ Vérifier si peut être annulé
      */
     public function peutEtreAnnule(): bool
     {
-        // Ne peut pas annuler si déjà annulé
+        // ✅ Ne peut pas annuler si déjà annulé
         if ($this->statut === 'annule') {
             return false;
         }
 
-        // Ne peut pas annuler si soldé
+        // ✅ Ne peut pas annuler si définitif
+        if ($this->statut === 'definitif') {
+            return false;
+        }
+
+        // ✅ Ne peut pas annuler si soldé
         if ($this->statut === 'solde') {
             return false;
         }
 
-        // Ne peut pas annuler s'il y a des ordonnances de paiement
+        // ✅ Ne peut pas annuler s'il y a des ordonnances de paiement
         if ($this->ordonnancesPaiement()->exists()) {
             return false;
         }
 
-        return true;
+        // ✅ Peut annuler seulement si provisoire et sans ordonnances
+        return $this->statut === 'provisoire';
     }
 
     /**
@@ -271,21 +320,43 @@ class Engagement extends Model
      */
     public function annuler(): void
     {
-        if ($this->statut === 'solde') {
-            throw new \Exception("Impossible d'annuler un engagement soldé");
+        // ✅ Vérifications de sécurité
+        if ($this->statut === 'definitif') {
+            throw new \Exception("Impossible d'annuler un engagement définitif.");
         }
 
-        DB::transaction(function () {
-            foreach ($this->lignes as $ligne) {
-                $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                    ->where('nomenclature_id', $ligne->nomenclature_id)
-                    ->firstOrFail();
+        if ($this->statut === 'annule') {
+            throw new \Exception("Cet engagement est déjà annulé.");
+        }
 
-                $ligneBudgetaire->annulerEngagement($ligne->montant);
+        if ($this->ordonnancesPaiement()->exists()) {
+            throw new \Exception("Impossible d'annuler un engagement qui a des ordonnances de paiement.");
+        }
+
+        // Libérer les crédits engagés
+        if ($this->nomenclature_principale_id) {
+            $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+                ->where('nomenclature_id', $this->nomenclature_principale_id)
+                ->first();
+
+            if ($ligneBudgetaire) {
+                $ligneBudgetaire->engage -= $this->montant_engage;
+                $ligneBudgetaire->save();
             }
+        }
 
-            $this->update(['statut' => 'annule']);
-        });
+        // Marquer comme annulé
+        $this->statut = 'annule';
+        $this->date_annulation = now();
+        $this->annule_par = auth()->id();
+        $this->save();
+
+        // Log
+        \Log::info("Engagement {$this->numero} annulé", [
+            'id' => $this->id,
+            'montant' => $this->montant_engage,
+            'user' => auth()->id(),
+        ]);
     }
 
     /**
@@ -324,8 +395,8 @@ class Engagement extends Model
         }
 
         return match ($this->beneficiaire_type) {
-            'App\Models\Fournisseur' => $this->beneficiaire->raison_sociale,
-            'App\Models\User' => $this->beneficiaire->name,
+            'App\Models\Fournisseur' => $this->beneficiaire->raison_sociale ?? 'N/A',
+            'App\Models\User' => $this->beneficiaire->name ?? 'N/A',
             default => 'Inconnu',
         };
     }
@@ -343,125 +414,220 @@ class Engagement extends Model
             ])
             ->logOnlyDirty();
     }
-    /**
-     * Relation : Bon de commande (si créé via BC)
-     */
-    // public function bonCommande(): BelongsTo
-    // {
-    //     return $this->belongsTo(BonCommande::class, 'bon_commande_id');
-    // }
 
-    // public function bonCommande()
-    // {
-    //     return $this->hasOne(BonCommande::class, 'bon_commande_id');
-    // }
-
+    // ========================================================================
+    // CRÉATION DES ORDONNANCES DE PAIEMENT - VERSION CORRIGÉE
+    // ========================================================================
 
     /**
-     * Créer les ordonnances de paiement (Standard + Impôt)
+     * ✅ CRÉER LES ORDONNANCES DE PAIEMENT (Standard + Impôt)
+     * Version corrigée avec les bons montants
      */
     public function creerOrdonnancesPaiement(): array
     {
-        $ordonnances = [];
-
-        // Récupérer le BC lié via la relation
-        $bonCommande = $this->bonCommande;
-
-        // Déterminer le fournisseur/bénéficiaire
-        $beneficiaire = null;
-        $montantIR = 0;
-
-        if ($bonCommande) {
-            // ✅ Si on a un BC, utiliser creerDepuisBonCommande qui est plus complet
-            return [
-                'standard' => \App\Models\OrdonnancePaiement::creerDepuisBonCommande($bonCommande, 'standard'),
-                'impot' => \App\Models\OrdonnancePaiement::creerDepuisBonCommande($bonCommande, 'impot'),
-            ];
+        // Vérifications préalables
+        if (!$this->peutCreerOrdonnances()) {
+            throw new \Exception("Impossible de créer les ordonnances : l'engagement doit être au statut DÉFINITIF.");
         }
 
-        // ❌ Engagement sans BC - utiliser l'ancienne logique
-        $beneficiaire = $this->beneficiaire ?? $this->engageable;
-
-        if (!$beneficiaire) {
-            throw new \Exception("Aucun bénéficiaire trouvé pour cet engagement. Veuillez définir un bénéficiaire.");
+        if ($this->hasOrdonnancesPaiement()) {
+            throw new \Exception("Des ordonnances existent déjà pour cet engagement.");
         }
 
-        $montantBrut = $this->montant_engage;
-        $montantNet = $montantBrut - $montantIR;
+        if ($this->montant_engage <= 0) {
+            throw new \Exception("Montant d'engagement invalide.");
+        }
 
-        // Log pour debug
-        \Log::info('Création OP sans BC', [
-            'engagement_id' => $this->id,
-            'beneficiaire_id' => $beneficiaire->id,
-            'beneficiaire_class' => get_class($beneficiaire),
-            'montant_ir' => $montantIR,
-        ]);
+        return DB::transaction(function () {
+            // ===== RÉCUPÉRATION DES MONTANTS DEPUIS LE DOCUMENT SOURCE =====
 
-        // 1. OP Standard (pour le fournisseur/bénéficiaire)
-        $opStandard = \App\Models\OrdonnancePaiement::create([
-            'numero' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'standard'),
-            'exercice_id' => $this->exercice_id,
-            'type_ordonnance' => 'standard',
-            'engagement_id' => $this->id,
-            'beneficiaire_type' => get_class($beneficiaire),
-            'beneficiaire_id' => $beneficiaire->id,
-            'objet' => $this->objet,
-            'montant_brut' => $montantBrut,
-            'montant_impot' => $montantIR,
-            'montant_net' => $montantNet,
-            'date_emission' => now(),
-            'mois_emission' => now()->format('m'),
-            'numero_emission' => $this->numero ?? null,
-            'numero_op' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'standard'),
-            'periode' => now()->format('m/Y'),
-            'statut' => 'brouillon',
-            'created_by' => auth()->id(),
-        ]);
+            $donnees = $this->extraireDonneesDocument();
 
-        $ordonnances['standard'] = $opStandard;
+            if (!$donnees['beneficiaire']) {
+                throw new \Exception("Aucun bénéficiaire défini pour cet engagement.");
+            }
 
-        // 2. OP Impôt (si IR > 0)
-        if ($montantIR > 0) {
-            $opImpot = \App\Models\OrdonnancePaiement::create([
-                'numero' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'impot'),
-                'exercice_id' => $this->exercice_id,
-                'type_ordonnance' => 'impot',
+            if ($donnees['montant_net'] <= 0) {
+                throw new \Exception("Le montant net à payer est invalide (montant: {$donnees['montant_net']}).");
+            }
+
+            // ===== 1. CRÉER L'OP STANDARD (Bénéficiaire principal) =====
+
+            $opStandard = \App\Models\OrdonnancePaiement::create([
+                'numero' => \App\Models\OrdonnancePaiement::genererNumero('standard'),
+                'type_ordonnance' => 'standard',
                 'engagement_id' => $this->id,
-                'beneficiaire_type' => null,
-                'beneficiaire_id' => null,
-                'objet' => "Reversement AIR",
-                'montant_brut' => $montantIR,
-                'montant_impot' => 0,
-                'montant_net' => $montantIR,
-                'montant_pec' => $montantNet,
+                'exercice_id' => $this->exercice_id,
+                'budget_id' => $this->budget_id,
+                'beneficiaire_type' => $donnees['beneficiaire_type'],
+                'beneficiaire_id' => $donnees['beneficiaire']->id,
                 'date_emission' => now(),
-                'mois_emission' => now()->format('m'),
-                'numero_emission' => $this->numero ?? null,
-                'numero_op' => \App\Models\OrdonnancePaiement::genererNumeroFromEngagement($this, 'impot'),
-                'periode' => now()->format('m/Y'),
-                'statut' => 'brouillon',
+                'montant_ordonnance' => round($donnees['montant_net'], 2), // ✅ MONTANT NET CORRECT
+                'objet' => $this->objet,
+                'reference_engagement' => $this->numero,
+                'statut' => 'emise', // ✅ STATUT ÉMISE (pas brouillon)
                 'created_by' => auth()->id(),
             ]);
 
-            $ordonnances['impot'] = $opImpot;
-        }
+            $ordonnances = ['standard' => $opStandard];
 
-        return $ordonnances;
+            // ===== 2. CRÉER L'OP IMPÔT (Si IR > 0) =====
+
+            if ($donnees['montant_ir'] > 0) {
+                // Trouver ou créer le bénéficiaire "DGI"
+                $tresorPublic = \App\Models\Fournisseur::firstOrCreate(
+                    ['code' => 'DGI'],
+                    [
+                        'raison_sociale' => 'Direction Générale des Impôts',
+                        'type_fournisseur' => 'administration',
+                        'actif' => true,
+                    ]
+                );
+
+                $opImpot = \App\Models\OrdonnancePaiement::create([
+                    'numero' => \App\Models\OrdonnancePaiement::genererNumero('impot'),
+                    'type_ordonnance' => 'impot',
+                    'engagement_id' => $this->id,
+                    'ordonnance_parent_id' => $opStandard->id, // Lien avec l'OP standard
+                    'exercice_id' => $this->exercice_id,
+                    'budget_id' => $this->budget_id,
+                    'beneficiaire_type' => 'App\Models\Fournisseur',
+                    'beneficiaire_id' => $tresorPublic->id,
+                    'date_emission' => now(),
+                    'montant_ordonnance' => round($donnees['montant_ir'], 2), // ✅ MONTANT IR CORRECT
+                    'objet' => "Impôt sur revenu (IR) - {$this->objet}",
+                    'reference_engagement' => $this->numero,
+                    'statut' => 'emise', // ✅ STATUT ÉMISE
+                    'created_by' => auth()->id(),
+                ]);
+
+                $ordonnances['impot'] = $opImpot;
+            }
+
+            return $ordonnances;
+        });
     }
 
     /**
-     * Vérifier si l'engagement a déjà des OP
+     * ✅ EXTRAIRE LES DONNÉES DU DOCUMENT SOURCE (BC, DA, ou manuel)
+     */
+    protected function extraireDonneesDocument(): array
+    {
+        $montantTotal = 0;
+        $montantIR = 0;
+        $montantNet = 0;
+        $beneficiaire = null;
+        $beneficiaireType = null;
+
+        // CAS 1 : BON DE COMMANDE
+        if ($this->estBonCommande() && $this->engageable) {
+            $bc = $this->engageable;
+
+            $montantTotal = $bc->montant_ttc ?? 0;
+            $montantIR = $bc->montant_ir ?? 0;
+            $montantNet = $bc->net_a_percevoir ?? ($montantTotal - $montantIR);
+            $beneficiaire = $bc->fournisseur;
+            $beneficiaireType = 'App\Models\Fournisseur';
+        }
+        // CAS 2 : DÉCISION ADMINISTRATIVE
+        elseif ($this->estDecision() && $this->engageable) {
+            $da = $this->engageable;
+
+            $montantTotal = $da->montant_total ?? $da->montant_ttc ?? $this->montant_engage;
+            $montantIR = $da->montant_ir ?? 0;
+            $montantNet = $da->net_a_percevoir ?? ($montantTotal - $montantIR);
+
+            // Bénéficiaire peut être un fournisseur ou un personnel
+            if (isset($da->beneficiaire_type)) {
+                if ($da->beneficiaire_type === 'fournisseur') {
+                    $beneficiaire = $da->beneficiaireFournisseur;
+                    $beneficiaireType = 'App\Models\Fournisseur';
+                } else {
+                    $beneficiaire = $da->beneficiairePersonnel;
+                    $beneficiaireType = 'App\Models\User';
+                }
+            }
+        }
+        // CAS 3 : ENGAGEMENT MANUEL (sans document source)
+        else {
+            $montantTotal = $this->montant_engage;
+
+            // Calculer l'IR automatiquement
+            $montantIR = $this->calculerMontantImpot();
+            $montantNet = $montantTotal - $montantIR;
+
+            // Déterminer le bénéficiaire depuis les champs de l'engagement
+            if ($this->beneficiaire_type === 'fournisseur' || $this->beneficiaire_type === 'App\Models\Fournisseur') {
+                $beneficiaire = $this->beneficiaireFournisseur ?? $this->beneficiaire;
+                $beneficiaireType = 'App\Models\Fournisseur';
+            } elseif ($this->beneficiaire_type === 'personnel' || $this->beneficiaire_type === 'App\Models\User') {
+                $beneficiaire = $this->beneficiairePersonnel ?? $this->beneficiaire;
+                $beneficiaireType = 'App\Models\User';
+            } else {
+                // Fallback sur beneficiaire polymorphique
+                $beneficiaire = $this->beneficiaire;
+                $beneficiaireType = $this->beneficiaire_type;
+            }
+        }
+
+        return [
+            'montant_total' => $montantTotal,
+            'montant_ir' => $montantIR,
+            'montant_net' => $montantNet,
+            'beneficiaire' => $beneficiaire,
+            'beneficiaire_type' => $beneficiaireType,
+        ];
+    }
+
+    /**
+     * ✅ CALCULER LE MONTANT IR POUR LES ENGAGEMENTS MANUELS
+     */
+    protected function calculerMontantImpot(): float
+    {
+        // Si l'engagement a un document source, ne pas recalculer
+        if ($this->engageable_type && $this->engageable) {
+            return 0;
+        }
+
+        $montant = $this->montant_engage;
+
+        // Pour les fournisseurs
+        if (($this->beneficiaire_type === 'fournisseur' || $this->beneficiaire_type === 'App\Models\Fournisseur')
+            && $this->beneficiaireFournisseur
+        ) {
+
+            $fournisseur = $this->beneficiaireFournisseur;
+
+            // Charger le régime fiscal si nécessaire
+            if (!$fournisseur->relationLoaded('regimeFiscal')) {
+                $fournisseur->load('regimeFiscal');
+            }
+
+            if ($fournisseur->regimeFiscal) {
+                $tauxIR = $fournisseur->regimeFiscal->taux_ir_defaut ?? 0;
+                return round(($montant * $tauxIR) / 100, 2);
+            }
+        }
+
+        // Pour les agents (personnel) - Barème IR personnel simplifié
+        if ($this->beneficiaire_type === 'personnel' || $this->beneficiaire_type === 'App\Models\User') {
+            if ($montant < 500000) {
+                return round(($montant * 5.5) / 100, 2);
+            } elseif ($montant < 3000000) {
+                return round(($montant * 11.0) / 100, 2);
+            } else {
+                return round(($montant * 15.0) / 100, 2);
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Vérifier si l'engagement a déjà des ordonnances
      */
     public function hasOrdonnancesPaiement(): bool
     {
-        return \App\Models\OrdonnancePaiement::where('engagement_id', $this->id)->exists();
-    }
-
-    /**
-     * Obtenir les ordonnances de paiement liées
-     */
-    public function ordonnancesPaiement()
-    {
-        return $this->hasMany(\App\Models\OrdonnancePaiement::class);
+        return $this->ordonnancesPaiement()->exists();
     }
 }

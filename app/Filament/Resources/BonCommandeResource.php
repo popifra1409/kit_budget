@@ -1173,13 +1173,14 @@ class BonCommandeResource extends Resource
                         });
                     })
                     ->toggle()
-                    ->default(false), // ← CHANGÉ : Désactivé par défaut
+                    ->default(false),
             ])
             ->actions(
                 WorkflowActions::make(
                     avecEngagement: true,
                     pdfServiceClass: BonCommandePdfService::class,
-                    pdfRouteName: 'bons-commande.pdf.preview'
+                    pdfRouteName: 'bons-commande.pdf.preview',
+                    avecModalEngagement: true
                 )
             )
             ->bulkActions([

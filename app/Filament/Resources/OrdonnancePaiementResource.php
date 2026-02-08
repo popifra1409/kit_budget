@@ -13,6 +13,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
+use Illuminate\Database\Eloquent\Builder;
 
 class OrdonnancePaiementResource extends Resource
 {
@@ -29,6 +30,14 @@ class OrdonnancePaiementResource extends Resource
     protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?int $navigationSort = 5;
+
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->whereIn('type_ordonnance', ['standard', 'impot']);
+    }
+
 
     public static function form(Form $form): Form
     {
@@ -292,11 +301,30 @@ class OrdonnancePaiementResource extends Resource
                     ])
                     ->query(function ($query, array $data) {
                         return $query
-                            ->when($data['date_emission_from'], fn($q, $date) =>
-                            $q->whereDate('date_emission', '>=', $date))
-                            ->when($data['date_emission_until'], fn($q, $date) =>
-                            $q->whereDate('date_emission', '<=', $date));
+                            ->when(
+                                $data['date_emission_from'],
+                                fn($q, $date) =>
+                                $q->whereDate('date_emission', '>=', $date)
+                            )
+                            ->when(
+                                $data['date_emission_until'],
+                                fn($q, $date) =>
+                                $q->whereDate('date_emission', '<=', $date)
+                            );
                     }),
+
+                // ✅ FILTRE TECHNIQUE POUR "Voir OP"
+                Tables\Filters\Filter::make('engagement_id')
+                    ->label('Engagement')
+                    ->query(function ($query, $data) {
+                        return $query->when(
+                            $data['value'] ?? null,
+                            fn($q, $engagementId) =>
+                            $q->where('engagement_id', $engagementId)
+                                ->whereIn('type_ordonnance', ['standard', 'impot'])
+                        );
+                    })
+                    ->hidden(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -343,50 +371,57 @@ class OrdonnancePaiementResource extends Resource
                     }),
 
                 Tables\Actions\ActionGroup::make([
-                    // OP Standard
+                    // ======================
+                    // OP STANDARD
+                    // ======================
                     Tables\Actions\Action::make('telecharger_op')
-                        ->label('OP Standard (PDF)')
+                        ->label('Télécharger OP')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('success')
+                        ->visible(fn($record) => $record->type_ordonnance === 'standard')
                         ->url(fn($record) => route('pdf.telecharger', [
                             'etat' => 'ordonnance_paiement',
-                            'id' => $record->id
+                            'id' => $record->id,
                         ])),
 
                     Tables\Actions\Action::make('afficher_op')
-                        ->label('OP Standard (Aperçu)')
+                        ->label('Aperçu OP')
                         ->icon('heroicon-o-eye')
                         ->color('info')
+                        ->visible(fn($record) => $record->type_ordonnance === 'standard')
                         ->url(fn($record) => route('pdf.afficher', [
                             'etat' => 'ordonnance_paiement',
-                            'id' => $record->id
+                            'id' => $record->id,
                         ]))
                         ->openUrlInNewTab(),
 
-                    // OP Impôt
+                    // ======================
+                    // OP IMPÔT
+                    // ======================
                     Tables\Actions\Action::make('telecharger_op_impot')
-                        ->label('OP Impôt (PDF)')
+                        ->label('Télécharger OP Impôt')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('warning')
+                        ->visible(fn($record) => $record->type_ordonnance === 'impot')
                         ->url(fn($record) => route('pdf.telecharger', [
                             'etat' => 'ordonnance_paiement_impot',
-                            'id' => $record->id
+                            'id' => $record->id,
                         ])),
 
                     Tables\Actions\Action::make('afficher_op_impot')
-                        ->label('OP Impôt (Aperçu)')
+                        ->label('Aperçu OP Impôt')
                         ->icon('heroicon-o-eye')
                         ->color('gray')
+                        ->visible(fn($record) => $record->type_ordonnance === 'impot')
                         ->url(fn($record) => route('pdf.afficher', [
                             'etat' => 'ordonnance_paiement_impot',
-                            'id' => $record->id
+                            'id' => $record->id,
                         ]))
                         ->openUrlInNewTab(),
                 ])
                     ->label('Télécharger / Aperçu')
                     ->icon('heroicon-m-document-arrow-down')
                     ->size('sm')
-                    ->color('success')
                     ->button(),
             ])
             ->bulkActions([

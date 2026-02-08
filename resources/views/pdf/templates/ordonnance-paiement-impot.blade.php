@@ -38,6 +38,18 @@ $montantTotalImpots = $detailImpots['total'];
 
 @section('additional_styles')
     <style>
+        @page {
+            size: A4 landscape;
+            margin: 15mm 12mm 12mm 18mm;
+        }
+
+        body {
+            font-family: "Times New Roman", serif;
+            font-size: 9pt;
+            /* au lieu de 9pt */
+            line-height: 1.12;
+        }
+
         .info-box {
             border: 1px solid #000;
             padding: 5px;
@@ -49,7 +61,7 @@ $montantTotalImpots = $detailImpots['total'];
             width: 100%;
             border-collapse: collapse;
             margin: 8px 0;
-            font-size: 8.5pt;
+            font-size: 9.5pt;
         }
 
         .detail-impots td {
