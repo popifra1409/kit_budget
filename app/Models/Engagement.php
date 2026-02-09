@@ -30,8 +30,8 @@ class Engagement extends Model
         'engageable_id',
         'beneficiaire_type',
         'beneficiaire_id',
-        'beneficiaire_fournisseur_id', // Ajouté pour compatibilité
-        'beneficiaire_personnel_id',   // Ajouté pour compatibilité
+        'beneficiaire_fournisseur_id',
+        'beneficiaire_personnel_id',
         'date_engagement',
         'exercice',
         'objet',
@@ -141,9 +141,33 @@ class Engagement extends Model
     /**
      * Relation : Bénéficiaire (polymorphique)
      */
-    public function beneficiaire(): MorphTo
+    // public function beneficiaire()
+    // {
+    //     if ($this->beneficiaire_type === 'fournisseur') {
+    //         return $this->beneficiaireFournisseur();
+    //     }
+
+    //     if ($this->beneficiaire_type === 'personnel') {
+    //         return $this->beneficiairePersonnel();
+    //     }
+
+    //     return null;
+    // }
+
+    /**
+     * ✅ Méthode pour obtenir le bénéficiaire (pas une relation)
+     */
+    public function getBeneficiaire()
     {
-        return $this->morphTo();
+        if ($this->beneficiaire_type === 'fournisseur') {
+            return $this->beneficiaireFournisseur;
+        }
+
+        if ($this->beneficiaire_type === 'personnel') {
+            return $this->beneficiairePersonnel;
+        }
+
+        return null;
     }
 
     /**
@@ -159,7 +183,7 @@ class Engagement extends Model
      */
     public function beneficiairePersonnel(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'beneficiaire_personnel_id');
+        return $this->belongsTo(Personnel::class, 'beneficiaire_personnel_id');
     }
 
     /**
@@ -397,7 +421,7 @@ class Engagement extends Model
 
         return match ($this->beneficiaire_type) {
             'App\Models\Fournisseur' => $this->beneficiaire->raison_sociale ?? 'N/A',
-            'App\Models\User' => $this->beneficiaire->name ?? 'N/A',
+            'App\Models\Personnel' => $this->beneficiaire->name ?? 'N/A',
             default => 'Inconnu',
         };
     }

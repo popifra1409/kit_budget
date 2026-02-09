@@ -528,11 +528,11 @@ class BonCommande extends Model
 
         // ✅ Remplacer BC par ENG dans le numéro
         // BC26-00001 → ENG26-00001
-        $numeroEngagement = str_replace('BC', 'ENG', $this->numero);
+        $numeroEngagement = str_replace('BC', 'BE', $this->numero);
 
         // Si le remplacement n'a pas fonctionné (cas improbable)
         if ($numeroEngagement === $this->numero) {
-            $numeroEngagement = 'ENG-' . $this->numero;
+            $numeroEngagement = 'BE-' . $this->numero;
         }
 
         // Vérifier l'unicité et ajouter un suffixe si nécessaire
@@ -637,7 +637,7 @@ class BonCommande extends Model
      */
     public function engagerBudget(?array $verifications = null): Engagement
     {
-        // ✅ Vérifications préalables simples
+        // ✅ Vérifications préalables
         if ($this->statut !== 'valide') {
             throw new \Exception("Le bon de commande doit être validé avant d'être engagé.");
         }
@@ -658,9 +658,6 @@ class BonCommande extends Model
                 $verifications = $this->verifierDisponibiliteBudgetaire();
             }
 
-            // ✅ CETTE VÉRIFICATION EST MAINTENANT FAITE DANS L'ACTION
-            // On suppose que si on arrive ici, c'est validé
-            // Mais on garde quand même une sécurité
             if (!$verifications['peut_engager']) {
                 $details = [];
                 foreach ($verifications['lignes_budgetaires'] as $ligne) {
@@ -677,8 +674,8 @@ class BonCommande extends Model
                 );
             }
 
-            // ✅ Créer l'engagement
-            $engagement = \App\Models\Engagement::create([
+            // ✅ Préparer les données de l'engagement
+            $engagementData = [
                 'numero' => $this->genererNumeroEngagement(),
                 'exercice_id' => $this->exercice_id,
                 'budget_id' => $this->budget_id,
@@ -692,15 +689,19 @@ class BonCommande extends Model
                 'reference_document' => $this->numero,
                 'statut' => 'provisoire',
                 'created_by' => auth()->id(),
-            ]);
+            ];
 
-            // ✅ Déterminer le bénéficiaire
+            // ✅ DÉFINIR LE BÉNÉFICIAIRE AVANT LA CRÉATION
             if ($this->fournisseur_id) {
-                $engagement->beneficiaire_fournisseur_id = $this->fournisseur_id;
-                $engagement->type_beneficiaire = 'fournisseur';
+                $engagementData['beneficiaire_id'] = $this->fournisseur_id;
+                $engagementData['beneficiaire_type'] = 'fournisseur';
+            } else {
+                // Si pas de fournisseur, utiliser un bénéficiaire par défaut
+                $engagementData['beneficiaire_type'] = 'autre';
             }
 
-            $engagement->save();
+            // ✅ Créer l'engagement avec toutes les données
+            $engagement = \App\Models\Engagement::create($engagementData);
 
             // ✅ Engager les crédits sur chaque ligne budgétaire
             foreach ($verifications['lignes_budgetaires'] as $verification) {
