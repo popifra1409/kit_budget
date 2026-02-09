@@ -1,3 +1,5 @@
+{{-- resources/views/pdf/engagement/autorisation-engagement.blade.php --}}
+
 @extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
 
 @section('footer_override')
@@ -20,28 +22,21 @@
     $objectif = null;
 
     if ($nomenclature) {
-        // Essayer de récupérer une tâche liée
         $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
 
         if ($tache) {
-            // Charger toute la hiérarchie
             $tache->load('activite.action.programme');
 
             $activite = $tache->activite;
             $action = $activite?->action;
             $programme = $action?->programme;
 
-            // ✅ Récupérer l'objectif (gestion collection)
-        if ($programme) {
-            try {
-                // Tentative 1 : Relation HasOne au singulier
-                if (method_exists($programme, 'objectifPrincipal')) {
-                    $objectif = $programme->objectifPrincipal;
-                }
-                // Tentative 2 : Relation HasMany au pluriel
-                elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                    $objectifs = $programme->objectifsPrincipaux;
-                    // Si c'est une collection, prendre le premier
+            if ($programme) {
+                try {
+                    if (method_exists($programme, 'objectifPrincipal')) {
+                        $objectif = $programme->objectifPrincipal;
+                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                        $objectifs = $programme->objectifsPrincipaux;
                         if ($objectifs instanceof \Illuminate\Support\Collection) {
                             $objectif = $objectifs->first();
                         } else {
@@ -58,6 +53,7 @@
             }
         }
     }
+    $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 @endphp
 
 @section('title', 'Autorisation d\'Engagement')
@@ -178,9 +174,9 @@
         <strong>Objet:</strong> {{ $engagement->objet ?? 'N/A' }}
     </div>
 
+    {{-- ✅ CORRIGER LIGNE 182 - Utiliser la variable calculée --}}
     <div class="info-line">
-        <strong>Bénéficiaire:</strong>
-        {{ $engagement->beneficiaire->raison_sociale ?? ($engagement->beneficiaire->name ?? 'N/A') }}
+        <strong>Bénéficiaire:</strong> {{ $nomBeneficiaire }}
     </div>
 
     {{-- Imputation --}}
@@ -214,8 +210,7 @@
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'N/A' }}
-            </td>
+            <td>{{ $objectif?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>ACTION:</th>

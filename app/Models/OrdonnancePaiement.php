@@ -29,14 +29,12 @@ class OrdonnancePaiement extends Model
         'montant_impot',
         'montant_net',
         'montant_pec',
-        // ✅ AJOUT : Détail des impôts
         'montant_tva',
         'montant_ir',
         'montant_tsr',
         'montant_cnps',
         'montant_irnc',
         'montant_autres_taxes',
-        // Fin ajout
         'date_emission',
         'mois_emission',
         'numero_bon',

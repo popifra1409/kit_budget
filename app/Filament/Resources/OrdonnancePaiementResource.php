@@ -135,13 +135,12 @@ class OrdonnancePaiementResource extends Resource
                                 $set('montant_net', $brut - $state);
                             }),
 
-                        Forms\Components\TextInput::make('montant_net')
-                            ->label('Montant net à payer')
-                            ->numeric()
-                            ->prefix('FCFA')
-                            ->required()
-                            ->disabled()
-                            ->dehydrated(),
+                        Tables\Columns\TextColumn::make('montant_ordonnance')
+                            ->label('Montant')
+                            ->money('XAF')
+                            ->sortable()
+                            ->weight('bold')
+                            ->color('success'),
 
                         Forms\Components\TextInput::make('montant_pec')
                             ->label('Montant PEC Médical')

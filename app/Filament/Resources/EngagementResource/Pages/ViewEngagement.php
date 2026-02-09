@@ -19,56 +19,155 @@ class ViewEngagement extends ViewRecord
             Actions\EditAction::make()
                 ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
 
+            // =============================================
+            // ✅ ACTION : VALIDER (PASSER DÉFINITIF)
+            // =============================================
             Actions\Action::make('valider')
-                ->label('Valider (Définitif)')
-                ->icon('heroicon-o-check-circle')
+                ->label('Passer définitif')
+                ->icon('heroicon-o-check-badge')
                 ->color('success')
                 ->visible(fn($record) => $record->statut === 'provisoire')
                 ->requiresConfirmation()
-                ->modalHeading('Valider l\'engagement')
+                ->modalHeading('Passer l\'engagement en définitif')
                 ->modalDescription(
                     fn($record) =>
-                    "Passer l'engagement {$record->numero} en statut définitif ?\n" .
-                        "Montant: " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA"
+                    "Voulez-vous passer l'engagement {$record->numero} en statut définitif ?\n" .
+                        "Montant: " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA\n\n" .
+                        "Cette action est irréversible."
                 )
                 ->action(function ($record) {
-                    $record->statut = 'definitif';
-                    $record->save();
+                    try {
+                        $record->passerDefinitif(auth()->user());
 
-                    Notification::make()
-                        ->title('Engagement validé')
-                        ->success()
-                        ->body('L\'engagement est maintenant définitif')
-                        ->send();
+                        Notification::make()
+                            ->title('✅ Engagement passé en définitif')
+                            ->success()
+                            ->body("L'engagement {$record->numero} est maintenant définitif. Vous pouvez créer les ordonnances de paiement.")
+                            ->send();
+
+                        return redirect()->route('filament.admin.resources.engagements.view', ['record' => $record]);
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Erreur')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->send();
+                    }
                 }),
 
+            // =============================================
+            // ✅ ACTION : CRÉER LES ORDONNANCES DE PAIEMENT
+            // =============================================
+            Actions\Action::make('creer_ordonnances')
+                ->label('Créer les OP')
+                ->icon('heroicon-o-document-currency-dollar')
+                ->color('primary')
+                ->visible(function ($record) {
+                    return $record->statut === 'definitif'
+                        && !$record->hasOrdonnancesPaiement();
+                })
+                ->requiresConfirmation()
+                ->modalHeading('Créer les ordonnances de paiement')
+                ->modalDescription(
+                    fn($record) =>
+                    "Voulez-vous créer les ordonnances de paiement pour l'engagement {$record->numero} ?\n\n" .
+                        "Montant total : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA"
+                )
+                ->modalContent(function ($record) {
+                    // ✅ Utiliser la méthode du modèle pour extraire TOUS les montants
+                    $donnees = $record->extraireDonneesDocument();
+
+                    return view('filament.modals.recap-ordonnances', [
+                        'engagement' => $record,
+                        'donnees' => $donnees,
+                    ]);
+                })
+                ->modalWidth('3xl')
+                ->action(function ($record) {
+                    try {
+                        $ordonnances = $record->creerOrdonnancesPaiement();
+
+                        $message = "✅ Ordonnances créées avec succès :\n\n";
+
+                        if (isset($ordonnances['standard'])) {
+                            $message .= "• OP Standard : {$ordonnances['standard']->numero}\n";
+                            $message .= "  Montant : " . number_format($ordonnances['standard']->montant_ordonnance, 0, ',', ' ') . " FCFA\n\n";
+                        }
+
+                        if (isset($ordonnances['impot'])) {
+                            $message .= "• OP Impôt : {$ordonnances['impot']->numero}\n";
+                            $message .= "  Montant : " . number_format($ordonnances['impot']->montant_ordonnance, 0, ',', ' ') . " FCFA";
+                        }
+
+                        Notification::make()
+                            ->title('Ordonnances créées')
+                            ->success()
+                            ->body($message)
+                            ->duration(10000)
+                            ->send();
+
+                        return redirect()->route('filament.admin.resources.engagements.view', ['record' => $record]);
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Erreur lors de la création des ordonnances')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
+            // =============================================
+            // ✅ ACTION : VOIR LES ORDONNANCES (si elles existent)
+            // =============================================
+            Actions\Action::make('voir_ordonnances')
+                ->label('Voir les OP')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->visible(fn($record) => $record->hasOrdonnancesPaiement())
+                ->modalHeading(fn($record) => "Ordonnances de paiement - {$record->numero}")
+                ->modalContent(function ($record) {
+                    // ✅ Charger la relation polymorphique 'beneficiaire'
+                    $ordonnances = $record->ordonnancesPaiement()->with('beneficiaire')->get();
+
+                    return view('filament.modals.ordonnances-list', [
+                        'ordonnances' => $ordonnances,
+                        'engagement' => $record,
+                    ]);
+                })
+                ->modalWidth('5xl')
+                ->modalSubmitActionLabel(false)
+                ->modalCancelActionLabel('Fermer'),
+
+            // =============================================
+            // ✅ ACTION : ANNULER
+            // =============================================
             Actions\Action::make('annuler')
                 ->label('Annuler')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn($record) => $record->statut !== 'annule' && $record->peutEtreAnnule())
+                ->visible(fn($record) => $record->statut === 'provisoire' && $record->peutEtreAnnule())
                 ->requiresConfirmation()
                 ->modalHeading('Annuler l\'engagement')
                 ->modalDescription('Confirmer l\'annulation de cet engagement ? Le budget sera libéré.')
                 ->action(function ($record) {
                     try {
-                        // ✅ SOLUTION 1 : Utiliser la méthode annuler() du modèle (RECOMMANDÉ)
                         $record->annuler();
 
                         Notification::make()
-                            ->title('Engagement annulé')
+                            ->title('✅ Engagement annulé')
                             ->success()
                             ->body("L'engagement {$record->numero} a été annulé. Le budget a été libéré.")
                             ->send();
+
+                        return redirect()->route('filament.admin.resources.engagements.index');
                     } catch (\Exception $e) {
                         Notification::make()
-                            ->title('Erreur lors de l\'annulation')
+                            ->title('❌ Erreur lors de l\'annulation')
                             ->danger()
                             ->body($e->getMessage())
                             ->persistent()
                             ->send();
-
-                        throw $e;
                     }
                 }),
         ];
@@ -81,17 +180,23 @@ class ViewEngagement extends ViewRecord
                 Infolists\Components\Section::make('Informations générales')
                     ->schema([
                         Infolists\Components\TextEntry::make('numero')
-                            ->label('Numéro'),
+                            ->label('Numéro')
+                            ->weight('bold')
+                            ->copyable(),
                         Infolists\Components\TextEntry::make('reference_document')
-                            ->label('Référence document'),
+                            ->label('Référence document')
+                            ->placeholder('Aucune'),
                         Infolists\Components\TextEntry::make('type_engagement')
-                            ->label('Type'),
+                            ->label('Type')
+                            ->badge(),
                         Infolists\Components\TextEntry::make('date_engagement')
                             ->label('Date engagement')
                             ->date('d/m/Y'),
                         Infolists\Components\TextEntry::make('montant_engage')
                             ->label('Montant engagé')
-                            ->money('XAF'),
+                            ->money('XAF')
+                            ->weight('bold')
+                            ->color('success'),
                         Infolists\Components\TextEntry::make('statut')
                             ->label('Statut')
                             ->badge()
@@ -100,18 +205,27 @@ class ViewEngagement extends ViewRecord
                                 'definitif' => 'success',
                                 'annule' => 'danger',
                                 default => 'gray',
+                            })
+                            ->formatStateUsing(fn(string $state): string => match ($state) {
+                                'provisoire' => 'Provisoire',
+                                'definitif' => 'Définitif',
+                                'annule' => 'Annulé',
+                                default => $state,
                             }),
                     ])
                     ->columns(3),
 
                 Infolists\Components\Section::make('Budget et nomenclature')
                     ->schema([
-                        Infolists\Components\TextEntry::make('budget.nom')
+                        Infolists\Components\TextEntry::make('budget.libelle')
                             ->label('Budget'),
                         Infolists\Components\TextEntry::make('exercice.annee')
-                            ->label('Exercice'),
+                            ->label('Exercice')
+                            ->badge(),
                         Infolists\Components\TextEntry::make('nomenclaturePrincipale.code')
-                            ->label('Code nomenclature'),
+                            ->label('Code nomenclature')
+                            ->badge()
+                            ->color('warning'),
                         Infolists\Components\TextEntry::make('nomenclaturePrincipale.libelle')
                             ->label('Libellé nomenclature')
                             ->columnSpanFull(),
@@ -122,10 +236,15 @@ class ViewEngagement extends ViewRecord
                     ->schema([
                         Infolists\Components\TextEntry::make('beneficiaire_type')
                             ->label('Type de bénéficiaire')
-                            ->formatStateUsing(fn($state) => class_basename($state)),
-                        Infolists\Components\TextEntry::make('beneficiaire.name')
+                            ->formatStateUsing(fn($state) => match ($state) {
+                                'App\Models\Fournisseur' => 'Fournisseur',
+                                'App\Models\Personnel' => 'Personnel',
+                                'App\Models\User' => 'Utilisateur',
+                                default => class_basename($state ?? ''),
+                            }),
+                        Infolists\Components\TextEntry::make('beneficiaire_nom')
                             ->label('Nom')
-                            ->default(fn($record) => $record->beneficiaire->raison_sociale ?? $record->beneficiaire->name ?? 'N/A'),
+                            ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini'),
                     ])
                     ->columns(2),
 
@@ -133,20 +252,21 @@ class ViewEngagement extends ViewRecord
                     ->schema([
                         Infolists\Components\TextEntry::make('engageable_type')
                             ->label('Type de document')
-                            ->formatStateUsing(fn($state) => match (class_basename($state)) {
+                            ->formatStateUsing(fn($state) => match (class_basename($state ?? '')) {
                                 'BonCommande' => 'Bon de commande',
                                 'DecisionAdministrative' => 'Décision administrative',
-                                default => class_basename($state),
-                            }),
+                                default => $state ? class_basename($state) : 'Manuel',
+                            })
+                            ->badge(),
                         Infolists\Components\TextEntry::make('engageable.numero')
-                            ->label('Numéro document'),
+                            ->label('Numéro document')
+                            ->placeholder('N/A'),
                         Infolists\Components\TextEntry::make('objet')
                             ->label('Objet')
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
 
-                // ✅ CORRECTION : Utiliser 'lignes' au lieu de 'lignesEngagement'
                 Infolists\Components\Section::make('Lignes d\'engagement')
                     ->schema([
                         Infolists\Components\RepeatableEntry::make('lignes')
@@ -173,11 +293,17 @@ class ViewEngagement extends ViewRecord
                             ->label('Liste des ordonnances')
                             ->schema([
                                 Infolists\Components\TextEntry::make('numero')
-                                    ->label('Numéro'),
-                                Infolists\Components\TextEntry::make('type')
+                                    ->label('Numéro')
+                                    ->weight('bold'),
+                                Infolists\Components\TextEntry::make('type_ordonnance')
                                     ->label('Type')
-                                    ->badge(),
-                                Infolists\Components\TextEntry::make('montant_brut')
+                                    ->badge()
+                                    ->formatStateUsing(fn($state) => match ($state) {
+                                        'standard' => 'Standard',
+                                        'impot' => 'Impôt',
+                                        default => $state,
+                                    }),
+                                Infolists\Components\TextEntry::make('montant_ordonnance')
                                     ->label('Montant')
                                     ->money('XAF'),
                                 Infolists\Components\TextEntry::make('date_emission')
@@ -187,10 +313,18 @@ class ViewEngagement extends ViewRecord
                                     ->label('Statut')
                                     ->badge()
                                     ->color(fn(string $state): string => match ($state) {
-                                        'emis' => 'success',
-                                        'paye' => 'success',
-                                        'annule' => 'danger',
+                                        'emise' => 'success',
+                                        'visee' => 'info',
+                                        'payee' => 'success',
+                                        'annulee' => 'danger',
                                         default => 'gray',
+                                    })
+                                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                                        'emise' => 'Émise',
+                                        'visee' => 'Visée',
+                                        'payee' => 'Payée',
+                                        'annulee' => 'Annulée',
+                                        default => $state,
                                     }),
                             ])
                             ->columns(5),
@@ -206,6 +340,13 @@ class ViewEngagement extends ViewRecord
                         Infolists\Components\TextEntry::make('updated_at')
                             ->label('Modifié le')
                             ->dateTime('d/m/Y H:i'),
+                        Infolists\Components\TextEntry::make('date_validation')
+                            ->label('Validé le')
+                            ->dateTime('d/m/Y H:i')
+                            ->visible(fn($record) => $record->date_validation),
+                        Infolists\Components\TextEntry::make('engagePar.name')
+                            ->label('Validé par')
+                            ->visible(fn($record) => $record->engage_par),
                     ])
                     ->columns(2)
                     ->collapsible(),

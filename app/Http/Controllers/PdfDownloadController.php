@@ -16,19 +16,12 @@ class PdfDownloadController extends Controller
     public function telecharger(Request $request, string $etat, int $id)
     {
         $modelMap = [
-            // États liés aux Engagements individuels
             'certificat_engagement' => Engagement::class,
             'autorisation_engagement' => Engagement::class,
             'fiche_performance' => Engagement::class,
-
-            // État lié au Bordereau (liste des engagements)
             'bordereau_engagement' => BordereauEngagement::class,
-
-            // États liés aux Bons de Commande
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
-
-            // États liés aux Ordonnances de paiement
             'ordonnance_paiement' => OrdonnancePaiement::class,
             'ordonnance_paiement_impot' => OrdonnancePaiement::class,
         ];
@@ -44,7 +37,8 @@ class PdfDownloadController extends Controller
             $record = $model::with([
                 'budget',
                 'validateur',
-                'engagements.beneficiaire',
+                'engagements.beneficiaireFournisseur',
+                'engagements.beneficiairePersonnel',
                 'engagements.nomenclaturePrincipale',
                 'engagements.lignes',
             ])->findOrFail($id);
@@ -62,11 +56,10 @@ class PdfDownloadController extends Controller
                 'engageable',
             ])->findOrFail($id);
         } elseif ($model === OrdonnancePaiement::class) {
-            // ✅ CORRECTION : Charger engageable au lieu de bonCommande
             $record = $model::with([
                 'engagement.nomenclaturePrincipale',
-                'engagement.engageable.fournisseur', // ✅ engageable au lieu de bonCommande
-                'beneficiaire',
+                'engagement.engageable.fournisseur',
+                'beneficiaire', // ✅ Cette relation est OK si OrdonnancePaiement utilise morphTo
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
             $record = $model::with([
@@ -85,19 +78,12 @@ class PdfDownloadController extends Controller
     public function afficher(Request $request, string $etat, int $id)
     {
         $modelMap = [
-            // États liés aux Engagements individuels
             'certificat_engagement' => Engagement::class,
             'autorisation_engagement' => Engagement::class,
             'fiche_performance' => Engagement::class,
-
-            // État lié au Bordereau (liste des engagements)
             'bordereau_engagement' => BordereauEngagement::class,
-
-            // États liés aux Bons de Commande
             'bon_commande' => BonCommande::class,
             'bon_commande_simple' => BonCommande::class,
-
-            // États liés aux Ordonnances de paiement
             'ordonnance_paiement' => OrdonnancePaiement::class,
             'ordonnance_paiement_impot' => OrdonnancePaiement::class,
         ];
@@ -113,7 +99,9 @@ class PdfDownloadController extends Controller
             $record = $model::with([
                 'budget',
                 'validateur',
-                'engagements.beneficiaire',
+                // ✅ CORRIGER ICI - Ligne 107
+                'engagements.beneficiaireFournisseur',
+                'engagements.beneficiairePersonnel',
                 'engagements.nomenclaturePrincipale',
                 'engagements.lignes',
             ])->findOrFail($id);
@@ -126,16 +114,17 @@ class PdfDownloadController extends Controller
                 'nomenclaturePrincipale.tache.activite',
                 'nomenclaturePrincipale.tache.activite.action',
                 'nomenclaturePrincipale.tache.activite.action.programme',
-                'beneficiaire',
+                // ✅ CORRIGER ICI - Ligne 124
+                'beneficiaireFournisseur',
+                'beneficiairePersonnel',
                 'lignes',
                 'engageable',
             ])->findOrFail($id);
         } elseif ($model === OrdonnancePaiement::class) {
-            // ✅ CORRECTION : Charger engageable au lieu de bonCommande
             $record = $model::with([
                 'engagement.nomenclaturePrincipale',
-                'engagement.engageable.fournisseur', // ✅ engageable au lieu de bonCommande
-                'beneficiaire',
+                'engagement.engageable.fournisseur',
+                'beneficiaire', // ✅ Cette relation est OK
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
             $record = $model::with([
@@ -151,4 +140,3 @@ class PdfDownloadController extends Controller
         return $this->generator->afficher($etat, $record);
     }
 }
-    

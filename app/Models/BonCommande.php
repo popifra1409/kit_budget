@@ -518,7 +518,7 @@ class BonCommande extends Model
 
     /**
      * Générer le numéro d'engagement
-     * Format : ENG26-00001 (adapté du BC26-00001)
+     * Format : BE26-00001 (adapté du BC26-00001)
      */
     protected function genererNumeroEngagement(): string
     {
@@ -526,8 +526,8 @@ class BonCommande extends Model
             throw new \Exception('Le bon de commande n\'a pas de numéro');
         }
 
-        // ✅ Remplacer BC par ENG dans le numéro
-        // BC26-00001 → ENG26-00001
+        // ✅ Remplacer BC par BE dans le numéro
+        // BC26-00001 → BE26-00001
         $numeroEngagement = str_replace('BC', 'BE', $this->numero);
 
         // Si le remplacement n'a pas fonctionné (cas improbable)
@@ -688,13 +688,13 @@ class BonCommande extends Model
                 'objet' => $this->objet,
                 'reference_document' => $this->numero,
                 'statut' => 'provisoire',
-                'created_by' => auth()->id(),
+                'engage_par' => auth()->id(),
             ];
 
             // ✅ DÉFINIR LE BÉNÉFICIAIRE AVANT LA CRÉATION
             if ($this->fournisseur_id) {
+                $engagementData['beneficiaire_type'] = \App\Models\Fournisseur::class;
                 $engagementData['beneficiaire_id'] = $this->fournisseur_id;
-                $engagementData['beneficiaire_type'] = 'fournisseur';
             } else {
                 // Si pas de fournisseur, utiliser un bénéficiaire par défaut
                 $engagementData['beneficiaire_type'] = 'autre';

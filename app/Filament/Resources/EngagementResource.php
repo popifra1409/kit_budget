@@ -376,7 +376,7 @@ class EngagementResource extends Resource
 
                 Tables\Columns\TextColumn::make('beneficiaire')
                     ->label('Bénéficiaire')
-                    ->formatStateUsing(fn($record) => $record->getNomBeneficiaire())
+                    ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini')
                     ->searchable()
                     ->limit(30),
 

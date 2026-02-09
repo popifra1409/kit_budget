@@ -17,6 +17,7 @@ use App\Models\BonCommande;
 use App\Observers\BonCommandeObserver;
 use App\Models\PieceDossier;
 use App\Observers\PieceDossierObserver;
+use Illuminate\Database\Eloquent\Relations\Relation;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -37,6 +38,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // ✅ Mapper les types courts vers les classes complètes
+        Relation::enforceMorphMap([
+            // Documents
+            'bon_commande' => \App\Models\BonCommande::class,
+            'engagement'   => \App\Models\Engagement::class,
+            'ordonnance'   => \App\Models\OrdonnancePaiement::class,
+            //Bénificiare
+            'fournisseur' => \App\Models\Fournisseur::class,
+            'personnel' => \App\Models\Personnel::class,
+            //système
+            'App\Models\User' => \App\Models\User::class,
+            'user'            => \App\Models\User::class,
+        ]);
+
         LignePrevisionRecette::observe(LignePrevisionRecetteObserver::class);
         // Enregistrer l'observer BonCommande
         BonCommande::observe(BonCommandeObserver::class);

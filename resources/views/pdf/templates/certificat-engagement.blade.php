@@ -1,3 +1,5 @@
+{{-- resources/views/pdf/engagement/certificat-engagement.blade.php --}}
+
 @extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
 
 @section('footer_override')
@@ -12,6 +14,10 @@
     $engagement->load(['nomenclaturePrincipale', 'beneficiaire', 'exercice']);
 
     $nomenclature = $engagement->nomenclaturePrincipale;
+
+    // Récupérer les données du bon
+    $bonCommande = $donnees['_raw'];
+    $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
 
     $tache = null;
     $activite = null;
@@ -30,34 +36,29 @@
             $programme = $action?->programme;
 
             if ($programme) {
-                // ✅ Essayer différentes façons de récupérer l'objectif
-            try {
-                // Tentative 1 : Relation HasOne au singulier
-                if (method_exists($programme, 'objectifPrincipal')) {
-                    $objectif = $programme->objectifPrincipal;
-                }
-                // Tentative 2 : Relation HasMany au pluriel, prendre le premier
-                elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                    $objectifs = $programme->objectifsPrincipaux;
-                    // Si c'est une collection
+                try {
+                    if (method_exists($programme, 'objectifPrincipal')) {
+                        $objectif = $programme->objectifPrincipal;
+                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                        $objectifs = $programme->objectifsPrincipaux;
                         if ($objectifs instanceof \Illuminate\Support\Collection) {
                             $objectif = $objectifs->first();
+                        } else {
+                            $objectif = $objectifs;
                         }
-                        // Si c'est déjà un modèle unique
-                    else {
-                        $objectif = $objectifs;
                     }
-                }
-            } catch (\Exception $e) {
-                \Log::warning('Erreur récupération objectif', [
-                    'programme_id' => $programme->id,
-                    'error' => $e->getMessage(),
+                } catch (\Exception $e) {
+                    \Log::warning('Erreur récupération objectif', [
+                        'programme_id' => $programme->id,
+                        'error' => $e->getMessage(),
                     ]);
                     $objectif = null;
                 }
             }
         }
     }
+
+    $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 @endphp
 
 @section('title', 'Certificat d\'Engagement')
@@ -143,7 +144,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Référence:</strong> {{ $engagement->numero ?? 'BON DE COMMANDE' }}
+        <strong>Référence:</strong> {{ $numeroBca ?? 'BON DE COMMANDE' }}
     </div>
 
     <div class="info-line">
@@ -159,9 +160,9 @@
         <strong>Objet:</strong> {{ $engagement->objet }}
     </div>
 
+    {{-- ✅ CORRIGER ICI - Utiliser la variable calculée --}}
     <div class="info-line">
-        <strong>Bénéficiaire:</strong>
-        {{ $engagement->beneficiaire->raison_sociale ?? ($engagement->beneficiaire->name ?? 'N/A') }}
+        <strong>Bénéficiaire:</strong> {{ $nomBeneficiaire }}
     </div>
 
     {{-- Imputation --}}
@@ -191,8 +192,7 @@
         </tr>
         <tr>
             <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'N/A' }}
-            </td>
+            <td>{{ $objectif?->libelle ?? 'N/A' }}</td>
         </tr>
         <tr>
             <th>ACTION:</th>
