@@ -56,17 +56,36 @@ class OrdonnancePaiement extends Model
         'montant_impot' => 'decimal:2',
         'montant_net' => 'decimal:2',
         'montant_pec' => 'decimal:2',
-        // ✅ AJOUT : Casts pour les impôts
         'montant_tva' => 'decimal:2',
         'montant_ir' => 'decimal:2',
         'montant_tsr' => 'decimal:2',
         'montant_cnps' => 'decimal:2',
         'montant_irnc' => 'decimal:2',
         'montant_autres_taxes' => 'decimal:2',
-        // Fin ajout
         'metadata' => 'array',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function ($ordonnance) {
+            // ✅ Générer le numéro d'émission automatiquement
+            if (!$ordonnance->numero_emission) {
+                $ordonnance->numero_emission = static::genererNumeroEmission();
+            }
+
+            // Générer le numéro si non défini
+            if (!$ordonnance->numero) {
+                $type = $ordonnance->type_ordonnance ?? 'standard';
+                $ordonnance->numero = static::genererNumero($type);
+            }
+
+            $ordonnance->created_by = auth()->id();
+        });
+
+        static::updating(function ($ordonnance) {
+            $ordonnance->updated_by = auth()->id();
+        });
+    }
     /*
     |--------------------------------------------------------------------------
     | RELATIONS
@@ -186,30 +205,50 @@ class OrdonnancePaiement extends Model
      */
     public function getDetailImpots(): array
     {
-        $bonCommande = $this->bonCommande;
+        // Charger l'engagement si nécessaire
+        if (!$this->relationLoaded('engagement')) {
+            $this->load('engagement.engageable');
+        }
 
-        // Si on a un BC, utiliser ses montants (source de vérité)
-        if ($bonCommande) {
+        $engagement = $this->engagement;
+
+        if (!$engagement || !$engagement->engageable) {
             return [
-                'tva' => (float) ($bonCommande->montant_tva ?? 0),
-                'ir' => (float) ($bonCommande->montant_ir ?? 0),
-                'tsr' => (float) ($bonCommande->montant_tsr ?? 0),
-                'cnps' => (float) ($bonCommande->montant_cnps ?? 0),
-                'irnc' => (float) ($bonCommande->montant_irnc ?? 0),
-                'autres' => (float) ($bonCommande->montant_autres_taxes ?? 0),
-                'total' => $bonCommande->calculerMontantTotalImpots(),
+                'ir' => 0,
+                'tva' => 0,
+                'tsr' => 0,
+                'cnps' => 0,
+                'irnc' => 0,
+                'autres' => 0,
+                'total' => 0,
             ];
         }
 
-        // Sinon utiliser les montants de l'ordonnance
+        // Extraire les données depuis l'engagement
+        $donnees = $engagement->extraireDonneesDocument();
+
+        $ir = $donnees['montant_ir'] ?? 0;
+        $tva = $donnees['montant_tva'] ?? 0;
+        $tsr = $donnees['montant_tsr'] ?? 0;
+        $cnps = $donnees['montant_cnps'] ?? 0;
+        $irnc = $donnees['montant_irnc'] ?? 0;
+        $autres = $donnees['autres_retenues'] ?? 0;
+
+        // Calculer le total selon le type de document
+        if ($engagement->estBonCommande()) {
+            $total = $ir + $tva + $tsr;
+        } else {
+            $total = $ir + $cnps + $irnc + $autres;
+        }
+
         return [
-            'tva' => (float) ($this->montant_tva ?? 0),
-            'ir' => (float) ($this->montant_ir ?? 0),
-            'tsr' => (float) ($this->montant_tsr ?? 0),
-            'cnps' => (float) ($this->montant_cnps ?? 0),
-            'irnc' => (float) ($this->montant_irnc ?? 0),
-            'autres' => (float) ($this->montant_autres_taxes ?? 0),
-            'total' => $this->calculerMontantTotalImpots(),
+            'ir' => $ir,
+            'tva' => $tva,
+            'tsr' => $tsr,
+            'cnps' => $cnps,
+            'irnc' => $irnc,
+            'autres' => $autres,
+            'total' => $total,
         ];
     }
 

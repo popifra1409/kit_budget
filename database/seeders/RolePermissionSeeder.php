@@ -33,22 +33,24 @@ class RolePermissionSeeder extends Seeder
             'fournisseur',
             'memoire_depense',
             'nomenclature_budgetaire',
-            'ordonnance_paiement',        
+            'ordonnance_paiement',
             'parametres_fournisseur',
             'parametres_structure',
             'permission',
-            'personnel',                   
+            'personnel',
             'piece_dossier',
             'prevision_recette',
             'programme',
             'recette_reelle',
             'reference_mercuriale',
-            'regime_fiscal',               
+            'regime_fiscal',
             'role',
             'service',
             'tache',
             'transmission',
-            'type_engagement',           
+            'type_engagement',
+            'type_decision',
+            'type_engagement',
             'user',
             'virement_budgetaire',
         ];
@@ -203,6 +205,12 @@ class RolePermissionSeeder extends Seeder
             'create_engagement',
             'view_engagement',
             'view_any_engagement',
+            'view_any_type_decision',
+            'view_type_decision',
+
+            //Decision
+            'view_any_type_decision',
+            'view_type_decision',
 
             // Bon de commande
             'create_bon_commande',
@@ -251,6 +259,12 @@ class RolePermissionSeeder extends Seeder
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+            'view_any_type_decision',
+            'view_type_decision',
+
+            //Decision
+            'view_any_type_decision',
+            'view_type_decision',
 
             // Bons de commande
             'view_any_bon_commande',
@@ -301,6 +315,12 @@ class RolePermissionSeeder extends Seeder
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+            'view_any_type_decision',
+            'view_type_decision',
+
+            //Decision
+            'view_any_type_decision',
+            'view_type_decision',
 
             // Bons de commande
             'view_any_bon_commande',
@@ -349,6 +369,12 @@ class RolePermissionSeeder extends Seeder
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+            'view_any_type_decision',
+            'view_type_decision',
+
+            //Decision
+            'view_any_type_decision',
+            'view_type_decision',
 
             // Bons de commande
             'view_any_bon_commande',
@@ -454,6 +480,12 @@ class RolePermissionSeeder extends Seeder
             'view_any_engagement',
             'view_engagement',
             'valider_engagement',
+            'view_any_type_decision',
+            'view_type_decision',
+
+            //Decision
+            'view_any_type_decision',
+            'view_type_decision',
 
             // Bons de commande
             'view_any_bon_commande',

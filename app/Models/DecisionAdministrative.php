@@ -11,6 +11,7 @@ use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Exceptions\CreditBudgetaireInsuffisantException;
+use Illuminate\Support\Facades\DB;
 
 class DecisionAdministrative extends Model
 {
@@ -26,7 +27,7 @@ class DecisionAdministrative extends Model
         'nom_personnel',
         'matricule',
         'fonction',
-        'type_decision',
+        'type_decision_id',
         'date_decision',
         'date_effet',
         'date_fin',
@@ -44,6 +45,7 @@ class DecisionAdministrative extends Model
         'statut',
         'validee_par',
         'date_validation',
+        //'engagement_id',
         'engagee',
         'montant_engage',
         'date_engagement',
@@ -139,11 +141,19 @@ class DecisionAdministrative extends Model
     }
 
     /**
+     * Relation : Type de décision
+     */
+    public function typeDecision()
+    {
+        return $this->belongsTo(TypeDecision::class, 'type_decision_id');
+    }
+
+    /**
      * Relation : Personnel
      */
     public function personnel(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'personnel_id');
+        return $this->belongsTo(Personnel::class, 'personnel_id');
     }
 
     /**
@@ -190,23 +200,26 @@ class DecisionAdministrative extends Model
      * Générer le numéro de décision
      * Format: DA-YYYY-XXXXX
      */
-    public function genererNumero(): string
+    public static function genererNumero(): string
     {
         $annee = now()->year;
-        $dernier = self::where('numero', 'like', "DA-{$annee}-%")
+        $anneeCourte = substr($annee, -2);
+
+        $prefixe = "DA{$anneeCourte}-";
+
+        // Trouver le dernier numéro de l'année
+        $dernier = static::where('numero', 'like', "{$prefixe}%")
             ->orderBy('numero', 'desc')
             ->first();
 
-        if ($dernier) {
-            $dernierNumero = intval(substr($dernier->numero, -5));
-            $nouveauNumero = $dernierNumero + 1;
+        if ($dernier && preg_match('/DA\d{2}-(\d+)/', $dernier->numero, $matches)) {
+            $sequence = intval($matches[1]) + 1;
         } else {
-            $nouveauNumero = 1;
+            $sequence = 1;
         }
 
-        return sprintf('DA-%d-%05d', $annee, $nouveauNumero);
+        return sprintf('DA%s-%05d', $anneeCourte, $sequence);
     }
-
 
     /**
      * Calculer les montants (CNPS, IRNC, autres retenues, net)
@@ -278,31 +291,61 @@ class DecisionAdministrative extends Model
                 );
             }
 
+            // ✅ Générer le numéro d'abord
+            $numeroEngagement = Engagement::genererNumero();
+
+            \Log::info("Création engagement", [
+                'da_numero' => $this->numero,
+                'numero_engagement' => $numeroEngagement,
+                'montant' => $this->montant_net,
+            ]);
+
             // Créer l'engagement
             $engagement = Engagement::create([
+                'numero' => $numeroEngagement,
+                'exercice_id' => $this->exercice_id,
                 'budget_id' => $this->budget_id,
-                'type_engagement' => $this->type_decision, // Type: prime, mission, formation, etc.
+                'type_engagement' => 'decision_administrative',
                 'nomenclature_principale_id' => $nomenclatureId,
                 'reference_document' => $this->numero,
-                'engageable_type' => self::class,
+                'engageable_type' => 'decision_administrative',
                 'engageable_id' => $this->id,
-                'beneficiaire_type' => $this->personnel_id ? User::class : null,
+                'beneficiaire_type' => 'App\Models\Personnel',
                 'beneficiaire_id' => $this->personnel_id,
                 'date_engagement' => now(),
-                'exercice' => now()->year,
+                'exercice' => $this->exercice?->annee ?? now()->year,
                 'objet' => $this->objet,
                 'montant_engage' => $this->montant_net,
                 'statut' => 'provisoire',
+                'created_by' => auth()->id(),
+            ]);
+
+            // ✅ Vérifier que l'engagement a bien été créé
+            if (!$engagement || !$engagement->id) {
+                throw new \Exception("Erreur lors de la création de l'engagement");
+            }
+
+            // ✅ Rafraîchir pour avoir toutes les données
+            $engagement->refresh();
+
+            \Log::info("Engagement créé avec succès", [
+                'id' => $engagement->id,
+                'numero' => $engagement->numero,
+                'montant' => $engagement->montant_engage,
             ]);
 
             // Créer la ligne d'engagement
-            LigneEngagement::create([
+            $ligneEngagement = LigneEngagement::create([
                 'engagement_id' => $engagement->id,
                 'nomenclature_id' => $nomenclatureId,
                 'numero_ligne' => 1,
                 'libelle' => $this->objet,
                 'montant' => $this->montant_net,
             ]);
+
+            if (!$ligneEngagement || !$ligneEngagement->id) {
+                throw new \Exception("Erreur lors de la création de la ligne d'engagement");
+            }
 
             // Engager la ligne budgétaire
             $ligneBudgetaire->enregistrerEngagement($this->montant_net);
@@ -311,12 +354,27 @@ class DecisionAdministrative extends Model
             $this->engagee = true;
             $this->montant_engage = $this->montant_net;
             $this->date_engagement = now();
+            //$this->engagement_id = $engagement->id;
             $this->statut = 'engagee';
             $this->save();
 
             \DB::commit();
+
+            \Log::info("Engagement créé depuis DA", [
+                'da_numero' => $this->numero,
+                'engagement_numero' => $engagement->numero,
+                'montant' => $this->montant_net,
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
+
+            \Log::error("Erreur lors de l'engagement", [
+                'da_id' => $this->id,
+                'da_numero' => $this->numero,
+                'erreur' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             throw $e;
         }
     }
@@ -487,8 +545,7 @@ class DecisionAdministrative extends Model
             'statut' => 'en_attente',
             'priorite' => $metadata['priorite'] ?? 'normale',
             'date_limite' => $metadata['date_limite'] ?? null,
-            'date_transmission' => now(), // ✅ OBLIGATOIRE
-            'metadata' => $metadata,
+            'date_transmission' => now(),
         ]);
 
         $transmission->save();

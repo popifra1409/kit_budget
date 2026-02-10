@@ -177,25 +177,23 @@ class ViewDecisionAdministrative extends ViewRecord
 
                 Infolists\Components\Section::make('Personnel concerné')
                     ->schema([
-                        Infolists\Components\TextEntry::make('personnel.name')
+                        Infolists\Components\TextEntry::make('personnel.nom_complet')
                             ->label('Nom')
-                            ->default(fn($record) => $record->nom_personnel)
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                            ->default('Non renseigné')
                             ->weight('bold'),
 
-                        Infolists\Components\TextEntry::make('matricule')
+                        Infolists\Components\TextEntry::make('personnel.matricule')
                             ->label('Matricule')
-                            ->placeholder('Non renseigné'),
+                            ->badge(),
 
-                        Infolists\Components\TextEntry::make('fonction')
-                            ->label('Fonction')
-                            ->placeholder('Non renseignée'),
+                        Infolists\Components\TextEntry::make('personnel.fonction')
+                            ->label('Fonction'),
 
-                        Infolists\Components\TextEntry::make('personnel.email')
-                            ->label('Email')
-                            ->placeholder('Non renseigné'),
+                        Infolists\Components\TextEntry::make('personnel.service.nom')
+                            ->label('Service'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->visible(fn($record) => $record->personnel_id),
 
                 Infolists\Components\Section::make('Montants')
                     ->schema([

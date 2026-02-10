@@ -208,6 +208,23 @@ class User extends Authenticatable implements FilamentUser
             $query->where('niveau_hierarchique', '<', $monNiveau);
         })->get();
     }
+    /**
+     * Peut transmettre un document à un autre utilisateur
+     * (uniquement vers un supérieur hiérarchique)
+     */
+    public function peutTransmettreA(User $destinataire): bool
+    {
+        return $destinataire->getNiveauHierarchique() > $this->getNiveauHierarchique();
+    }
+
+    /**
+     * Peut retourner un document à un autre utilisateur
+     * (uniquement vers un inférieur hiérarchique)
+     */
+    public function peutRetournerA(User $destinataire): bool
+    {
+        return $destinataire->getNiveauHierarchique() < $this->getNiveauHierarchique();
+    }
 
     // ========================================
     // RELATIONS BORDEREAUX ENGAGEMENT

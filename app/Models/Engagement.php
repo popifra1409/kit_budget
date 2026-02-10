@@ -89,7 +89,7 @@ class Engagement extends Model
      */
     public function engageable(): MorphTo
     {
-        return $this->morphTo();
+        return $this->morphTo('engageable', 'engageable_type', 'engageable_id');
     }
 
     /**
@@ -125,8 +125,8 @@ class Engagement extends Model
      */
     public function estBonCommande(): bool
     {
-        return $this->engageable_type === \App\Models\BonCommande::class
-            || $this->engageable_type === 'App\Models\BonCommande';
+        return $this->engageable_type === 'bon_commande'
+            || str_contains($this->engageable_type ?? '', 'BonCommande');
     }
 
     /**
@@ -134,9 +134,14 @@ class Engagement extends Model
      */
     public function estDecision(): bool
     {
-        return $this->engageable_type === \App\Models\DecisionAdministrative::class
-            || $this->engageable_type === 'App\Models\DecisionAdministrative';
+        return $this->engageable_type === 'decision_administrative'
+            || str_contains($this->engageable_type ?? '', 'DecisionAdministrative');
     }
+
+    // public function beneficiaire(): MorphTo
+    // {
+    //     return $this->morphTo()->withTrashed();
+    // }
 
     public function beneficiaire()
     {
@@ -246,21 +251,25 @@ class Engagement extends Model
      * Générer le numéro d'engagement
      * Format: BE-YYYY-XXXXX
      */
-    public function genererNumero(): string
+    public static function genererNumero(): string
     {
         $annee = now()->year;
-        $dernier = self::where('numero', 'like', "BE-{$annee}-%")
+        $anneeCourtе = substr($annee, -2);
+
+        $prefixe = "BE{$anneeCourtе}-";
+
+        // Trouver le dernier numéro de l'année
+        $dernier = static::where('numero', 'like', "{$prefixe}%")
             ->orderBy('numero', 'desc')
             ->first();
 
-        if ($dernier) {
-            $dernierNumero = intval(substr($dernier->numero, -5));
-            $nouveauNumero = $dernierNumero + 1;
+        if ($dernier && preg_match('/BE\d{2}-(\d+)/', $dernier->numero, $matches)) {
+            $sequence = intval($matches[1]) + 1;
         } else {
-            $nouveauNumero = 1;
+            $sequence = 1;
         }
 
-        return sprintf('BE-%d-%05d', $annee, $nouveauNumero);
+        return sprintf('BE%s-%05d', $anneeCourtе, $sequence);
     }
 
     /**
@@ -410,7 +419,7 @@ class Engagement extends Model
             }
 
             if ($beneficiaire instanceof \App\Models\User || $beneficiaire instanceof \App\Models\Personnel) {
-                return $beneficiaire->name;
+                return $beneficiaire->nom_complet;
             }
         }
 
@@ -448,6 +457,7 @@ class Engagement extends Model
      * ✅ CRÉER LES ORDONNANCES DE PAIEMENT (Standard + Impôt)
      * Version corrigée avec les bons montants
      */
+
     public function creerOrdonnancesPaiement(): array
     {
         if (!$this->peutCreerOrdonnances()) {
@@ -479,6 +489,7 @@ class Engagement extends Model
             // ===== 1. CRÉER L'OP STANDARD (Bénéficiaire principal) =====
             $opStandard = \App\Models\OrdonnancePaiement::create([
                 'numero' => \App\Models\OrdonnancePaiement::genererNumero('standard'),
+                'numero_emission' => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
                 'type_ordonnance' => 'standard',
                 'engagement_id' => $this->id,
                 'exercice_id' => $this->exercice_id,
@@ -497,51 +508,63 @@ class Engagement extends Model
 
             \Log::info("OP Standard créée", [
                 'numero' => $opStandard->numero,
-                'montant' => $opStandard->montant_ordonnance,
+                'montant' => $opStandard->montant_net,  // ✅ Correction : montant_net au lieu de montant_ordonnance
                 'beneficiaire' => $donnees['beneficiaire']->raison_sociale ?? $donnees['beneficiaire']->name ?? 'N/A',
             ]);
 
             // ===== 2. CRÉER L'OP IMPÔT (TOTAL DE TOUTES LES RETENUES) =====
-            // ✅ Calculer le total des retenues
             $totalRetenues = 0;
             $detailsRetenues = [];
 
             if ($this->estBonCommande()) {
-                // ✅ Pour BC : IR + TVA + TSR
-                $totalRetenues = $donnees['montant_ir']
-                    + $donnees['montant_tva']
-                    + $donnees['montant_tsr'];
+                // ✅ Pour BC : IR + TVA + TSR (avec vérification null)
+                $totalRetenues = ($donnees['montant_ir'] ?? 0)
+                    + ($donnees['montant_tva'] ?? 0)
+                    + ($donnees['montant_tsr'] ?? 0);
 
-                if ($donnees['montant_ir'] > 0) {
+                if (($donnees['montant_ir'] ?? 0) > 0) {
                     $detailsRetenues[] = "IR: " . number_format($donnees['montant_ir'], 0, ',', ' ') . " FCFA";
                 }
-                if ($donnees['montant_tva'] > 0) {
+                if (($donnees['montant_tva'] ?? 0) > 0) {
                     $detailsRetenues[] = "TVA: " . number_format($donnees['montant_tva'], 0, ',', ' ') . " FCFA";
                 }
-                if ($donnees['montant_tsr'] > 0) {
+                if (($donnees['montant_tsr'] ?? 0) > 0) {
                     $detailsRetenues[] = "TSR: " . number_format($donnees['montant_tsr'], 0, ',', ' ') . " FCFA";
                 }
             } else {
-                // ✅ Pour DA et autres : IR + CNPS + IRNC + Autres
-                $totalRetenues = $donnees['montant_ir']
-                    + $donnees['montant_cnps']
-                    + $donnees['montant_irnc']
-                    + $donnees['autres_retenues'];
+                // ✅ Pour DA et autres : IR + CNPS + IRNC + Autres (avec vérification null)
+                $totalRetenues = ($donnees['montant_ir'] ?? 0)
+                    + ($donnees['montant_cnps'] ?? 0)
+                    + ($donnees['montant_irnc'] ?? 0)
+                    + ($donnees['autres_retenues'] ?? 0);
 
-                if ($donnees['montant_ir'] > 0) {
+                if (($donnees['montant_ir'] ?? 0) > 0) {
                     $detailsRetenues[] = "IR: " . number_format($donnees['montant_ir'], 0, ',', ' ') . " FCFA";
                 }
-                if ($donnees['montant_cnps'] > 0) {
+                if (($donnees['montant_cnps'] ?? 0) > 0) {
                     $detailsRetenues[] = "CNPS: " . number_format($donnees['montant_cnps'], 0, ',', ' ') . " FCFA";
                 }
-                if ($donnees['montant_irnc'] > 0) {
+                if (($donnees['montant_irnc'] ?? 0) > 0) {
                     $detailsRetenues[] = "IRNC: " . number_format($donnees['montant_irnc'], 0, ',', ' ') . " FCFA";
                 }
-                if ($donnees['autres_retenues'] > 0) {
+                if (($donnees['autres_retenues'] ?? 0) > 0) {
                     $detailsRetenues[] = "Autres: " . number_format($donnees['autres_retenues'], 0, ',', ' ') . " FCFA";
                 }
             }
 
+            \Log::info("Calcul total retenues", [
+                'type_document' => $this->estBonCommande() ? 'BC' : 'DA',
+                'montant_ir' => $donnees['montant_ir'] ?? 0,
+                'montant_cnps' => $donnees['montant_cnps'] ?? 0,
+                'montant_irnc' => $donnees['montant_irnc'] ?? 0,
+                'montant_tva' => $donnees['montant_tva'] ?? 0,
+                'montant_tsr' => $donnees['montant_tsr'] ?? 0,
+                'autres_retenues' => $donnees['autres_retenues'] ?? 0,
+                'total_retenues' => $totalRetenues,
+                'details' => $detailsRetenues,
+            ]);
+
+            // ✅ Créer l'OP Impôt si le total > 0
             if ($totalRetenues > 0) {
                 $tresorPublic = \App\Models\Fournisseur::firstOrCreate(
                     ['code' => 'TRESOR_PUBLIC'],
@@ -559,6 +582,7 @@ class Engagement extends Model
 
                 $opImpot = \App\Models\OrdonnancePaiement::create([
                     'numero' => \App\Models\OrdonnancePaiement::genererNumero('impot'),
+                    'numero_emission' => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
                     'type_ordonnance' => 'impot',
                     'engagement_id' => $this->id,
                     'ordonnance_parent_id' => $opStandard->id,
@@ -576,15 +600,42 @@ class Engagement extends Model
 
                 $ordonnances['impot'] = $opImpot;
 
-                \Log::info("OP Impôt créée", [
+                \Log::info("OP Impôt créée avec succès", [
                     'type_document' => $this->estBonCommande() ? 'BC' : 'DA',
                     'numero' => $opImpot->numero,
-                    'montant_total' => $opImpot->montant_ordonnance,
-                    'detail_ir' => $donnees['montant_ir'],
+                    'montant_total' => $opImpot->montant_net,  // ✅ Correction : montant_net
+                    'detail_ir' => $donnees['montant_ir'] ?? 0,
                     'detail_tva' => $donnees['montant_tva'] ?? 0,
                     'detail_tsr' => $donnees['montant_tsr'] ?? 0,
                     'detail_cnps' => $donnees['montant_cnps'] ?? 0,
                     'detail_irnc' => $donnees['montant_irnc'] ?? 0,
+                    'detail_autres' => $donnees['autres_retenues'] ?? 0,
+                ]);
+            } else {
+                \Log::info("Pas d'OP Impôt créée", [
+                    'raison' => 'Aucune retenue (total = 0)',
+                    'type_document' => $this->estBonCommande() ? 'BC' : 'DA',
+                ]);
+            }
+
+            // ✅ Vérification finale
+            $totalOP = $opStandard->montant_net + ($ordonnances['impot']->montant_net ?? 0);
+
+            \Log::info("✅ Ordonnances créées avec succès", [
+                'engagement_numero' => $this->numero,
+                'montant_ttc_engagement' => $donnees['montant_ttc'],
+                'op_standard' => $opStandard->montant_net,
+                'op_impot' => $ordonnances['impot']->montant_net ?? 0,
+                'total_ordonnances' => $totalOP,
+                'difference' => abs($donnees['montant_ttc'] - $totalOP),
+            ]);
+
+            // Alerte si écart
+            if (abs($donnees['montant_ttc'] - $totalOP) > 0.01) {
+                \Log::warning("⚠️ Écart détecté entre TTC et total OP", [
+                    'ttc' => $donnees['montant_ttc'],
+                    'total_op' => $totalOP,
+                    'ecart' => $donnees['montant_ttc'] - $totalOP,
                 ]);
             }
 
@@ -599,7 +650,7 @@ class Engagement extends Model
     {
         $montantBrut = 0;
         $montantTVA = 0;
-        $montantTSR = 0;      // ✅ Ajouter TSR
+        $montantTSR = 0;
         $montantTTC = 0;
         $montantIR = 0;
         $montantCNPS = 0;
@@ -615,25 +666,19 @@ class Engagement extends Model
 
             $montantBrut = $bc->montant_ht ?? 0;
             $montantTVA = $bc->montant_tva ?? 0;
-            $montantTSR = $bc->montant_tsr ?? 0;      // ✅ Extraire TSR
+            $montantTSR = $bc->montant_tsr ?? 0;
             $montantTTC = $bc->montant_ttc ?? 0;
             $montantIR = $bc->montant_ir ?? 0;
-
-            // ✅ Pour BC : Net = TTC - (IR + TVA + TSR)
-            // Car TVA et TSR sont reversées au Trésor Public
             $montantNet = $montantTTC - ($montantIR + $montantTVA + $montantTSR);
 
+            // Charger et récupérer le fournisseur
+            $bc->load('fournisseur');
             $beneficiaire = $bc->fournisseur;
             $beneficiaireType = 'App\Models\Fournisseur';
 
             \Log::info("BC - Montants extraits", [
                 'bc_numero' => $bc->numero,
-                'montant_ht' => $montantBrut,
-                'montant_tva' => $montantTVA,
-                'montant_tsr' => $montantTSR,
-                'montant_ttc' => $montantTTC,
-                'montant_ir' => $montantIR,
-                'montant_net' => $montantNet,
+                'beneficiaire' => $beneficiaire?->raison_sociale ?? 'NULL',
             ]);
         }
 
@@ -641,35 +686,49 @@ class Engagement extends Model
         elseif ($this->estDecision() && $this->engageable) {
             $da = $this->engageable;
 
-            $montantBrut = $da->montant_ht ?? $da->montant_brut ?? 0;
+            $montantBrut = $da->montant_brut ?? 0;
             $montantTVA = $da->montant_tva ?? 0;
             $montantTTC = $da->montant_ttc ?? $da->montant_total ?? $this->montant_engage;
             $montantIR = $da->montant_ir ?? 0;
             $montantCNPS = $da->montant_cnps ?? 0;
             $montantIRNC = $da->montant_irnc ?? 0;
             $autresRetenues = $da->autres_retenues ?? 0;
-
-            // ✅ Pour DA : Net = TTC - (IR + CNPS + IRNC + Autres)
-            // Pas de TVA/TSR pour les DA
             $montantNet = $montantTTC - ($montantIR + $montantCNPS + $montantIRNC + $autresRetenues);
 
-            if (isset($da->beneficiaire_type)) {
-                if ($da->beneficiaire_type === 'fournisseur' || $da->beneficiaire_type === 'App\Models\Fournisseur') {
-                    $beneficiaire = $da->beneficiaireFournisseur;
-                    $beneficiaireType = 'App\Models\Fournisseur';
-                } else {
-                    $beneficiaire = $da->beneficiairePersonnel;
-                    $beneficiaireType = 'App\Models\Personnel';
-                }
+            // ✅ RÉCUPÉRER LE BÉNÉFICIAIRE (Personnel pour une DA)
+            \Log::info("DA - Récupération bénéficiaire", [
+                'da_id' => $da->id,
+                'personnel_id' => $da->personnel_id,
+                'personnel_relation_loaded' => $da->relationLoaded('personnel'),
+            ]);
+
+            // Charger la relation si pas déjà chargée
+            if (!$da->relationLoaded('personnel')) {
+                $da->load('personnel');
+            }
+
+            if ($da->personnel_id && $da->personnel) {
+                $beneficiaire = $da->personnel;
+                $beneficiaireType = 'App\Models\Personnel';
+
+                \Log::info("DA - Bénéficiaire trouvé", [
+                    'personnel_id' => $beneficiaire->id,
+                    'nom' => $beneficiaire->nom_complet,
+                ]);
+            } else {
+                \Log::error("DA - Bénéficiaire non trouvé", [
+                    'da_id' => $da->id,
+                    'personnel_id' => $da->personnel_id,
+                    'personnel_exists' => $da->personnel !== null,
+                ]);
             }
 
             \Log::info("DA - Montants extraits", [
+                'da_numero' => $da->numero ?? 'N/A',
                 'montant_ttc' => $montantTTC,
-                'montant_ir' => $montantIR,
-                'montant_cnps' => $montantCNPS,
-                'montant_irnc' => $montantIRNC,
-                'autres_retenues' => $autresRetenues,
+                'total_retenues' => ($montantIR + $montantCNPS + $montantIRNC + $autresRetenues),
                 'montant_net' => $montantNet,
+                'beneficiaire' => $beneficiaire?->nom_complet ?? 'NULL',
             ]);
         }
 
@@ -679,20 +738,29 @@ class Engagement extends Model
             $montantIR = $this->calculerMontantImpot();
             $montantNet = $montantTTC - $montantIR;
 
-            if ($this->beneficiaire_type === 'fournisseur' || $this->beneficiaire_type === 'App\Models\Fournisseur') {
+            // Charger le bénéficiaire selon le type
+            if ($this->beneficiaire_type === 'App\Models\Fournisseur') {
+                if (!$this->relationLoaded('beneficiaireFournisseur')) {
+                    $this->load('beneficiaireFournisseur');
+                }
                 $beneficiaire = $this->beneficiaireFournisseur;
                 $beneficiaireType = 'App\Models\Fournisseur';
-            } elseif ($this->beneficiaire_type === 'personnel' || $this->beneficiaire_type === 'App\Models\Personnel' || $this->beneficiaire_type === 'App\Models\User') {
+            } elseif ($this->beneficiaire_type === 'App\Models\Personnel') {
+                if (!$this->relationLoaded('beneficiairePersonnel')) {
+                    $this->load('beneficiairePersonnel');
+                }
                 $beneficiaire = $this->beneficiairePersonnel;
                 $beneficiaireType = 'App\Models\Personnel';
             }
-
-            \Log::info("Manuel - Montants extraits", [
-                'montant_ttc' => $montantTTC,
-                'montant_ir' => $montantIR,
-                'montant_net' => $montantNet,
-            ]);
         }
+
+        // ✅ LOG FINAL
+        \Log::info("Données extraites - Résumé final", [
+            'engagement_numero' => $this->numero,
+            'beneficiaire_existe' => $beneficiaire !== null,
+            'beneficiaire_type' => $beneficiaireType,
+            'beneficiaire_nom' => $beneficiaire?->nom_complet ?? $beneficiaire?->raison_sociale ?? 'NULL',
+        ]);
 
         return [
             'montant_brut' => $montantBrut,

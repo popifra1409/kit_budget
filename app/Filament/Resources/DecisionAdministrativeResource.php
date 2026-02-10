@@ -335,20 +335,29 @@ class DecisionAdministrativeResource extends Resource
 
                 Forms\Components\Section::make('Type et objet')
                     ->schema([
-                        Forms\Components\Select::make('type_decision')
+                        Forms\Components\Select::make('type_decision_id')
                             ->label('Type de décision')
-                            ->options([
-                                'avancement' => 'Avancement',
-                                'promotion' => 'Promotion',
-                                'prime' => 'Prime',
-                                'indemnite' => 'Indemnité',
-                                'formation' => 'Formation',
-                                'mission' => 'Mission',
-                                'affectation' => 'Affectation',
-                                'autre' => 'Autre',
-                            ])
+                            ->relationship('typeDecision', 'libelle', function ($query) {
+                                return $query->actif()->ordonne();
+                            })
                             ->required()
-                            ->searchable(),
+                            ->searchable()
+                            ->preload()
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('code')
+                                    ->required()
+                                    ->unique()
+                                    ->maxLength(50),
+                                Forms\Components\TextInput::make('libelle')
+                                    ->required()
+                                    ->maxLength(255),
+                                Forms\Components\Textarea::make('description')
+                                    ->rows(2),
+                                Forms\Components\TextInput::make('ordre')
+                                    ->numeric()
+                                    ->default(0),
+                            ])
+                            ->createOptionModalHeading('Créer un type de décision'),
 
                         Forms\Components\DatePicker::make('date_decision')
                             ->label('Date de décision')
@@ -498,26 +507,12 @@ class DecisionAdministrativeResource extends Resource
                     ->badge()
                     ->color('info'),
 
-                Tables\Columns\BadgeColumn::make('type_decision')
+                Tables\Columns\TextColumn::make('typeDecision.libelle')
                     ->label('Type')
-                    ->colors([
-                        'success' => 'prime',
-                        'info' => 'mission',
-                        'warning' => 'formation',
-                        'primary' => fn($state) => in_array($state, ['avancement', 'promotion']),
-                        'secondary' => fn($state) => !in_array($state, ['prime', 'mission', 'formation', 'avancement', 'promotion']),
-                    ])
-                    ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'avancement' => 'Avancement',
-                        'promotion' => 'Promotion',
-                        'prime' => 'Prime',
-                        'indemnite' => 'Indemnité',
-                        'formation' => 'Formation',
-                        'mission' => 'Mission',
-                        'affectation' => 'Affectation',
-                        'autre' => 'Autre',
-                        default => $state,
-                    }),
+                    ->searchable()
+                    ->sortable()
+                    ->badge()
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('personnel')
                     ->label('Personnel')

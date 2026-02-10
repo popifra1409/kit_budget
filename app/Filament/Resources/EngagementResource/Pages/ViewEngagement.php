@@ -74,7 +74,10 @@ class ViewEngagement extends ViewRecord
                         "Montant total : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA"
                 )
                 ->modalContent(function ($record) {
-                    // ✅ Utiliser la méthode du modèle pour extraire TOUS les montants
+                    // ✅ Charger les relations nécessaires
+                    $record->load(['engageable', 'beneficiaire']);
+
+                    // Utiliser la méthode du modèle pour extraire TOUS les montants
                     $donnees = $record->extraireDonneesDocument();
 
                     return view('filament.modals.recap-ordonnances', [
@@ -91,12 +94,12 @@ class ViewEngagement extends ViewRecord
 
                         if (isset($ordonnances['standard'])) {
                             $message .= "• OP Standard : {$ordonnances['standard']->numero}\n";
-                            $message .= "  Montant : " . number_format($ordonnances['standard']->montant_ordonnance, 0, ',', ' ') . " FCFA\n\n";
+                            $message .= "  Montant : " . number_format($ordonnances['standard']->montant_net, 0, ',', ' ') . " FCFA\n\n"; // ✅ Correction
                         }
 
                         if (isset($ordonnances['impot'])) {
                             $message .= "• OP Impôt : {$ordonnances['impot']->numero}\n";
-                            $message .= "  Montant : " . number_format($ordonnances['impot']->montant_ordonnance, 0, ',', ' ') . " FCFA";
+                            $message .= "  Montant : " . number_format($ordonnances['impot']->montant_net, 0, ',', ' ') . " FCFA"; // ✅ Correction
                         }
 
                         Notification::make()
@@ -127,7 +130,6 @@ class ViewEngagement extends ViewRecord
                 ->visible(fn($record) => $record->hasOrdonnancesPaiement())
                 ->modalHeading(fn($record) => "Ordonnances de paiement - {$record->numero}")
                 ->modalContent(function ($record) {
-                    // ✅ Charger la relation polymorphique 'beneficiaire'
                     $ordonnances = $record->ordonnancesPaiement()->with('beneficiaire')->get();
 
                     return view('filament.modals.ordonnances-list', [
@@ -267,6 +269,139 @@ class ViewEngagement extends ViewRecord
                     ])
                     ->columns(2),
 
+                // ✅ NOUVELLE SECTION : DÉTAILS DES MONTANTS ET RETENUES
+                Infolists\Components\Section::make('Détails des montants')
+                    ->schema([
+                        // Montant TTC
+                        Infolists\Components\TextEntry::make('montant_ttc')
+                            ->label('Montant TTC')
+                            ->money('XAF')
+                            ->weight('bold')
+                            ->color('primary')
+                            ->getStateUsing(function ($record) {
+                                $record->load('engageable');
+                                $donnees = $record->extraireDonneesDocument();
+                                return $donnees['montant_ttc'];
+                            }),
+
+                        // ✅ Pour Bon de Commande
+                        Infolists\Components\Grid::make(3)
+                            ->schema([
+                                Infolists\Components\TextEntry::make('retenue_ir')
+                                    ->label('Impôt sur Revenu (IR)')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['montant_ir'] ?? 0;
+                                    }),
+
+                                Infolists\Components\TextEntry::make('retenue_tva')
+                                    ->label('TVA')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['montant_tva'] ?? 0;
+                                    }),
+
+                                Infolists\Components\TextEntry::make('retenue_tsr')
+                                    ->label('TSR')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['montant_tsr'] ?? 0;
+                                    }),
+                            ])
+                            ->visible(fn($record) => $record->estBonCommande()),
+
+                        // ✅ Pour Décision Administrative
+                        Infolists\Components\Grid::make(4)
+                            ->schema([
+                                Infolists\Components\TextEntry::make('retenue_ir_da')
+                                    ->label('Impôt sur Revenu (IR)')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['montant_ir'] ?? 0;
+                                    }),
+
+                                Infolists\Components\TextEntry::make('retenue_cnps')
+                                    ->label('CNPS')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['montant_cnps'] ?? 0;
+                                    }),
+
+                                Infolists\Components\TextEntry::make('retenue_irnc')
+                                    ->label('IRNC')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['montant_irnc'] ?? 0;
+                                    }),
+
+                                Infolists\Components\TextEntry::make('autres_retenues')
+                                    ->label('Autres retenues')
+                                    ->money('XAF')
+                                    ->color('danger')
+                                    ->getStateUsing(function ($record) {
+                                        $record->load('engageable');
+                                        $donnees = $record->extraireDonneesDocument();
+                                        return $donnees['autres_retenues'] ?? 0;
+                                    }),
+                            ])
+                            ->visible(fn($record) => $record->estDecision()),
+
+                        // Total retenues
+                        Infolists\Components\TextEntry::make('total_retenues')
+                            ->label('Total retenues et impôts')
+                            ->money('XAF')
+                            ->weight('bold')
+                            ->color('warning')
+                            ->getStateUsing(function ($record) {
+                                $record->load('engageable');
+                                $donnees = $record->extraireDonneesDocument();
+
+                                if ($record->estBonCommande()) {
+                                    return ($donnees['montant_ir'] ?? 0)
+                                        + ($donnees['montant_tva'] ?? 0)
+                                        + ($donnees['montant_tsr'] ?? 0);
+                                } else {
+                                    return ($donnees['montant_ir'] ?? 0)
+                                        + ($donnees['montant_cnps'] ?? 0)
+                                        + ($donnees['montant_irnc'] ?? 0)
+                                        + ($donnees['autres_retenues'] ?? 0);
+                                }
+                            }),
+
+                        // Montant Net
+                        Infolists\Components\TextEntry::make('montant_net_final')
+                            ->label('Montant Net à payer')
+                            ->money('XAF')
+                            ->weight('bold')
+                            ->color('success')
+                            ->getStateUsing(function ($record) {
+                                $record->load('engageable');
+                                $donnees = $record->extraireDonneesDocument();
+                                return $donnees['montant_net'];
+                            }),
+                    ])
+                    ->columns(2)
+                    ->visible(fn($record) => $record->engageable_id !== null)
+                    ->collapsible(),
+
                 Infolists\Components\Section::make('Lignes d\'engagement')
                     ->schema([
                         Infolists\Components\RepeatableEntry::make('lignes')
@@ -303,7 +438,7 @@ class ViewEngagement extends ViewRecord
                                         'impot' => 'Impôt',
                                         default => $state,
                                     }),
-                                Infolists\Components\TextEntry::make('montant_ordonnance')
+                                Infolists\Components\TextEntry::make('montant_net') // ✅ Correction
                                     ->label('Montant')
                                     ->money('XAF'),
                                 Infolists\Components\TextEntry::make('date_emission')

@@ -59,7 +59,7 @@ class PdfDownloadController extends Controller
             $record = $model::with([
                 'engagement.nomenclaturePrincipale',
                 'engagement.engageable.fournisseur',
-                'beneficiaire', // ✅ Cette relation est OK si OrdonnancePaiement utilise morphTo
+                'beneficiaire', 
             ])->findOrFail($id);
         } elseif ($model === BonCommande::class) {
             $record = $model::with([
@@ -94,44 +94,70 @@ class PdfDownloadController extends Controller
 
         $model = $modelMap[$etat];
 
-        // Charger les relations selon le type de modèle
         if ($model === BordereauEngagement::class) {
             $record = $model::with([
                 'budget',
                 'validateur',
-                // ✅ CORRIGER ICI - Ligne 107
-                'engagements.beneficiaireFournisseur',
-                'engagements.beneficiairePersonnel',
-                'engagements.nomenclaturePrincipale',
-                'engagements.lignes',
+                'engagements' => function ($query) {
+                    $query->with([
+                        'beneficiaire',  
+                        'nomenclaturePrincipale',
+                        'lignes',
+                        'engageable', 
+                    ]);
+                },
             ])->findOrFail($id);
         } elseif ($model === Engagement::class) {
             $record = $model::with([
                 'budget',
+                'exercice',
                 'nomenclaturePrincipale',
                 'nomenclaturePrincipale.parent',
                 'nomenclaturePrincipale.tache',
                 'nomenclaturePrincipale.tache.activite',
                 'nomenclaturePrincipale.tache.activite.action',
                 'nomenclaturePrincipale.tache.activite.action.programme',
-                // ✅ CORRIGER ICI - Ligne 124
-                'beneficiaireFournisseur',
-                'beneficiairePersonnel',
-                'lignes',
+                'beneficiaire', 
+                'lignes.nomenclature',
                 'engageable',
+                'ordonnancesPaiement',
             ])->findOrFail($id);
+
+            if ($record->engageable) {
+                if ($record->engageable instanceof \App\Models\BonCommande) {
+                    $record->engageable->load('fournisseur', 'lignes');
+                } elseif ($record->engageable instanceof \App\Models\DecisionAdministrative) {
+                    $record->engageable->load('personnel', 'typeDecision');
+                }
+            }
         } elseif ($model === OrdonnancePaiement::class) {
             $record = $model::with([
-                'engagement.nomenclaturePrincipale',
-                'engagement.engageable.fournisseur',
-                'beneficiaire', // ✅ Cette relation est OK
+                'engagement' => function ($query) {
+                    $query->with([
+                        'nomenclaturePrincipale',
+                        'exercice',
+                        'budget',
+                        'engageable', 
+                    ]);
+                },
+                'beneficiaire',  
             ])->findOrFail($id);
+
+            if ($record->engagement && $record->engagement->engageable) {
+                $engageable = $record->engagement->engageable;
+
+                if ($engageable instanceof \App\Models\BonCommande) {
+                    $engageable->load('fournisseur');
+                } elseif ($engageable instanceof \App\Models\DecisionAdministrative) {
+                    $engageable->load('personnel');
+                }
+            }
         } elseif ($model === BonCommande::class) {
             $record = $model::with([
                 'fournisseur',
                 'serviceDemandeur',
                 'lignes',
-                'engagement',
+                'engagement.beneficiaire', 
             ])->findOrFail($id);
         } else {
             $record = $model::findOrFail($id);

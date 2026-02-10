@@ -18,6 +18,8 @@ use App\Observers\BonCommandeObserver;
 use App\Models\PieceDossier;
 use App\Observers\PieceDossierObserver;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -44,12 +46,17 @@ class AppServiceProvider extends ServiceProvider
             'bon_commande' => \App\Models\BonCommande::class,
             'engagement'   => \App\Models\Engagement::class,
             'ordonnance'   => \App\Models\OrdonnancePaiement::class,
+            'decision_administrative' => \App\Models\DecisionAdministrative::class,
+            'dossier_fournisseur' => \App\Models\DossierFournisseur::class,
             //Bénificiare
             'fournisseur' => \App\Models\Fournisseur::class,
             'personnel' => \App\Models\Personnel::class,
             //système
             'App\Models\User' => \App\Models\User::class,
             'user'            => \App\Models\User::class,
+            'role'       => Role::class,
+            'permission' => Permission::class,
+
         ]);
 
         LignePrevisionRecette::observe(LignePrevisionRecetteObserver::class);

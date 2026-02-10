@@ -13,20 +13,34 @@ $bonCommande = $engagement?->bonCommande;
 
 // Récupérer le reverseur (fournisseur)
 $reverseur = null;
-if ($ordonnance->beneficiaire) {
-    $reverseur = $ordonnance->beneficiaire;
-} elseif ($bonCommande && $bonCommande->fournisseur) {
-    $reverseur = $bonCommande->fournisseur;
-} elseif ($ordonnance->beneficiaire_type && $ordonnance->beneficiaire_id) {
-    $reverseur = $ordonnance->beneficiaire_type::find($ordonnance->beneficiaire_id);
+$documentSource = null;
+
+if ($engagement && $engagement->engageable) {
+    $documentSource = $engagement->engageable;
+
+    // Si c'est un Bon de Commande
+        if ($engagement->estBonCommande()) {
+            $reverseur = $documentSource->fournisseur;
+        }
+        // Si c'est une Décision Administrative
+    elseif ($engagement->estDecision()) {
+        $reverseur = $documentSource->personnel;
+    }
 }
+// Fallback : utiliser le bénéficiaire de l'ordonnance
+    if (!$reverseur && $ordonnance->beneficiaire) {
+        $reverseur = $ordonnance->beneficiaire;
+    }
 
-$nomReverseur = $reverseur->raison_sociale ?? ($reverseur->name ?? 'N/A');
-$nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
+    // Nom du reverseur
+    $nomReverseur = $reverseur->raison_sociale ?? ($reverseur->nom_complet ?? ($reverseur->name ?? 'N/A'));
 
-// ✅ Calculer le total des impôts
-$detailImpots = $ordonnance->getDetailImpots();
-$montantTotalImpots = $detailImpots['total'];
+    $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
+
+    // ✅ Calculer le total des impôts
+    $detailImpots = $ordonnance->getDetailImpots();
+    $montantTotalImpots = $detailImpots['total'];
+
 @endphp
 
 @section('title', 'Ordonnance de Paiement - Impot')
@@ -83,6 +97,52 @@ $montantTotalImpots = $detailImpots['total'];
             background-color: #f0f0f0;
             font-weight: bold;
         }
+        @section('additional_styles')
+    <style>
+        @page {
+            size: A4 landscape;
+            margin: 15mm 12mm 12mm 18mm;
+        }
+
+        body {
+            font-family: "Times New Roman", serif;
+            font-size: 9pt;
+            line-height: 1.12;
+        }
+
+        .detail-impots {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            font-size: 9.5pt;
+        }
+
+        .detail-impots td {
+            border: 1px solid #333;
+            padding: 3px 5px;
+        }
+
+        .detail-impots .label {
+            font-weight: bold;
+            width: 60%;
+        }
+
+        .detail-impots .montant {
+            text-align: right;
+            width: 40%;
+        }
+
+        .detail-impots .total-row {
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }
+
+        {{-- ✅ AJOUTER : Style pour les lignes exonérées --}}
+        .detail-impots tr[class*="opacity"] {
+            opacity: 0.5;
+        }
+    </style>
+@endsection
     </style>
 @endsection
 
@@ -101,61 +161,98 @@ $montantTotalImpots = $detailImpots['total'];
                         {{ $nomReverseur }}
                     </div>
                 </div>
-
-                {{-- ✅ Détail des impôts --}}
-                @if ($bonCommande)
-                    <div style="margin-top: 8px; font-size: 8.5pt;">
-                        <div style="font-weight: bold; margin-bottom: 3px;">Detail des impots et taxes:</div>
-                        <table class="detail-impots">
-                            @if ($detailImpots['tva'] > 0)
-                                <tr>
-                                    <td class="label">TVA (19.25%)</td>
-                                    <td class="montant">{{ number_format($detailImpots['tva'], 0, ',', ' ') }}</td>
-                                </tr>
-                            @endif
-
-                            @if ($detailImpots['ir'] > 0)
-                                <tr>
-                                    <td class="label">Impot sur le Revenu (IR)</td>
-                                    <td class="montant">{{ number_format($detailImpots['ir'], 0, ',', ' ') }}</td>
-                                </tr>
-                            @endif
-
-                            @if ($detailImpots['tsr'] > 0)
-                                <tr>
-                                    <td class="label">Taxe Statistique Regionale (TSR)</td>
-                                    <td class="montant">{{ number_format($detailImpots['tsr'], 0, ',', ' ') }}</td>
-                                </tr>
-                            @endif
-
-                            @if ($detailImpots['cnps'] > 0)
-                                <tr>
-                                    <td class="label">Cotisations CNPS</td>
-                                    <td class="montant">{{ number_format($detailImpots['cnps'], 0, ',', ' ') }}</td>
-                                </tr>
-                            @endif
-
-                            @if ($detailImpots['irnc'] > 0)
-                                <tr>
-                                    <td class="label">IR Non Commercial (IRNC)</td>
-                                    <td class="montant">{{ number_format($detailImpots['irnc'], 0, ',', ' ') }}</td>
-                                </tr>
-                            @endif
-
-                            @if ($detailImpots['autres'] > 0)
-                                <tr>
-                                    <td class="label">Autres taxes</td>
-                                    <td class="montant">{{ number_format($detailImpots['autres'], 0, ',', ' ') }}</td>
-                                </tr>
-                            @endif
-
-                            <tr class="total-row">
-                                <td class="label">TOTAL IMPOTS ET TAXES</td>
-                                <td class="montant">{{ number_format($montantTotalImpots, 0, ',', ' ') }}</td>
+                {{-- ✅ Détail des impôts - Afficher pour BC ET DA --}}
+                <div style="margin-top: 8px; font-size: 8.5pt;">
+                    <div style="font-weight: bold; margin-bottom: 3px;">Detail des impots et taxes:</div>
+                    <table class="detail-impots">
+                        {{-- ✅ Pour Bon de Commande --}}
+                        @if ($engagement && $engagement->estBonCommande())
+                            <tr class="{{ $detailImpots['ir'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    Impot sur le Revenu (IR)
+                                    @if ($detailImpots['ir'] == 0)
+                                        <span
+                                            style="font-weight: normal; font-style: italic; font-size: 8pt;">(exonéré)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['ir'], 0, ',', ' ') }} FCFA</td>
                             </tr>
-                        </table>
-                    </div>
-                @endif
+
+                            <tr class="{{ $detailImpots['tva'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    TVA (19.25%)
+                                    @if ($detailImpots['tva'] == 0)
+                                        <span style="font-weight: normal; font-style: italic; font-size: 8pt;">(non
+                                            applicable)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['tva'], 0, ',', ' ') }} FCFA</td>
+                            </tr>
+
+                            <tr class="{{ $detailImpots['tsr'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    Taxe Statistique Regionale (TSR)
+                                    @if ($detailImpots['tsr'] == 0)
+                                        <span
+                                            style="font-weight: normal; font-style: italic; font-size: 8pt;">(exonéré)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['tsr'], 0, ',', ' ') }} FCFA</td>
+                            </tr>
+                        @else
+                            {{-- ✅ Pour Décision Administrative --}}
+                            <tr class="{{ $detailImpots['ir'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    Impot sur le Revenu (IR)
+                                    @if ($detailImpots['ir'] == 0)
+                                        <span
+                                            style="font-weight: normal; font-style: italic; font-size: 8pt;">(exonéré)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['ir'], 0, ',', ' ') }} FCFA</td>
+                            </tr>
+
+                            <tr class="{{ $detailImpots['cnps'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    Cotisations CNPS
+                                    @if ($detailImpots['cnps'] == 0)
+                                        <span
+                                            style="font-weight: normal; font-style: italic; font-size: 8pt;">(exonéré)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['cnps'], 0, ',', ' ') }} FCFA</td>
+                            </tr>
+
+                            <tr class="{{ $detailImpots['irnc'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    IR Non Commercial (IRNC)
+                                    @if ($detailImpots['irnc'] == 0)
+                                        <span
+                                            style="font-weight: normal; font-style: italic; font-size: 8pt;">(exonéré)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['irnc'], 0, ',', ' ') }} FCFA</td>
+                            </tr>
+
+                            <tr class="{{ $detailImpots['autres'] == 0 ? 'opacity: 0.5;' : '' }}">
+                                <td class="label">
+                                    Autres retenues
+                                    @if ($detailImpots['autres'] == 0)
+                                        <span
+                                            style="font-weight: normal; font-style: italic; font-size: 8pt;">(aucune)</span>
+                                    @endif
+                                </td>
+                                <td class="montant">{{ number_format($detailImpots['autres'], 0, ',', ' ') }} FCFA</td>
+                            </tr>
+                        @endif
+
+                        {{-- Ligne de total --}}
+                        <tr class="total-row">
+                            <td class="label">TOTAL IMPOTS ET TAXES</td>
+                            <td class="montant">{{ number_format($montantTotalImpots, 0, ',', ' ') }} FCFA</td>
+                        </tr>
+                    </table>
+                </div>
             </td>
             <td style="border: none; padding: 0; vertical-align: top; width: 35%;">
                 <table style="width: 100%; border: 1px solid #333; border-collapse: collapse;">
@@ -208,7 +305,7 @@ $montantTotalImpots = $detailImpots['total'];
                 @if ($bonCommande)
                     <div style="margin-top: 8px; font-size: 8.5pt;">
                         - Bon de Commande N° {{ $bonCommande->numero }}<br>
-                        - Engagement Budgetaire N° {{ $engagement->reference_document ?? 'N/A' }}<br>
+                        - Engagement Budgetaire N° {{ $engagement->numero ?? 'N/A' }}<br>
                         - Facture Fournisseur
                     </div>
                 @endif

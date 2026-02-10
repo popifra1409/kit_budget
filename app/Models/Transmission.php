@@ -39,6 +39,19 @@ class Transmission extends Model
         'metadata' => 'array',
     ];
 
+    public static function booted()
+    {
+        static::creating(function ($transmission) {
+            self::where('document_type', $transmission->document_type)
+                ->where('document_id', $transmission->document_id)
+                ->where('statut', 'en_attente')
+                ->update([
+                    'statut' => 'annule',
+                    'date_traitement' => now(),
+                ]);
+        });
+    }
+
     /**
      * Relation polymorphique : Document transmis
      */

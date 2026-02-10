@@ -422,7 +422,20 @@ class WorkflowActions
             ->form([
                 Forms\Components\Select::make('destinataire_id')
                     ->label('Transmettre à')
-                    ->options(User::whereNotNull('name')->pluck('name', 'id'))
+                    ->options(
+                        fn() =>
+                        User::actif()
+                            ->where('id', '!=', auth()->id())
+                            ->whereHas('roles', function ($q) {
+                                $q->where(
+                                    'niveau_hierarchique',
+                                    '>=',
+                                    auth()->user()->getNiveauHierarchique()
+                                );
+                            })
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                    )
                     ->required()
                     ->searchable()
                     ->preload()
@@ -431,11 +444,11 @@ class WorkflowActions
                 Forms\Components\Select::make('action_attendue')
                     ->label('Action attendue')
                     ->options([
-                        'validation' => 'Validation',
-                        'engagement' => 'Engagement',
-                        'verification' => 'Vérification',
-                        'signature' => 'Signature',
-                        'information' => 'Pour information',
+                        'validation'    => 'Validation',
+                        'engagement'    => 'Engagement',
+                        'verification'  => 'Vérification',
+                        'signature'     => 'Signature',
+                        'information'   => 'Pour information',
                     ])
                     ->required()
                     ->default('validation'),
@@ -448,57 +461,45 @@ class WorkflowActions
                     ->label('Priorité')
                     ->options(fn(Get $get) => self::priorites($get))
                     ->default('normale')
-                    ->required()
-                    ->live()
-                    ->helperText(function (Get $get) {
-                        $destinataireId = $get('destinataire_id');
-
-                        if (!$destinataireId) {
-                            return '';
-                        }
-
-                        $destinataire = User::find($destinataireId);
-                        $expediteur = auth()->user();
-
-                        if (!$expediteur->peutImposerPrioriteA($destinataire)) {
-                            return '⚠️ Vous ne pouvez pas définir une priorité haute ou urgente pour un supérieur hiérarchique.';
-                        }
-
-                        return '';
-                    }),
+                    ->required(),
 
                 Forms\Components\DatePicker::make('date_limite')
                     ->label('Date limite (optionnel)')
                     ->minDate(now()),
             ])
             ->action(function ($record, array $data) {
-                try {
-                    $destinataire = User::findOrFail($data['destinataire_id']);
 
-                    $record->transmettreA(
-                        $destinataire,
-                        $data['action_attendue'],
-                        $data['commentaire'] ?? null,
-                        [
-                            'priorite' => $data['priorite'],
-                            'date_limite' => $data['date_limite'] ?? null,
-                        ]
+                $expediteur   = auth()->user();
+                $destinataire = User::actif()->findOrFail($data['destinataire_id']);
+
+                // 🔒 Sécurité serveur : priorité
+                if (
+                    in_array($data['priorite'], ['haute', 'urgente']) &&
+                    !$expediteur->peutImposerPrioriteA($destinataire)
+                ) {
+                    throw new \Exception(
+                        "Vous ne pouvez pas imposer une priorité élevée à un supérieur hiérarchique."
                     );
-
-                    Notification::make()
-                        ->title('Document transmis')
-                        ->success()
-                        ->body("Transmis à {$destinataire->name}")
-                        ->send();
-                } catch (\Throwable $e) {
-                    Notification::make()
-                        ->title('Erreur lors de la transmission')
-                        ->danger()
-                        ->body($e->getMessage())
-                        ->send();
                 }
+
+                $record->transmettreA(
+                    $destinataire,
+                    $data['action_attendue'],
+                    $data['commentaire'] ?? null,
+                    [
+                        'priorite'    => $data['priorite'],
+                        'date_limite' => $data['date_limite'] ?? null,
+                    ]
+                );
+
+                Notification::make()
+                    ->title('Document transmis')
+                    ->success()
+                    ->body("Transmis à {$destinataire->name}")
+                    ->send();
             });
     }
+
 
     /* =========================
      | ACTION : RETOURNER
@@ -523,24 +524,14 @@ class WorkflowActions
             ])
             ->requiresConfirmation()
             ->modalHeading('Retourner pour correction')
-            ->modalDescription('Le document sera retourné à l\'expéditeur avec votre motif')
-            ->action(function ($record, array $data) {
-                try {
-                    $record->retournerPourCorrection($data['motif']);
-
-                    Notification::make()
-                        ->title('Document retourné')
-                        ->warning()
-                        ->body('Le document a été retourné à l\'expéditeur')
-                        ->send();
-                } catch (\Throwable $e) {
-                    Notification::make()
-                        ->title('Erreur')
-                        ->danger()
-                        ->body($e->getMessage())
-                        ->send();
-                }
-            });
+            ->modalDescription("Le document sera retourné à l'expéditeur")
+            ->action(fn($record, array $data) => tap(
+                $record->retournerPourCorrection($data['motif']),
+                fn() => Notification::make()
+                    ->title('Document retourné')
+                    ->warning()
+                    ->send()
+            ));
     }
 
     /* =========================
@@ -564,17 +555,13 @@ class WorkflowActions
                     ->rows(3),
             ])
             ->requiresConfirmation()
-            ->modalHeading('Clôturer la transmission')
-            ->modalDescription('Confirmez que vous avez traité cette transmission')
-            ->action(function ($record, array $data) {
-                $record->cloturerTransmission($data['reponse'] ?? null);
-
-                Notification::make()
+            ->action(fn($record, array $data) => tap(
+                $record->cloturerTransmission($data['reponse'] ?? null),
+                fn() => Notification::make()
                     ->title('Transmission clôturée')
                     ->success()
-                    ->body('La transmission a été traitée avec succès')
-                    ->send();
-            });
+                    ->send()
+            ));
     }
 
     /* =========================
@@ -616,19 +603,23 @@ class WorkflowActions
         }
 
         $destinataire = User::find($destinataireId);
-        $expediteur = auth()->user();
+        $expediteur   = auth()->user();
 
-        if ($destinataire && method_exists($expediteur, 'peutImposerPrioriteA') && $expediteur->peutImposerPrioriteA($destinataire)) {
+        if (!$destinataire || !$expediteur) {
+            return ['normale' => 'Normale'];
+        }
+
+        if ($expediteur->peutImposerPrioriteA($destinataire)) {
             return [
-                'basse' => 'Basse',
+                'basse'   => 'Basse',
                 'normale' => 'Normale',
-                'haute' => 'Haute',
+                'haute'   => 'Haute',
                 'urgente' => 'Urgente',
             ];
         }
 
         return [
-            'basse' => 'Basse',
+            'basse'   => 'Basse',
             'normale' => 'Normale',
         ];
     }

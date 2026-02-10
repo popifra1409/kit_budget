@@ -26,6 +26,58 @@ class TypeEngagementResource extends Resource
 
     protected static ?int $navigationSort = 10;
 
+    /**
+     * Permissions – Types d’Engagement
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_any_type_engagement');
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_type_engagement');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('create_type_engagement');
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('update_type_engagement');
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->check()) {
+            return false;
+        }
+
+        if (!auth()->user()->can('delete_type_engagement')) {
+            return false;
+        }
+
+        // 🔒 Règle métier : type déjà utilisé
+        if ($record->engagements()->exists()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Suppression impossible')
+                ->warning()
+                ->body('Ce type d’engagement est déjà utilisé.')
+                ->send();
+
+            return false;
+        }
+
+        return true;
+    }
+
+
     public static function form(Form $form): Form
     {
         return $form
