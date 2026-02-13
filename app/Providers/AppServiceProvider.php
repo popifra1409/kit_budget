@@ -45,15 +45,17 @@ class AppServiceProvider extends ServiceProvider
             // Documents
             'bon_commande' => \App\Models\BonCommande::class,
             'engagement'   => \App\Models\Engagement::class,
-            'ordonnance'   => \App\Models\OrdonnancePaiement::class,
+            'ordonnance_paiement'     => \App\Models\OrdonnancePaiement::class,
+            'ordonnance_paiement_impot' => \App\Models\OrdonnancePaiement::class,
             'decision_administrative' => \App\Models\DecisionAdministrative::class,
             'dossier_fournisseur' => \App\Models\DossierFournisseur::class,
-            //Bénificiare
+            'bordereau_engagement' => \App\Models\BordereauEngagement::class,
+            //Acteurs
             'fournisseur' => \App\Models\Fournisseur::class,
             'personnel' => \App\Models\Personnel::class,
-            //système
             'App\Models\User' => \App\Models\User::class,
             'user'            => \App\Models\User::class,
+            // 🔐 Sécurité (Spatie)
             'role'       => Role::class,
             'permission' => Permission::class,
 

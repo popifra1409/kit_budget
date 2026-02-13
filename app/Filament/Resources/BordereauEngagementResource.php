@@ -68,11 +68,11 @@ class BordereauEngagementResource extends Resource
         }
 
         // règle métier
-        if (!$record->estModifiable()) {
+        if (! $record->estModifiable()) {
             Notification::make()
                 ->title('Bordereau verrouillé')
                 ->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")
+                ->body("Exercice {$record->exercice} en lecture seule.")
                 ->send();
 
             return false;
@@ -216,7 +216,8 @@ class BordereauEngagementResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()
+            ->with(['exercice']);
     }
 
     public static function table(Table $table): Table
@@ -387,36 +388,44 @@ class BordereauEngagementResource extends Resource
                     ->label('Transmettre')
                     ->icon('heroicon-o-paper-airplane')
                     ->color('info')
-                    ->visible(fn($record) => $record->statut === 'brouillon')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'brouillon'
+                            && auth()->user()?->can('transmettre_bordereau')
+                    )
                     ->requiresConfirmation()
                     ->form([
-                        // ✅ NOUVEAU : Sélection du destinataire (utilisateur)
                         Forms\Components\Select::make('destinataire_id')
                             ->label('Transmettre à')
-                            ->options(function () {
-                                return \App\Models\User::whereHas('roles', function ($query) {
-                                    $query->whereIn('name', [
-                                        'chef_service_budget',
-                                        'sous_directeur_budget',
-                                        'directeur_general',
-                                        'controleur_financier',
-                                        'agence_comptable'
-                                    ]);
-                                })->get()->mapWithKeys(fn($user) => [
-                                    $user->id => $user->name . ' - ' .
-                                        ($user->roles->first()?->name ? match ($user->roles->first()->name) {
-                                            'chef_service_budget' => 'Chef Service Budget',
-                                            'sous_directeur_budget' => 'Sous-Directeur Budget',
-                                            'directeur_general' => 'Directeur Général',
-                                            'controleur_financier' => 'Contrôleur Financier',
-                                            'agence_comptable' => 'Agence Comptable',
-                                            default => $user->roles->first()->name
-                                        } : 'Utilisateur')
-                                ]);
-                            })
+                            ->options(
+                                fn() =>
+                                \App\Models\User::actif()
+                                    ->where('id', '!=', auth()->id())
+                                    ->whereHas(
+                                        'roles',
+                                        fn($q) =>
+                                        $q->whereIn('name', [
+                                            'controleur_financier',
+                                            'daaf',
+                                            'directeur_general',
+                                        ])
+                                    )
+                                    ->orderBy('name')
+                                    ->get()
+                                    ->mapWithKeys(fn($user) => [
+                                        $user->id => sprintf(
+                                            '%s (%s)',
+                                            $user->name,
+                                            $user->roles->pluck('name')
+                                                ->map(fn($r) => ucfirst(str_replace('_', ' ', $r)))
+                                                ->join(', ')
+                                        )
+                                    ])
+                            )
                             ->required()
                             ->searchable()
-                            ->helperText('Sélectionnez l\'utilisateur destinataire'),
+                            ->preload()
+                            ->helperText('Destinataire autorisé : Contrôle Financier, DAAF ou Direction Générale'),
 
                         Forms\Components\Textarea::make('observations')
                             ->label('Observations')
@@ -424,28 +433,32 @@ class BordereauEngagementResource extends Resource
                             ->placeholder('Commentaire de transmission (optionnel)'),
                     ])
                     ->action(function ($record, array $data) {
-                        try {
-                            $destinataire = \App\Models\User::findOrFail($data['destinataire_id']);
 
-                            // Appeler la méthode modifiée avec User au lieu de string
-                            $record->transmettre(
-                                user: auth()->user(),
-                                destinataire: $destinataire,
-                                observations: $data['observations'] ?? null
+                        $expediteur   = auth()->user();
+                        $destinataire = \App\Models\User::actif()->findOrFail($data['destinataire_id']);
+
+                        // 🔐 Sécurité serveur ABSOLUE
+                        if (! $destinataire->hasAnyRole([
+                            'controleur_financier',
+                            'daaf',
+                            'directeur_general',
+                        ])) {
+                            throw new \Exception(
+                                'Le destinataire sélectionné n’est pas autorisé à recevoir un bordereau d’engagement.'
                             );
-
-                            Notification::make()
-                                ->title('Bordereau transmis')
-                                ->success()
-                                ->body("Transmis à {$destinataire->name}")
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Erreur')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
                         }
+
+                        $record->transmettre(
+                            user: $expediteur,
+                            destinataire: $destinataire,
+                            observations: $data['observations'] ?? null
+                        );
+
+                        Notification::make()
+                            ->title('Bordereau transmis')
+                            ->success()
+                            ->body("Transmis à {$destinataire->name}")
+                            ->send();
                     }),
 
                 Tables\Actions\Action::make('receptionner')
@@ -472,50 +485,55 @@ class BordereauEngagementResource extends Resource
             ])
 
             ->actions([
-                ActionGroup::make([
-                    // Vos actions existantes...
-
-                    Action::make('telecharger_certificat')
-                        ->label('Certificat d\'engagement')
-                        ->icon('heroicon-o-document-text')
-                        ->color('success')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'certificat_engagement',
-                            'id' => $record->id
-                        ])),
-
-                    Action::make('afficher_certificat')
-                        ->label('Aperçu Certificat')
+                Tables\Actions\ActionGroup::make([
+                    // ✅ Voir le bordereau
+                    Tables\Actions\ViewAction::make()
+                        ->label('Voir le détail')
                         ->icon('heroicon-o-eye')
-                        ->color('info')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'certificat_engagement',
-                            'id' => $record->id
+                        ->color('info'),
+
+                    // ✅ Éditer (seulement si brouillon)
+                    Tables\Actions\EditAction::make()
+                        ->label('Modifier')
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning')
+                        ->visible(fn($record) => $record->statut === 'brouillon'),
+
+                    // ✅ Télécharger le PDF du bordereau
+                    Tables\Actions\Action::make('telecharger_pdf')
+                        ->label('Télécharger PDF')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('primary')
+                        ->url(fn($record) => route('pdf.telecharger', [
+                            'etat' => 'bordereau_engagement',
+                            'id' => $record->id,
                         ]))
                         ->openUrlInNewTab(),
 
-                    Action::make('telecharger_autorisation')
-                        ->label('Autorisation d\'engagement')
-                        ->icon('heroicon-o-document-check')
-                        ->color('warning')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'autorisation_engagement',
-                            'id' => $record->id
-                        ])),
-
-                    Action::make('afficher_autorisation')
-                        ->label('Aperçu Autorisation')
-                        ->icon('heroicon-o-eye')
+                    // ✅ Afficher le PDF dans le navigateur
+                    Tables\Actions\Action::make('afficher_pdf')
+                        ->label('Aperçu PDF')
+                        ->icon('heroicon-o-document-magnifying-glass')
                         ->color('gray')
                         ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'autorisation_engagement',
-                            'id' => $record->id
+                            'etat' => 'bordereau_engagement',
+                            'id' => $record->id,
                         ]))
                         ->openUrlInNewTab(),
+
+                    // ✅ Supprimer (seulement si brouillon)
+                    Tables\Actions\DeleteAction::make()
+                        ->label('Supprimer')
+                        ->icon('heroicon-o-trash')
+                        ->visible(fn($record) => $record->statut === 'brouillon')
+                        ->requiresConfirmation()
+                        ->modalHeading('Supprimer le bordereau')
+                        ->modalDescription('Êtes-vous sûr de vouloir supprimer ce bordereau ? Cette action est irréversible.'),
                 ])
-                    ->label('États PDF')
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->color('primary')
+                    ->label('Actions')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->size('sm')
+                    ->color('gray')
                     ->button(),
             ])
             ->bulkActions([

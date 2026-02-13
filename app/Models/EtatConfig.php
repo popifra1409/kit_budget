@@ -21,7 +21,7 @@ class EtatConfig extends Model
         'pied_page_config',
         'signature_config',
         'options_pdf',
-        'format_papier',      
+        'format_papier',
         'orientation',
         'actif',
         'ordre',
@@ -106,7 +106,7 @@ class EtatConfig extends Model
     public function estSupprimable(): bool
     {
         // Ne pas supprimer les états système
-        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement', 'bon_commande', 'bon_commande_simple'];
+        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement', 'bon_commande', 'bon_commande_simple', 'bordereau_engagement'];
         return !in_array($this->code, $etatsSysteme);
     }
 }

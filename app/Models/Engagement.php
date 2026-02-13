@@ -68,6 +68,14 @@ class Engagement extends Model
     }
 
     /**
+     * Relation : Lignes de bordereau
+     */
+    public function lignesBordereau(): HasMany
+    {
+        return $this->hasMany(BordereauEngagementLigne::class, 'engagement_id');
+    }
+
+    /**
      * Relation : Budget
      */
     public function budget(): BelongsTo

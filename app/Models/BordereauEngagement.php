@@ -84,12 +84,23 @@ class BordereauEngagement extends Model
         });
     }
 
+    public function peutEtreTransmisPar(User $user): bool
+    {
+        return $this->statut === 'brouillon'
+            && $user->can('bordereau.transmettre');
+    }
+
     /**
      * Relation : Budget
      */
     public function budget(): BelongsTo
     {
         return $this->belongsTo(Budget::class);
+    }
+
+    public function exercice()
+    {
+        return $this->belongsTo(Exercice::class, "exercice_id");
     }
 
     /**
@@ -217,18 +228,26 @@ class BordereauEngagement extends Model
             throw new \Exception("Impossible d'ajouter un engagement à un bordereau déjà transmis");
         }
 
-        // Calculer le numéro de ligne
-        if ($numeroLigne === null) {
-            $numeroLigne = $this->lignes()->max('numero_ligne') + 1;
+        // ✅ Vérifier si l'engagement n'est pas déjà dans le bordereau
+        if ($this->lignes()->where('engagement_id', $engagement->id)->exists()) {
+            throw new \Exception("Cet engagement est déjà dans le bordereau");
         }
 
-        BordereauEngagementLigne::create([
+        // Calculer le numéro de ligne
+        if ($numeroLigne === null) {
+            $maxNumero = $this->lignes()->max('numero_ligne') ?? 0;
+            $numeroLigne = $maxNumero + 1;
+        }
+
+        // ✅ Créer la ligne
+        \App\Models\BordereauEngagementLigne::create([
             'bordereau_id' => $this->id,
             'engagement_id' => $engagement->id,
             'numero_ligne' => $numeroLigne,
             'statut_ligne' => 'en_attente',
         ]);
 
+        // ✅ Recalculer les montants
         $this->recalculerMontants();
     }
 
@@ -250,12 +269,21 @@ class BordereauEngagement extends Model
      */
     public function recalculerMontants(): void
     {
+        // ✅ Compter le nombre de lignes
         $this->nombre_engagements = $this->lignes()->count();
-        $this->montant_total = $this->lignes()
-            ->join('engagements', 'bordereau_engagement_lignes.engagement_id', '=', 'engagements.id')
-            ->sum('engagements.montant_engage');
 
-        $this->save();
+        // ✅ Calculer le total en chargeant les engagements
+        $total = 0;
+        $this->load('lignes.engagement');
+
+        foreach ($this->lignes as $ligne) {
+            if ($ligne->engagement) {
+                $total += $ligne->engagement->montant_engage;
+            }
+        }
+
+        $this->montant_total = $total;
+        $this->saveQuietly();
     }
 
     /**
@@ -264,48 +292,29 @@ class BordereauEngagement extends Model
     public function transmettre(User $user, User $destinataire, ?string $observations = null): void
     {
         if ($this->statut !== 'brouillon') {
-            throw new \Exception("Seul un bordereau brouillon peut être transmis");
+            throw new \LogicException('Seul un bordereau en brouillon peut être transmis.');
         }
 
-        if ($this->nombre_engagements === 0) {
-            throw new \Exception("Le bordereau doit contenir au moins un engagement");
+        if (! $destinataire->hasAnyRole([
+            'controleur_financier',
+            'daaf',
+            'directeur_general',
+        ])) {
+            throw new \LogicException('Destinataire non autorisé.');
         }
 
-        \DB::beginTransaction();
-        try {
-            $this->statut = 'transmis';
-            $this->date_transmission = now();
-            $this->detenu_par_id = $destinataire->id;  // ← Utilisateur au lieu de texte
-            $this->date_reception = now();
-            $this->date_derniere_action = now();
+        $this->update([
+            'statut'              => 'transmis',
+            'detenu_par_id'       => $destinataire->id,
+            'instance_destinataire' => $destinataire->roles->first()?->name,
+        ]);
 
-            // Garder aussi le texte pour compatibilité
-            $roleName = $destinataire->roles->first()?->name ?? 'Utilisateur';
-            $roleLabel = match ($roleName) {
-                'chef_service_budget' => 'Chef Service Budget',
-                'sous_directeur_budget' => 'Sous-Directeur Budget',
-                'controleur_financier' => 'Contrôleur Financier',
-                'agence_comptable' => 'Agence Comptable',
-                default => $roleName
-            };
-            $this->instance_destinataire = "{$destinataire->name} ({$roleLabel})";
-
-            $this->save();
-
-            // Enregistrer le mouvement
-            $this->enregistrerMouvement(
-                'transmis',
-                $user,
-                "Agent DAF",
-                $destinataire->name,
-                $observations ?? "Bordereau transmis à {$destinataire->name}"
-            );
-
-            \DB::commit();
-        } catch (\Exception $e) {
-            \DB::rollBack();
-            throw $e;
-        }
+        $this->mouvements()->create([
+            'action'        => 'transmission',
+            'effectue_par'  => $user->id,
+            'destinataire_id' => $destinataire->id,
+            'commentaire'   => $observations,
+        ]);
     }
 
     public function receptionner(User $user): void

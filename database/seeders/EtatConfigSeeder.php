@@ -284,7 +284,62 @@ class EtatConfigSeeder extends Seeder
                 ],
             ],
 
-        ]; // ← FIN du tableau $etats
+            // ===================================
+            // 4. ✅ BORDEREAU D’ENGAGEMENT (AJOUT)
+            // ===================================
+            [
+                'code' => 'bordereau_engagement',
+                'nom' => 'BORDEREAU D\'ENGAGEMENT',
+                'template' => 'pdf.templates.bordereau-engagement',
+                'description' => 'Bordereau récapitulatif des engagements',
+                'categorie' => 'Budgétaire',
+                'ordre' => 4,
+                'champs_variables' => [
+                    'numero' => [
+                        'source' => 'numero',
+                        'type' => 'text',
+                    ],
+                    'date' => [
+                        'source' => 'date_emission',
+                        'type' => 'date',
+                        'format' => 'd/m/Y',
+                    ],
+                    'exercice' => [
+                        'source' => 'exercice.annee',
+                        'type' => 'text',
+                    ],
+                    'budget' => [
+                        'source' => 'budget.libelle',
+                        'type' => 'text',
+                    ],
+                    'total' => [
+                        'source' => 'montant_total',
+                        'type' => 'money',
+                    ],
+                    'lignes' => [
+                        'source' => 'lignes',
+                        'type' => 'array',
+                    ],
+                ],
+                'calculs' => [
+                    'total_lettres' => [
+                        'fonction' => 'nombre_en_lettres',
+                        'params' => ['_raw.montant_total'],
+                    ],
+                ],
+                'signature_config' => [
+                    'afficher' => true,
+                    'signatures' => [
+                        [
+                            'titre' => 'ORDONNATEUR',
+                            'position' => 'right',
+                            'largeur' => 90,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        // ← FIN du tableau $etats
 
         // Créer ou mettre à jour les états
         foreach ($etats as $etat) {

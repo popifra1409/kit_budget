@@ -17,61 +17,171 @@ class ViewBordereauEngagement extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            // ✅ Éditer (seulement en brouillon)
             Actions\EditAction::make()
-                ->visible(fn($record) => $record->estModifiable()),
+                ->visible(fn($record) => $record->statut === 'brouillon'),
 
-            Actions\Action::make('transmettre')
-                ->label('Transmettre')
-                ->icon('heroicon-o-paper-airplane')
+            // ✅ Gérer les engagements (ajouter/retirer)
+            Actions\Action::make('gerer_engagements')
+                ->label('Gérer les engagements')
+                ->icon('heroicon-o-queue-list')
                 ->color('info')
                 ->visible(fn($record) => $record->statut === 'brouillon')
-                ->requiresConfirmation()
-                ->modalHeading('Transmettre le bordereau')
-                ->modalDescription(
-                    fn($record) =>
-                    "Transmettre le bordereau {$record->numero} avec {$record->nombre_engagements} engagement(s) " .
-                        "pour un montant total de " . number_format($record->montant_total, 0, ',', ' ') . " FCFA ?"
-                )
+                ->modalHeading('Ajouter des engagements au bordereau')
+                ->modalWidth('5xl')
                 ->form([
-                    Forms\Components\TextInput::make('instance_destinataire')
-                        ->label('Instance destinataire')
-                        ->required()
-                        ->placeholder('Ex: Contrôle Financier, Tutelle, Direction Générale')
-                        ->helperText('Vers quelle instance transmettre ce bordereau ?'),
+                    Forms\Components\CheckboxList::make('engagements')
+                        ->label('Sélectionnez les engagements à ajouter')
+                        ->options(function ($record) {
+                            return \App\Models\Engagement::query()
+                                ->where('statut', 'provisoire')
+                                ->where('exercice_id', $record->exercice_id)
+                                ->whereDoesntHave('lignesBordereau')
+                                ->get()
+                                ->mapWithKeys(function ($engagement) {
+                                    $beneficiaire = $engagement->beneficiaire;
+                                    $nomBenef = $beneficiaire->raison_sociale
+                                        ?? $beneficiaire->nom_complet
+                                        ?? $beneficiaire->name
+                                        ?? 'N/A';
+
+                                    $label = $engagement->numero . ' - ' . $nomBenef . ' - ' .
+                                        number_format($engagement->montant_engage, 0, ',', ' ') . ' FCFA';
+
+                                    return [$engagement->id => $label];
+                                });
+                        })
+                        ->columns(1)
+                        ->searchable(),
                 ])
                 ->action(function ($record, array $data) {
                     try {
-                        $record->transmettre(auth()->user(), $data['instance_destinataire']);
+                        $ajoutees = 0;
+                        foreach ($data['engagements'] ?? [] as $engagementId) {
+                            $engagement = \App\Models\Engagement::find($engagementId);
+                            if ($engagement) {
+                                $record->ajouterEngagement($engagement);
+                                $ajoutees++;
+                            }
+                        }
+
+                        Notification::make()
+                            ->title("{$ajoutees} engagement(s) ajouté(s)")
+                            ->success()
+                            ->send();
+
+                        return redirect()->route('filament.admin.resources.bordereau-engagements.view', ['record' => $record]);
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('Erreur')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->send();
+                    }
+                }),
+
+            // ✅ Télécharger PDF
+            Actions\Action::make('telecharger_pdf')
+                ->label('Télécharger PDF')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('primary')
+                ->url(fn($record) => route('pdf.telecharger', [
+                    'etat' => 'bordereau_engagement',
+                    'id' => $record->id,
+                ]))
+                ->openUrlInNewTab(),
+
+            // ✅ Afficher PDF
+            Actions\Action::make('afficher_pdf')
+                ->label('Afficher PDF')
+                ->icon('heroicon-o-eye')
+                ->color('gray')
+                ->url(fn($record) => route('pdf.afficher', [
+                    'etat' => 'bordereau_engagement',
+                    'id' => $record->id,
+                ]))
+                ->openUrlInNewTab(),
+
+            // ✅ TRANSMETTRE (visible seulement en brouillon)
+            Actions\Action::make('transmettre')
+                ->label('Transmettre')
+                ->icon('heroicon-o-paper-airplane')
+                ->color('success')
+                ->visible(function ($record) {
+                    return $record->statut === 'brouillon'
+                        && $record->nombre_engagements > 0;
+                })
+                ->requiresConfirmation()
+                ->modalHeading('Transmettre le bordereau')
+                ->modalDescription(fn($record) => "Vous êtes sur le point de transmettre ce bordereau contenant {$record->nombre_engagements} engagement(s) pour un montant total de " . number_format($record->montant_total, 0, ',', ' ') . " FCFA.")
+                ->form([
+                    Forms\Components\Select::make('destinataire_id')
+                        ->label('Destinataire')
+                        ->required()
+                        ->searchable()
+                        ->options(function () {
+                            // ✅ CORRECTION : Utiliser get() puis pluck
+                            return \App\Models\User::query()
+                                ->whereHas('roles', function ($query) {
+                                    $query->whereIn('name', ['controleur_financier', 'daaf', 'directeur_general']);
+                                })
+                                ->orderBy('name')
+                                ->get()
+                                ->pluck('name', 'id');
+                        })
+                        ->placeholder('Sélectionnez un destinataire')
+                        ->helperText('Sélectionnez le contrôleur financier ou le responsable destinataire')
+                        ->native(false), // ✅ Utiliser le select Filament au lieu du natif
+
+                    Forms\Components\Textarea::make('observations')
+                        ->label('Observations')
+                        ->rows(3)
+                        ->placeholder('Observations ou commentaires éventuels...'),
+                ])
+                ->action(function ($record, array $data) {
+                    try {
+                        $destinataire = \App\Models\User::findOrFail($data['destinataire_id']);
+
+                        $record->transmettre(
+                            auth()->user(),
+                            $destinataire,
+                            $data['observations'] ?? null
+                        );
+
                         Notification::make()
                             ->title('Bordereau transmis avec succès')
                             ->success()
-                            ->body("Transmis à {$data['instance_destinataire']}")
+                            ->body("Le bordereau {$record->numero} a été transmis à {$destinataire->name}")
                             ->send();
+
+                        return redirect()->route('filament.admin.resources.bordereau-engagements.view', ['record' => $record]);
                     } catch (\Exception $e) {
                         Notification::make()
                             ->title('Erreur lors de la transmission')
                             ->danger()
                             ->body($e->getMessage())
+                            ->persistent()
                             ->send();
                     }
                 }),
 
+            // ✅ RÉCEPTIONNER
             Actions\Action::make('receptionner')
                 ->label('Réceptionner')
                 ->icon('heroicon-o-inbox-arrow-down')
-                ->color('warning')
-                ->visible(fn($record) => $record->statut === 'transmis')
+                ->color('info')
+                ->visible(fn($record) => $record->statut === 'transmis' && $record->detenu_par_id === auth()->id())
                 ->requiresConfirmation()
-                ->modalHeading('Réceptionner le bordereau')
-                ->modalDescription('Confirmer la réception de ce bordereau pour examen ?')
                 ->action(function ($record) {
                     try {
                         $record->receptionner(auth()->user());
+
                         Notification::make()
                             ->title('Bordereau réceptionné')
                             ->success()
-                            ->body('Le bordereau est maintenant en cours d\'examen')
                             ->send();
+
+                        return redirect()->route('filament.admin.resources.bordereau-engagements.view', ['record' => $record]);
                     } catch (\Exception $e) {
                         Notification::make()
                             ->title('Erreur')
@@ -81,26 +191,26 @@ class ViewBordereauEngagement extends ViewRecord
                     }
                 }),
 
+            // ✅ VALIDER
             Actions\Action::make('valider')
-                ->label('Valider le bordereau')
-                ->icon('heroicon-o-check-circle')
+                ->label('Valider')
+                ->icon('heroicon-o-check-badge')
                 ->color('success')
                 ->visible(fn($record) => in_array($record->statut, ['en_cours', 'transmis']))
                 ->requiresConfirmation()
                 ->modalHeading('Valider le bordereau')
-                ->modalDescription(
-                    fn($record) =>
-                    "Valider tous les engagements de ce bordereau ? " .
-                        "Les {$record->nombre_engagements} engagement(s) passeront en statut définitif."
-                )
+                ->modalDescription(fn($record) => "Confirmer la validation de ce bordereau contenant {$record->nombre_engagements} engagement(s) pour un montant total de " . number_format($record->montant_total, 0, ',', ' ') . " FCFA ?")
                 ->action(function ($record) {
                     try {
                         $record->valider(auth()->user());
+
                         Notification::make()
                             ->title('Bordereau validé')
                             ->success()
-                            ->body("Tous les engagements ont été approuvés")
+                            ->body("Les {$record->nombre_engagements} engagements sont maintenant définitifs")
                             ->send();
+
+                        return redirect()->route('filament.admin.resources.bordereau-engagements.view', ['record' => $record]);
                     } catch (\Exception $e) {
                         Notification::make()
                             ->title('Erreur')
@@ -110,59 +220,28 @@ class ViewBordereauEngagement extends ViewRecord
                     }
                 }),
 
-            Actions\Action::make('rejeter_total')
-                ->label('Rejeter tout')
+            // ✅ REJETER
+            Actions\Action::make('rejeter')
+                ->label('Rejeter')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
                 ->visible(fn($record) => in_array($record->statut, ['en_cours', 'transmis']))
-                ->requiresConfirmation()
-                ->modalHeading('Rejeter le bordereau (total)')
                 ->form([
                     Forms\Components\Textarea::make('motif')
                         ->label('Motif du rejet')
                         ->required()
-                        ->rows(3)
-                        ->placeholder('Ex: Pièces justificatives manquantes, crédits insuffisants...'),
+                        ->rows(3),
                 ])
                 ->action(function ($record, array $data) {
                     try {
                         $record->rejeter(auth()->user(), $data['motif']);
+
                         Notification::make()
                             ->title('Bordereau rejeté')
                             ->warning()
-                            ->body('Tous les engagements ont été rejetés')
                             ->send();
-                    } catch (\Exception $e) {
-                        Notification::make()
-                            ->title('Erreur')
-                            ->danger()
-                            ->body($e->getMessage())
-                            ->send();
-                    }
-                }),
 
-            Actions\Action::make('retourner')
-                ->label('Retourner')
-                ->icon('heroicon-o-arrow-uturn-left')
-                ->color('gray')
-                ->visible(fn($record) => in_array($record->statut, ['en_cours', 'rejete_partiel']))
-                ->requiresConfirmation()
-                ->modalHeading('Retourner le bordereau')
-                ->modalDescription('Retourner le bordereau à l\'émetteur pour corrections ?')
-                ->form([
-                    Forms\Components\Textarea::make('commentaire')
-                        ->label('Commentaire')
-                        ->rows(3)
-                        ->placeholder('Précisez les corrections à apporter...'),
-                ])
-                ->action(function ($record, array $data) {
-                    try {
-                        $record->retourner(auth()->user(), $data['commentaire'] ?? '');
-                        Notification::make()
-                            ->title('Bordereau retourné')
-                            ->success()
-                            ->body('Le bordereau a été retourné pour corrections')
-                            ->send();
+                        return redirect()->route('filament.admin.resources.bordereau-engagements.view', ['record' => $record]);
                     } catch (\Exception $e) {
                         Notification::make()
                             ->title('Erreur')
@@ -182,12 +261,16 @@ class ViewBordereauEngagement extends ViewRecord
                     ->schema([
                         Infolists\Components\TextEntry::make('numero')
                             ->label('Numéro')
-                            ->copyable()
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold'),
+                            ->weight('bold')
+                            ->copyable(),
 
-                        Infolists\Components\TextEntry::make('budget.libelle')
-                            ->label('Budget'),
+                        Infolists\Components\TextEntry::make('date_emission')
+                            ->label('Date d\'émission')
+                            ->date('d/m/Y'),
+
+                        Infolists\Components\TextEntry::make('exercice')
+                            ->label('Exercice')
+                            ->badge(),
 
                         Infolists\Components\TextEntry::make('statut')
                             ->label('Statut')
@@ -197,133 +280,122 @@ class ViewBordereauEngagement extends ViewRecord
                                 'transmis' => 'info',
                                 'en_cours' => 'warning',
                                 'valide' => 'success',
-                                'rejete_total' => 'danger',
-                                'rejete_partiel' => 'danger',
-                                'retourne' => 'gray',
+                                'rejete_total', 'rejete_partiel' => 'danger',
+                                'retourne' => 'warning',
                                 default => 'gray',
                             })
-                            ->formatStateUsing(fn(string $state): string => match ($state) {
-                                'brouillon' => 'Brouillon',
-                                'transmis' => 'Transmis',
-                                'en_cours' => 'En cours',
-                                'valide' => 'Validé',
-                                'rejete_partiel' => 'Rejeté partiellement',
-                                'rejete_total' => 'Rejeté totalement',
-                                'retourne' => 'Retourné',
-                                default => $state,
-                            }),
-
-                        Infolists\Components\TextEntry::make('date_emission')
-                            ->label('Date d\'émission')
-                            ->date('d/m/Y'),
-
-                        Infolists\Components\TextEntry::make('date_transmission')
-                            ->label('Date de transmission')
-                            ->date('d/m/Y')
-                            ->placeholder('Non transmis')
-                            ->visible(fn($record) => $record->date_transmission),
-
-                        Infolists\Components\TextEntry::make('instance_destinataire')
-                            ->label('Instance destinataire')
-                            ->placeholder('Non renseigné')
-                            ->visible(fn($record) => $record->instance_destinataire),
-                    ])
-                    ->columns(3),
-
-                Infolists\Components\Section::make('Montants')
-                    ->schema([
-                        Infolists\Components\TextEntry::make('nombre_engagements')
-                            ->label('Nombre d\'engagements')
-                            ->badge()
-                            ->color('info')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+                            ->formatStateUsing(fn(string $state): string => str_replace('_', ' ', ucfirst($state))),
 
                         Infolists\Components\TextEntry::make('montant_total')
                             ->label('Montant total')
-                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
-                            ->color('success')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold'),
+                            ->money('XAF')
+                            ->weight('bold')
+                            ->color('success'),
 
-                        Infolists\Components\TextEntry::make('statistiques')
-                            ->label('Statistiques des engagements')
-                            ->formatStateUsing(function ($record) {
-                                $stats = $record->getStatistiques();
-                                return "✅ {$stats['valides']} validés | " .
-                                    "⏳ {$stats['en_attente']} en attente | " .
-                                    "❌ {$stats['rejetes']} rejetés | " .
-                                    "🚫 {$stats['annules']} annulés";
-                            })
-                            ->columnSpanFull(),
+                        Infolists\Components\TextEntry::make('nombre_engagements')
+                            ->label('Nombre d\'engagements')
+                            ->badge()
+                            ->color('primary'),
                     ])
                     ->columns(3),
 
-                Infolists\Components\Section::make('Objet')
+                Infolists\Components\Section::make('Budget')
                     ->schema([
-                        Infolists\Components\TextEntry::make('objet')
-                            ->label('')
-                            ->columnSpanFull(),
-                    ]),
+                        Infolists\Components\TextEntry::make('budget.libelle')
+                            ->label('Budget'),
 
-                Infolists\Components\Section::make('Émetteur')
+                        Infolists\Components\TextEntry::make('objet')
+                            ->label('Objet')
+                            ->columnSpanFull()
+                            ->placeholder('Aucun objet défini'),
+                    ])
+                    ->columns(2),
+
+                // ✅ CORRECTION : Section des engagements avec message conditionnel
+                Infolists\Components\Section::make('Engagements')
+                    ->schema([
+                        // ✅ Afficher la liste si > 0 engagements
+                        Infolists\Components\RepeatableEntry::make('lignes')
+                            ->label('Liste des engagements')
+                            ->schema([
+                                Infolists\Components\TextEntry::make('numero_ligne')
+                                    ->label('N°'),
+
+                                Infolists\Components\TextEntry::make('engagement.numero')
+                                    ->label('N° Engagement'),
+
+                                Infolists\Components\TextEntry::make('beneficiaire')
+                                    ->label('Bénéficiaire')
+                                    ->getStateUsing(function ($record) {
+                                        $beneficiaire = $record->engagement?->beneficiaire;
+                                        return $beneficiaire?->raison_sociale
+                                            ?? $beneficiaire?->nom_complet
+                                            ?? $beneficiaire?->name
+                                            ?? 'N/A';
+                                    }),
+
+                                Infolists\Components\TextEntry::make('engagement.objet')
+                                    ->label('Objet')
+                                    ->limit(50),
+
+                                Infolists\Components\TextEntry::make('engagement.montant_engage')
+                                    ->label('Montant')
+                                    ->money('XAF'),
+
+                                Infolists\Components\TextEntry::make('statut_ligne')
+                                    ->label('Statut')
+                                    ->badge()
+                                    ->color(fn(string $state): string => match ($state) {
+                                        'en_attente' => 'warning',
+                                        'valide' => 'success',
+                                        'rejete' => 'danger',
+                                        default => 'gray',
+                                    }),
+
+                                Infolists\Components\TextEntry::make('observations')
+                                    ->label('Observations')
+                                    ->placeholder('Aucune'),
+                            ])
+                            ->columns(7)
+                            ->visible(fn($record) => $record->nombre_engagements > 0),
+
+                        // ✅ Afficher un message si 0 engagement
+                        Infolists\Components\TextEntry::make('message_vide')
+                            ->label('')
+                            ->default('Aucun engagement ajouté à ce bordereau. Cliquez sur "Gérer les engagements" pour en ajouter.')
+                            ->color('warning')
+                            ->icon('heroicon-o-information-circle')
+                            ->visible(fn($record) => $record->nombre_engagements == 0)
+                            ->columnSpanFull(),
+                    ])
+                    ->collapsible(),
+
+                Infolists\Components\Section::make('Suivi et validation')
                     ->schema([
                         Infolists\Components\TextEntry::make('emetteur.name')
                             ->label('Émis par'),
 
-                        Infolists\Components\TextEntry::make('emetteur.email')
-                            ->label('Email émetteur'),
-                    ])
-                    ->columns(2),
-
-                Infolists\Components\Section::make('Validation')
-                    ->schema([
-                        Infolists\Components\TextEntry::make('receptionniste.name')
-                            ->label('Réceptionné par')
-                            ->placeholder('Non réceptionné'),
-
-                        Infolists\Components\TextEntry::make('date_reception')
-                            ->label('Date de réception')
-                            ->dateTime('d/m/Y H:i')
-                            ->placeholder('Non réceptionné'),
+                        Infolists\Components\TextEntry::make('detenuPar.name')
+                            ->label('Détenu par')
+                            ->placeholder('N/A'),
 
                         Infolists\Components\TextEntry::make('validateur.name')
                             ->label('Validé par')
-                            ->placeholder('Non validé'),
+                            ->visible(fn($record) => $record->valide_par),
 
                         Infolists\Components\TextEntry::make('date_validation')
                             ->label('Date de validation')
                             ->dateTime('d/m/Y H:i')
-                            ->placeholder('Non validé'),
-                    ])
-                    ->columns(2)
-                    ->visible(fn($record) => $record->receptionne_par || $record->valide_par),
-
-                Infolists\Components\Section::make('Rejet')
-                    ->schema([
-                        Infolists\Components\TextEntry::make('rejeteur.name')
-                            ->label('Rejeté par'),
-
-                        Infolists\Components\TextEntry::make('date_rejet')
-                            ->label('Date de rejet')
-                            ->dateTime('d/m/Y H:i'),
+                            ->visible(fn($record) => $record->date_validation),
 
                         Infolists\Components\TextEntry::make('motif_rejet')
                             ->label('Motif du rejet')
-                            ->columnSpanFull(),
+                            ->visible(fn($record) => $record->motif_rejet)
+                            ->columnSpanFull()
+                            ->color('danger'),
                     ])
                     ->columns(2)
-                    ->visible(fn($record) => $record->rejete_par)
-                    ->collapsed(),
-
-                Infolists\Components\Section::make('Observations')
-                    ->schema([
-                        Infolists\Components\TextEntry::make('observations')
-                            ->label('')
-                            ->placeholder('Aucune observation')
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible()
-                    ->collapsed(),
+                    ->collapsible(),
             ]);
     }
 }
