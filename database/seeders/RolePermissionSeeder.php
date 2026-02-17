@@ -48,7 +48,6 @@ class RolePermissionSeeder extends Seeder
             'service',
             'tache',
             'transmission',
-            'type_engagement',
             'type_decision',
             'type_engagement',
             'user',
