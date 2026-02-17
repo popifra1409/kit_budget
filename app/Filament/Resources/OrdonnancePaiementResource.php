@@ -25,6 +25,64 @@ class OrdonnancePaiementResource extends Resource
     protected static ?string $navigationGroup = 'Commandes & Engagement';
     protected static ?int $navigationSort = 5;
 
+    // ========================================
+    // PERMISSIONS
+    // ========================================
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_ordonnance_paiement') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_ordonnance_paiement') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_ordonnance_paiement') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        $user = auth()->user();
+
+        if (!$user?->can('update_ordonnance_paiement')) {
+            return false;
+        }
+
+        // Règle métier : Seules les OP en brouillon sont modifiables
+        if ($record->statut !== 'brouillon') {
+            return false;
+        }
+
+        // Override pour super admin / DAAF
+        if ($user->can('override_ordonnance_paiement')) {
+            return true;
+        }
+
+        // Sinon, seulement ses propres OP
+        return $record->created_by === $user->id;
+    }
+
+    public static function canDelete($record): bool
+    {
+        $user = auth()->user();
+
+        if (!$user?->can('delete_ordonnance_paiement')) {
+            return false;
+        }
+
+        // Seulement les brouillons
+        if ($record->statut !== 'brouillon') {
+            return false;
+        }
+
+        // Override ou créateur
+        return $user->can('override_ordonnance_paiement') || $record->created_by === $user->id;
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()

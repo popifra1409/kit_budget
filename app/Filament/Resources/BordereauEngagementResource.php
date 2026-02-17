@@ -35,77 +35,51 @@ class BordereauEngagementResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-
-    /**
-     * Permissions - Bordereau d'engagement avec workflow complet
-     */
-
+    
     // ========================================
-    // CRUD Standard
+    // PERMISSIONS
     // ========================================
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('view_any_bordereau') ?? false;
+        return auth()->user()?->can('view_any_bordereau_engagement') ?? false;
     }
 
     public static function canView($record): bool
     {
-        return auth()->user()?->can('view_bordereau') ?? false;
+        return auth()->user()?->can('view_bordereau_engagement') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->can('create_bordereau') ?? false;
+        return auth()->user()?->can('create_bordereau_engagement') ?? false;
     }
 
     public static function canEdit($record): bool
     {
         $user = auth()->user();
 
-        if (!$user?->can('update_bordereau')) {
+        if (!$user?->can('update_bordereau_engagement')) {
             return false;
         }
 
-        // règle métier
-        if (! $record->estModifiable()) {
-            Notification::make()
-                ->title('Bordereau verrouillé')
-                ->warning()
-                ->body("Exercice {$record->exercice} en lecture seule.")
-                ->send();
-
+        // Règle métier : Seuls les brouillons sont modifiables
+        if (!$record->estModifiable()) {
             return false;
         }
 
-        // si pas super admin → seulement ses brouillons
-        if (!$user->can('override_bordereau')) {
-            return $record->statut === 'brouillon'
-                && $record->emis_par === $user->id;
+        // Override pour super admin / DAAF
+        if ($user->can('override_bordereau_engagement')) {
+            return true;
         }
 
-        return true;
+        // Sinon, seulement ses propres bordereaux
+        return $record->statut === 'brouillon' && $record->emis_par === $user->id;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_bordereau') &&
-            $record->estModifiable();
-    }
-
-    public static function canEditRecord($record): bool
-    {
-        $canEdit = static::canEdit($record);
-
-        if (!$canEdit && $record->estLectureSeule()) {
-            Notification::make()
-                ->title('Édition impossible')
-                ->warning()
-                ->body("Exercice {$record->exercice->annee} en lecture seule.")
-                ->send();
-        }
-
-        return $canEdit;
+        return auth()->user()?->can('delete_bordereau_engagement') && $record->estModifiable();
     }
 
     public static function form(Form $form): Form
