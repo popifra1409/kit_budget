@@ -321,77 +321,7 @@ class OrdonnancePaiement extends Model
         return static::genererNumero($type);
     }
 
-    /**
-     * ✅ AJOUT : Créer une OP Impôt depuis un Bon de Commande
-     */
-    // public static function creerDepuisBonCommande(BonCommande $bonCommande, string $type = 'standard'): self
-    // {
-    //     // ✅ Charger l'engagement via la relation polymorphique
-    //     if (!$bonCommande->relationLoaded('engagement')) {
-    //         $bonCommande->load('engagement');
-    //     }
 
-    //     $engagement = $bonCommande->engagement;
-
-    //     if (!$engagement) {
-    //         throw new \Exception("Le bon de commande n'a pas d'engagement associé. Veuillez d'abord engager le BC.");
-    //     }
-
-    //     if ($type === 'impot') {
-    //         // OP Impôt : pour reverser les taxes
-    //         $montantTotalImpots = $bonCommande->calculerMontantTotalImpots();
-
-    //         if ($montantTotalImpots <= 0) {
-    //             throw new \Exception("Aucun impôt à reverser pour ce bon de commande");
-    //         }
-
-    //         return static::create([
-    //             'exercice_id' => $bonCommande->exercice_id,
-    //             'numero' => static::genererNumeroFromBonCommande($bonCommande, 'impot'), // ✅ Basé sur BC
-    //             'type_ordonnance' => 'impot',
-    //             'engagement_id' => $engagement->id,
-    //             'beneficiaire_type' => 'App\Models\OrganismePublic',
-    //             'beneficiaire_id' => 1,
-    //             'date_emission' => now(),
-    //             'objet' => "Reversement des impots et taxes - BC N° {$bonCommande->numero}",
-    //             'montant_brut' => $montantTotalImpots,
-    //             'montant_tva' => $bonCommande->montant_tva ?? 0,
-    //             'montant_ir' => $bonCommande->montant_ir ?? 0,
-    //             'montant_tsr' => $bonCommande->montant_tsr ?? 0,
-    //             'montant_cnps' => $bonCommande->montant_cnps ?? 0,
-    //             'montant_irnc' => $bonCommande->montant_irnc ?? 0,
-    //             'montant_autres_taxes' => $bonCommande->montant_autres_taxes ?? 0,
-    //             'montant_impot' => $montantTotalImpots,
-    //             'montant_net' => $montantTotalImpots,
-    //             'statut' => 'brouillon',
-    //             'created_by' => auth()->id(),
-    //         ]);
-    //     } else {
-    //         // OP Standard : pour payer le fournisseur (HT - IR)
-    //         $montantNet = $bonCommande->montant_ht - $bonCommande->montant_ir;
-
-    //         if ($montantNet <= 0) {
-    //             throw new \Exception("Le montant net à payer au fournisseur est invalide");
-    //         }
-
-    //         return static::create([
-    //             'exercice_id' => $bonCommande->exercice_id,
-    //             'numero' => static::genererNumeroFromBonCommande($bonCommande, 'standard'), // ✅ Basé sur BC
-    //             'type_ordonnance' => 'standard',
-    //             'engagement_id' => $engagement->id,
-    //             'beneficiaire_type' => Fournisseur::class,
-    //             'beneficiaire_id' => $bonCommande->fournisseur_id,
-    //             'date_emission' => now(),
-    //             'objet' => "Paiement fournisseur - BC N° {$bonCommande->numero}",
-    //             'montant_brut' => $bonCommande->montant_ht,
-    //             'montant_ir' => $bonCommande->montant_ir ?? 0,
-    //             'montant_impot' => $bonCommande->montant_ir ?? 0,
-    //             'montant_net' => $montantNet,
-    //             'statut' => 'brouillon',
-    //             'created_by' => auth()->id(),
-    //         ]);
-    //     }
-    // }
 
     public static function creerDepuisBonCommande(BonCommande $bonCommande): self
     {

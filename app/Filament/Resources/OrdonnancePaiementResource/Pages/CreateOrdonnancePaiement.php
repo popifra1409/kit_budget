@@ -4,72 +4,163 @@ namespace App\Filament\Resources\OrdonnancePaiementResource\Pages;
 
 use App\Filament\Resources\OrdonnancePaiementResource;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Notifications\Notification;
 use App\Models\Engagement;
+use App\Models\OrdonnancePaiement;
 
 class CreateOrdonnancePaiement extends CreateRecord
 {
     protected static string $resource = OrdonnancePaiementResource::class;
 
-    protected function mutateFormDataBeforeCreate(array $data): array
+    /**
+     * ✅ Intercepter la création complète pour utiliser la méthode de l'engagement
+     */
+    public function create(bool $another = false): void
     {
-        // Générer le numéro d'OP
-        if (isset($data['engagement_id'])) {
-            $engagement = Engagement::find($data['engagement_id']);
-            if ($engagement) {
-                $data['numero'] = \App\Models\OrdonnancePaiement::genererNumeroFromEngagement(
-                    $engagement,
-                    $data['type_ordonnance']
-                );
-            } else {
-                $data['numero'] = \App\Models\OrdonnancePaiement::genererNumero(
-                    $data['type_ordonnance']
-                );
+        $this->authorizeAccess();
+
+        try {
+            // Valider le formulaire
+            $this->callHook('beforeValidate');
+            $data = $this->form->getState();
+            $this->callHook('afterValidate');
+
+            $engagementId = $data['engagement_id'] ?? null;
+
+            if (!$engagementId) {
+                throw new \Exception('Aucun engagement sélectionné');
             }
-        } else {
-            $data['numero'] = \App\Models\OrdonnancePaiement::genererNumero(
-                $data['type_ordonnance']
+
+            // Charger l'engagement avec ses relations
+            $engagement = Engagement::with('engageable', 'beneficiaire')->findOrFail($engagementId);
+
+            // ✅ CRÉER LES ORDONNANCES VIA LA MÉTHODE DE L'ENGAGEMENT
+            $ordonnances = $engagement->creerOrdonnancesPaiement();
+
+            // Stocker l'OP standard comme record principal pour la redirection
+            if (isset($ordonnances['standard'])) {
+                $this->record = $ordonnances['standard'];
+            } else {
+                // Si pas d'OP standard, prendre la première disponible
+                $this->record = reset($ordonnances);
+            }
+
+            // ✅ Message de succès détaillé
+            $message = $this->construireMessageSucces($ordonnances);
+
+            Notification::make()
+                ->title('✅ Ordonnances créées avec succès')
+                ->success()
+                ->body($message)
+                ->duration(10000)
+                ->send();
+
+            // Log pour traçabilité
+            \Log::info('Ordonnances créées depuis Filament', [
+                'engagement_id' => $engagement->id,
+                'engagement_numero' => $engagement->numero,
+                'op_standard' => $ordonnances['standard']->numero ?? null,
+                'op_impot' => $ordonnances['impot']->numero ?? null,
+                'utilisateur' => auth()->user()->name,
+            ]);
+
+            // Appeler les hooks après création
+            $this->callHook('afterCreate');
+
+            // Redirection
+            $this->redirect($this->getRedirectUrl());
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('❌ Erreur lors de la création')
+                ->danger()
+                ->body($e->getMessage())
+                ->persistent()
+                ->send();
+
+            \Log::error('Erreur création OP depuis Filament', [
+                'engagement_id' => $engagementId ?? null,
+                'erreur' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            // Ne pas rediriger en cas d'erreur
+            return;
+        }
+    }
+
+    /**
+     * ✅ Construire un message de succès détaillé
+     */
+    protected function construireMessageSucces(array $ordonnances): string
+    {
+        $details = [];
+
+        if (isset($ordonnances['standard'])) {
+            $op = $ordonnances['standard'];
+            $details[] = sprintf(
+                "📄 **OP Standard %s**\n   → Bénéficiaire : %s\n   → Montant : %s FCFA",
+                $op->numero,
+                $op->beneficiaire->raison_sociale ?? $op->beneficiaire->nom_complet ?? $op->beneficiaire->name ?? 'N/A',
+                number_format($op->montant_net, 0, ',', ' ')
             );
         }
 
-        // Définir le créateur
-        $data['created_by'] = auth()->id();
-
-        // Calculer mois et période depuis date_emission
-        if (isset($data['date_emission'])) {
-            $date = \Carbon\Carbon::parse($data['date_emission']);
-            $data['mois_emission'] = $date->format('m');
-            $data['periode'] = $date->format('m/Y');
+        if (isset($ordonnances['impot'])) {
+            $op = $ordonnances['impot'];
+            $details[] = sprintf(
+                "💰 **OP Impôt %s**\n   → Bénéficiaire : Trésor Public\n   → Montant : %s FCFA",
+                $op->numero,
+                number_format($op->montant_net, 0, ',', ' ')
+            );
         }
 
-        // ✅ CRITIQUE : Définir le bénéficiaire pour les OP standard
-        if (isset($data['engagement_id']) && $data['type_ordonnance'] === 'standard') {
-            $engagement = Engagement::with('bonCommande.fournisseur')->find($data['engagement_id']);
+        $total = count($ordonnances);
+        $header = $total === 1
+            ? "1 ordonnance créée :"
+            : "{$total} ordonnances créées :";
 
-            if ($engagement && $engagement->bonCommande && $engagement->bonCommande->fournisseur) {
-                $fournisseur = $engagement->bonCommande->fournisseur;
-                $data['beneficiaire_type'] = get_class($fournisseur);
-                $data['beneficiaire_id'] = $fournisseur->id;
-
-                // Log pour debug
-                \Log::info('Bénéficiaire défini dans CreateOrdonnancePaiement', [
-                    'beneficiaire_type' => $data['beneficiaire_type'],
-                    'beneficiaire_id' => $data['beneficiaire_id'],
-                    'fournisseur' => $fournisseur->raison_sociale ?? $fournisseur->name,
-                ]);
-            }
-        }
-
-        // Pour les OP impôt, pas de bénéficiaire (Direction des Impôts)
-        if ($data['type_ordonnance'] === 'impot') {
-            $data['beneficiaire_type'] = null;
-            $data['beneficiaire_id'] = null;
-        }
-
-        return $data;
+        return $header . "\n\n" . implode("\n\n", $details);
     }
 
+    /**
+     * ✅ Redirection vers la liste avec filtre sur l'engagement
+     */
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('view', ['record' => $this->record]);
+        $engagementId = $this->data['engagement_id'] ?? null;
+
+        // Si on a un engagement, rediriger vers la liste filtrée
+        if ($engagementId) {
+            return $this->getResource()::getUrl('index', [
+                'tableFilters' => [
+                    'engagement_id' => ['value' => $engagementId],
+                ],
+            ]);
+        }
+
+        // Sinon, redirection standard vers la vue de l'OP créée
+        if ($this->record) {
+            return $this->getResource()::getUrl('view', ['record' => $this->record]);
+        }
+
+        // Fallback vers la liste
+        return $this->getResource()::getUrl('index');
+    }
+
+    /**
+     * ✅ Désactiver la notification par défaut de Filament
+     */
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return null; // On gère la notification manuellement dans create()
+    }
+
+    /**
+     * ✅ Hook après création (optionnel)
+     */
+    protected function afterCreate(): void
+    {
+        // Actions supplémentaires si nécessaire
+        // Par exemple : envoyer un email, créer une notification système, etc.
     }
 }

@@ -18,19 +18,12 @@ use Illuminate\Database\Eloquent\Builder;
 class OrdonnancePaiementResource extends Resource
 {
     protected static ?string $model = OrdonnancePaiement::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-
     protected static ?string $navigationLabel = 'Ordonnances de Paiement';
-
     protected static ?string $modelLabel = 'Ordonnance de Paiement';
-
     protected static ?string $pluralModelLabel = 'Ordonnances de Paiement';
-
     protected static ?string $navigationGroup = 'Commandes & Engagement';
-
     protected static ?int $navigationSort = 5;
-
 
     public static function getEloquentQuery(): Builder
     {
@@ -38,185 +31,114 @@ class OrdonnancePaiementResource extends Resource
             ->whereIn('type_ordonnance', ['standard', 'impot']);
     }
 
-
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Exercice')
+                Forms\Components\Section::make('Création automatique d\'ordonnances')
+                    ->description('⚡ Les ordonnances de paiement seront créées automatiquement à partir de l\'engagement.')
                     ->schema([
-                        ExerciceSelect::make(),
-                    ])
-                    ->collapsible()
-                    ->collapsed(fn($record) => $record !== null),
-
-                Forms\Components\Section::make('Informations générales')
-                    ->schema([
-                        Forms\Components\Select::make('type_ordonnance')
-                            ->label('Type d\'ordonnance')
-                            ->options([
-                                'standard' => 'Standard (Fournisseur)',
-                                'impot' => 'Impôt (Direction des Impôts)',
-                            ])
-                            ->required()
-                            ->default('standard')
-                            ->live(),
-
-                        Forms\Components\TextInput::make('numero')
-                            ->label('N° Ordonnance')
-                            ->disabled()
-                            ->dehydrated(false)
-                            ->placeholder('Généré automatiquement')
-                            ->visible(fn($record) => $record === null),
-
                         Forms\Components\Select::make('engagement_id')
                             ->label('Engagement')
-                            ->options(Engagement::with('nomenclaturePrincipale')
-                                ->get()
-                                ->mapWithKeys(fn($eng) => [
-                                    $eng->id => "{$eng->numero} - {$eng->objet} (" . number_format($eng->montant_engage, 0, ',', ' ') . " FCFA)"
-                                ]))
+                            ->options(
+                                Engagement::with('engageable', 'beneficiaire')
+                                    ->where('statut', 'definitif')
+                                    ->whereDoesntHave('ordonnancesPaiement')
+                                    ->orderBy('date_engagement', 'desc')
+                                    ->get()
+                                    ->mapWithKeys(fn($eng) => [
+                                        $eng->id => sprintf(
+                                            '%s - %s (%s FCFA)',
+                                            $eng->numero,
+                                            \Str::limit($eng->objet, 50),
+                                            number_format($eng->montant_engage, 0, ',', ' ')
+                                        )
+                                    ])
+                            )
                             ->required()
                             ->searchable()
                             ->preload()
                             ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if (!$state) {
-                                    return;
-                                }
-
-                                $engagement = Engagement::with('engageable')->find($state);
-
-                                if (
-                                    $engagement &&
-                                    $engagement->engageable instanceof \App\Models\BonCommande
-                                ) {
-                                    $bc = $engagement->engageable;
-
-                                    $ir = $bc->montant_ir ?? 0;
-                                    $net = $engagement->montant_engage - $ir;
-
-                                    $set('objet', $bc->objet);
-                                    $set('montant_brut', $engagement->montant_engage);
-                                    $set('montant_impot', $ir);
-                                    $set('montant_net', $net);
-                                }
-                            }),
-
-                        Forms\Components\Textarea::make('objet')
-                            ->label('Objet')
-                            ->required()
-                            ->rows(2)
+                            ->helperText('💡 Seuls les engagements définitifs sans ordonnances sont listés')
                             ->columnSpanFull(),
-                    ])
-                    ->columns(2),
 
-                Forms\Components\Section::make('Montants')
+                        // ✅ Aperçu des montants
+                        Forms\Components\Placeholder::make('apercu')
+                            ->label('📊 Aperçu')
+                            ->content(fn(Forms\Get $get) => static::getApercu($get('engagement_id')))
+                            ->columnSpanFull()
+                            ->visible(fn(Forms\Get $get) => $get('engagement_id')),
+                    ]),
+
+                Forms\Components\Section::make('ℹ️ Information')
                     ->schema([
-                        Forms\Components\TextInput::make('montant_brut')
-                            ->label('Montant brut')
-                            ->numeric()
-                            ->prefix('FCFA')
-                            ->required()
-                            ->live()
-                            ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
-                                $impot = $get('montant_impot') ?? 0;
-                                $set('montant_net', $state - $impot);
-                            }),
-
-                        Forms\Components\TextInput::make('montant_impot')
-                            ->label('Montant impôt')
-                            ->numeric()
-                            ->prefix('FCFA')
-                            ->default(0)
-                            ->live()
-                            ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
-                                $brut = $get('montant_brut') ?? 0;
-                                $set('montant_net', $brut - $state);
-                            }),
-
-                        Tables\Columns\TextColumn::make('montant_ordonnance')
-                            ->label('Montant')
-                            ->money('XAF')
-                            ->sortable()
-                            ->weight('bold')
-                            ->color('success'),
-
-                        Forms\Components\TextInput::make('montant_pec')
-                            ->label('Montant PEC Médical')
-                            ->numeric()
-                            ->prefix('FCFA')
-                            ->default(0)
-                            ->visible(fn(Forms\Get $get) => $get('type_ordonnance') === 'impot'),
-                    ])
-                    ->columns(4),
-
-                Forms\Components\Section::make('Dates et Références')
-                    ->schema([
-                        Forms\Components\DatePicker::make('date_emission')
-                            ->label('Date d\'émission')
-                            ->required()
-                            ->default(now())
-                            ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state) {
-                                    $date = \Carbon\Carbon::parse($state);
-                                    $set('mois_emission', $date->format('m'));
-                                    $set('periode', $date->format('m/Y'));
-                                }
-                            }),
-
-                        Forms\Components\TextInput::make('numero_bon')
-                            ->label('N° Bon de caisse')
-                            ->maxLength(255),
-
-                        Forms\Components\TextInput::make('numero_emission')
-                            ->label('N° d\'émission')
-                            ->maxLength(255),
-
-                        Forms\Components\TextInput::make('numero_op')
-                            ->label('N° OP')
-                            ->maxLength(255),
-
-                        Forms\Components\Select::make('statut')
-                            ->label('Statut')
-                            ->options([
-                                'brouillon' => 'Brouillon',
-                                'emise' => 'Émise',
-                                'visee' => 'Visée',
-                                'payee' => 'Payée',
-                                'annulee' => 'Annulée',
-                            ])
-                            ->default('brouillon')
-                            ->required()
-                            ->visible(fn($record) => $record !== null),
-                    ])
-                    ->columns(3),
-
-                Forms\Components\Section::make('Paiement')
-                    ->schema([
-                        Forms\Components\DatePicker::make('date_paiement')
-                            ->label('Date de paiement')
-                            ->visible(fn($record) => $record && $record->statut === 'payee'),
-
-                        Forms\Components\TextInput::make('reference_paiement')
-                            ->label('Référence de paiement')
-                            ->maxLength(255)
-                            ->visible(fn($record) => $record && $record->statut === 'payee'),
-                    ])
-                    ->columns(2)
-                    ->visible(fn($record) => $record && $record->statut === 'payee'),
-
-                Forms\Components\Section::make('Observations')
-                    ->schema([
-                        Forms\Components\Textarea::make('observations')
-                            ->label('Observations')
-                            ->rows(3)
+                        Forms\Components\Placeholder::make('info')
+                            ->label('')
+                            ->content(
+                                "**Ce qui sera créé automatiquement :**\n\n" .
+                                    "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
+                                    "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
+                                    "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
+                            )
                             ->columnSpanFull(),
                     ])
                     ->collapsible()
                     ->collapsed(),
             ]);
+    }
+
+    /**
+     * ✅ Aperçu des montants avant création
+     */
+    protected static function getApercu(?int $engagementId): string
+    {
+        if (!$engagementId) return '';
+
+        try {
+            $engagement = Engagement::with('engageable', 'beneficiaire')->find($engagementId);
+            if (!$engagement) return '';
+
+            $donnees = $engagement->extraireDonneesDocument();
+
+            // Calculer les retenues
+            if ($engagement->estBonCommande()) {
+                $retenues = ($donnees['montant_ir'] ?? 0) +
+                    ($donnees['montant_tva'] ?? 0) +
+                    ($donnees['montant_tsr'] ?? 0);
+            } else {
+                $retenues = ($donnees['montant_ir'] ?? 0) +
+                    ($donnees['montant_cnps'] ?? 0) +
+                    ($donnees['montant_irnc'] ?? 0) +
+                    ($donnees['autres_retenues'] ?? 0);
+            }
+
+            $beneficiaire = $donnees['beneficiaire'];
+            $nomBenef = $beneficiaire->raison_sociale ??
+                $beneficiaire->nom_complet ??
+                $beneficiaire->name ??
+                'N/A';
+
+            $html = "**💰 Montants :**\n\n";
+            $html .= "• Montant TTC : **" . number_format($donnees['montant_ttc'], 0, ',', ' ') . " FCFA**\n";
+            $html .= "• Montant Net (bénéficiaire) : **" . number_format($donnees['montant_net'], 0, ',', ' ') . " FCFA**\n";
+
+            if ($retenues > 0) {
+                $html .= "• Retenues/Impôts (Trésor) : **" . number_format($retenues, 0, ',', ' ') . " FCFA**\n\n";
+                $html .= "**🎯 Résultat :**\n\n";
+                $html .= "→ **2 ordonnances** seront créées :\n";
+                $html .= "   • OP Standard pour **{$nomBenef}**\n";
+                $html .= "   • OP Impôt pour **Trésor Public**";
+            } else {
+                $html .= "\n**🎯 Résultat :**\n\n";
+                $html .= "→ **1 ordonnance** sera créée :\n";
+                $html .= "   • OP Standard pour **{$nomBenef}**\n";
+                $html .= "   • Aucune retenue à reverser";
+            }
+
+            return $html;
+        } catch (\Exception $e) {
+            return "⚠️ Erreur : " . $e->getMessage();
+        }
     }
 
     public static function table(Table $table): Table
@@ -257,10 +179,26 @@ class OrdonnancePaiementResource extends Resource
                     ->formatStateUsing(fn($record) => $record->statut_label)
                     ->color(fn($record) => $record->statut_color),
 
+                // ✅ Colonnes de montants correctement placées dans la table
+                Tables\Columns\TextColumn::make('montant_brut')
+                    ->label('Montant brut')
+                    ->money('XAF')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('montant_impot')
+                    ->label('A précompter')
+                    ->money('XAF')
+                    ->sortable()
+                    ->color('danger')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('montant_net')
                     ->label('Montant Net')
                     ->money('XAF')
-                    ->sortable(),
+                    ->sortable()
+                    ->weight('bold')
+                    ->color('success'),
 
                 Tables\Columns\TextColumn::make('date_emission')
                     ->label('Date émission')
@@ -302,28 +240,13 @@ class OrdonnancePaiementResource extends Resource
                         return $query
                             ->when(
                                 $data['date_emission_from'],
-                                fn($q, $date) =>
-                                $q->whereDate('date_emission', '>=', $date)
+                                fn($q, $date) => $q->whereDate('date_emission', '>=', $date)
                             )
                             ->when(
                                 $data['date_emission_until'],
-                                fn($q, $date) =>
-                                $q->whereDate('date_emission', '<=', $date)
+                                fn($q, $date) => $q->whereDate('date_emission', '<=', $date)
                             );
                     }),
-
-                // ✅ FILTRE TECHNIQUE POUR "Voir OP"
-                Tables\Filters\Filter::make('engagement_id')
-                    ->label('Engagement')
-                    ->query(function ($query, $data) {
-                        return $query->when(
-                            $data['value'] ?? null,
-                            fn($q, $engagementId) =>
-                            $q->where('engagement_id', $engagementId)
-                                ->whereIn('type_ordonnance', ['standard', 'impot'])
-                        );
-                    })
-                    ->hidden(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -337,7 +260,6 @@ class OrdonnancePaiementResource extends Resource
                     ->requiresConfirmation()
                     ->action(function ($record) {
                         $record->emettre();
-
                         Notification::make()
                             ->title('Ordonnance émise')
                             ->success()
@@ -362,7 +284,6 @@ class OrdonnancePaiementResource extends Resource
                         $record->marquerPayee($data['reference_paiement']);
                         $record->date_paiement = $data['date_paiement'];
                         $record->save();
-
                         Notification::make()
                             ->title('Paiement enregistré')
                             ->success()
@@ -370,9 +291,6 @@ class OrdonnancePaiementResource extends Resource
                     }),
 
                 Tables\Actions\ActionGroup::make([
-                    // ======================
-                    // OP STANDARD
-                    // ======================
                     Tables\Actions\Action::make('telecharger_op')
                         ->label('Télécharger OP')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -394,9 +312,6 @@ class OrdonnancePaiementResource extends Resource
                         ]))
                         ->openUrlInNewTab(),
 
-                    // ======================
-                    // OP IMPÔT
-                    // ======================
                     Tables\Actions\Action::make('telecharger_op_impot')
                         ->label('Télécharger OP Impôt')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -433,9 +348,7 @@ class OrdonnancePaiementResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
