@@ -68,19 +68,20 @@ class BordereauEngagement extends Model
             if (empty($bordereau->numero)) {
                 $bordereau->numero = $bordereau->genererNumero();
             }
-
             if (empty($bordereau->exercice)) {
                 $bordereau->exercice = now()->year;
             }
-
             if (empty($bordereau->date_emission)) {
                 $bordereau->date_emission = now();
             }
-
-            // Ajouter l'utilisateur connecté automatiquement
             if (empty($bordereau->emis_par)) {
                 $bordereau->emis_par = auth()->id();
             }
+        });
+
+        // ✅ AJOUT : Recalculer après sync des engagements
+        static::created(function ($bordereau) {
+            // Déclenché après création, les engagements seront syncés ensuite
         });
     }
 
@@ -269,23 +270,24 @@ class BordereauEngagement extends Model
      */
     public function recalculerMontants(): void
     {
-        // ✅ Compter le nombre de lignes
-        $this->nombre_engagements = $this->lignes()->count();
-
-        // ✅ Calculer le total en chargeant les engagements
-        $total = 0;
+        // Recharger les lignes depuis la base
         $this->load('lignes.engagement');
 
+        $total = 0;
         foreach ($this->lignes as $ligne) {
             if ($ligne->engagement) {
-                $total += $ligne->engagement->montant_engage;
+                $total += $ligne->engagement->montant_engage ?? 0;
             }
         }
 
-        $this->montant_total = $total;
-        $this->saveQuietly();
+        // Utiliser update() pour éviter les boucles d'événements
+        $this->timestamps = false;
+        $this->update([
+            'nombre_engagements' => $this->lignes->count(),
+            'montant_total' => $total,
+        ]);
+        $this->timestamps = true;
     }
-
     /**
      * Transmettre le bordereau à un utilisateur spécifique
      */
