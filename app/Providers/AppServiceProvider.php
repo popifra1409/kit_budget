@@ -42,6 +42,23 @@ class AppServiceProvider extends ServiceProvider
     {
         // ✅ Mapper les types courts vers les classes complètes
         Relation::enforceMorphMap([
+            //configurations
+            'programme' => \App\Models\Programme::class,
+            'action' => \App\Models\Action::class,
+            'activite' => \App\Models\Activite::class,
+            'tache' => \App\Models\Tache::class,
+            'nomenclature_budgetaire' => \App\Models\NomenclatureBudgetaire::class,
+            'budget' => \App\Models\Budget::class,
+            'prevision_recette' => \App\Models\PrevisionRecette::class,
+            'recette_reelle' => \App\Models\RecetteReelle::class,
+            'virement_budgetaire' => \App\Models\VirementBudgetaire::class,
+            'memoire_depense' => \App\Models\MemoireDepense::class,
+            'reference_mercuriale' => \App\Models\ReferenceMercuriale::class,
+            'etat_config' => \App\Models\EtatConfig::class,
+            'type_decision' => \App\Models\TypeDecision::class,
+            'type_engagement' => \App\Models\TypeEngagement::class,
+            'parametre_structure' => \App\Models\ParametresStructure::class,
+            'parametre_fournisseur' => \App\Models\ParametresFournisseur::class,
             // Documents
             'bon_commande' => \App\Models\BonCommande::class,
             'engagement'   => \App\Models\Engagement::class,
@@ -53,6 +70,7 @@ class AppServiceProvider extends ServiceProvider
             //Acteurs
             'fournisseur' => \App\Models\Fournisseur::class,
             'personnel' => \App\Models\Personnel::class,
+            'service' => \App\Models\Service::class,
             'App\Models\User' => \App\Models\User::class,
             'user'            => \App\Models\User::class,
             // 🔐 Sécurité (Spatie)
