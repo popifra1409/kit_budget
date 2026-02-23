@@ -6,6 +6,7 @@ use App\Filament\Resources\OrdonnancePaiementResource\Pages;
 use App\Models\OrdonnancePaiement;
 use App\Models\Engagement;
 use App\Models\Fournisseur;
+use App\Exports\OrdonnancesPaiementExport;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -14,6 +15,8 @@ use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use Illuminate\Database\Eloquent\Builder;
+use Maatwebsite\Excel\Facades\Excel;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class OrdonnancePaiementResource extends Resource
 {
@@ -245,7 +248,7 @@ class OrdonnancePaiementResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('montant_impot')
-                    ->label('A précompter')
+                    ->label('À précompter')
                     ->money('XAF')
                     ->sortable()
                     ->color('danger')
@@ -396,12 +399,253 @@ class OrdonnancePaiementResource extends Resource
                     ->size('sm')
                     ->button(),
             ])
+            ->headerActions([
+                // ========================================
+                // 📊 ACTIONS D'EXPORT
+                // ========================================
+                Tables\Actions\ActionGroup::make([
+                    // Export Excel OP Standard
+                    Tables\Actions\Action::make('export_excel_standard')
+                        ->label('Export Excel OP Standard')
+                        ->icon('heroicon-o-table-cells')
+                        ->color('success')
+                        ->form([
+                            Forms\Components\Select::make('mois')
+                                ->label('Mois')
+                                ->options([
+                                    '01' => 'Janvier',
+                                    '02' => 'Février',
+                                    '03' => 'Mars',
+                                    '04' => 'Avril',
+                                    '05' => 'Mai',
+                                    '06' => 'Juin',
+                                    '07' => 'Juillet',
+                                    '08' => 'Août',
+                                    '09' => 'Septembre',
+                                    '10' => 'Octobre',
+                                    '11' => 'Novembre',
+                                    '12' => 'Décembre',
+                                ])
+                                ->required()
+                                ->default(date('m')),
+                            Forms\Components\Select::make('annee')
+                                ->label('Année')
+                                ->options(function () {
+                                    $years = [];
+                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
+                                        $years[$i] = $i;
+                                    }
+                                    return $years;
+                                })
+                                ->required()
+                                ->default(date('Y')),
+                        ])
+                        ->action(function (array $data) {
+                            return Excel::download(
+                                new OrdonnancesPaiementExport('standard', null, null, $data['mois'], $data['annee']),
+                                'OP_Standard_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
+                            );
+                        }),
+
+                    // Export Excel OP Impôt
+                    Tables\Actions\Action::make('export_excel_impot')
+                        ->label('Export Excel OP Impôt')
+                        ->icon('heroicon-o-table-cells')
+                        ->color('warning')
+                        ->form([
+                            Forms\Components\Select::make('mois')
+                                ->label('Mois')
+                                ->options([
+                                    '01' => 'Janvier',
+                                    '02' => 'Février',
+                                    '03' => 'Mars',
+                                    '04' => 'Avril',
+                                    '05' => 'Mai',
+                                    '06' => 'Juin',
+                                    '07' => 'Juillet',
+                                    '08' => 'Août',
+                                    '09' => 'Septembre',
+                                    '10' => 'Octobre',
+                                    '11' => 'Novembre',
+                                    '12' => 'Décembre',
+                                ])
+                                ->required()
+                                ->default(date('m')),
+                            Forms\Components\Select::make('annee')
+                                ->label('Année')
+                                ->options(function () {
+                                    $years = [];
+                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
+                                        $years[$i] = $i;
+                                    }
+                                    return $years;
+                                })
+                                ->required()
+                                ->default(date('Y')),
+                        ])
+                        ->action(function (array $data) {
+                            return Excel::download(
+                                new OrdonnancesPaiementExport('impot', null, null, $data['mois'], $data['annee']),
+                                'OP_Impot_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
+                            );
+                        }),
+
+                    // Export PDF OP Standard
+                    Tables\Actions\Action::make('export_pdf_standard')
+                        ->label('Export PDF OP Standard')
+                        ->icon('heroicon-o-document-text')
+                        ->color('danger')
+                        ->form([
+                            Forms\Components\Select::make('mois')
+                                ->label('Mois')
+                                ->options([
+                                    '01' => 'Janvier',
+                                    '02' => 'Février',
+                                    '03' => 'Mars',
+                                    '04' => 'Avril',
+                                    '05' => 'Mai',
+                                    '06' => 'Juin',
+                                    '07' => 'Juillet',
+                                    '08' => 'Août',
+                                    '09' => 'Septembre',
+                                    '10' => 'Octobre',
+                                    '11' => 'Novembre',
+                                    '12' => 'Décembre',
+                                ])
+                                ->required()
+                                ->default(date('m')),
+                            Forms\Components\Select::make('annee')
+                                ->label('Année')
+                                ->options(function () {
+                                    $years = [];
+                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
+                                        $years[$i] = $i;
+                                    }
+                                    return $years;
+                                })
+                                ->required()
+                                ->default(date('Y')),
+                        ])
+                        ->action(function (array $data) {
+                            return static::exportPdf('standard', $data['mois'], $data['annee']);
+                        }),
+
+                    // Export PDF OP Impôt
+                    Tables\Actions\Action::make('export_pdf_impot')
+                        ->label('Export PDF OP Impôt')
+                        ->icon('heroicon-o-document-text')
+                        ->color('gray')
+                        ->form([
+                            Forms\Components\Select::make('mois')
+                                ->label('Mois')
+                                ->options([
+                                    '01' => 'Janvier',
+                                    '02' => 'Février',
+                                    '03' => 'Mars',
+                                    '04' => 'Avril',
+                                    '05' => 'Mai',
+                                    '06' => 'Juin',
+                                    '07' => 'Juillet',
+                                    '08' => 'Août',
+                                    '09' => 'Septembre',
+                                    '10' => 'Octobre',
+                                    '11' => 'Novembre',
+                                    '12' => 'Décembre',
+                                ])
+                                ->required()
+                                ->default(date('m')),
+                            Forms\Components\Select::make('annee')
+                                ->label('Année')
+                                ->options(function () {
+                                    $years = [];
+                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
+                                        $years[$i] = $i;
+                                    }
+                                    return $years;
+                                })
+                                ->required()
+                                ->default(date('Y')),
+                        ])
+                        ->action(function (array $data) {
+                            return static::exportPdf('impot', $data['mois'], $data['annee']);
+                        }),
+                ])
+                    ->label('📥 Exports')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->button()
+                    ->color('primary'),
+            ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');
+    }
+
+    /**
+     * ✅ Méthode pour exporter en PDF
+     */
+    protected static function exportPdf(string $type, string $mois, string $annee)
+    {
+        // Récupérer les ordonnances
+        $ordonnances = OrdonnancePaiement::with(['engagement', 'beneficiaire', 'exercice'])
+            ->where('type_ordonnance', $type)
+            ->whereMonth('date_emission', $mois)
+            ->whereYear('date_emission', $annee)
+            ->orderBy('date_emission', 'desc')
+            ->orderBy('numero', 'asc')
+            ->get();
+
+        // Calculer les statistiques
+        $statistiques = [
+            'nombre_total' => $ordonnances->count(),
+            'montant_brut' => $ordonnances->sum('montant_brut'),
+            'montant_impot' => $ordonnances->sum('montant_impot'),
+            'montant_net' => $ordonnances->sum('montant_net'),
+        ];
+
+        // Préparer les filtres
+        $moisNom = [
+            '01' => 'Janvier',
+            '02' => 'Février',
+            '03' => 'Mars',
+            '04' => 'Avril',
+            '05' => 'Mai',
+            '06' => 'Juin',
+            '07' => 'Juillet',
+            '08' => 'Août',
+            '09' => 'Septembre',
+            '10' => 'Octobre',
+            '11' => 'Novembre',
+            '12' => 'Décembre',
+        ][$mois];
+
+        $periode = $moisNom . ' ' . $annee;
+        $filtres = [
+            'Type : ' . ($type === 'standard' ? 'OP Standard' : 'OP Impôt'),
+            'Période : ' . $periode,
+        ];
+
+        // Générer le PDF
+        $pdf = Pdf::loadView('pdf.ordonnances-liste', [
+            'ordonnances' => $ordonnances,
+            'statistiques' => $statistiques,
+            'periode' => $periode,
+            'filtres' => $filtres,
+            'utilisateur' => auth()->user()->name,
+        ])
+            ->setPaper('a4', 'landscape') // ← FORMAT PAYSAGE
+            ->setOption('margin-top', 10)
+            ->setOption('margin-right', 10)
+            ->setOption('margin-bottom', 10)
+            ->setOption('margin-left', 10);
+
+        $filename = 'Liste_OP_' . ($type === 'standard' ? 'Standard' : 'Impot') . '_' . $mois . '_' . $annee . '.pdf';
+
+        return response()->streamDownload(function () use ($pdf) {
+            echo $pdf->output();
+        }, $filename);
     }
 
     public static function getRelations(): array
