@@ -167,7 +167,7 @@
     <div class="text-center font-bold mb-15">
         BON DE COMMANDE ADMINISTRATIF
     </div>
-       <div class="text-center font-bold mb-15">
+    <div class="text-center font-bold mb-15">
         Pour les objets et matières ci-après:
     </div>
 
@@ -193,65 +193,87 @@
         </table>
     </div>
 
+
     {{-- Tableau des articles --}}
     <table class="articles-table">
         <thead>
             <tr>
-                <th style="width: 10%;">Qté</th>
-                <th style="width: 50%;">Désignation</th>
-                <th style="width: 20%;">PU</th>
-                <th style="width: 20%;">Montant</th>
+                <th style="width: 5%;">N°</th>
+                <th style="width: 15%;">REFERENCE</th>
+                <th style="width: 40%;">DESIGNATION</th>
+                <th style="width: 10%;">QTES</th>
+                <th style="width: 15%;">P.U</th>
+                <th style="width: 15%;">Total</th>
             </tr>
         </thead>
         <tbody>
             @if (isset($bonCommande->lignes) && $bonCommande->lignes->count() > 0)
-                @foreach ($bonCommande->lignes as $ligne)
+                @foreach ($bonCommande->lignes as $i => $ligne)
                     <tr>
-                        <td class="nombre">{{ $ligne->quantite }}</td>
+                        <td class="center">{{ $i + 1 }}</td>
+                        <td>{{ $ligne->reference ?? '-' }}</td>
                         <td>{{ $ligne->designation }}</td>
+                        <td class="nombre">{{ $ligne->quantite }}</td>
                         <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
-                        <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }} F cfa</td>
+                        <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                     </tr>
                 @endforeach
+            @else
+                <tr>
+                    <td colspan="6" class="text-center" style="padding: 20px; color: #999;">
+                        Aucune ligne de commande
+                    </td>
+                </tr>
             @endif
-            <tr>
-                <td colspan="3" class="text-right font-bold">TOTAL</td>
-                <td class="nombre font-bold">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }} F cfa</td>
-            </tr>
         </tbody>
     </table>
 
     {{-- Section totaux --}}
     <div class="totaux-section">
-        <p class="font-bold mb-10">Les parties arrêtent la présente commande à:</p>
-        <table class="totaux-table simple">
+        <table style="width: 100%; border-collapse: collapse;">
             <tr>
-                <td class="label">Prix total HT</td>
-                <td class="valeur font-bold">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }} F cfa</td>
-            </tr>
-            <tr>
-                <td class="label">TVA</td>
-                <td class="valeur font-bold">{{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }} F cfa</td>
-            </tr>
-            <tr>
-                <td class="label">Prix total TTC</td>
-                <td class="valeur font-bold">{{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} F cfa</td>
+                <td style="width: 50%; vertical-align: top;">
+                    {{-- Espace vide ou informations supplémentaires --}}
+                </td>
+                <td style="width: 50%; vertical-align: top;">
+                    <table class="simple" style="width: 100%;">
+                        <tr>
+                            <td class="label">MONTANT HT</td>
+                            <td class="valeur font-bold">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
+                                FCFA</td>
+                        </tr>
+                        <tr>
+                            <td class="label">MONTANT TVA</td>
+                            <td class="valeur font-bold">{{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }}
+                                FCFA</td>
+                        </tr>
+                        <tr>
+                            <td class="label">MONTANT IR</td>
+                            <td class="valeur font-bold">{{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }}
+                                FCFA</td>
+                        </tr>
+                        <tr>
+                            <td class="label font-bold" style="background-color: #e8e8e8;">NET A PAYER</td>
+                            <td class="valeur font-bold" style="background-color: #e8e8e8;">
+                                {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
+                        </tr>
+                        <tr>
+                            <td class="label font-bold" style="background-color: #e8e8e8;">MONTANT TOTAL TTC</td>
+                            <td class="valeur font-bold" style="background-color: #e8e8e8;">
+                                {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
+                        </tr>
+                    </table>
+                </td>
             </tr>
         </table>
-
-        <div class="mt-10">
-            <strong>Montant total en lettres:</strong> @yield('montant_lettres')
-        </div>
-
-        <div class="mt-10">
-            <strong>Délai de livraison:</strong>
-            @if ($bonCommande->date_livraison_prevue)
-                {{ \Carbon\Carbon::parse($bonCommande->date_livraison_prevue)->format('d/m/Y') }}
-            @else
-                ...................................
-            @endif
-        </div>
     </div>
+
+    {{-- Montant en lettres --}}
+    <div class="montant-lettres-box">
+        Arrêté le présent bon de commande à la somme de
+        <strong>@yield('montant_lettres')</strong>
+    </div>
+
 
     {{-- Signatures --}}
     <div class="mt-20 clearfix">
