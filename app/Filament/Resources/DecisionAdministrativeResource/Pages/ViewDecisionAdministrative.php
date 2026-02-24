@@ -143,20 +143,9 @@ class ViewDecisionAdministrative extends ViewRecord
                                 default => $state,
                             }),
 
-                        Infolists\Components\TextEntry::make('type_decision')
+                        Infolists\Components\TextEntry::make('typeDecision.libelle')
                             ->label('Type de décision')
-                            ->badge()
-                            ->formatStateUsing(fn(string $state): string => match ($state) {
-                                'avancement' => 'Avancement',
-                                'promotion' => 'Promotion',
-                                'prime' => 'Prime',
-                                'indemnite' => 'Indemnité',
-                                'formation' => 'Formation',
-                                'mission' => 'Mission',
-                                'affectation' => 'Affectation',
-                                'autre' => 'Autre',
-                                default => $state,
-                            }),
+                            ->badge(),
 
                         Infolists\Components\TextEntry::make('date_decision')
                             ->label('Date de décision')
@@ -195,18 +184,28 @@ class ViewDecisionAdministrative extends ViewRecord
                     ->columns(2)
                     ->visible(fn($record) => $record->personnel_id),
 
-                Infolists\Components\Section::make('Montants')
+                Infolists\Components\Section::make('Montants et retenues')
                     ->schema([
+                        // Montant brut
                         Infolists\Components\TextEntry::make('montant_brut')
-                            ->label('Montant brut')
+                            ->label('💰 Montant brut')
                             ->formatStateUsing(
                                 fn($state) =>
                                 number_format((float) $state, 0, ',', ' ') . ' FCFA'
                             )
                             ->color('info')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold'),
+                            ->weight('bold')
+                            ->columnSpanFull(),
 
+                        // Séparateur
+                        Infolists\Components\TextEntry::make('separator_retenues')
+                            ->label('📊 Retenues et taxes')
+                            ->default('')
+                            ->columnSpanFull()
+                            ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 dark:text-gray-300']),
+
+                        // CNPS
                         Infolists\Components\TextEntry::make('montant_cnps')
                             ->label(
                                 fn($record) =>
@@ -219,6 +218,7 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_cnps ?? 0) > 0),
 
+                        // IRNC
                         Infolists\Components\TextEntry::make('montant_irnc')
                             ->label(
                                 fn($record) =>
@@ -231,31 +231,98 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
+                        // ========================================
+                        // TVA
+                        // ========================================
+                        Infolists\Components\TextEntry::make('montant_tva_calcule')
+                            ->label(
+                                function ($record) {
+                                    if ($record->type_tva === 'taux') {
+                                        return 'TVA (' . number_format($record->taux_tva ?? 0, 2) . '%)';
+                                    } else {
+                                        return 'TVA (forfait)';
+                                    }
+                                }
+                            )
+                            ->formatStateUsing(
+                                fn($state, $record) =>
+                                number_format((float) $record->montant_tva_calcule, 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('warning')
+                            ->visible(fn($record) => ($record->montant_tva_calcule ?? 0) > 0),
+
+                        // ========================================
+                        // Redevance audiovisuelle
+                        // ========================================
+                        Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle_calcule')
+                            ->label(
+                                function ($record) {
+                                    if ($record->type_redevance_audiovisuelle === 'taux') {
+                                        return 'Redevance audiovisuelle (' . number_format($record->taux_redevance_audiovisuelle ?? 0, 2) . '%)';
+                                    } else {
+                                        return 'Redevance audiovisuelle (forfait)';
+                                    }
+                                }
+                            )
+                            ->formatStateUsing(
+                                fn($state, $record) =>
+                                number_format((float) $record->montant_redevance_audiovisuelle_calcule, 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('warning')
+                            ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
+
+                        // ========================================
+                        // FEICOM
+                        // ========================================
+                        Infolists\Components\TextEntry::make('montant_feicom_calcule')
+                            ->label(
+                                function ($record) {
+                                    if ($record->type_feicom === 'taux') {
+                                        return 'FEICOM (' . number_format($record->taux_feicom ?? 0, 2) . '%)';
+                                    } else {
+                                        return 'FEICOM (forfait)';
+                                    }
+                                }
+                            )
+                            ->formatStateUsing(
+                                fn($state, $record) =>
+                                number_format((float) $record->montant_feicom_calcule, 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('warning')
+                            ->visible(fn($record) => ($record->montant_feicom_calcule ?? 0) > 0),
+
+                        // Autres retenues
                         Infolists\Components\TextEntry::make('autres_retenues')
                             ->label('Autres retenues')
                             ->formatStateUsing(
                                 fn($state) =>
                                 number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA'
                             )
+                            ->color('warning')
                             ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
 
+                        // Total taxes
                         Infolists\Components\TextEntry::make('total_taxes')
-                            ->label('Total retenues')
+                            ->label('📊 Total retenues et taxes')
                             ->formatStateUsing(
                                 fn($state) =>
                                 number_format((float) $state, 0, ',', ' ') . ' FCFA'
                             )
-                            ->color('danger'),
+                            ->color('danger')
+                            ->weight('bold')
+                            ->columnSpanFull(),
 
+                        // Montant net
                         Infolists\Components\TextEntry::make('montant_net')
-                            ->label('Montant net à payer')
+                            ->label('✅ Montant net à payer')
                             ->formatStateUsing(
                                 fn($state) =>
                                 number_format((float) $state, 0, ',', ' ') . ' FCFA'
                             )
                             ->color('success')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold'),
+                            ->weight('bold')
+                            ->columnSpanFull(),
                     ])
                     ->columns(3),
 

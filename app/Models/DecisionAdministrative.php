@@ -33,10 +33,24 @@ class DecisionAdministrative extends Model
         'date_fin',
         'objet',
         'montant_brut',
+
+        // Taxes CNPS et IRNC
         'taux_cnps',
         'taux_irnc',
         'montant_cnps',
         'montant_irnc',
+
+        // Nouvelles taxes
+        'type_tva',
+        'taux_tva',
+        'montant_tva',
+        'type_redevance_audiovisuelle',
+        'taux_redevance_audiovisuelle',
+        'montant_redevance_audiovisuelle',
+        'type_feicom',
+        'taux_feicom',
+        'montant_feicom',
+
         'autres_retenues',
         'total_taxes',
         'montant_net',
@@ -45,13 +59,13 @@ class DecisionAdministrative extends Model
         'statut',
         'validee_par',
         'date_validation',
-        //'engagement_id',
         'engagee',
         'montant_engage',
         'date_engagement',
         'observations',
         'created_by',
         'updated_by',
+        'service_emetteur_id',
     ];
 
     protected $casts = [
@@ -60,16 +74,56 @@ class DecisionAdministrative extends Model
         'date_fin' => 'date',
         'date_validation' => 'datetime',
         'date_engagement' => 'datetime',
+
+        // Montants de base
         'montant_brut' => 'decimal:2',
-        'taux_cnps' => 'decimal:2',
-        'taux_irnc' => 'decimal:2',
         'montant_cnps' => 'decimal:2',
         'montant_irnc' => 'decimal:2',
         'autres_retenues' => 'decimal:2',
         'total_taxes' => 'decimal:2',
         'montant_net' => 'decimal:2',
+        'montant_engage' => 'decimal:2',
+
+        // Taux CNPS et IRNC
+        'taux_cnps' => 'decimal:2',
+        'taux_irnc' => 'decimal:2',
+
+        // TVA
+        'type_tva' => 'string',
+        'taux_tva' => 'decimal:2',
+        'montant_tva' => 'decimal:2',
+
+        // Redevance audiovisuelle
+        'type_redevance_audiovisuelle' => 'string',
+        'taux_redevance_audiovisuelle' => 'decimal:2',
+        'montant_redevance_audiovisuelle' => 'decimal:2',
+
+        // FEICOM
+        'type_feicom' => 'string',
+        'taux_feicom' => 'decimal:2',
+        'montant_feicom' => 'decimal:2',
+
         'engagee' => 'boolean',
     ];
+
+    // ========================================
+    // BOOT ET ÉVÉNEMENTS
+    // ========================================
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($decision) {
+            if (empty($decision->numero)) {
+                $decision->numero = $decision->genererNumero();
+            }
+        });
+
+        static::saving(function ($decision) {
+            $decision->calculerMontants();
+        });
+    }
 
     protected static function booted(): void
     {
@@ -114,23 +168,9 @@ class DecisionAdministrative extends Model
         });
     }
 
-    /**
-     * Boot - Générer le numéro et calculer automatiquement
-     */
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function ($decision) {
-            if (empty($decision->numero)) {
-                $decision->numero = $decision->genererNumero();
-            }
-        });
-
-        static::saving(function ($decision) {
-            $decision->calculerMontants();
-        });
-    }
+    // ========================================
+    // RELATIONS
+    // ========================================
 
     /**
      * Relation : Budget
@@ -157,6 +197,14 @@ class DecisionAdministrative extends Model
     }
 
     /**
+     * Relation : Service émetteur
+     */
+    public function serviceEmetteur(): BelongsTo
+    {
+        return $this->belongsTo(Service::class, 'service_emetteur_id');
+    }
+
+    /**
      * Relation : Validée par
      */
     public function validateurUser(): BelongsTo
@@ -171,6 +219,18 @@ class DecisionAdministrative extends Model
     {
         return $this->morphOne(Engagement::class, 'engageable');
     }
+
+    /**
+     * Relation polymorphique : Transmissions
+     */
+    public function transmissions()
+    {
+        return $this->morphMany(Transmission::class, 'document');
+    }
+
+    // ========================================
+    // SCOPES
+    // ========================================
 
     /**
      * Scope : Par type
@@ -195,6 +255,107 @@ class DecisionAdministrative extends Model
     {
         return $query->where('engagee', true);
     }
+
+    // ========================================
+    // ACCESSEURS (GETTERS) POUR LES MONTANTS
+    // ========================================
+
+    /**
+     * ✅ Calculer le montant CNPS
+     */
+    public function getMontantCnpsCalculeAttribute(): float
+    {
+        $brut = (float) ($this->montant_brut ?? 0);
+        $taux = (float) ($this->taux_cnps ?? 0);
+
+        return $brut * ($taux / 100);
+    }
+
+    /**
+     * ✅ Calculer le montant IRNC
+     */
+    public function getMontantIrncCalculeAttribute(): float
+    {
+        $brut = (float) ($this->montant_brut ?? 0);
+        $taux = (float) ($this->taux_irnc ?? 0);
+
+        return $brut * ($taux / 100);
+    }
+
+    /**
+     * ✅ Calculer le montant de la TVA selon le type
+     */
+    public function getMontantTvaCalculeAttribute(): float
+    {
+        if ($this->type_tva === 'forfait') {
+            return (float) ($this->attributes['montant_tva'] ?? 0);
+        }
+
+        // Type = taux
+        $brut = (float) ($this->montant_brut ?? 0);
+        $taux = (float) ($this->taux_tva ?? 0);
+
+        return $brut * ($taux / 100);
+    }
+
+    /**
+     * ✅ Calculer le montant de la Redevance audiovisuelle selon le type
+     */
+    public function getMontantRedevanceAudiovisuelleCalculeAttribute(): float
+    {
+        if ($this->type_redevance_audiovisuelle === 'forfait') {
+            return (float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0);
+        }
+
+        // Type = taux
+        $brut = (float) ($this->montant_brut ?? 0);
+        $taux = (float) ($this->taux_redevance_audiovisuelle ?? 0);
+
+        return $brut * ($taux / 100);
+    }
+
+    /**
+     * ✅ Calculer le montant du FEICOM selon le type
+     */
+    public function getMontantFeicomCalculeAttribute(): float
+    {
+        if ($this->type_feicom === 'forfait') {
+            return (float) ($this->attributes['montant_feicom'] ?? 0);
+        }
+
+        // Type = taux
+        $brut = (float) ($this->montant_brut ?? 0);
+        $taux = (float) ($this->taux_feicom ?? 0);
+
+        return $brut * ($taux / 100);
+    }
+
+    /**
+     * ✅ Calculer le total de toutes les retenues et taxes
+     */
+    public function getTotalRetenuesCalculeAttribute(): float
+    {
+        return $this->montant_cnps_calcule +
+            $this->montant_irnc_calcule +
+            $this->montant_tva_calcule +
+            $this->montant_redevance_audiovisuelle_calcule +
+            $this->montant_feicom_calcule +
+            ((float) ($this->autres_retenues ?? 0));
+    }
+
+    /**
+     * ✅ Calculer le montant net à payer
+     */
+    public function getMontantNetCalculeAttribute(): float
+    {
+        $brut = (float) ($this->montant_brut ?? 0);
+
+        return $brut - $this->total_retenues_calcule;
+    }
+
+    // ========================================
+    // MÉTHODES MÉTIER
+    // ========================================
 
     /**
      * Générer le numéro de décision
@@ -222,18 +383,56 @@ class DecisionAdministrative extends Model
     }
 
     /**
-     * Calculer les montants (CNPS, IRNC, autres retenues, net)
+     * ✅ Calculer tous les montants (CNPS, IRNC, TVA, Redevance, FEICOM, net)
      */
     public function calculerMontants(): void
     {
-        $brut = $this->montant_brut ?? 0;
-        $tauxCnps = $this->taux_cnps ?? 4.2;
-        $tauxIrnc = $this->taux_irnc ?? 11;
-        $autresRetenues = $this->autres_retenues ?? 0;
+        $brut = (float) ($this->montant_brut ?? 0);
 
+        // CNPS
+        $tauxCnps = (float) ($this->taux_cnps ?? 4.2);
         $this->montant_cnps = $brut * ($tauxCnps / 100);
+
+        // IRNC  
+        $tauxIrnc = (float) ($this->taux_irnc ?? 11);
         $this->montant_irnc = $brut * ($tauxIrnc / 100);
-        $this->total_taxes = $this->montant_cnps + $this->montant_irnc + $autresRetenues;
+
+        // TVA
+        if ($this->type_tva === 'taux') {
+            $tauxTva = (float) ($this->taux_tva ?? 0);
+            $montantTva = $brut * ($tauxTva / 100);
+            // On stocke le montant calculé
+            $this->attributes['montant_tva'] = $montantTva;
+        }
+        // Si type = forfait, on garde la valeur saisie manuellement
+
+        // Redevance audiovisuelle
+        if ($this->type_redevance_audiovisuelle === 'taux') {
+            $tauxRedevance = (float) ($this->taux_redevance_audiovisuelle ?? 0);
+            $montantRedevance = $brut * ($tauxRedevance / 100);
+            $this->attributes['montant_redevance_audiovisuelle'] = $montantRedevance;
+        }
+
+        // FEICOM
+        if ($this->type_feicom === 'taux') {
+            $tauxFeicom = (float) ($this->taux_feicom ?? 0);
+            $montantFeicom = $brut * ($tauxFeicom / 100);
+            $this->attributes['montant_feicom'] = $montantFeicom;
+        }
+
+        // Autres retenues
+        $autresRetenues = (float) ($this->autres_retenues ?? 0);
+
+        // Total taxes
+        $this->total_taxes =
+            $this->montant_cnps +
+            $this->montant_irnc +
+            ((float) ($this->attributes['montant_tva'] ?? 0)) +
+            ((float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0)) +
+            ((float) ($this->attributes['montant_feicom'] ?? 0)) +
+            $autresRetenues;
+
+        // Montant net
         $this->montant_net = $brut - $this->total_taxes;
     }
 
@@ -280,7 +479,7 @@ class DecisionAdministrative extends Model
                         "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
                         "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
                         "💰 ENGAGEMENT DEMANDÉ:\n" .
-                        "• Type: {$this->type_decision}\n" .
+                        "• Type: Décision Administrative\n" .
                         "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
                         "• Montant net à engager: " . number_format($this->montant_net, 0, ',', ' ') . " FCFA\n" .
                         "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
@@ -354,7 +553,6 @@ class DecisionAdministrative extends Model
             $this->engagee = true;
             $this->montant_engage = $this->montant_net;
             $this->date_engagement = now();
-            //$this->engagement_id = $engagement->id;
             $this->statut = 'engagee';
             $this->save();
 
@@ -459,23 +657,9 @@ class DecisionAdministrative extends Model
         return ''; // valeur par défaut obligatoire
     }
 
-
-    public function getActivitylogOptions(): LogOptions
-    {
-        return LogOptions::defaults()
-            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
-            ->logOnlyDirty()
-            ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
-    }
-
-    /**
-     * Relation polymorphique : Transmissions
-     */
-    public function transmissions()
-    {
-        return $this->morphMany(Transmission::class, 'document');
-    }
+    // ========================================
+    // MÉTHODES DE TRANSMISSION
+    // ========================================
 
     /**
      * Vérifier si la décision est en cours de transmission
@@ -523,7 +707,7 @@ class DecisionAdministrative extends Model
     }
 
     /**
-     * Méthodes de transmission (trait Transmissible)
+     * Transmettre la décision à un destinataire
      */
     public function transmettreA(
         User $destinataire,
@@ -559,6 +743,9 @@ class DecisionAdministrative extends Model
         return $transmission;
     }
 
+    /**
+     * Retourner pour correction
+     */
     public function retournerPourCorrection(string $motif): void
     {
         $transmission = $this->transmissions()
@@ -582,6 +769,9 @@ class DecisionAdministrative extends Model
             ->log('Décision retournée pour correction');
     }
 
+    /**
+     * Clôturer la transmission
+     */
     public function cloturerTransmission(?string $reponse = null): void
     {
         $transmission = $this->transmissions()
@@ -604,6 +794,9 @@ class DecisionAdministrative extends Model
             ->log('Transmission clôturée');
     }
 
+    /**
+     * Vérifier si peut être transmis
+     */
     public function peutEtreTransmis(): bool
     {
         // Ne peut pas transmettre si déjà en cours de transmission
@@ -615,6 +808,9 @@ class DecisionAdministrative extends Model
         return in_array($this->statut, ['brouillon', 'valide']);
     }
 
+    /**
+     * Obtenir la transmission en cours
+     */
     public function transmissionEnCours(): ?Transmission
     {
         return $this->transmissions()
@@ -623,16 +819,35 @@ class DecisionAdministrative extends Model
             ->first();
     }
 
+    /**
+     * Vérifier si a été transmis
+     */
     public function aEteTransmis(): bool
     {
         return $this->transmissions()->exists();
     }
 
+    /**
+     * Obtenir l'historique des transmissions
+     */
     public function historiqueTransmissions()
     {
         return $this->transmissions()
             ->with(['expediteur', 'destinataire'])
             ->orderBy('created_at', 'desc')
             ->get();
+    }
+
+    // ========================================
+    // ACTIVITY LOG
+    // ========================================
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'montant_brut', 'montant_net'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Décision administrative {$eventName}");
     }
 }

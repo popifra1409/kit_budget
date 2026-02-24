@@ -384,60 +384,293 @@ class DecisionAdministrativeResource extends Resource
 
                 Forms\Components\Section::make('Montants et retenues')
                     ->schema([
+                        // Montant brut
                         Forms\Components\TextInput::make('montant_brut')
                             ->label('Montant Brut')
                             ->numeric()
                             ->required()
                             ->prefix('FCFA')
-                            ->live(onBlur: true),
+                            ->live(onBlur: true)
+                            ->columnSpanFull(),
 
-                        Forms\Components\TextInput::make('taux_cnps')
-                            ->label('CNPS (%)')
-                            ->numeric()
-                            ->default(4.2)
-                            ->step(0.01)
-                            ->live(onBlur: true),
+                        // ========================================
+                        // CNPS
+                        // ========================================
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('taux_cnps')
+                                    ->label('CNPS (%)')
+                                    ->numeric()
+                                    ->default(4.2)
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->live(onBlur: true),
 
-                        Forms\Components\TextInput::make('taux_irnc')
-                            ->label('IRNC (%)')
-                            ->numeric()
-                            ->default(11)
-                            ->step(0.01)
-                            ->live(onBlur: true),
+                                Forms\Components\Placeholder::make('montant_cnps_calcule')
+                                    ->label('Montant CNPS calculé')
+                                    ->content(function (callable $get) {
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $taux = (float) ($get('taux_cnps') ?? 0);
+                                        $montant = $brut * ($taux / 100);
+                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
+                                    }),
+                            ])
+                            ->columnSpanFull(),
 
+                        // ========================================
+                        // IRNC
+                        // ========================================
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('taux_irnc')
+                                    ->label('IRNC (%)')
+                                    ->numeric()
+                                    ->default(11)
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\Placeholder::make('montant_irnc_calcule')
+                                    ->label('Montant IRNC calculé')
+                                    ->content(function (callable $get) {
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $taux = (float) ($get('taux_irnc') ?? 0);
+                                        $montant = $brut * ($taux / 100);
+                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
+                                    }),
+                            ])
+                            ->columnSpanFull(),
+
+                        // ========================================
+                        // TVA
+                        // ========================================
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\Select::make('type_tva')
+                                    ->label('Type TVA')
+                                    ->options([
+                                        'taux' => 'Taux (%)',
+                                        'forfait' => 'Forfait (FCFA)',
+                                    ])
+                                    ->default('taux')
+                                    ->live()
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('taux_tva')
+                                    ->label('Taux TVA (%)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->visible(fn(callable $get) => $get('type_tva') === 'taux')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\TextInput::make('montant_tva')
+                                    ->label('Montant TVA')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->prefix('FCFA')
+                                    ->visible(fn(callable $get) => $get('type_tva') === 'forfait')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\Placeholder::make('montant_tva_calcule')
+                                    ->label('Montant TVA calculé')
+                                    ->content(function (callable $get) {
+                                        $typeTva = $get('type_tva');
+                                        if ($typeTva === 'taux') {
+                                            $brut = (float) ($get('montant_brut') ?? 0);
+                                            $taux = (float) ($get('taux_tva') ?? 0);
+                                            $montant = $brut * ($taux / 100);
+                                        } else {
+                                            $montant = (float) ($get('montant_tva') ?? 0);
+                                        }
+                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
+                                    })
+                                    ->visible(fn(callable $get) => $get('type_tva') === 'taux'),
+                            ])
+                            ->columnSpanFull(),
+
+                        // ========================================
+                        // REDEVANCE AUDIOVISUELLE
+                        // ========================================
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\Select::make('type_redevance_audiovisuelle')
+                                    ->label('Type Redevance audiovisuelle')
+                                    ->options([
+                                        'taux' => 'Taux (%)',
+                                        'forfait' => 'Forfait (FCFA)',
+                                    ])
+                                    ->default('forfait')
+                                    ->live()
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('taux_redevance_audiovisuelle')
+                                    ->label('Taux Redevance (%)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->visible(fn(callable $get) => $get('type_redevance_audiovisuelle') === 'taux')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\TextInput::make('montant_redevance_audiovisuelle')
+                                    ->label('Montant Redevance')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->prefix('FCFA')
+                                    ->visible(fn(callable $get) => $get('type_redevance_audiovisuelle') === 'forfait')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\Placeholder::make('montant_redevance_calcule')
+                                    ->label('Montant Redevance calculé')
+                                    ->content(function (callable $get) {
+                                        $typeRedevance = $get('type_redevance_audiovisuelle');
+                                        if ($typeRedevance === 'taux') {
+                                            $brut = (float) ($get('montant_brut') ?? 0);
+                                            $taux = (float) ($get('taux_redevance_audiovisuelle') ?? 0);
+                                            $montant = $brut * ($taux / 100);
+                                        } else {
+                                            $montant = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
+                                        }
+                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
+                                    })
+                                    ->visible(fn(callable $get) => $get('type_redevance_audiovisuelle') === 'taux'),
+                            ])
+                            ->columnSpanFull(),
+
+                        // ========================================
+                        // FEICOM (Fonds Spécial d'Équipement et d'Intervention Intercommunale)
+                        // ========================================
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\Select::make('type_feicom')
+                                    ->label('Type FEICOM')
+                                    ->options([
+                                        'taux' => 'Taux (%)',
+                                        'forfait' => 'Forfait (FCFA)',
+                                    ])
+                                    ->default('forfait')
+                                    ->live()
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('taux_feicom')
+                                    ->label('Taux FEICOM (%)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->visible(fn(callable $get) => $get('type_feicom') === 'taux')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\TextInput::make('montant_feicom')
+                                    ->label('Montant FEICOM')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->prefix('FCFA')
+                                    ->visible(fn(callable $get) => $get('type_feicom') === 'forfait')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\Placeholder::make('montant_feicom_calcule')
+                                    ->label('Montant FEICOM calculé')
+                                    ->content(function (callable $get) {
+                                        $typeFeicom = $get('type_feicom');
+                                        if ($typeFeicom === 'taux') {
+                                            $brut = (float) ($get('montant_brut') ?? 0);
+                                            $taux = (float) ($get('taux_feicom') ?? 0);
+                                            $montant = $brut * ($taux / 100);
+                                        } else {
+                                            $montant = (float) ($get('montant_feicom') ?? 0);
+                                        }
+                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
+                                    })
+                                    ->visible(fn(callable $get) => $get('type_feicom') === 'taux'),
+                            ])
+                            ->columnSpanFull(),
+
+                        // ========================================
+                        // AUTRES RETENUES
+                        // ========================================
                         Forms\Components\TextInput::make('autres_retenues')
                             ->label('Autres retenues')
                             ->numeric()
                             ->default(0)
                             ->prefix('FCFA')
-                            ->live(onBlur: true),
+                            ->live(onBlur: true)
+                            ->columnSpanFull(),
 
+                        // ========================================
+                        // RÉSUMÉ DES TAXES
+                        // ========================================
                         Forms\Components\Placeholder::make('resume_taxes')
-                            ->label('Résumé des taxes')
+                            ->label('📊 Résumé des taxes et montant net')
                             ->content(function (callable $get) {
-
                                 $brut = (float) ($get('montant_brut') ?? 0);
-                                $tauxCnps = (float) ($get('taux_cnps') ?? 0);
-                                $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
-                                $autres = (float) ($get('autres_retenues') ?? 0);
 
+                                // CNPS
+                                $tauxCnps = (float) ($get('taux_cnps') ?? 0);
                                 $montantCnps = $brut * ($tauxCnps / 100);
+
+                                // IRNC
+                                $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
                                 $montantIrnc = $brut * ($tauxIrnc / 100);
 
-                                $totalTaxes = $montantCnps + $montantIrnc + $autres;
+                                // TVA
+                                $typeTva = $get('type_tva') ?? 'taux';
+                                if ($typeTva === 'taux') {
+                                    $tauxTva = (float) ($get('taux_tva') ?? 0);
+                                    $montantTva = $brut * ($tauxTva / 100);
+                                    $labelTva = "TVA ({$tauxTva}%)";
+                                } else {
+                                    $montantTva = (float) ($get('montant_tva') ?? 0);
+                                    $labelTva = "TVA (forfait)";
+                                }
+
+                                // Redevance audiovisuelle
+                                $typeRedevance = $get('type_redevance_audiovisuelle') ?? 'forfait';
+                                if ($typeRedevance === 'taux') {
+                                    $tauxRedevance = (float) ($get('taux_redevance_audiovisuelle') ?? 0);
+                                    $montantRedevance = $brut * ($tauxRedevance / 100);
+                                    $labelRedevance = "Redevance audiovisuelle ({$tauxRedevance}%)";
+                                } else {
+                                    $montantRedevance = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
+                                    $labelRedevance = "Redevance audiovisuelle (forfait)";
+                                }
+
+                                // FEICOM
+                                $typeFeicom = $get('type_feicom') ?? 'forfait';
+                                if ($typeFeicom === 'taux') {
+                                    $tauxFeicom = (float) ($get('taux_feicom') ?? 0);
+                                    $montantFeicom = $brut * ($tauxFeicom / 100);
+                                    $labelFeicom = "FEICOM ({$tauxFeicom}%)";
+                                } else {
+                                    $montantFeicom = (float) ($get('montant_feicom') ?? 0);
+                                    $labelFeicom = "FEICOM (forfait)";
+                                }
+
+                                // Autres retenues
+                                $autres = (float) ($get('autres_retenues') ?? 0);
+
+                                // Total taxes et net
+                                $totalTaxes = $montantCnps + $montantIrnc + $montantTva + $montantRedevance + $montantFeicom + $autres;
                                 $net = $brut - $totalTaxes;
 
                                 return collect([
+                                    "Montant brut : " . number_format($brut, 0, ',', ' ') . " FCFA",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                                     "CNPS ({$tauxCnps}%) : " . number_format($montantCnps, 0, ',', ' ') . " FCFA",
                                     "IRNC ({$tauxIrnc}%) : " . number_format($montantIrnc, 0, ',', ' ') . " FCFA",
+                                    "{$labelTva} : " . number_format($montantTva, 0, ',', ' ') . " FCFA",
+                                    "{$labelRedevance} : " . number_format($montantRedevance, 0, ',', ' ') . " FCFA",
+                                    "{$labelFeicom} : " . number_format($montantFeicom, 0, ',', ' ') . " FCFA",
                                     "Autres retenues : " . number_format($autres, 0, ',', ' ') . " FCFA",
-                                    "----------------------------",
-                                    "Total taxes : " . number_format($totalTaxes, 0, ',', ' ') . " FCFA",
-                                    "Net à payer : " . number_format($net, 0, ',', ' ') . " FCFA",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                    "TOTAL TAXES : " . number_format($totalTaxes, 0, ',', ' ') . " FCFA",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                    "💰 NET À PAYER : " . number_format($net, 0, ',', ' ') . " FCFA",
                                 ])->implode("\n");
                             })
                             ->columnSpanFull(),
-
                     ])
                     ->columns(2),
 
