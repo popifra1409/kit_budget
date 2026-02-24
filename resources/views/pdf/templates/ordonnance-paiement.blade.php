@@ -28,52 +28,72 @@ if ($ordonnance->beneficiaire) {
 
 $nomBeneficiaire = $beneficiaire->raison_sociale ?? ($beneficiaire->nom_complet ?? ($beneficiaire->name ?? 'N/A'));
 
-// ✅ Récupérer les montants depuis l'engagement
-    if ($engagement && $engagement->engageable) {
-        $donneesEngagement = $engagement->extraireDonneesDocument();
+// ✅ LOGIQUE CORRIGÉE : Montants selon le type de document
+if ($engagement && $engagement->engageable) {
+    $donneesEngagement = $engagement->extraireDonneesDocument();
 
-        // ✅ CORRECTION : Montant HT selon le type de document
-        if ($engagement->estBonCommande()) {
-            // Pour BC : montant_ht du bon de commande
-            $montantHT = $documentSource->montant_ht ?? 0;
-        } else {
-            // Pour DA : montant_brut de la décision administrative
-            $montantHT = $documentSource->montant_brut ?? 0;
-        }
-
-        $montantBrut = $donneesEngagement['montant_ttc'] ?? 0; // Montant brut de l'ordonnance (TTC)
-    $montantNet = $donneesEngagement['montant_net'] ?? 0; // Somme nette à payer
-
-    $detailImpots = [
-        'ir' => $donneesEngagement['montant_ir'] ?? 0,
-        'tva' => $donneesEngagement['montant_tva'] ?? 0,
-        'tsr' => $donneesEngagement['montant_tsr'] ?? 0,
-        'cnps' => $donneesEngagement['montant_cnps'] ?? 0,
-        'irnc' => $donneesEngagement['montant_irnc'] ?? 0,
-        'autres' => $donneesEngagement['autres_retenues'] ?? 0,
-    ];
-
-    // ✅ A PRECOMPTER = Somme des taxes et impôts
     if ($engagement->estBonCommande()) {
-        $montantTotalImpots = $detailImpots['ir'] + $detailImpots['tva'] + $detailImpots['tsr'];
-    } else {
+        // ========================================
+        // BON DE COMMANDE
+        // ========================================
+        // Imputation = Montant HT
+        $montantImputation = $documentSource->montant_ht ?? 0;
+
+        // Montant brut de l'ordonnance = Montant TTC
+            $montantBrut = $donneesEngagement['montant_ttc'] ?? 0;
+
+            // A précompter = IR + TVA + TSR
+            $detailImpots = [
+                'ir' => $donneesEngagement['montant_ir'] ?? 0,
+                'tva' => $donneesEngagement['montant_tva'] ?? 0,
+                'tsr' => $donneesEngagement['montant_tsr'] ?? 0,
+                'cnps' => 0,
+                'irnc' => 0,
+                'autres' => 0,
+            ];
+            $montantTotalImpots = $detailImpots['ir'] + $detailImpots['tva'] + $detailImpots['tsr'];
+
+            // Somme nette = Montant net à percevoir
+            $montantNet = $donneesEngagement['montant_net'] ?? 0;
+        } else {
+            // ========================================
+            // DÉCISION ADMINISTRATIVE
+            // ========================================
+            // Imputation = Montant brut (avant retenues)
+            $montantImputation = $donneesEngagement['montant_brut'] ?? 0;
+
+            // Montant brut de l'ordonnance = Montant brut (même chose pour DA)
+        $montantBrut = $donneesEngagement['montant_brut'] ?? 0;
+
+        // A précompter = IR + CNPS + IRNC + Autres retenues
+        $detailImpots = [
+            'ir' => $donneesEngagement['montant_ir'] ?? 0,
+            'tva' => 0,
+            'tsr' => 0,
+            'cnps' => $donneesEngagement['montant_cnps'] ?? 0,
+            'irnc' => $donneesEngagement['montant_irnc'] ?? 0,
+            'autres' => $donneesEngagement['autres_retenues'] ?? 0,
+        ];
         $montantTotalImpots =
             $detailImpots['ir'] + $detailImpots['cnps'] + $detailImpots['irnc'] + $detailImpots['autres'];
+
+        // Somme nette = Montant brut - Retenues
+        $montantNet = $donneesEngagement['montant_net'] ?? 0;
     }
 } else {
-    // Fallback
-    $montantHT = $ordonnance->montant_brut ?? 0;
-    $montantBrut = $ordonnance->montant_net ?? 0;
-    $montantNet = $ordonnance->montant_net ?? 0;
-    $montantTotalImpots = 0;
+    // Fallback si pas d'engagement
+        $montantImputation = $ordonnance->montant_brut ?? 0;
+        $montantBrut = $ordonnance->montant_brut ?? 0;
+        $montantNet = $ordonnance->montant_net ?? 0;
+        $montantTotalImpots = 0;
 
-    $detailImpots = [
-        'ir' => 0,
-        'tva' => 0,
-        'tsr' => 0,
-        'cnps' => 0,
-        'irnc' => 0,
-        'autres' => 0,
+        $detailImpots = [
+            'ir' => 0,
+            'tva' => 0,
+            'tsr' => 0,
+            'cnps' => 0,
+            'irnc' => 0,
+            'autres' => 0,
         ];
     }
 @endphp
@@ -157,8 +177,8 @@ $nomBeneficiaire = $beneficiaire->raison_sociale ?? ($beneficiaire->nom_complet 
                         </td>
                         <td
                             style="padding: 2px 4px; text-align: center; font-size: 10pt; font-weight: bold; line-height: 1.2;">
-                            {{-- ✅ Montant HT : montant_ht pour BC, montant_brut pour DA --}}
-                            {{ number_format($montantHT, 0, ',', ' ') }}
+                            {{-- ✅ IMPUTATION : montant_ht pour BC, montant_brut pour DA --}}
+                            {{ number_format($montantImputation, 0, ',', ' ') }}
                         </td>
                     </tr>
                 </table>
@@ -225,7 +245,7 @@ $nomBeneficiaire = $beneficiaire->raison_sociale ?? ($beneficiaire->nom_complet 
                         <td style="padding: 2px 0; width: 35%; text-align: right;">
                             <div
                                 style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; line-height: 1.2;">
-                                {{-- ✅ Montant brut = Montant TTC --}}
+                                {{-- ✅ MONTANT BRUT : TTC pour BC, montant_brut pour DA --}}
                                 {{ number_format($montantBrut, 0, ',', ' ') }}
                             </div>
                         </td>
@@ -242,7 +262,7 @@ $nomBeneficiaire = $beneficiaire->raison_sociale ?? ($beneficiaire->nom_complet 
                         <td style="padding: 2px 0; text-align: right;">
                             <div
                                 style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; line-height: 1.2;">
-                                {{-- ✅ A précompter = Somme des taxes et impôts --}}
+                                {{-- ✅ A PRÉCOMPTER : IR+TVA+TSR pour BC, IR+CNPS+IRNC+Autres pour DA --}}
                                 {{ number_format($montantTotalImpots, 0, ',', ' ') }}
                             </div>
                         </td>
@@ -259,7 +279,7 @@ $nomBeneficiaire = $beneficiaire->raison_sociale ?? ($beneficiaire->nom_complet 
                         <td style="padding: 2px 0; text-align: right;">
                             <div
                                 style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; background-color: #f5f5f5; line-height: 1.2;">
-                                {{-- ✅ Somme nette = Montant brut - Somme des taxes et impôts --}}
+                                {{-- ✅ SOMME NETTE : Montant brut - Retenues (pour les deux types) --}}
                                 {{ number_format($montantNet, 0, ',', ' ') }}
                             </div>
                         </td>

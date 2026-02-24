@@ -656,6 +656,7 @@ class Engagement extends Model
      */
     public function extraireDonneesDocument(): array
     {
+        $montantHT = 0;
         $montantBrut = 0;
         $montantTVA = 0;
         $montantTSR = 0;
@@ -672,7 +673,8 @@ class Engagement extends Model
         if ($this->estBonCommande() && $this->engageable) {
             $bc = $this->engageable;
 
-            $montantBrut = $bc->montant_ht ?? 0;
+            $montantHT = $bc->montant_ht ?? 0;
+            $montantBrut = $bc->montant_ttc ?? 0;
             $montantTVA = $bc->montant_tva ?? 0;
             $montantTSR = $bc->montant_tsr ?? 0;
             $montantTTC = $bc->montant_ttc ?? 0;
@@ -694,6 +696,7 @@ class Engagement extends Model
         elseif ($this->estDecision() && $this->engageable) {
             $da = $this->engageable;
 
+            //$montantHT = $da->montant_ht ?? 0;
             $montantBrut = $da->montant_brut ?? 0;
             $montantTVA = $da->montant_tva ?? 0;
             $montantTTC = $da->montant_ttc ?? $da->montant_total ?? $this->montant_engage;
@@ -771,6 +774,7 @@ class Engagement extends Model
         ]);
 
         return [
+            'montant_ht' => $montantHT,
             'montant_brut' => $montantBrut,
             'montant_tva' => $montantTVA,
             'montant_tsr' => $montantTSR,

@@ -70,7 +70,8 @@
 
                 <p style="margin: 0 0 8px 0;">
                     <strong>N° de bon de caisse:</strong>
-                    {{ $ordonnance->numero_bon ?? ($bonCommande->numero ?? '-') }}
+                    {{-- {{ $ordonnance->numero_bon ?? ($bonCommande->numero ?? '-') }} --}}
+                    {{ $engagement->numero }}   
                     <br><i>N° of the cash voucher</i>
                 </p>
 
