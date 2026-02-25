@@ -67,7 +67,8 @@
                         <div class="text-right">
                             <p
                                 class="text-2xl font-bold {{ $ordonnance->type_ordonnance === 'standard' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400' }}">
-                                {{ number_format($ordonnance->montant_ordonnance, 0, ',', ' ') }}
+                                {{-- ✅ CORRECTION : montant_net au lieu de montant_ordonnance --}}
+                                {{ number_format($ordonnance->montant_net, 0, ',', ' ') }}
                             </p>
                             <p class="text-xs text-gray-500 dark:text-gray-400">FCFA</p>
                         </div>
@@ -81,7 +82,7 @@
                             <span class="text-gray-600 dark:text-gray-400">Bénéficiaire :</span>
                             <p class="font-medium text-gray-900 dark:text-white">
                                 @if ($ordonnance->beneficiaire)
-                                    {{ $ordonnance->beneficiaire->raison_sociale ?? ($ordonnance->beneficiaire->name ?? 'N/A') }}
+                                    {{ $ordonnance->beneficiaire->raison_sociale ?? ($ordonnance->beneficiaire->nom_complet ?? ($ordonnance->beneficiaire->name ?? 'N/A')) }}
                                 @else
                                     N/A
                                 @endif
@@ -124,6 +125,128 @@
                             </p>
                         </div>
                     @endif
+
+                    {{-- =============================================
+                        ✅ NOUVEAU : Détail des taxes pour OP Impôt
+                        ============================================= --}}
+                    @if ($ordonnance->type_ordonnance === 'impot')
+                        @php
+                            $detailImpots = $ordonnance->getDetailImpots();
+                        @endphp
+
+                        <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <span class="text-gray-600 dark:text-gray-400 text-sm font-semibold">Détail des retenues et
+                                impôts :</span>
+
+                            <div class="mt-2 space-y-1.5 text-sm">
+                                {{-- ✅ Pour Bon de Commande --}}
+                                @if ($engagement->estBonCommande())
+                                    @if (($detailImpots['ir'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">IR :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['ir'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['tva'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">TVA :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tva'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['tsr'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">TSR :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tsr'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    {{-- ✅ Pour Décision Administrative --}}
+                                @else
+                                    @if (($detailImpots['ir'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">IR :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['ir'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['cnps'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">CNPS :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['cnps'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['irnc'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">IRNC :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['irnc'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    {{-- ✅ NOUVELLES TAXES DA --}}
+                                    @if (($detailImpots['tva'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">TVA :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tva'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['redevance'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">Redevance audiovisuelle
+                                                :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['redevance'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['feicom'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">FEICOM :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['feicom'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+
+                                    @if (($detailImpots['autres'] ?? 0) > 0)
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-600 dark:text-gray-400">Autres retenues :</span>
+                                            <span
+                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['autres'], 0, ',', ' ') }}
+                                                FCFA</span>
+                                        </div>
+                                    @endif
+                                @endif
+
+                                {{-- Total --}}
+                                <div
+                                    class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700 font-semibold">
+                                    <span class="text-gray-900 dark:text-white">Total :</span>
+                                    <span
+                                        class="text-orange-600 dark:text-orange-400">{{ number_format($detailImpots['total'], 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
         @empty
@@ -145,7 +268,8 @@
             <div class="flex items-center justify-between">
                 <span class="font-semibold text-gray-900 dark:text-white">Total des ordonnances :</span>
                 <span class="text-xl font-bold text-blue-600 dark:text-blue-400">
-                    {{ number_format($ordonnances->sum('montant_ordonnance'), 0, ',', ' ') }} FCFA
+                    {{-- ✅ CORRECTION : montant_net au lieu de montant_ordonnance --}}
+                    {{ number_format($ordonnances->sum('montant_net'), 0, ',', ' ') }} FCFA
                 </span>
             </div>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
