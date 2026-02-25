@@ -544,8 +544,20 @@ class Engagement extends Model
                 $totalRetenues = ($donnees['montant_ir'] ?? 0)
                     + ($donnees['montant_cnps'] ?? 0)
                     + ($donnees['montant_irnc'] ?? 0)
+                    + ($donnees['montant_tva'] ?? 0)
+                    + ($donnees['montant_redevance'] ?? 0)
+                    + ($donnees['montant_feicom'] ?? 0)
                     + ($donnees['autres_retenues'] ?? 0);
 
+                if (($donnees['montant_tva'] ?? 0) > 0) {
+                    $detailsRetenues[] = "TVA: " . number_format($donnees['montant_tva'], 0, ',', ' ') . " FCFA";
+                }
+                if (($donnees['montant_redevance'] ?? 0) > 0) {
+                    $detailsRetenues[] = "Redevance audiovisuelle: " . number_format($donnees['montant_redevance'], 0, ',', ' ') . " FCFA";
+                }
+                if (($donnees['montant_feicom'] ?? 0) > 0) {
+                    $detailsRetenues[] = "FEICOM: " . number_format($donnees['montant_feicom'], 0, ',', ' ') . " FCFA";
+                }
                 if (($donnees['montant_ir'] ?? 0) > 0) {
                     $detailsRetenues[] = "IR: " . number_format($donnees['montant_ir'], 0, ',', ' ') . " FCFA";
                 }
@@ -566,6 +578,8 @@ class Engagement extends Model
                 'montant_cnps' => $donnees['montant_cnps'] ?? 0,
                 'montant_irnc' => $donnees['montant_irnc'] ?? 0,
                 'montant_tva' => $donnees['montant_tva'] ?? 0,
+                'montant_redevance' => $donnees['montant_redevance'] ?? 0,
+                'montant_feicom' => $donnees['montant_feicom'] ?? 0,
                 'montant_tsr' => $donnees['montant_tsr'] ?? 0,
                 'autres_retenues' => $donnees['autres_retenues'] ?? 0,
                 'total_retenues' => $totalRetenues,
@@ -611,12 +625,14 @@ class Engagement extends Model
                 \Log::info("OP Impôt créée avec succès", [
                     'type_document' => $this->estBonCommande() ? 'BC' : 'DA',
                     'numero' => $opImpot->numero,
-                    'montant_total' => $opImpot->montant_net,  // ✅ Correction : montant_net
+                    'montant_total' => $opImpot->montant_net,
                     'detail_ir' => $donnees['montant_ir'] ?? 0,
-                    'detail_tva' => $donnees['montant_tva'] ?? 0,
-                    'detail_tsr' => $donnees['montant_tsr'] ?? 0,
                     'detail_cnps' => $donnees['montant_cnps'] ?? 0,
                     'detail_irnc' => $donnees['montant_irnc'] ?? 0,
+                    'detail_tva' => $donnees['montant_tva'] ?? 0,
+                    'detail_redevance' => $donnees['montant_redevance'] ?? 0,
+                    'detail_feicom' => $donnees['montant_feicom'] ?? 0,
+                    'detail_tsr' => $donnees['montant_tsr'] ?? 0,
                     'detail_autres' => $donnees['autres_retenues'] ?? 0,
                 ]);
             } else {
@@ -664,6 +680,8 @@ class Engagement extends Model
         $montantIR = 0;
         $montantCNPS = 0;
         $montantIRNC = 0;
+        $montantRedevance = 0;
+        $montantFeicom = 0;
         $autresRetenues = 0;
         $montantNet = 0;
         $beneficiaire = null;
@@ -689,6 +707,9 @@ class Engagement extends Model
             \Log::info("BC - Montants extraits", [
                 'bc_numero' => $bc->numero,
                 'beneficiaire' => $beneficiaire?->raison_sociale ?? 'NULL',
+                'montant_ht' => $montantHT,
+                'montant_ttc' => $montantTTC,
+                'montant_net' => $montantNet,
             ]);
         }
 
@@ -696,15 +717,17 @@ class Engagement extends Model
         elseif ($this->estDecision() && $this->engageable) {
             $da = $this->engageable;
 
-            //$montantHT = $da->montant_ht ?? 0;
             $montantBrut = $da->montant_brut ?? 0;
-            $montantTVA = $da->montant_tva ?? 0;
-            $montantTTC = $da->montant_ttc ?? $da->montant_total ?? $this->montant_engage;
+            $montantTTC = $montantBrut;
             $montantIR = $da->montant_ir ?? 0;
             $montantCNPS = $da->montant_cnps ?? 0;
             $montantIRNC = $da->montant_irnc ?? 0;
+            $montantTVA = $da->montant_tva_calcule ?? ($da->montant_tva ?? 0);
+            $montantRedevance = $da->montant_redevance_audiovisuelle_calcule ?? ($da->montant_redevance_audiovisuelle ?? 0);
+            $montantFeicom = $da->montant_feicom_calcule ?? ($da->montant_feicom ?? 0);
             $autresRetenues = $da->autres_retenues ?? 0;
-            $montantNet = $montantTTC - ($montantIR + $montantCNPS + $montantIRNC + $autresRetenues);
+            $montantNet = $da->montant_net ?? 0;
+            // $montantNet = $montantTTC - ($montantIR + $montantCNPS + $montantIRNC + $autresRetenues);
 
             // ✅ RÉCUPÉRER LE BÉNÉFICIAIRE (Personnel pour une DA)
             \Log::info("DA - Récupération bénéficiaire", [
@@ -734,10 +757,22 @@ class Engagement extends Model
                 ]);
             }
 
+            // ✅ CALCUL TOTAL RETENUES (pour vérification)
+            $totalRetenues = $montantIR + $montantCNPS + $montantIRNC +
+                $montantTVA + $montantRedevance + $montantFeicom +
+                $autresRetenues;
+
             \Log::info("DA - Montants extraits", [
                 'da_numero' => $da->numero ?? 'N/A',
-                'montant_ttc' => $montantTTC,
-                'total_retenues' => ($montantIR + $montantCNPS + $montantIRNC + $autresRetenues),
+                'montant_brut' => $montantBrut,
+                'retenue_ir' => $montantIR,
+                'retenue_cnps' => $montantCNPS,
+                'retenue_irnc' => $montantIRNC,
+                'retenue_tva' => $montantTVA,
+                'retenue_redevance' => $montantRedevance,
+                'retenue_feicom' => $montantFeicom,
+                'retenue_autres' => $autresRetenues,
+                'total_retenues' => $totalRetenues,
                 'montant_net' => $montantNet,
                 'beneficiaire' => $beneficiaire?->nom_complet ?? 'NULL',
             ]);
@@ -782,6 +817,8 @@ class Engagement extends Model
             'montant_ir' => $montantIR,
             'montant_cnps' => $montantCNPS,
             'montant_irnc' => $montantIRNC,
+            'montant_redevance' => $montantRedevance,
+            'montant_feicom' => $montantFeicom,
             'autres_retenues' => $autresRetenues,
             'montant_net' => $montantNet,
             'beneficiaire' => $beneficiaire,
