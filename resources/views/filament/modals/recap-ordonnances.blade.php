@@ -30,7 +30,7 @@
 @endif
 
 @php
-    // Sécurisation des montants
+    // Sécurisation des montants de base
     $montantBrut = $donnees['montant_brut'] ?? 0;
     $montantTVA = $donnees['montant_tva'] ?? 0;
     $montantTSR = $donnees['montant_tsr'] ?? 0;
@@ -38,6 +38,11 @@
     $montantIR = $donnees['montant_ir'] ?? 0;
     $montantCNPS = $donnees['montant_cnps'] ?? 0;
     $montantIRNC = $donnees['montant_irnc'] ?? 0;
+
+    // ✅ NOUVEAUX IMPÔTS : FEICOM et Redevance Audiovisuelle
+    $montantFEICOM = $donnees['montant_feicom'] ?? 0;
+    $montantRedevanceAV = $donnees['montant_redevance_av'] ?? 0;
+
     $autresRetenues = $donnees['autres_retenues'] ?? 0;
     $montantNet = $donnees['montant_net'] ?? 0;
 
@@ -45,7 +50,9 @@
     if ($engagement->estBonCommande()) {
         $totalRetenues = $montantIR + $montantTVA + $montantTSR;
     } else {
-        $totalRetenues = $montantIR + $montantCNPS + $montantIRNC + $autresRetenues;
+        // ✅ Ajout FEICOM et Redevance Audiovisuelle dans le total pour les décisions
+        $totalRetenues =
+            $montantIR + $montantCNPS + $montantIRNC + $montantFEICOM + $montantRedevanceAV + $autresRetenues;
     }
 
     $nomBeneficiaire =
@@ -163,7 +170,7 @@
                         </td>
                     </tr>
                 @else
-                    {{-- ✅ Pour Décision Administrative : TOUJOURS afficher IR, CNPS, IRNC, Autres --}}
+                    {{-- ✅ Pour Décision Administrative : TOUJOURS afficher IR, CNPS, IRNC, FEICOM, Redevance AV, Autres --}}
                     <tr class="{{ $montantIR == 0 ? 'opacity-60' : '' }}">
                         <td class="px-4 py-2 text-gray-600 dark:text-gray-400">
                             Impôt sur Revenu (IR)
@@ -200,6 +207,34 @@
                         <td
                             class="px-4 py-2 text-right {{ $montantIRNC > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400' }}">
                             - {{ number_format($montantIRNC, 0, ',', ' ') }} FCFA
+                        </td>
+                    </tr>
+
+                    {{-- ✅ NOUVEAU : FEICOM --}}
+                    <tr class="{{ $montantFEICOM == 0 ? 'opacity-60' : '' }}">
+                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">
+                            FEICOM ({{ $donnees['taux_feicom'] ?? 1 }}%)
+                            @if ($montantFEICOM == 0)
+                                <span class="text-xs italic text-gray-400">(exonéré)</span>
+                            @endif
+                        </td>
+                        <td
+                            class="px-4 py-2 text-right {{ $montantFEICOM > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400' }}">
+                            - {{ number_format($montantFEICOM, 0, ',', ' ') }} FCFA
+                        </td>
+                    </tr>
+
+                    {{-- ✅ NOUVEAU : Redevance Audiovisuelle --}}
+                    <tr class="{{ $montantRedevanceAV == 0 ? 'opacity-60' : '' }}">
+                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">
+                            Redevance Audiovisuelle ({{ $donnees['taux_redevance_av'] ?? 0.3 }}%)
+                            @if ($montantRedevanceAV == 0)
+                                <span class="text-xs italic text-gray-400">(exonéré)</span>
+                            @endif
+                        </td>
+                        <td
+                            class="px-4 py-2 text-right {{ $montantRedevanceAV > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400' }}">
+                            - {{ number_format($montantRedevanceAV, 0, ',', ' ') }} FCFA
                         </td>
                     </tr>
 
@@ -331,6 +366,22 @@
                                     class="{{ $montantIRNC > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-gray-400' }}">
                                     • IRNC : {{ number_format($montantIRNC, 0, ',', ' ') }} FCFA
                                     @if ($montantIRNC == 0)
+                                        <span class="italic">(exonéré)</span>
+                                    @endif
+                                </div>
+                                {{-- ✅ NOUVEAU : Ajout FEICOM dans le détail --}}
+                                <div
+                                    class="{{ $montantFEICOM > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-gray-400' }}">
+                                    • FEICOM : {{ number_format($montantFEICOM, 0, ',', ' ') }} FCFA
+                                    @if ($montantFEICOM == 0)
+                                        <span class="italic">(exonéré)</span>
+                                    @endif
+                                </div>
+                                {{-- ✅ NOUVEAU : Ajout Redevance AV dans le détail --}}
+                                <div
+                                    class="{{ $montantRedevanceAV > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-gray-400' }}">
+                                    • Redevance AV : {{ number_format($montantRedevanceAV, 0, ',', ' ') }} FCFA
+                                    @if ($montantRedevanceAV == 0)
                                         <span class="italic">(exonéré)</span>
                                     @endif
                                 </div>

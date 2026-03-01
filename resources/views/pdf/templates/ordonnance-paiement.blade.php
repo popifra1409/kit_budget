@@ -49,6 +49,8 @@ if ($engagement && $engagement->engageable) {
                 'tsr' => $donneesEngagement['montant_tsr'] ?? 0,
                 'cnps' => 0,
                 'irnc' => 0,
+                'feicom' => 0,
+                'redevance_av' => 0,
                 'autres' => 0,
             ];
             $montantTotalImpots = $detailImpots['ir'] + $detailImpots['tva'] + $detailImpots['tsr'];
@@ -65,17 +67,27 @@ if ($engagement && $engagement->engageable) {
             // Montant brut de l'ordonnance = Montant brut (même chose pour DA)
         $montantBrut = $donneesEngagement['montant_brut'] ?? 0;
 
-        // A précompter = IR + CNPS + IRNC + Autres retenues
+        // ✅ A précompter = IR + CNPS + IRNC + FEICOM + Redevance AV + Autres retenues
         $detailImpots = [
             'ir' => $donneesEngagement['montant_ir'] ?? 0,
-            'tva' => 0,
+            'tva' => $donneesEngagement['montant_tva'] ?? 0,
             'tsr' => 0,
             'cnps' => $donneesEngagement['montant_cnps'] ?? 0,
             'irnc' => $donneesEngagement['montant_irnc'] ?? 0,
+            'feicom' => $donneesEngagement['montant_feicom'] ?? 0,
+            'redevance_av' => $donneesEngagement['montant_redevance_av'] ?? 0,
             'autres' => $donneesEngagement['autres_retenues'] ?? 0,
         ];
+
+        // ✅ Total des impôts incluant FEICOM et Redevance Audiovisuelle
         $montantTotalImpots =
-            $detailImpots['ir'] + $detailImpots['cnps'] + $detailImpots['irnc'] + $detailImpots['autres'];
+            $detailImpots['ir'] +
+            $detailImpots['tva'] +
+            $detailImpots['cnps'] +
+            $detailImpots['irnc'] +
+            $detailImpots['feicom'] +
+            $detailImpots['redevance_av'] +
+            $detailImpots['autres'];
 
         // Somme nette = Montant brut - Retenues
         $montantNet = $donneesEngagement['montant_net'] ?? 0;
@@ -93,6 +105,8 @@ if ($engagement && $engagement->engageable) {
             'tsr' => 0,
             'cnps' => 0,
             'irnc' => 0,
+            'feicom' => 0,
+            'redevance_av' => 0,
             'autres' => 0,
         ];
     }
@@ -262,7 +276,7 @@ if ($engagement && $engagement->engageable) {
                         <td style="padding: 2px 0; text-align: right;">
                             <div
                                 style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; line-height: 1.2;">
-                                {{-- ✅ A PRÉCOMPTER : IR+TVA+TSR pour BC, IR+CNPS+IRNC+Autres pour DA --}}
+                                {{-- ✅ A PRÉCOMPTER : IR+TVA+TSR pour BC, IR+CNPS+IRNC+FEICOM+Redevance AV+Autres pour DA --}}
                                 {{ number_format($montantTotalImpots, 0, ',', ' ') }}
                             </div>
                         </td>
