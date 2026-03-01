@@ -357,6 +357,27 @@ class BonCommande extends Model
          * AVANT MISE À JOUR
          */
         static::updating(function ($bonCommande) {
+            // ✅ CORRECTION: Champs autorisés à être modifiés même si le BC n'est pas en brouillon
+            // Ces champs font partie du workflow normal (engagement, transitions de statut)
+            $champsAutorisesSansRestriction = [
+                'engagement_id',
+                'engage',
+                'date_engagement',
+                'statut',
+                'updated_by',
+                'updated_at',
+            ];
+
+            // Vérifier si SEULEMENT des champs autorisés ont été modifiés
+            $champsDirty = array_keys($bonCommande->getDirty());
+            $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
+
+            // ✅ Si seuls les champs autorisés sont modifiés, autoriser la mise à jour
+            if ($modificationAutorisee) {
+                return; // Sortir de l'observer sans lever d'exception
+            }
+
+            // Vérifier les permissions pour les autres modifications
             if (
                 $bonCommande->isDirty() &&
                 $bonCommande->getOriginal('statut') !== 'brouillon' &&
@@ -367,6 +388,7 @@ class BonCommande extends Model
                 );
             }
 
+            // Mise à jour automatique du type d'engagement si le montant change
             if ($bonCommande->isDirty('montant_ttc') && !$bonCommande->isDirty('type_engagement_id')) {
                 if ($bonCommande->montant_ttc > 0) {
                     $type = \App\Models\TypeEngagement::determinerParMontant($bonCommande->montant_ttc);

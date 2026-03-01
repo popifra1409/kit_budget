@@ -141,7 +141,7 @@ class DecisionAdministrative extends Model
         static::updating(function ($decision) {
             $decision->updated_by = auth()->id();
 
-            // ✅ Champs autorisés même si non brouillon
+            // ✅ CETTE SECTION DOIT ÊTRE PRÉSENTE
             $champsAutorisesSansRestriction = [
                 'engagement_id',
                 'engage',
@@ -151,14 +151,13 @@ class DecisionAdministrative extends Model
                 'updated_at',
             ];
 
-            // Vérifier si SEULEMENT des champs autorisés ont été modifiés
             $champsDirty = array_keys($decision->getDirty());
             $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
 
-            // Si seuls les champs autorisés sont modifiés, autoriser
             if ($modificationAutorisee) {
-                return;
+                return; // ← CE RETURN EST CRUCIAL
             }
+            // ✅ FIN DE LA SECTION
 
             // Vérifications normales...
             if (
