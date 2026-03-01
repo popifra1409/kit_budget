@@ -139,10 +139,28 @@ class DecisionAdministrative extends Model
         });
 
         static::updating(function ($decision) {
-            // Assigner automatiquement le modificateur
             $decision->updated_by = auth()->id();
 
-            // Vérifier les permissions
+            // ✅ Champs autorisés même si non brouillon
+            $champsAutorisesSansRestriction = [
+                'engagement_id',
+                'engage',
+                'date_engagement',
+                'statut',
+                'updated_by',
+                'updated_at',
+            ];
+
+            // Vérifier si SEULEMENT des champs autorisés ont été modifiés
+            $champsDirty = array_keys($decision->getDirty());
+            $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
+
+            // Si seuls les champs autorisés sont modifiés, autoriser
+            if ($modificationAutorisee) {
+                return;
+            }
+
+            // Vérifications normales...
             if (
                 $decision->isDirty() &&
                 $decision->getOriginal('statut') !== 'brouillon' &&
@@ -151,7 +169,6 @@ class DecisionAdministrative extends Model
                 throw new \Exception('Modification interdite : décision non brouillon.');
             }
 
-            // Bloquer si en cours de transmission
             if ($decision->estEnCoursDeTransmission() && !auth()->user()?->can('force_update_decision_administrative')) {
                 throw new \Exception('Modification interdite : décision en cours de transmission.');
             }

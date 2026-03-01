@@ -416,7 +416,6 @@ class BonCommandeResource extends Resource
                     ->schema([
                         // ===== NOMENCLATURE COMMUNE =====
                         Forms\Components\Select::make('nomenclature_commune_id')
-                            ->label('Nomenclature budgétaire (commune à toutes les lignes)')
                             ->options(function (callable $get) {
                                 $budgetId = $get('budget_id');
                                 if (!$budgetId) {
@@ -424,8 +423,10 @@ class BonCommandeResource extends Resource
                                 }
 
                                 return \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
+                                    ->whereNotNull('nomenclature_id') // 
                                     ->with('nomenclature')
                                     ->get()
+                                    ->filter(fn($lb) => $lb->nomenclature !== null) //
                                     ->mapWithKeys(fn($lb) => [
                                         $lb->nomenclature_id => "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} (Dispo: " .
                                             number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
