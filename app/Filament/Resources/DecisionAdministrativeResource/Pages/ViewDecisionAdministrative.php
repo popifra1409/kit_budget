@@ -49,8 +49,8 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->modalHeading('Engager le budget')
                 ->modalDescription(
                     fn($record) =>
-                    "Engager le budget pour un montant net de " .
-                        number_format($record->montant_net, 0, ',', ' ') . " FCFA ?"
+                    "Engager le budget pour un montant de " .
+                        number_format($record->montant_brut, 0, ',', ' ') . " FCFA ?"
                 )
                 ->form([
                     Forms\Components\Select::make('nomenclature_id')
@@ -59,6 +59,7 @@ class ViewDecisionAdministrative extends ViewRecord
                             return \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
                                 ->with('nomenclature')
                                 ->get()
+                                ->filter(fn($lb) => $lb->nomenclature !== null)
                                 ->mapWithKeys(fn($lb) => [
                                     $lb->nomenclature_id => "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} (Dispo: " .
                                         number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
@@ -94,12 +95,36 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->requiresConfirmation()
                 ->modalHeading('Annuler la décision')
                 ->modalDescription('Confirmer l\'annulation de cette décision ? Si le budget est engagé, il sera désengagé automatiquement.')
+
+                // ✅ AJOUT : Gestion d'erreur avec try-catch
                 ->action(function ($record) {
-                    $record->annuler();
-                    Notification::make()
-                        ->title('Décision annulée')
-                        ->warning()
-                        ->send();
+                    try {
+                        // Tenter d'annuler la décision
+                        $record->annuler();
+
+                        // ✅ SUCCÈS : Afficher notification de succès
+                        Notification::make()
+                            ->title('Décision annulée')
+                            ->success()
+                            ->body('La décision a été annulée avec succès.')
+                            ->send();
+                    } catch (\Exception $e) {
+                        // ✅ ERREUR : Capturer l'exception et afficher un message clair
+                        Notification::make()
+                            ->title('Impossible d\'annuler')
+                            ->danger()
+                            ->body($e->getMessage()) // Message de l'exception
+                            ->persistent() 
+                            ->send();
+
+                        // Optionnel : Logger l'erreur
+                        \Log::warning('Tentative d\'annulation échouée', [
+                            'decision_id' => $record->id,
+                            'decision_numero' => $record->numero,
+                            'user_id' => auth()->id(),
+                            'erreur' => $e->getMessage(),
+                        ]);
+                    }
                 }),
         ];
     }

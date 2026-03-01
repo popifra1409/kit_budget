@@ -201,7 +201,7 @@ class OrdonnancePaiement extends Model
     }
 
     /**
-     * ✅ AJOUT : Obtenir le détail des impôts
+     * ✅ CORRIGÉ : Obtenir le détail des impôts avec TOUTES les taxes DA
      */
     public function getDetailImpots(): array
     {
@@ -212,13 +212,15 @@ class OrdonnancePaiement extends Model
 
         $engagement = $this->engagement;
 
-        if (!$engagement || !$engagement->engageable) {
+        if (!$engagement) {
             return [
                 'ir' => 0,
                 'tva' => 0,
                 'tsr' => 0,
                 'cnps' => 0,
                 'irnc' => 0,
+                'redevance' => 0,  
+                'feicom' => 0,     
                 'autres' => 0,
                 'total' => 0,
             ];
@@ -227,18 +229,23 @@ class OrdonnancePaiement extends Model
         // Extraire les données depuis l'engagement
         $donnees = $engagement->extraireDonneesDocument();
 
+        // Récupérer toutes les taxes
         $ir = $donnees['montant_ir'] ?? 0;
         $tva = $donnees['montant_tva'] ?? 0;
         $tsr = $donnees['montant_tsr'] ?? 0;
         $cnps = $donnees['montant_cnps'] ?? 0;
         $irnc = $donnees['montant_irnc'] ?? 0;
+        $redevance = $donnees['montant_redevance'] ?? 0;  
+        $feicom = $donnees['montant_feicom'] ?? 0; 
         $autres = $donnees['autres_retenues'] ?? 0;
 
-        // Calculer le total selon le type de document
+        // ✅ CORRIGÉ : Calculer le total selon le type de document
         if ($engagement->estBonCommande()) {
+            // Pour BC : IR + TVA + TSR
             $total = $ir + $tva + $tsr;
         } else {
-            $total = $ir + $cnps + $irnc + $autres;
+            // Pour DA : IR + CNPS + IRNC + TVA + Redevance + FEICOM + Autres
+            $total = $ir + $cnps + $irnc + $tva + $redevance + $feicom + $autres;
         }
 
         return [
@@ -247,6 +254,8 @@ class OrdonnancePaiement extends Model
             'tsr' => $tsr,
             'cnps' => $cnps,
             'irnc' => $irnc,
+            'redevance' => $redevance,  
+            'feicom' => $feicom,    
             'autres' => $autres,
             'total' => $total,
         ];

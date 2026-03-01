@@ -67,7 +67,6 @@
                         <div class="text-right">
                             <p
                                 class="text-2xl font-bold {{ $ordonnance->type_ordonnance === 'standard' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400' }}">
-                                {{-- ✅ CORRECTION : montant_net au lieu de montant_ordonnance --}}
                                 {{ number_format($ordonnance->montant_net, 0, ',', ' ') }}
                             </p>
                             <p class="text-xs text-gray-500 dark:text-gray-400">FCFA</p>
@@ -127,123 +126,114 @@
                     @endif
 
                     {{-- =============================================
-                        ✅ NOUVEAU : Détail des taxes pour OP Impôt
+                        ✅ VERSION DEBUG : Affiche TOUTES les taxes
                         ============================================= --}}
                     @if ($ordonnance->type_ordonnance === 'impot')
                         @php
                             $detailImpots = $ordonnance->getDetailImpots();
+                            $engagementOP = $ordonnance->engagement;
                         @endphp
 
                         <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
-                            <span class="text-gray-600 dark:text-gray-400 text-sm font-semibold">Détail des retenues et
-                                impôts :</span>
+                            <span class="text-gray-600 dark:text-gray-400 text-sm font-semibold">🔍 DEBUG - Détail des
+                                retenues et impôts :</span>
+
+                            {{-- Debug : Type de document --}}
+                            <div
+                                class="mt-2 mb-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
+                                <strong>Type document :</strong>
+                                @if ($engagementOP && $engagementOP->estBonCommande())
+                                    Bon de Commande
+                                @elseif ($engagementOP && $engagementOP->estDecision())
+                                    Décision Administrative
+                                @else
+                                    Inconnu ou Manuel
+                                @endif
+                            </div>
 
                             <div class="mt-2 space-y-1.5 text-sm">
-                                {{-- ✅ Pour Bon de Commande --}}
-                                @if ($engagement->estBonCommande())
-                                    @if (($detailImpots['ir'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">IR :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['ir'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                {{-- ✅ AFFICHAGE TOUTES LES TAXES (même si 0) --}}
 
-                                    @if (($detailImpots['tva'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">TVA :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tva'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['ir'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">IR :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['ir'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    @if (($detailImpots['tsr'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">TSR :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tsr'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['cnps'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">CNPS :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['cnps'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    {{-- ✅ Pour Décision Administrative --}}
-                                @else
-                                    @if (($detailImpots['ir'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">IR :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['ir'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['irnc'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">IRNC :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['irnc'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    @if (($detailImpots['cnps'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">CNPS :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['cnps'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                {{-- ✅ NOUVELLES TAXES DA --}}
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['tva'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">TVA :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tva'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    @if (($detailImpots['irnc'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">IRNC :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['irnc'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['redevance'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">Redevance audiovisuelle :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['redevance'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    {{-- ✅ NOUVELLES TAXES DA --}}
-                                    @if (($detailImpots['tva'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">TVA :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tva'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['feicom'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">FEICOM :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['feicom'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    @if (($detailImpots['redevance'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">Redevance audiovisuelle
-                                                :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['redevance'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['tsr'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">TSR :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['tsr'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
-                                    @if (($detailImpots['feicom'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">FEICOM :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['feicom'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
-
-                                    @if (($detailImpots['autres'] ?? 0) > 0)
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600 dark:text-gray-400">Autres retenues :</span>
-                                            <span
-                                                class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['autres'], 0, ',', ' ') }}
-                                                FCFA</span>
-                                        </div>
-                                    @endif
-                                @endif
+                                <div
+                                    class="flex justify-between {{ ($detailImpots['autres'] ?? 0) == 0 ? 'opacity-50' : '' }}">
+                                    <span class="text-gray-600 dark:text-gray-400">Autres retenues :</span>
+                                    <span
+                                        class="font-medium text-gray-900 dark:text-white">{{ number_format($detailImpots['autres'] ?? 0, 0, ',', ' ') }}
+                                        FCFA</span>
+                                </div>
 
                                 {{-- Total --}}
                                 <div
                                     class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700 font-semibold">
                                     <span class="text-gray-900 dark:text-white">Total :</span>
                                     <span
-                                        class="text-orange-600 dark:text-orange-400">{{ number_format($detailImpots['total'], 0, ',', ' ') }}
+                                        class="text-orange-600 dark:text-orange-400">{{ number_format($detailImpots['total'] ?? 0, 0, ',', ' ') }}
                                         FCFA</span>
                                 </div>
+                            </div>
+
+                            {{-- Debug: Afficher le tableau complet --}}
+                            <div
+                                class="mt-3 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-xs font-mono">
+                                <strong>DEBUG - Contenu $detailImpots :</strong>
+                                <pre class="mt-1 overflow-auto">{{ json_encode($detailImpots, JSON_PRETTY_PRINT) }}</pre>
                             </div>
                         </div>
                     @endif
@@ -268,7 +258,6 @@
             <div class="flex items-center justify-between">
                 <span class="font-semibold text-gray-900 dark:text-white">Total des ordonnances :</span>
                 <span class="text-xl font-bold text-blue-600 dark:text-blue-400">
-                    {{-- ✅ CORRECTION : montant_net au lieu de montant_ordonnance --}}
                     {{ number_format($ordonnances->sum('montant_net'), 0, ',', ' ') }} FCFA
                 </span>
             </div>

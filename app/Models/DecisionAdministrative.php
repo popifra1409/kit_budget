@@ -467,9 +467,9 @@ class DecisionAdministrative extends Model
                 ->where('nomenclature_id', $nomenclatureId)
                 ->firstOrFail();
 
-            if (!$ligneBudgetaire->peutEngager($this->montant_net)) {
+            if (!$ligneBudgetaire->peutEngager($this->montant_brut)) {
                 $nomenclature = $ligneBudgetaire->nomenclature;
-                $manque = $this->montant_net - $ligneBudgetaire->disponible_engagement;
+                $manque = $this->montant_brut - $ligneBudgetaire->disponible_engagement;
 
                 throw new CreditBudgetaireInsuffisantException(
                     "❌ CRÉDIT INSUFFISANT\n\n" .
@@ -481,7 +481,7 @@ class DecisionAdministrative extends Model
                         "💰 ENGAGEMENT DEMANDÉ:\n" .
                         "• Type: Décision Administrative\n" .
                         "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
-                        "• Montant net à engager: " . number_format($this->montant_net, 0, ',', ' ') . " FCFA\n" .
+                        "• Montant net à engager: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
                         "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
                         "✅ SOLUTIONS:\n" .
                         "1. Réduire le montant de la décision\n" .
@@ -496,7 +496,8 @@ class DecisionAdministrative extends Model
             \Log::info("Création engagement", [
                 'da_numero' => $this->numero,
                 'numero_engagement' => $numeroEngagement,
-                'montant' => $this->montant_net,
+                // 'montant' => $this->montant_net,
+                'montant' => $this->montant_brut,
             ]);
 
             // Créer l'engagement
@@ -514,7 +515,8 @@ class DecisionAdministrative extends Model
                 'date_engagement' => now(),
                 'exercice' => $this->exercice?->annee ?? now()->year,
                 'objet' => $this->objet,
-                'montant_engage' => $this->montant_net,
+                // 'montant_engage' => $this->montant_net,
+                'montant_engage' => $this->montant_brut,
                 'statut' => 'provisoire',
                 'created_by' => auth()->id(),
             ]);
@@ -530,7 +532,7 @@ class DecisionAdministrative extends Model
             \Log::info("Engagement créé avec succès", [
                 'id' => $engagement->id,
                 'numero' => $engagement->numero,
-                'montant' => $engagement->montant_engage,
+                'montant' => $engagement->montant_brut,
             ]);
 
             // Créer la ligne d'engagement
@@ -539,7 +541,7 @@ class DecisionAdministrative extends Model
                 'nomenclature_id' => $nomenclatureId,
                 'numero_ligne' => 1,
                 'libelle' => $this->objet,
-                'montant' => $this->montant_net,
+                'montant' => $this->montant_brut,
             ]);
 
             if (!$ligneEngagement || !$ligneEngagement->id) {
@@ -547,11 +549,11 @@ class DecisionAdministrative extends Model
             }
 
             // Engager la ligne budgétaire
-            $ligneBudgetaire->enregistrerEngagement($this->montant_net);
+            $ligneBudgetaire->enregistrerEngagement($this->montant_brut);
 
             // Marquer la décision comme engagée
             $this->engagee = true;
-            $this->montant_engage = $this->montant_net;
+            $this->montant_engage = $this->montant_brut;
             $this->date_engagement = now();
             $this->statut = 'engagee';
             $this->save();
@@ -561,7 +563,7 @@ class DecisionAdministrative extends Model
             \Log::info("Engagement créé depuis DA", [
                 'da_numero' => $this->numero,
                 'engagement_numero' => $engagement->numero,
-                'montant' => $this->montant_net,
+                'montant' => $this->montant_brut,
             ]);
         } catch (\Exception $e) {
             \DB::rollBack();

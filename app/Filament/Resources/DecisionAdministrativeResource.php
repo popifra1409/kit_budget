@@ -118,7 +118,7 @@ class DecisionAdministrativeResource extends Resource
     public static function canAnnuler($record): bool
     {
         return auth()->check()
-            && auth()->user()->can('annuler_decision_administrative');
+            && auth()->user()->can('annuler_decision_administrative');                                                                                                                                                                                                                                                                                                                                                      
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
@@ -960,5 +960,41 @@ class DecisionAdministrativeResource extends Resource
             'edit' => Pages\EditDecisionAdministrative::route('/{record}/edit'),
             'view' => Pages\ViewDecisionAdministrative::route('/{record}'),
         ];
+    }
+
+    /**
+     * ✅ Garantir des valeurs par défaut AVANT la création
+     */
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        // Taux → 0 par défaut
+        $data['taux_cnps'] = $data['taux_cnps'] ?? 0;
+        $data['taux_irnc'] = $data['taux_irnc'] ?? 0;
+        $data['taux_tva'] = $data['taux_tva'] ?? 0;
+        $data['taux_redevance_audiovisuelle'] = $data['taux_redevance_audiovisuelle'] ?? 0;
+        $data['taux_feicom'] = $data['taux_feicom'] ?? 0;
+
+        // Montants → 0 par défaut
+        $data['montant_cnps'] = $data['montant_cnps'] ?? 0;
+        $data['montant_irnc'] = $data['montant_irnc'] ?? 0;
+        $data['montant_tva'] = $data['montant_tva'] ?? 0;
+        $data['montant_redevance_audiovisuelle'] = $data['montant_redevance_audiovisuelle'] ?? 0;
+        $data['montant_feicom'] = $data['montant_feicom'] ?? 0;
+        $data['autres_retenues'] = $data['autres_retenues'] ?? 0;
+
+        // Textes → chaîne vide par défaut
+        $data['reference_decision'] = $data['reference_decision'] ?? '';
+        $data['signataire'] = $data['signataire'] ?? '';
+        $data['observations'] = $data['observations'] ?? '';
+
+        return $data;
+    }
+
+    /**
+     * ✅ Garantir des valeurs par défaut AVANT la mise à jour
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        return $this->mutateFormDataBeforeCreate($data);
     }
 }

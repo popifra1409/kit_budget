@@ -39,6 +39,14 @@ class TypeEngagement extends Model
     ];
 
     /**
+     * ✅ AJOUT : Relation : Engagements de ce type
+     */
+    public function engagements(): HasMany
+    {
+        return $this->hasMany(Engagement::class, 'type_engagement');
+    }
+
+    /**
      * Relation : Bons de commande
      */
     public function bonsCommande(): HasMany
