@@ -139,27 +139,31 @@ class DecisionAdministrative extends Model
         });
 
         static::updating(function ($decision) {
+            // Assigner automatiquement le modificateur
             $decision->updated_by = auth()->id();
 
-            // ✅ CETTE SECTION DOIT ÊTRE PRÉSENTE
+            // ✅ CORRECTION: Champs autorisés même si la décision n'est pas en brouillon
+            // ATTENTION: Le champ s'appelle "engagee" (avec "e") dans DecisionAdministrative
             $champsAutorisesSansRestriction = [
                 'engagement_id',
-                'engage',
+                'engagee',              // ← DIFFÉRENT de BonCommande (qui utilise "engage")
+                'montant_engage',       // ← Montant engagé
                 'date_engagement',
                 'statut',
                 'updated_by',
                 'updated_at',
             ];
 
+            // Vérifier si SEULEMENT des champs autorisés ont été modifiés
             $champsDirty = array_keys($decision->getDirty());
             $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
 
+            // ✅ Si seuls les champs autorisés sont modifiés, autoriser la mise à jour
             if ($modificationAutorisee) {
-                return; // ← CE RETURN EST CRUCIAL
+                return; // Sortir de l'observer sans lever d'exception
             }
-            // ✅ FIN DE LA SECTION
 
-            // Vérifications normales...
+            // Vérifier les permissions pour les autres modifications
             if (
                 $decision->isDirty() &&
                 $decision->getOriginal('statut') !== 'brouillon' &&
@@ -168,6 +172,7 @@ class DecisionAdministrative extends Model
                 throw new \Exception('Modification interdite : décision non brouillon.');
             }
 
+            // Bloquer si en cours de transmission
             if ($decision->estEnCoursDeTransmission() && !auth()->user()?->can('force_update_decision_administrative')) {
                 throw new \Exception('Modification interdite : décision en cours de transmission.');
             }
