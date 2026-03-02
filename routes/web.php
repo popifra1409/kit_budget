@@ -86,6 +86,15 @@ Route::middleware(['web', 'auth'])->group(function () {
         return BonCommandePdfService::telecharger($bonCommande, 'complet');
     })->name('bons-commande.pdf.download.complet');
 
+    // BC pour le papier préimprimé
+    Route::get('/bons-commande/{bonCommande}/pdf/preview-simple-preimprime', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::apercu($bonCommande, 'simple_preimprime');
+    })->name('bons-commande.pdf.preview.simple-preimprime');
+
+    Route::get('/bons-commande/{bonCommande}/pdf/download/simple-preimprime', function (BonCommande $bonCommande){
+         return BonCommandePdfService::telecharger($bonCommande, 'simple_preimprime');
+    })->name('bons-commande.pdf.download.simple-preimprime');
+
     // Décisions administratives
     Route::get('/decisions-administratives/{decision}/pdf/preview', function (DecisionAdministrative $decision) {
         return DecisionAdministrativePdfService::apercu($decision);

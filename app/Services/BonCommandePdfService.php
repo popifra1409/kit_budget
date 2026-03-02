@@ -17,6 +17,7 @@ class BonCommandePdfService
         // Déterminer le code d'état
         $codeEtat = match ($typeEtat) {
             'simple' => 'bon-commande-simple',
+            'simple_preimprime' => 'bon-commande-simple-2',
             'complet' => 'bon-commande',
             default => 'bon-commande-simple',
         };
@@ -40,6 +41,7 @@ class BonCommandePdfService
         } else {
             $template = match ($typeEtat) {
                 'simple' => 'pdf.templates.bon-commande-simple',
+                'simple_preimprime' => 'pdf.templates.bon-commande-simple2', 
                 'complet' => 'pdf.templates.bon-commande',
                 default => 'pdf.templates.bon-commande-simple',
             };
@@ -108,6 +110,7 @@ class BonCommandePdfService
 
         $filename = match ($typeEtat) {
             'simple' => "BC-{$bonCommande->numero}.pdf",
+            'simple_preimprime' => "BC-PREIMPRIME-{$bonCommande->numero}.pdf",
             'complet' => "BCA-{$bonCommande->numero}.pdf",
             default => "BC-{$bonCommande->numero}.pdf",
         };
@@ -121,6 +124,7 @@ class BonCommandePdfService
 
         $filename = match ($typeEtat) {
             'simple' => "BC-{$bonCommande->numero}.pdf",
+            'simple_preimprime' => "BC-PREIMPRIME-{$bonCommande->numero}.pdf",
             'complet' => "BCA-{$bonCommande->numero}.pdf",
             default => "BC-{$bonCommande->numero}.pdf",
         };
@@ -132,5 +136,17 @@ class BonCommandePdfService
     {
         $pdf = static::genererPdf($bonCommande, $typeEtat);
         return $pdf->output();
+    }
+
+    /**
+     * Obtenir la liste des types d'états disponibles
+     */
+    public static function getTypesEtatsDisponibles(): array
+    {
+        return [
+            'simple' => 'Bon de commande simple (avec en-tête)',
+            'simple_preimprime' => 'Bon de commande simple (papier préimprimé)',
+            'complet' => 'Bon de commande complet',
+        ];
     }
 }
