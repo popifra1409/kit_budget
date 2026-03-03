@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Bon de Commande {{ $donnees['_raw']->numero }}</title>
+    <title>Bon de Commande HGY</title>
     <style>
         @page {
             margin: 0;
@@ -15,175 +15,150 @@
             font-size: 10pt;
             margin: 0;
             padding: 0;
+            line-height: 1.2;
         }
 
-        /* Espace réservé pour l'en-tête préimprimé */
         .header-space {
-            height: 50mm;
-            /* Ajuster selon votre papier préimprimé */
+            height: 98mm;
         }
 
         .content {
-            padding: 0 15mm;
+            padding: 0 18mm 0 12mm;
         }
 
-        /* Date et numéro */
         .date-numero {
             text-align: right;
-            margin: 10px 70px 120px;
-            font-size: 12pt;
+            margin: -38mm 0 12mm 0;
+            font-size: 11pt;
         }
 
         .commande-box {
             display: inline-block;
             border: 2px solid #000;
-            padding: 5px 10px;
+            padding: 3px 12px;
             font-weight: bold;
-            margin-bottom: 15px;
+            font-size: 11.5pt;
         }
 
-        /* Tableau d'informations */
-        .info-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 15px;
+        .date-line {
+            margin-top: 6px;
+            font-size: 10pt;
         }
 
-        .info-table td {
-            padding: 4px 8px;
-            vertical-align: top;
-        }
-
-        .info-table .label {
-            width: 35%;
-            font-weight: bold;
-        }
-
-        .info-table .value {
-            width: 65%;
-        }
-
-        /* Tableau des lignes - SANS BORDURES */
         .lignes-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 15px 0;
+            margin: 0 0 3px 0;
         }
 
         .lignes-table td {
-            padding: 6px;
+            padding: 7px 3px;
             vertical-align: top;
             border: none;
-            /* Suppression des bordures */
+            font-size: 9.5pt;
         }
 
         .lignes-table .ref {
-            width: 12%;
+            width: 15%;
             text-align: center;
+            font-size: 8.5pt;
         }
 
         .lignes-table .designation {
-            width: 52%;
-            /* Élargi de 40% à 52% */
+            width: 50%;
+            padding-left: 6px;
         }
 
         .lignes-table .qte {
-            width: 8%;
+            width: 10%;
             text-align: center;
         }
 
         .lignes-table .pu {
-            width: 14%;
-            /* Réduit de 17.5% à 14% */
+            width: 13%;
             text-align: right;
+            padding-right: 6px;
         }
 
         .lignes-table .total {
-            width: 14%;
-            /* Réduit de 17.5% à 14% */
+            width: 13%;
             text-align: right;
+            padding-right: 6px;
         }
 
-        /* Totaux */
-        .totaux {
-            width: 50%;
-            margin-left: auto;
-            margin-top: 15px;
+        /* Section totaux SANS bordures */
+        .totaux-section {
+            margin-top: 8px;
         }
 
-        .totaux table {
+        .totaux-section table {
             width: 100%;
             border-collapse: collapse;
         }
 
-        .totaux td {
-            padding: 5px;
-            border: 1px solid #000;
-        }
-
-        .totaux .label-tot {
-            width: 60%;
-            font-weight: bold;
-        }
-
-        .totaux .montant-tot {
-            width: 40%;
-            text-align: right;
-        }
-
-        .totaux .total-final {
-            font-weight: bold;
-            font-size: 11pt;
-        }
-
-        /* Montant en lettres */
-        .montant-lettres {
-            margin: 15px 0;
-            padding: 10px;
-            border: 1px solid #000;
-            text-align: center;
+        .totaux-section td {
+            padding: 5px 6px;
+            border: none;
+            /* ✅ SANS bordures */
             font-size: 10pt;
         }
 
-        /* Bas de page */
-        .bas-page {
-            display: table;
-            width: 100%;
-            margin-top: 20px;
+        .totaux-section .label-col {
+            width: 57%;
+            font-weight: bold;
+            text-align: left;
+            padding-left: 220px;
         }
+
+        .totaux-section .vide-col {
+            width: 9%;
+        }
+
+        .totaux-section .montant-col {
+            width: 34%;
+            text-align: right;
+            font-weight: bold;
+            padding-right: 10px;
+        }
+
+        /* Ligne montant en lettres */
+        .totaux-section .ligne-lettres .montant-col {
+            font-weight: normal;
+            text-align: left;
+            padding-left: 6px;
+            font-size: 9.5pt;
+        }
+
+        /* Ligne TOTAL finale avec soulignement */
+        .totaux-section .ligne-finale {
+            border-top: 1px solid #000;
+            /* Seulement bordure supérieure */
+        }
+
+        .totaux-section .ligne-finale td {
+            padding: 6px;
+            font-size: 10.5pt;
+            font-weight: bold;
+        }
+
 
         .mention-gauche {
             display: table-cell;
-            width: 50%;
-            vertical-align: top;
-            font-size: 9pt;
+            width: 35%;
+            font-size: 8pt;
         }
 
-        .signature {
+        .signature-droite {
             display: table-cell;
-            width: 50%;
-            text-align: center;
-            vertical-align: bottom;
+            width: 65%;
+            text-align: right;
         }
 
-        .signature-box {
-            margin-top: 40px;
-        }
-
-        .signature .fonction {
+        .signature-droite .titre {
             font-weight: bold;
+            font-size: 10pt;
             text-decoration: underline;
-            margin-bottom: 40px;
-        }
-
-        .signature .nom {
-            font-weight: bold;
-        }
-
-        /* Espace pour le footer préimprimé */
-        .footer-space {
-            height: 20mm;
-            /* Ajuster selon votre papier */
+            margin-bottom: 45px;
         }
     </style>
 </head>
@@ -192,73 +167,74 @@
     @php
         $bonCommande = $donnees['_raw'];
         $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+        $netAPayer = $bonCommande->net_a_percevoir ?? $bonCommande->montant_ttc - $bonCommande->montant_ir;
     @endphp
 
-    {{-- Espace réservé pour l'en-tête préimprimé --}}
     <div class="header-space"></div>
-
     <div class="content">
-        {{-- Date et numéro de commande --}}
         <div class="date-numero">
-            <div class="commande-box">
-                N° {{ $bonCommande->numero }}
-            </div>
-            <div>
-                {{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
+            <div class="commande-box"> {{ $bonCommande->numero }}</div>
+            <div class="date-line">{{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
             </div>
         </div>
 
-        {{-- Tableau des lignes - SANS BORDURES NI EN-TÊTE --}}
         <table class="lignes-table">
-            <tbody>
-                @foreach ($bonCommande->lignes as $ligne)
-                    <tr>
-                        <td class="ref">{{ $ligne->reference ?? '-' }}</td>
-                        <td class="designation">{{ $ligne->designation }}</td>
-                        <td class="qte">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
-                        <td class="pu">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
-                        <td class="total">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
-                    </tr>
-                @endforeach
-            </tbody>
+            @foreach ($bonCommande->lignes as $index => $ligne)
+                <tr>
+                    <td class="ref">
+                        {{ $ligne->reference_personnalisee ?? ($ligne->reference ?? ($ligne->referenceMercuriale?->code_reference ?? '-')) }}
+                    </td>
+                    <td class="designation">{{ $ligne->designation }}</td>
+                    <td class="qte">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
+                    <td class="pu">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
+                    <td class="total">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                </tr>
+            @endforeach
         </table>
 
-        {{-- Totaux --}}
-        <div class="totaux">
+        {{-- ✅ Section totaux SANS bordures --}}
+        <div class="totaux-section">
             <table>
                 <tr>
-                    <td class="label-tot">MONTANT HT</td>
-                    <td class="montant-tot">{{ number_format($bonCommande->montant_ht, 0, ',', ' ') }}</td>
+                    <td class="label-col">MONTANT HT</td>
+                    <td class="vide-col"></td>
+                    <td class="montant-col">{{ number_format($bonCommande->montant_ht, 0, ',', ' ') }}</td>
                 </tr>
                 <tr>
-                    <td class="label-tot">MONTANT TVA</td>
-                    <td class="montant-tot">{{ number_format($bonCommande->montant_tva, 0, ',', ' ') }}</td>
+                    <td class="label-col">MONTANT TVA</td>
+                    <td class="vide-col"></td>
+                    <td class="montant-col">{{ number_format($bonCommande->montant_tva, 0, ',', ' ') }}</td>
                 </tr>
                 <tr>
-                    <td class="label-tot">MONTANT IR</td>
-                    <td class="montant-tot">{{ number_format($bonCommande->montant_ir, 0, ',', ' ') }}</td>
+                    <td class="label-col">MONTANT IR</td>
+                    <td class="vide-col"></td>
+                    <td class="montant-col">{{ number_format($bonCommande->montant_ir, 0, ',', ' ') }}</td>
                 </tr>
                 <tr>
-                    <td class="label-tot total-final">NET A PAYER</td>
-                    <td class="montant-tot total-final">
-                        {{ number_format($bonCommande->net_a_percevoir, 0, ',', ' ') }}
+                    <td class="label-col">NET A PAYER</td>
+                    <td class="vide-col"></td>
+                    <td class="montant-col">{{ number_format($netAPayer, 0, ',', ' ') }}</td>
+                </tr>
+
+                {{-- ✅ Ligne montant en lettres --}}
+                <tr class="ligne-lettres">
+                    <td colspan="3" class="montant-col">
+                        Arrete le present bon de commande a la somme de
+                        <strong>{{ \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc) }}</strong>
                     </td>
                 </tr>
-                <tr>
-                    <td class="label-tot total-final">MONTANT TOTAL TTC</td>
-                    <td class="montant-tot total-final">
-                        {{ number_format($bonCommande->montant_ttc, 0, ',', ' ') }}
-                    </td>
+
+                {{-- ✅ Ligne TOTAL finale avec le montant TTC --}}
+                <tr class="ligne-finale">
+                    <td class="label-col">TOTAL ......</td>
+                    <td class="vide-col">FCFA</td>
+                    <td class="montant-col">{{ number_format($bonCommande->montant_ttc, 0, ',', ' ') }}</td>
                 </tr>
             </table>
         </div>
-
-        {{-- Montant en lettres --}}
-        <div class="montant-lettres">
-            Arrete le present bon de commande a la somme de
-            <strong>{{ \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc) }}</strong>
-        </div>
     </div>
+
+    {{-- ✅ Footer supprimé --}}
 </body>
 
 </html>
