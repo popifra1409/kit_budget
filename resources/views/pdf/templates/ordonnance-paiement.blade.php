@@ -122,43 +122,43 @@ if ($engagement && $engagement->engageable) {
     <style>
         @page {
             size: A4 landscape;
-            margin: 15mm 12mm 12mm 18mm;
+            margin: 14mm 10mm 10mm 16mm;
         }
 
         body {
             font-family: "Times New Roman", serif;
-            font-size: 9pt;
-            line-height: 1.12;
+            font-size: 10.5pt;
+            line-height: 1.35;
         }
 
         .info-box {
             border: 1px solid #000;
-            padding: 5px;
-            margin: 5px 0;
-            font-size: 9pt;
+            padding: 6px;
+            margin: 6px 0;
+            font-size: 10pt;
         }
     </style>
 @endsection
 
 @section('content')
     {{-- ✅ Numéro d'émission --}}
-    <div style="text-align: right; font-size: 9pt; font-weight: bold; margin-bottom: 5px;">
+    <div style="text-align: right; font-size: 11pt; font-weight: bold; margin-bottom: 6px;">
         N° EMISSION : {{ $ordonnance->numero_emission ?? 'NON ATTRIBUÉ' }}
     </div>
 
     <table style="width: 100%; border-collapse: collapse; margin: 0px;">
         <tr>
             <td style="border: none; padding: 0; vertical-align: top; width: 65%;">
-                <div style="font-size: 8pt; line-height: 1.1; margin-bottom: 2px;">
+                <div style="font-size: 9.5pt; line-height: 1.3; margin-bottom: 3px;">
                     <div style="font-weight: bold;">
                         OBJET DE LA DEPENSE:
                         <span style="padding-left: 26px;">
                             {{ $ordonnance->objet ?? ($documentSource?->objet ?? 'Paiement') }}
                         </span>
                     </div>
-                    <div style="font-style: italic; font-size: 8pt;">SUBJECT OF EXPENDITURE:</div>
+                    <div style="font-style: italic; font-size: 9pt;">SUBJECT OF EXPENDITURE:</div>
                 </div>
-                <div style="font-weight: bold; font-size: 10pt; line-height: 1.2; margin-top: 4px;">
+                <div style="font-weight: bold; font-size: 11pt; line-height: 1.3; margin-top: 5px;">
                     Paiement selon
                     @if ($engagement && $documentSource)
                         @if ($engagement->estBonCommande())
@@ -166,31 +166,31 @@ if ($engagement && $engagement->engageable) {
                         @else
                             la décision administrative
                         @endif
-                        <span style="font-size: 10pt;">{{ $documentSource->numero }}</span>
+                        <span style="font-size: 11pt;">{{ $documentSource->numero }}</span>
                     @else
-                        l'engagement <span style="font-size: 10pt;">{{ $engagement?->numero ?? 'N/A' }}</span>
+                        l'engagement <span style="font-size: 11pt;">{{ $engagement?->numero ?? 'N/A' }}</span>
                     @endif
                 </div>
             </td>
             <td style="border: none; padding: 0; vertical-align: top; width: 35%;">
                 <table style="width: 100%; border: 1px solid #333; border-collapse: collapse;">
                     <tr>
-                        <td style="border-right: 1px solid #333; padding: 2px 4px; width: 50%;">
-                            <div style="font-size: 8.5pt; font-weight: bold; line-height: 1.1;">Imputation</div>
-                            <div style="font-size: 7.5pt; font-style: italic; line-height: 1.1;">Imputation</div>
+                        <td style="border-right: 1px solid #333; padding: 3px 5px; width: 50%;">
+                            <div style="font-size: 10pt; font-weight: bold; line-height: 1.3;">Imputation</div>
+                            <div style="font-size: 9pt; font-style: italic; line-height: 1.3;">Imputation</div>
                         </td>
-                        <td style="padding: 2px 4px; width: 50%;">
-                            <div style="font-size: 8.5pt; font-weight: bold; line-height: 1.1;">Montant:</div>
-                            <div style="font-size: 7.5pt; font-style: italic; line-height: 1.1;">Amount</div>
+                        <td style="padding: 3px 5px; width: 50%;">
+                            <div style="font-size: 10pt; font-weight: bold; line-height: 1.3;">Montant:</div>
+                            <div style="font-size: 9pt; font-style: italic; line-height: 1.3;">Amount</div>
                         </td>
                     </tr>
                     <tr>
                         <td
-                            style="border-right: 1px solid #333; padding: 2px 4px; text-align: center; font-size: 10pt; font-weight: bold; line-height: 1.2;">
+                            style="border-right: 1px solid #333; padding: 3px 5px; text-align: center; font-size: 11pt; font-weight: bold; line-height: 1.3;">
                             {{ $engagement->nomenclaturePrincipale->code ?? 'N/A' }}
                         </td>
                         <td
-                            style="padding: 2px 4px; text-align: center; font-size: 10pt; font-weight: bold; line-height: 1.2;">
+                            style="padding: 3px 5px; text-align: center; font-size: 11pt; font-weight: bold; line-height: 1.3;">
                             {{-- ✅ IMPUTATION : montant_ht pour BC, montant_brut pour DA --}}
                             {{ number_format($montantImputation, 0, ',', ' ') }}
                         </td>
@@ -200,27 +200,27 @@ if ($engagement && $engagement->engageable) {
         </tr>
     </table>
 
-    <table style="width: 100%; border: 1px solid #000; border-collapse: collapse; font-size: 9pt; margin: 0px;">
+    <table style="width: 100%; border: 1px solid #000; border-collapse: collapse; font-size: 10pt; margin: 0px;">
         <tr>
-            <td style="border-right: 1px solid #000; padding: 4px 6px; vertical-align: top; width: 55%;">
-                <div style="font-weight: bold; margin-bottom: 2px; line-height: 1.1;">
+            <td style="border-right: 1px solid #000; padding: 5px 7px; vertical-align: top; width: 55%;">
+                <div style="font-weight: bold; margin-bottom: 3px; line-height: 1.3;">
                     DESIGNATION DU CREANCIER(1):
-                    <div style="font-weight: normal; font-style: italic; font-size: 8pt; line-height: 1.1;">
+                    <div style="font-weight: normal; font-style: italic; font-size: 9pt; line-height: 1.3;">
                         DESIGNATION OF THE CREDITOR(1):
                     </div>
                 </div>
-                <div style="margin-top: 8px; font-size: 10pt; font-weight: bold; min-height: 30px; line-height: 1.2;">
+                <div style="margin-top: 8px; font-size: 11pt; font-weight: bold; min-height: 32px; line-height: 1.3;">
                     {{ $nomBeneficiaire }}
                 </div>
 
-                <div style="font-weight: bold; margin-top: 12px; line-height: 1.1;">
+                <div style="font-weight: bold; margin-top: 12px; line-height: 1.3;">
                     PIECES JUSTIFICATIVES DE LA DEPENSE(1)
-                    <div style="font-weight: normal; font-style: italic; font-size: 8pt; line-height: 1.1;">
+                    <div style="font-weight: normal; font-style: italic; font-size: 9pt; line-height: 1.3;">
                         RELEVANT OF THE CREDITOR(1)
                     </div>
                 </div>
 
-                <div style="margin-top: 5px; font-size: 7pt;">
+                <div style="margin-top: 6px; font-size: 8.5pt; line-height: 1.4;">
                     @if ($engagement && $documentSource)
                         @if ($engagement->estBonCommande())
                             - Bon de Commande Administratif N° {{ $documentSource->numero }}<br>
@@ -240,59 +240,59 @@ if ($engagement && $engagement->engageable) {
                     @endif
                 </div>
 
-                <div style="margin-top: 15px; line-height: 1.1;">
+                <div style="margin-top: 16px; line-height: 1.3;">
                     <div style="font-weight: bold;">L'AGENT COMPTABLE</div>
-                    <div style="font-style: italic; font-size: 8pt;">(THE ACCOUNTING OFFICER)</div>
+                    <div style="font-style: italic; font-size: 9pt;">(THE ACCOUNTING OFFICER)</div>
                 </div>
             </td>
-            <td style="padding: 4px 6px; vertical-align: top; width: 45%;">
+            <td style="padding: 5px 7px; vertical-align: top; width: 45%;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
-                        <td style="padding: 2px 0; vertical-align: middle;">
-                            <div style="font-weight: bold; line-height: 1.1;">
+                        <td style="padding: 3px 0; vertical-align: middle;">
+                            <div style="font-weight: bold; line-height: 1.3;">
                                 Montant brut de l'ordonnance
-                                <div style="font-weight: normal; font-style: italic; font-size: 8pt; line-height: 1.1;">
+                                <div style="font-weight: normal; font-style: italic; font-size: 9pt; line-height: 1.3;">
                                     Gross amount of the order
                                 </div>
                             </div>
                         </td>
-                        <td style="padding: 2px 0; width: 35%; text-align: right;">
+                        <td style="padding: 3px 0; width: 35%; text-align: right;">
                             <div
-                                style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; line-height: 1.2;">
+                                style="border: 1px solid #000; padding: 2px 5px; text-align: center; font-weight: bold; font-size: 10.5pt; line-height: 1.3;">
                                 {{-- ✅ MONTANT BRUT : TTC pour BC, montant_brut pour DA --}}
                                 {{ number_format($montantBrut, 0, ',', ' ') }}
                             </div>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding: 2px 0; vertical-align: middle;">
-                            <div style="font-weight: bold; line-height: 1.1;">
+                        <td style="padding: 3px 0; vertical-align: middle;">
+                            <div style="font-weight: bold; line-height: 1.3;">
                                 A PRECOMPTER
-                                <div style="font-weight: normal; font-style: italic; font-size: 8pt; line-height: 1.1;">
+                                <div style="font-weight: normal; font-style: italic; font-size: 9pt; line-height: 1.3;">
                                     TO BE DEDUCED
                                 </div>
                             </div>
                         </td>
-                        <td style="padding: 2px 0; text-align: right;">
+                        <td style="padding: 3px 0; text-align: right;">
                             <div
-                                style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; line-height: 1.2;">
+                                style="border: 1px solid #000; padding: 2px 5px; text-align: center; font-weight: bold; font-size: 10.5pt; line-height: 1.3;">
                                 {{-- ✅ A PRÉCOMPTER : IR+TVA+TSR pour BC, IR+CNPS+IRNC+FEICOM+Redevance AV+Autres pour DA --}}
                                 {{ number_format($montantTotalImpots, 0, ',', ' ') }}
                             </div>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding: 2px 0; vertical-align: middle;">
-                            <div style="font-weight: bold; line-height: 1.1;">
+                        <td style="padding: 3px 0; vertical-align: middle;">
+                            <div style="font-weight: bold; line-height: 1.3;">
                                 Somme nette a payer ou a virer(A)
-                                <div style="font-weight: normal; font-style: italic; font-size: 8pt; line-height: 1.1;">
+                                <div style="font-weight: normal; font-style: italic; font-size: 9pt; line-height: 1.3;">
                                     Net sum to be paid or transfered(A)
                                 </div>
                             </div>
                         </td>
-                        <td style="padding: 2px 0; text-align: right;">
+                        <td style="padding: 3px 0; text-align: right;">
                             <div
-                                style="border: 1px solid #000; padding: 1px 4px; text-align: center; font-weight: bold; font-size: 9pt; background-color: #f5f5f5; line-height: 1.2;">
+                                style="border: 1px solid #000; padding: 2px 5px; text-align: center; font-weight: bold; font-size: 10.5pt; background-color: #f5f5f5; line-height: 1.3;">
                                 {{-- ✅ SOMME NETTE : Montant brut - Retenues (pour les deux types) --}}
                                 {{ number_format($montantNet, 0, ',', ' ') }}
                             </div>
@@ -301,29 +301,29 @@ if ($engagement && $engagement->engageable) {
                 </table>
 
                 <div style="margin-top: 12px; text-align: center;">
-                    <div style="line-height: 1.1;">
+                    <div style="line-height: 1.3;">
                         Arrete par nous le present ordre de paiement a la somme de:
-                        <div style="font-style: italic; font-size: 8pt; line-height: 1.1;">
+                        <div style="font-style: italic; font-size: 9pt; line-height: 1.3;">
                             We hereby make up this order at the amount of:
                         </div>
                     </div>
 
                     <div
-                        style="border: 1px solid #333; padding: 4px; margin: 6px 0; font-weight: bold; font-size: 9.5pt; min-height: 40px; line-height: 1.2;">
+                        style="border: 1px solid #333; padding: 5px; margin: 6px 0; font-weight: bold; font-size: 10.5pt; min-height: 42px; line-height: 1.3;">
                         @yield('montant_lettres')
                     </div>
 
-                    <div style="text-align: left; margin-bottom: 3px; line-height: 1.1;">
+                    <div style="text-align: left; margin-bottom: 4px; line-height: 1.3;">
                         <span style="font-weight: bold;">Emis a Yaounde le</span><br>
-                        <span style="font-style: italic; font-size: 8pt;">Issued at Yaounde on</span><br>
+                        <span style="font-style: italic; font-size: 9pt;">Issued at Yaounde on</span><br>
                         <span style="text-decoration: underline; font-weight: bold;">
                             {{ $ordonnance->date_emission ? \Carbon\Carbon::parse($ordonnance->date_emission)->format('d/m/Y') : '................................' }}
                         </span>
                     </div>
 
-                    <div style="text-align: right; margin-top: 20px; line-height: 1.1;">
+                    <div style="text-align: right; margin-top: 20px; line-height: 1.3;">
                         <div style="font-weight: bold;">(Signature et timbre de l'ordonnateur)</div>
-                        <div style="font-style: italic; font-size: 8pt;">(Signature and stamp of the Vote Holder)</div>
+                        <div style="font-style: italic; font-size: 9pt;">(Signature and stamp of the Vote Holder)</div>
                     </div>
                 </div>
             </td>
@@ -333,24 +333,24 @@ if ($engagement && $engagement->engageable) {
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
                         <td style="width: 40%; vertical-align: top; padding-right: 10px;">
-                            <div style="font-weight: bold; line-height: 1.1;">PAIEMENT PAR:</div>
-                            <div style="font-style: italic; font-size: 8pt; line-height: 1.1;">(Payment by)</div>
-                            <div style="margin-top: 5px; line-height: 1.1;">
+                            <div style="font-weight: bold; line-height: 1.3;">PAIEMENT PAR:</div>
+                            <div style="font-style: italic; font-size: 9pt; line-height: 1.3;">(Payment by)</div>
+                            <div style="margin-top: 6px; line-height: 1.3;">
                                 <span style="font-weight: bold;">A Yaounde, le</span><br>
-                                <span style="font-style: italic; font-size: 8pt;">At Yaounde on</span><br>
+                                <span style="font-style: italic; font-size: 9pt;">At Yaounde on</span><br>
                                 <span
-                                    style="border-bottom: 1px solid #333; display: inline-block; min-width: 120px; height: 14px;">&nbsp;</span>
+                                    style="border-bottom: 1px solid #333; display: inline-block; min-width: 120px; height: 16px;">&nbsp;</span>
                             </div>
                         </td>
                         <td style="width: 30%; text-align: center; vertical-align: top;">
-                            <div style="font-weight: bold; line-height: 1.1;">Le Controleur Financier</div>
-                            <div style="font-style: italic; font-size: 8pt; line-height: 1.1;">(The Financial Controller)
+                            <div style="font-weight: bold; line-height: 1.3;">Le Controleur Financier</div>
+                            <div style="font-style: italic; font-size: 9pt; line-height: 1.3;">(The Financial Controller)
                             </div>
                         </td>
                         <td style="width: 30%; vertical-align: top;">
-                            <div style="font-weight: bold; line-height: 1.1;">COMPTE A CREDITER</div>
-                            <div style="font-style: italic; font-size: 8pt; line-height: 1.1;">ACCOUNT TO BE CREDITED</div>
-                            <div style="margin-top: 5px; border: 1px solid #333; min-height: 30px; padding: 2px;">
+                            <div style="font-weight: bold; line-height: 1.3;">COMPTE A CREDITER</div>
+                            <div style="font-style: italic; font-size: 9pt; line-height: 1.3;">ACCOUNT TO BE CREDITED</div>
+                            <div style="margin-top: 6px; border: 1px solid #333; min-height: 32px; padding: 3px;">
                                 @if ($beneficiaire && isset($beneficiaire->compte_bancaire))
                                     {{ $beneficiaire->compte_bancaire }}
                                 @endif
@@ -362,7 +362,7 @@ if ($engagement && $engagement->engageable) {
         </tr>
         <tr>
             <td colspan="2"
-                style="border-top: 1px solid #000; padding: 3px; font-size: 7.5pt; background-color: #f9f9f9; line-height: 1.1;">
+                style="border-top: 1px solid #000; padding: 4px; font-size: 8.5pt; background-color: #f9f9f9; line-height: 1.3;">
                 <div style="font-weight: bold;">Note:</div>
                 <div>(1) Nom, Prenom, Adresse complete. Pour les societes: Raisons sociales exactes.</div>
                 <div style="font-style: italic;">(1) Surname, name and full address. Precise company name</div>

@@ -59,8 +59,8 @@ if ($engagement && $engagement->engageable) {
 
         body {
             font-family: "Times New Roman", serif;
-            font-size: 9pt;
-            line-height: 1.12;
+            font-size: 10.5pt;
+            line-height: 1.35;
         }
 
         .info-box {
@@ -107,11 +107,11 @@ if ($engagement && $engagement->engageable) {
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
         <tr>
             <td style="border: none; padding: 0; vertical-align: top; width: 65%;">
-                <div style="font-size: 8.5pt; line-height: 1.1; margin-bottom: 2px;">
+                <div style="font-size: 9.5pt; line-height: 1.1; margin-bottom: 2px;">
                     <div style="font-weight: bold;">OBJET DE LA DEPENSE:</div>
                     <div style="padding-left: 3px;">{{ $ordonnance->objet ?? 'Reversement des impots et taxes' }}</div>
-                    <div style="font-style: italic; font-size: 8pt;">SUBJECT OF EXPENDITURE:</div>
-                    <div style="text-align: center; font-weight: bold; font-size: 10pt; line-height: 1.2; margin-top: 4px;">
+                    <div style="font-style: italic; font-size: 9pt;">SUBJECT OF EXPENDITURE:</div>
+                    <div style="text-align: center; font-weight: bold; font-size: 10pt; line-height: 1.3; margin-top: 4px;">
                         Reversement Impots et Taxes
                     </div>
                     <div style="text-align: center; font-weight: bold; font-size: 10pt; line-height: 1.2; margin-top: 4px;">
@@ -249,7 +249,7 @@ if ($engagement && $engagement->engageable) {
                             {{ $engagement->nomenclaturePrincipale->code ?? '610300' }}
                         </td>
                         <td
-                            style="padding: 2px 4px; text-align: center; font-size: 10pt; font-weight: bold; line-height: 1.2;">
+                            style="padding: 2px 4px; text-align: center; font-size: 10.5pt; font-weight: bold; line-height: 1.2;">
                             {{-- ✅ CORRECTION : Afficher le total des impôts --}}
                             {{ number_format($montantTotalImpots, 0, ',', ' ') }}
                         </td>

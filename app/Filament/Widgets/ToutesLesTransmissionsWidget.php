@@ -13,6 +13,9 @@ class ToutesLesTransmissionsWidget extends BaseWidget
 
     protected int | string | array $columnSpan = 'full';
 
+    // ✅ Rafraîchir automatiquement toutes les 30 secondes
+    protected static ?string $pollingInterval = '30s';
+
     public function table(Table $table): Table
     {
         return $table
@@ -120,8 +123,14 @@ class ToutesLesTransmissionsWidget extends BaseWidget
                 Tables\Actions\Action::make('voir')
                     ->label('Voir')
                     ->icon('heroicon-o-eye')
-                    ->url(fn($record) => $this->getDocumentUrl($record))
-                    ->openUrlInNewTab(),
+                    ->color('primary')
+                    ->action(function (Transmission $record) {
+                        // Marquer comme lu
+                        $record->marquerCommeLu();
+
+                        // Rediriger vers le document
+                        $this->redirect($this->getDocumentUrl($record));
+                    }),
             ])
             ->emptyStateHeading('Aucune transmission en cours')
             ->emptyStateDescription('Toutes les transmissions ont été traitées')
@@ -132,9 +141,13 @@ class ToutesLesTransmissionsWidget extends BaseWidget
 
     protected function getDocumentUrl(Transmission $transmission): string
     {
-        return match ($transmission->document_type) {
-            'App\Models\BonCommande' => route('filament.admin.resources.bon-commandes.view', $transmission->document_id),
-            'App\Models\Engagement' => route('filament.admin.resources.engagements.view', $transmission->document_id),
+        $documentType = class_basename($transmission->document_type);
+
+        return match ($documentType) {
+            'BonCommande' => route('filament.admin.resources.bon-commandes.edit', ['record' => $transmission->document_id]),
+            'Engagement' => route('filament.admin.resources.engagements.edit', ['record' => $transmission->document_id]),
+            'Decision' => route('filament.admin.resources.decisions.edit', ['record' => $transmission->document_id]),
+            'Recours' => route('filament.admin.resources.recours.edit', ['record' => $transmission->document_id]),
             default => route('filament.admin.pages.dashboard'),
         };
     }

@@ -63,7 +63,7 @@
             width: 65%;
         }
 
-        /* Tableau des lignes - SANS EN-TÊTE */
+        /* Tableau des lignes - SANS BORDURES */
         .lignes-table {
             width: 100%;
             border-collapse: collapse;
@@ -71,32 +71,36 @@
         }
 
         .lignes-table td {
-            border: 1px solid #000;
             padding: 6px;
             vertical-align: top;
+            border: none;
+            /* Suppression des bordures */
         }
 
         .lignes-table .ref {
-            width: 15%;
+            width: 12%;
             text-align: center;
         }
 
         .lignes-table .designation {
-            width: 40%;
+            width: 52%;
+            /* Élargi de 40% à 52% */
         }
 
         .lignes-table .qte {
-            width: 10%;
+            width: 8%;
             text-align: center;
         }
 
         .lignes-table .pu {
-            width: 17.5%;
+            width: 14%;
+            /* Réduit de 17.5% à 14% */
             text-align: right;
         }
 
         .lignes-table .total {
-            width: 17.5%;
+            width: 14%;
+            /* Réduit de 17.5% à 14% */
             text-align: right;
         }
 
@@ -204,58 +208,14 @@
             </div>
         </div>
 
-        {{-- Informations du bon de commande --}}
-        {{-- <table class="info-table">
-            <tr>
-                <td class="label">Nom ou raison du Prestataire :</td>
-                <td class="value">
-                    {{ $bonCommande->fournisseur->raison_sociale ?? '' }}
-                </td>
-            </tr>
-
-            <tr>
-                <td class="label">
-                    Livraison - Reception<br>
-                    de 7h30 a 12h du Lundi au Mercredi<br>
-                    (Sauf urgence)
-                </td>
-                <td class="value">
-                    {{ $bonCommande->serviceDemandeur->nom ?? '' }}
-                </td>
-            </tr>
-
-            <tr>
-                <td class="label">DELAI :</td>
-                <td class="value">
-                    le plus court possible et a nous confirmer au plus tard le _____________
-                </td>
-            </tr>
-
-            <tr>
-                <td class="label">IMPUTATION :</td>
-                <td class="value">
-                    {{ $bonCommande->engagement->nomenclaturePrincipale->code ?? '' }}
-                    -
-                    {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
-                </td>
-            </tr>
-
-            <tr>
-                <td class="label">OBJET :</td>
-                <td class="value">
-                    {{ $bonCommande->engagement->objet ?? '' }}
-                </td>
-            </tr>
-        </table> --}}
-
-        {{-- Tableau des lignes - SANS EN-TÊTE NI COLONNE N° --}}
+        {{-- Tableau des lignes - SANS BORDURES NI EN-TÊTE --}}
         <table class="lignes-table">
             <tbody>
                 @foreach ($bonCommande->lignes as $ligne)
                     <tr>
                         <td class="ref">{{ $ligne->reference ?? '-' }}</td>
                         <td class="designation">{{ $ligne->designation }}</td>
-                        <td class="qte">{{ $ligne->quantite }}</td>
+                        <td class="qte">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
                         <td class="pu">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
                         <td class="total">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                     </tr>
@@ -298,6 +258,7 @@
             Arrete le present bon de commande a la somme de
             <strong>{{ \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc) }}</strong>
         </div>
+    </div>
 </body>
 
 </html>

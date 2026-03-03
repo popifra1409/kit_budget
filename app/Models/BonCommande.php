@@ -12,11 +12,12 @@ use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Traits\HasWorkflow;
+use App\Traits\GereTransmissions;
 use Illuminate\Support\Facades\DB;
 
 class BonCommande extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity, GereTransmissions;
 
     protected $table = 'bons_commande';
 
@@ -53,8 +54,8 @@ class BonCommande extends Model
         'created_by',
         'updated_by',
         'net_a_payer',
-        'net_a_percevoir', // ✅ AJOUTÉ
-        'exonere_tva', // ✅ AJOUTÉ - TRÈS IMPORTANT
+        'net_a_percevoir',
+        'exonere_tva', 
     ];
 
     protected $casts = [

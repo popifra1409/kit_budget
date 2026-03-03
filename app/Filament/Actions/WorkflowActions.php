@@ -6,6 +6,7 @@ use Filament\Tables;
 use Filament\Forms;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
+use App\Models\Transmission;
 use App\Models\User;
 
 class WorkflowActions
@@ -149,6 +150,14 @@ class WorkflowActions
             ->action(function ($record) {
                 $record->valider(auth()->user());
 
+                // ✅ Traiter la transmission si elle existe
+                Transmission::where('document_type', get_class($record))
+                    ->where('document_id', $record->id)
+                    ->where('destinataire_id', auth()->id())
+                    ->where('statut', 'en_attente')
+                    ->first()
+                    ?->traiter('Document validé avec succès');
+
                 Notification::make()
                     ->title('Document validé')
                     ->success()
@@ -202,7 +211,6 @@ class WorkflowActions
             })
             ->action(function ($record) {
                 try {
-                    // ✅ VÉRIFICATION CRITIQUE
                     $verifications = $record->verifierDisponibiliteBudgetaire();
 
                     if (!$verifications['peut_engager']) {
@@ -232,6 +240,15 @@ class WorkflowActions
                     }
 
                     $engagement = $record->engagerBudget($verifications);
+
+                    // ✅ Traiter la transmission après engagement réussi
+                    Transmission::where('document_type', get_class($record))
+                        ->where('document_id', $record->id)
+                        ->where('destinataire_id', auth()->id())
+                        ->where('action_attendue', 'engagement')
+                        ->where('statut', 'en_attente')
+                        ->first()
+                        ?->traiter("Budget engagé - Engagement N° {$engagement->numero}");
 
                     Notification::make()
                         ->title('✅ Budget engagé avec succès')
@@ -547,13 +564,23 @@ class WorkflowActions
             ->requiresConfirmation()
             ->modalHeading('Retourner pour correction')
             ->modalDescription("Le document sera retourné à l'expéditeur")
-            ->action(fn($record, array $data) => tap(
-                $record->retournerPourCorrection($data['motif']),
-                fn() => Notification::make()
+            ->action(function ($record, array $data) {
+                // Retourner le document
+                $record->retournerPourCorrection($data['motif']);
+
+                // ✅ Rejeter la transmission avec le motif
+                Transmission::where('document_type', get_class($record))
+                    ->where('document_id', $record->id)
+                    ->where('destinataire_id', auth()->id())
+                    ->where('statut', 'en_attente')
+                    ->first()
+                    ?->rejeter($data['motif']);
+
+                Notification::make()
                     ->title('Document retourné')
                     ->warning()
-                    ->send()
-            ));
+                    ->send();
+            });
     }
 
     /* =========================
@@ -577,13 +604,23 @@ class WorkflowActions
                     ->rows(3),
             ])
             ->requiresConfirmation()
-            ->action(fn($record, array $data) => tap(
-                $record->cloturerTransmission($data['reponse'] ?? null),
-                fn() => Notification::make()
+            ->action(function ($record, array $data) {
+                // Clôturer la transmission dans le document
+                $record->cloturerTransmission($data['reponse'] ?? null);
+
+                // ✅ Traiter la transmission avec la réponse
+                Transmission::where('document_type', get_class($record))
+                    ->where('document_id', $record->id)
+                    ->where('destinataire_id', auth()->id())
+                    ->where('statut', 'en_attente')
+                    ->first()
+                    ?->traiter($data['reponse'] ?? 'Transmission clôturée');
+
+                Notification::make()
                     ->title('Transmission clôturée')
                     ->success()
-                    ->send()
-            ));
+                    ->send();
+            });
     }
 
     /* =========================
