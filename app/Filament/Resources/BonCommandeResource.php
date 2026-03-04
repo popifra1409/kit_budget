@@ -200,7 +200,8 @@ class BonCommandeResource extends Resource
                     ])
                     ->columns(3),
 
-                Forms\Components\Section::make('Dates')
+                Forms\Components\Section::make('Dates et Délais')
+                    ->description('Précisez soit une date précise, soit un délai de livraison')
                     ->schema([
                         Forms\Components\DatePicker::make('date_emission')
                             ->label('Date d\'émission')
@@ -209,8 +210,14 @@ class BonCommandeResource extends Resource
 
                         Forms\Components\DatePicker::make('date_livraison_prevue')
                             ->label('Date de livraison prévue')
-                            ->required()
-                            ->after('date_emission'),
+                            ->nullable() 
+                            ->helperText('Laisser vide si vous préférez indiquer un délai'),
+
+                        Forms\Components\TextInput::make('delai_livraison')
+                            ->label('OU Délai de livraison')
+                            ->placeholder('Ex: 30 jours à date, 45 jours après signature')
+                            ->maxLength(200)
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
 
@@ -401,6 +408,70 @@ class BonCommandeResource extends Resource
                         static::recalculerTotaux($lignes, $set);
                     }),
 
+                Forms\Components\Toggle::make('exonere_ir')
+                    ->label('Exonération d\'IR')
+                    ->helperText('Forcer l\'IR à 0% (même si le fournisseur est assujetti)')
+                    ->live()
+                    ->reactive()
+                    ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                        // Forcer l'état booléen
+                        $set('exonere_ir', (bool) $state);
+
+                        // Recalculer toutes les lignes lors du chargement
+                        if ($state) {
+                            $lignes = $get('lignes') ?? [];
+                            foreach ($lignes as $index => $ligne) {
+                                $set("lignes.$index.taux_ir", 0);
+                                // Recalculer la ligne
+                                static::recalculerLigne(
+                                    function ($key, $value) use ($set, $index) {
+                                        $set("lignes.$index.$key", $value);
+                                    },
+                                    function ($key) use ($get, $index) {
+                                        return $get("lignes.$index.$key");
+                                    }
+                                );
+                            }
+                        }
+                    })
+                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                        $lignes = $get('lignes') ?? [];
+
+                        foreach ($lignes as $index => $ligne) {
+                            if ($state) {
+                                // Si exonéré, forcer IR à 0
+                                $set("lignes.$index.taux_ir", 0);
+                            } else {
+                                // Si non exonéré, recalculer l'IR selon le régime fiscal
+                                $typeEngagementId = $get('type_engagement_id');
+                                $fournisseurId = $get('fournisseur_id');
+
+                                if ($typeEngagementId && $fournisseurId) {
+                                    $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
+                                    $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
+
+                                    if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
+                                        $tauxIR = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
+                                        $set("lignes.$index.taux_ir", $tauxIR);
+                                    }
+                                }
+                            }
+
+                            // Recalculer immédiatement chaque ligne
+                            static::recalculerLigne(
+                                function ($key, $value) use ($set, $index) {
+                                    $set("lignes.$index.$key", $value);
+                                },
+                                function ($key) use ($get, $index) {
+                                    return $get("lignes.$index.$key");
+                                }
+                            );
+                        }
+
+                        // Recalculer les totaux
+                        static::recalculerTotaux($lignes, $set);
+                    }),
+
                 Forms\Components\Section::make('Référence')
                     ->schema([
                         Forms\Components\TextInput::make('reference')
@@ -571,13 +642,20 @@ class BonCommandeResource extends Resource
                                         Forms\Components\TextInput::make('taux_ir')
                                             ->label('IR %')
                                             ->numeric()
-                                            ->default(5.5)
                                             ->suffix('%')
                                             ->minValue(0)
                                             ->maxValue(100)
                                             ->live(onBlur: true)
                                             ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get))
-                                            ->helperText('IR spécifique (0 = auto)'),
+                                            ->helperText('IR spécifique (0 = auto)')
+                                            ->default(fn(callable $get) => $get('../../exonere_ir') ? 0 : 5.5)
+                                            ->disabled(fn(callable $get) => (bool) $get('../../exonere_ir'))
+                                            ->dehydrated(true)
+                                            ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                                if ($get('../../exonere_ir')) {
+                                                    $set('taux_ir', 0);
+                                                }
+                                            }),
 
                                         Forms\Components\Placeholder::make('net_a_payer')
                                             ->label('Net à payer')
@@ -678,7 +756,14 @@ class BonCommandeResource extends Resource
         // 4. Calcul de l'IR
         $montantIR = 0;
 
-        if ($tauxIR > 0) {
+        // ✅ Vérifier d'abord si IR est exonéré au niveau du BC
+        $exonereIR = $get('../../exonere_ir') ?? false;
+
+        if ($exonereIR) {
+            // Si exonéré au niveau du BC, IR = 0
+            $montantIR = 0;
+            $set('taux_ir', 0);
+        } elseif ($tauxIR > 0) {
             // IR manuel spécifié
             $montantIR = ($montantHT * $tauxIR) / 100;
         } else {
@@ -693,7 +778,7 @@ class BonCommandeResource extends Resource
                 if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
                     $tauxIRAuto = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
                     $montantIR = ($montantHT * $tauxIRAuto) / 100;
-                    $set('taux_ir', $tauxIRAuto); // Mettre à jour le taux affiché
+                    $set('taux_ir', $tauxIRAuto);
                 }
             }
         }
@@ -701,12 +786,7 @@ class BonCommandeResource extends Resource
         $set('montant_ir', round($montantIR, 2));
 
         // 5. Calcul du net à payer
-        // Option 1: Net à payer = HT - IR (montant sans TVA, après retenue IR)
         $netAPayer = $montantHT - $montantIR;
-
-        // Option 2: Net à payer = TTC - IR (si l'IR doit être déduit du TTC)
-        // $netAPayer = $montantTTC - $montantIR;
-
         $set('net_a_payer', round($netAPayer, 2));
 
         // 6. Mettre à jour quantite_restante

@@ -34,14 +34,17 @@
 
         .commande-box {
             display: inline-block;
-            border: 2px solid #000;
-            padding: 3px 12px;
+            border: 1px solid #000;
+            padding: 3px 5px;
             font-weight: bold;
             font-size: 11.5pt;
+            margin-top: -43px;
+            margin-left: 30px;
         }
 
         .date-line {
-            margin-top: 6px;
+            /* margin-top: 10px; */
+            margin-bottom: 160px;
             font-size: 10pt;
         }
 
@@ -60,28 +63,28 @@
 
         .lignes-table .ref {
             width: 15%;
-            text-align: center;
+            text-align: left;
             font-size: 8.5pt;
         }
 
         .lignes-table .designation {
-            width: 50%;
+            width: 53%;
             padding-left: 6px;
         }
 
         .lignes-table .qte {
-            width: 10%;
+            width: 9%;
             text-align: center;
         }
 
         .lignes-table .pu {
-            width: 13%;
+            width: 11%;
             text-align: right;
             padding-right: 6px;
         }
 
         .lignes-table .total {
-            width: 13%;
+            width: 12%;
             text-align: right;
             padding-right: 6px;
         }
@@ -107,7 +110,7 @@
             width: 57%;
             font-weight: bold;
             text-align: left;
-            padding-left: 220px;
+            padding-left: 200px;
         }
 
         .totaux-section .vide-col {
@@ -126,7 +129,12 @@
             font-weight: normal;
             text-align: left;
             padding-left: 6px;
+            padding-top: 130px;
             font-size: 9.5pt;
+        }
+
+        .ligne-lettres {
+            margin-top: 30px;
         }
 
         /* Ligne TOTAL finale avec soulignement */
@@ -226,8 +234,8 @@
 
                 {{-- ✅ Ligne TOTAL finale avec le montant TTC --}}
                 <tr class="ligne-finale">
-                    <td class="label-col">TOTAL ......</td>
-                    <td class="vide-col">FCFA</td>
+                     <td class=""></td>
+                    <td class=""></td>
                     <td class="montant-col">{{ number_format($bonCommande->montant_ttc, 0, ',', ' ') }}</td>
                 </tr>
             </table>

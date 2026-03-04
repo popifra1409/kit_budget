@@ -30,6 +30,7 @@ class BonCommande extends Model
         'service_beneficiaire_id',
         'date_emission',
         'date_livraison_prevue',
+        'delai_livraison',
         'date_livraison_effective',
         'objet',
         'observations',
@@ -55,7 +56,8 @@ class BonCommande extends Model
         'updated_by',
         'net_a_payer',
         'net_a_percevoir',
-        'exonere_tva', 
+        'exonere_tva',
+        'exonere_ir',
     ];
 
     protected $casts = [
@@ -80,6 +82,7 @@ class BonCommande extends Model
         'net_a_payer' => 'decimal:2',
         'net_a_percevoir' => 'decimal:2',
         'exonere_tva' => 'boolean',
+        'exonere_ir' => 'boolean',
     ];
 
     /**
@@ -335,6 +338,10 @@ class BonCommande extends Model
             // Forcer exonération TVA
             if ($bonCommande->exonere_tva) {
                 $bonCommande->montant_tva = 0;
+            }
+            // Forcer exonération IF
+            if ($bonCommande->exonere_ir) {
+                $bonCommande->montant_ir = 0;
             }
         });
 
