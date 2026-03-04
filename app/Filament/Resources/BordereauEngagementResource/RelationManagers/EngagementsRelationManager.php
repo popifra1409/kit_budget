@@ -56,16 +56,33 @@ class EngagementsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('numero')
             ->columns([
-                // ✅ FIX: Désactiver le tri sur la colonne pivot
                 Tables\Columns\TextColumn::make('pivot.numero_ligne')
                     ->label('#')
-                    ->sortable(false),  // ← Correction PostgreSQL
+                    ->sortable(false),
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° Engagement')
                     ->searchable()
                     ->weight('bold')
                     ->copyable(),
+
+                Tables\Columns\TextColumn::make('numero_document')
+                    ->label('N° BC/DA')
+                    ->getStateUsing(function ($record) {
+                        return $record->engageable?->numero ?? '-';
+                    })
+                    ->badge()
+                    ->color(fn($record) => match ($record->type_engagement) {
+                        'BC' => 'primary',
+                        'DA' => 'success',
+                        default => 'gray',
+                    })
+                    ->description(fn($record) => match ($record->type_engagement) {
+                        'BC' => 'Bon de Commande',
+                        'DA' => 'Décision Administrative',
+                        default => null,
+                    })
+                    ->placeholder('-'),
 
                 Tables\Columns\BadgeColumn::make('type_engagement')
                     ->label('Type')
@@ -135,11 +152,7 @@ class EngagementsRelationManager extends RelationManager
                     ->label('Type')
                     ->options([
                         'BC' => 'Bon de Commande',
-                        'DA' => 'Décision Administrative',
-                        'Mission' => 'Ordre de mission',
-                        'Avance' => 'Avance sur solde',
-                        'Lettre-commande' => 'Lettre-commande',
-                        'Marché' => 'Marché',
+                        'DA' => 'Décision',
                     ]),
             ])
             ->headerActions([
@@ -239,7 +252,6 @@ class EngagementsRelationManager extends RelationManager
                         ->visible(fn() => $this->getOwnerRecord()->estModifiable()),
                 ]),
             ])
-            // ✅ FIX: Trier par colonne normale au lieu de colonne pivot
-            ->defaultSort('numero', 'desc');  // ← Correction PostgreSQL
+            ->defaultSort('numero', 'desc');
     }
 }

@@ -312,6 +312,12 @@ class ViewBonCommande extends ViewRecord
                             ->color('danger')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
 
+                        Infolists\Components\TextEntry::make('montant_tsr')
+                            ->label('Montant TSR')
+                            ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                            ->color('danger')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+
                         Infolists\Components\TextEntry::make('net_a_percevoir')
                             ->label('Net à Percevoir')
                             ->formatStateUsing(fn($record) => number_format($record->net_a_percevoir, 0, ',', ' ') . ' FCFA')

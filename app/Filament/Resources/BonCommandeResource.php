@@ -669,6 +669,7 @@ class BonCommandeResource extends Resource
                                 Forms\Components\Hidden::make('montant_ht')->default(0),
                                 Forms\Components\Hidden::make('montant_tva')->default(0),
                                 Forms\Components\Hidden::make('montant_ir')->default(0),
+                                Forms\Components\Hidden::make('montant_tsr')->default(0),
                                 Forms\Components\Hidden::make('montant_ttc')->default(0),
                                 Forms\Components\Hidden::make('net_a_payer')->default(0),
                                 Forms\Components\Hidden::make('nomenclature_id'), // ← Récupéré de nomenclature_commune_id
@@ -683,6 +684,7 @@ class BonCommandeResource extends Resource
                                         $montantHT = (float) ($get('montant_ht') ?? 0);
                                         $montantTVA = (float) ($get('montant_tva') ?? 0);
                                         $montantIR = (float) ($get('montant_ir') ?? 0);
+                                        $montantTSR = (float) ($get('montant_tsr') ?? 0);
                                         $montantTTC = (float) ($get('montant_ttc') ?? 0);
                                         $netAPercevoir = (float) ($get('net_a_payer') ?? 0);
 
@@ -692,6 +694,7 @@ class BonCommandeResource extends Resource
                                             number_format($montantTVA, 0, ',', ' '),
                                             number_format($montantTTC, 0, ',', ' '),
                                             number_format($montantIR, 0, ',', ' '),
+                                            number_format($montantTSR, 0, ',', ' '),
                                             number_format($netAPercevoir, 0, ',', ' ')
                                         );
                                     })

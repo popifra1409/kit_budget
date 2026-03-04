@@ -44,7 +44,7 @@ class LigneBonCommande extends Model
         'montant_ir' => 'decimal:2',
         'taux_ir' => 'decimal:2',
         'montant_ttc' => 'decimal:2',
-        'net_a_payer' => 'decimal:2', // ← CHANGÉ
+        'net_a_payer' => 'decimal:2', 
         'quantite_livree' => 'decimal:3',
         'quantite_restante' => 'decimal:3',
         'numero_ligne' => 'integer',
