@@ -118,7 +118,7 @@ class DecisionAdministrativeResource extends Resource
     public static function canAnnuler($record): bool
     {
         return auth()->check()
-            && auth()->user()->can('annuler_decision_administrative');                                                                                                                                                                                                                                                                                                                                                      
+            && auth()->user()->can('annuler_decision_administrative');
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
@@ -178,7 +178,40 @@ class DecisionAdministrativeResource extends Resource
                             ->required()
                             ->searchable()
                             ->preload()
-                            ->live(),
+                            ->live()
+                            ->columnSpan(1),
+
+                        Forms\Components\Select::make('service_emetteur_id')
+                            ->label('Service émetteur')
+                            ->options(\App\Models\Service::where('actif', true)->pluck('nom', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Service qui émet la décision')
+                            ->columnSpan(1),
+
+                        Forms\Components\ToggleButtons::make('type_beneficiaire')
+                            ->label('Type de bénéficiaire')
+                            ->options([
+                                'personnel' => 'Personnel',
+                                'fournisseur' => 'Fournisseur',
+                            ])
+                            ->icons([
+                                'personnel' => 'heroicon-o-user',
+                                'fournisseur' => 'heroicon-o-building-office',
+                            ])
+                            ->default('personnel')
+                            ->inline()
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                // Réinitialiser l'autre champ quand on change de type
+                                if ($state === 'personnel') {
+                                    $set('fournisseur_id', null);
+                                } else {
+                                    $set('personnel_id', null);
+                                }
+                            })
+                            ->columnSpanFull(),
 
                         Forms\Components\Select::make('personnel_id')
                             ->label('Personnel concerné')
@@ -198,7 +231,8 @@ class DecisionAdministrativeResource extends Resource
                             })
                             ->searchable()
                             ->preload()
-                            ->required()
+                            ->required(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
+                            ->visible(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
                             ->live()
                             ->helperText(function ($get) {
                                 $personnelId = $get('personnel_id');
@@ -215,7 +249,7 @@ class DecisionAdministrativeResource extends Resource
                                         return $info;
                                     }
                                 }
-                                return 'Sélectionnez un membre du personnel ou créez une nouvelle fiche';
+                                return 'Sélectionnez un membre du personnel';
                             })
                             ->createOptionForm([
                                 Forms\Components\Section::make('Identité')
@@ -322,14 +356,98 @@ class DecisionAdministrativeResource extends Resource
                                     ->send();
 
                                 return $personnel->id;
-                            }),
+                            })
+                            ->columnSpanFull(),
 
-                        Forms\Components\Select::make('service_emetteur_id')
-                            ->label('Service émetteur')
-                            ->options(\App\Models\Service::where('actif', true)->pluck('nom', 'id'))
+                        Forms\Components\Select::make('fournisseur_id')
+                            ->label('Fournisseur concerné')
+                            ->relationship('fournisseur', 'raison_sociale')
                             ->searchable()
                             ->preload()
-                            ->helperText('Service qui émet la décision'),
+                            ->required(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
+                            ->visible(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
+                            ->live()
+                            ->helperText(function ($get) {
+                                $fournisseurId = $get('fournisseur_id');
+                                if ($fournisseurId) {
+                                    $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
+                                    if ($fournisseur) {
+                                        $info = "📋 {$fournisseur->raison_sociale}";
+                                        if ($fournisseur->numero_contribuable) {
+                                            $info .= " | N° Contribuable: {$fournisseur->numero_contribuable}";
+                                        }
+                                        if ($fournisseur->regimeFiscal) {
+                                            $info .= " | Régime: {$fournisseur->regimeFiscal->libelle}";
+                                        }
+                                        return $info;
+                                    }
+                                }
+                                return 'Sélectionnez un fournisseur';
+                            })
+                            ->createOptionForm([
+                                Forms\Components\Section::make('Identification')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('raison_sociale')
+                                                    ->label('Raison sociale')
+                                                    ->required()
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('sigle')
+                                                    ->label('Sigle')
+                                                    ->maxLength(50),
+                                            ]),
+
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('numero_contribuable')
+                                                    ->label('N° Contribuable')
+                                                    ->maxLength(100),
+
+                                                Forms\Components\Select::make('regime_fiscal_id')
+                                                    ->label('Régime fiscal')
+                                                    ->relationship('regimeFiscal', 'libelle')
+                                                    ->searchable()
+                                                    ->preload(),
+                                            ]),
+                                    ]),
+
+                                Forms\Components\Section::make('Contact')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('telephone')
+                                                    ->label('Téléphone')
+                                                    ->tel()
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('email')
+                                                    ->label('Email')
+                                                    ->email()
+                                                    ->maxLength(255),
+                                            ]),
+
+                                        Forms\Components\Textarea::make('adresse')
+                                            ->label('Adresse')
+                                            ->rows(2)
+                                            ->maxLength(500),
+                                    ])
+                                    ->collapsible()
+                                    ->collapsed(),
+                            ])
+                            ->createOptionUsing(function (array $data) {
+                                $fournisseur = \App\Models\Fournisseur::create($data);
+
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Fournisseur créé')
+                                    ->success()
+                                    ->body("Le fournisseur {$fournisseur->raison_sociale} a été ajouté.")
+                                    ->send();
+
+                                return $fournisseur->id;
+                            })
+                            ->columnSpanFull(),
                     ])
                     ->columns(3),
 
@@ -383,69 +501,22 @@ class DecisionAdministrativeResource extends Resource
                     ->columns(4),
 
                 Forms\Components\Section::make('Montants et retenues')
+                    ->description('Le montant brut est le montant TTC (toutes taxes comprises). Le montant HT sera calculé automatiquement.')
                     ->schema([
-                        // Montant brut
-                        Forms\Components\TextInput::make('montant_brut')
-                            ->label('Montant Brut')
-                            ->numeric()
-                            ->required()
-                            ->prefix('FCFA')
-                            ->live(onBlur: true)
-                            ->columnSpanFull(),
-
                         // ========================================
-                        // CNPS
-                        // ========================================
-                        Forms\Components\Grid::make(2)
-                            ->schema([
-                                Forms\Components\TextInput::make('taux_cnps')
-                                    ->label('CNPS (%)')
-                                    ->numeric()
-                                    ->default(4.2)
-                                    ->step(0.01)
-                                    ->suffix('%')
-                                    ->live(onBlur: true),
-
-                                Forms\Components\Placeholder::make('montant_cnps_calcule')
-                                    ->label('Montant CNPS calculé')
-                                    ->content(function (callable $get) {
-                                        $brut = (float) ($get('montant_brut') ?? 0);
-                                        $taux = (float) ($get('taux_cnps') ?? 0);
-                                        $montant = $brut * ($taux / 100);
-                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
-                                    }),
-                            ])
-                            ->columnSpanFull(),
-
-                        // ========================================
-                        // IRNC
-                        // ========================================
-                        Forms\Components\Grid::make(2)
-                            ->schema([
-                                Forms\Components\TextInput::make('taux_irnc')
-                                    ->label('IRNC (%)')
-                                    ->numeric()
-                                    ->default(11)
-                                    ->step(0.01)
-                                    ->suffix('%')
-                                    ->live(onBlur: true),
-
-                                Forms\Components\Placeholder::make('montant_irnc_calcule')
-                                    ->label('Montant IRNC calculé')
-                                    ->content(function (callable $get) {
-                                        $brut = (float) ($get('montant_brut') ?? 0);
-                                        $taux = (float) ($get('taux_irnc') ?? 0);
-                                        $montant = $brut * ($taux / 100);
-                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
-                                    }),
-                            ])
-                            ->columnSpanFull(),
-
-                        // ========================================
-                        // TVA
+                        // MONTANT BRUT (TTC) et TAUX TVA
                         // ========================================
                         Forms\Components\Grid::make(3)
                             ->schema([
+                                Forms\Components\TextInput::make('montant_brut')
+                                    ->label('Montant Brut (TTC)')
+                                    ->numeric()
+                                    ->required()
+                                    ->prefix('FCFA')
+                                    ->live(onBlur: true)
+                                    ->helperText('Montant TTC incluant la TVA')
+                                    ->columnSpan(1),
+
                                 Forms\Components\Select::make('type_tva')
                                     ->label('Type TVA')
                                     ->options([
@@ -459,34 +530,103 @@ class DecisionAdministrativeResource extends Resource
                                 Forms\Components\TextInput::make('taux_tva')
                                     ->label('Taux TVA (%)')
                                     ->numeric()
-                                    ->default(0)
+                                    ->default(19.25)
                                     ->step(0.01)
                                     ->suffix('%')
-                                    ->visible(fn(callable $get) => $get('type_tva') === 'taux')
-                                    ->live(onBlur: true),
+                                    ->live(onBlur: true)
+                                    ->helperText('TVA incluse dans le montant brut')
+                                    ->columnSpan(1),
 
-                                Forms\Components\TextInput::make('montant_tva')
-                                    ->label('Montant TVA')
-                                    ->numeric()
-                                    ->default(0)
-                                    ->prefix('FCFA')
-                                    ->visible(fn(callable $get) => $get('type_tva') === 'forfait')
-                                    ->live(onBlur: true),
-
-                                Forms\Components\Placeholder::make('montant_tva_calcule')
-                                    ->label('Montant TVA calculé')
+                                // ✅ NOUVEAU : Montant HT calculé automatiquement
+                                Forms\Components\Placeholder::make('montant_ht_affiche')
+                                    ->label('💰 Montant HT (calculé)')
                                     ->content(function (callable $get) {
-                                        $typeTva = $get('type_tva');
-                                        if ($typeTva === 'taux') {
-                                            $brut = (float) ($get('montant_brut') ?? 0);
-                                            $taux = (float) ($get('taux_tva') ?? 0);
-                                            $montant = $brut * ($taux / 100);
-                                        } else {
-                                            $montant = (float) ($get('montant_tva') ?? 0);
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $tauxTva = (float) ($get('taux_tva') ?? 19.25);
+
+                                        if ($brut <= 0) {
+                                            return '0 FCFA';
                                         }
-                                        return number_format($montant, 0, ',', ' ') . ' FCFA';
+
+                                        // Formule : HT = Brut / (1 + TVA/100)
+                                        $montantHT = $brut / (1 + ($tauxTva / 100));
+
+                                        return number_format($montantHT, 0, ',', ' ') . ' FCFA';
                                     })
-                                    ->visible(fn(callable $get) => $get('type_tva') === 'taux'),
+                                    ->columnSpan(1),
+                            ])
+                            ->columnSpanFull(),
+
+                        // ========================================
+                        // CNPS
+                        // ========================================
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('taux_cnps')
+                                    ->label('CNPS (%)')
+                                    ->numeric()
+                                    ->placeholder(4.2)
+                                    // ->default(0.0)
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\Placeholder::make('montant_cnps_calcule')
+                                    ->label('Montant CNPS calculé')
+                                    ->content(function (callable $get) {
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $tauxTva = (float) ($get('taux_tva') ?? 19.25);
+                                        $tauxCnps = (float) ($get('taux_cnps') ?? 0);
+
+                                        if ($brut <= 0) {
+                                            return '0 FCFA';
+                                        }
+
+                                        // Calculer HT
+                                        $montantHT = $brut / (1 + ($tauxTva / 100));
+
+                                        // Calculer CNPS sur HT
+                                        $montantCnps = $montantHT * ($tauxCnps / 100);
+
+                                        return number_format($montantCnps, 0, ',', ' ') . ' FCFA';
+                                    }),
+                            ])
+                            ->columnSpanFull(),
+
+                        // ========================================
+                        // IRNC
+                        // ========================================
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('taux_irnc')
+                                    ->label('IRNC (%)')
+                                    ->numeric()
+                                    ->placeholder(11)
+                                    // ->default(11)
+                                    ->helperText('IR Non Commercial')
+                                    ->step(0.01)
+                                    ->suffix('%')
+                                    ->live(onBlur: true),
+
+                                Forms\Components\Placeholder::make('montant_irnc_calcule')
+                                    ->label('Montant IRNC calculé')
+                                    ->content(function (callable $get) {
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $tauxTva = (float) ($get('taux_tva') ?? 19.25);
+                                        $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
+
+                                        if ($brut <= 0) {
+                                            return '0 FCFA';
+                                        }
+
+                                        // Calculer HT
+                                        $montantHT = $brut / (1 + ($tauxTva / 100));
+
+                                        // Calculer IRNC sur HT
+                                        $montantIrnc = $montantHT * ($tauxIrnc / 100);
+
+                                        return number_format($montantIrnc, 0, ',', ' ') . ' FCFA';
+                                    }),
                             ])
                             ->columnSpanFull(),
 
@@ -526,13 +666,25 @@ class DecisionAdministrativeResource extends Resource
                                     ->label('Montant Redevance calculé')
                                     ->content(function (callable $get) {
                                         $typeRedevance = $get('type_redevance_audiovisuelle');
+
                                         if ($typeRedevance === 'taux') {
                                             $brut = (float) ($get('montant_brut') ?? 0);
-                                            $taux = (float) ($get('taux_redevance_audiovisuelle') ?? 0);
-                                            $montant = $brut * ($taux / 100);
+                                            $tauxTva = (float) ($get('taux_tva') ?? 19.25);
+                                            $tauxRedevance = (float) ($get('taux_redevance_audiovisuelle') ?? 0);
+
+                                            if ($brut <= 0) {
+                                                return '0 FCFA';
+                                            }
+
+                                            // Calculer HT
+                                            $montantHT = $brut / (1 + ($tauxTva / 100));
+
+                                            // Calculer redevance sur HT
+                                            $montant = $montantHT * ($tauxRedevance / 100);
                                         } else {
                                             $montant = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
                                         }
+
                                         return number_format($montant, 0, ',', ' ') . ' FCFA';
                                     })
                                     ->visible(fn(callable $get) => $get('type_redevance_audiovisuelle') === 'taux'),
@@ -575,13 +727,25 @@ class DecisionAdministrativeResource extends Resource
                                     ->label('Montant FEICOM calculé')
                                     ->content(function (callable $get) {
                                         $typeFeicom = $get('type_feicom');
+
                                         if ($typeFeicom === 'taux') {
                                             $brut = (float) ($get('montant_brut') ?? 0);
-                                            $taux = (float) ($get('taux_feicom') ?? 0);
-                                            $montant = $brut * ($taux / 100);
+                                            $tauxTva = (float) ($get('taux_tva') ?? 19.25);
+                                            $tauxFeicom = (float) ($get('taux_feicom') ?? 0);
+
+                                            if ($brut <= 0) {
+                                                return '0 FCFA';
+                                            }
+
+                                            // Calculer HT
+                                            $montantHT = $brut / (1 + ($tauxTva / 100));
+
+                                            // Calculer FEICOM sur HT
+                                            $montant = $montantHT * ($tauxFeicom / 100);
                                         } else {
                                             $montant = (float) ($get('montant_feicom') ?? 0);
                                         }
+
                                         return number_format($montant, 0, ',', ' ') . ' FCFA';
                                     })
                                     ->visible(fn(callable $get) => $get('type_feicom') === 'taux'),
@@ -602,35 +766,35 @@ class DecisionAdministrativeResource extends Resource
                         // ========================================
                         // RÉSUMÉ DES TAXES
                         // ========================================
-                        Forms\Components\Placeholder::make('resume_taxes')
-                            ->label('📊 Résumé des taxes et montant net')
+                        Forms\Components\Placeholder::make('resume_montants')
+                            ->label('📊 Résumé des montants et calculs')
                             ->content(function (callable $get) {
                                 $brut = (float) ($get('montant_brut') ?? 0);
+                                $tauxTva = (float) ($get('taux_tva') ?? 19.25);
 
-                                // CNPS
-                                $tauxCnps = (float) ($get('taux_cnps') ?? 0);
-                                $montantCnps = $brut * ($tauxCnps / 100);
-
-                                // IRNC
-                                $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
-                                $montantIrnc = $brut * ($tauxIrnc / 100);
-
-                                // TVA
-                                $typeTva = $get('type_tva') ?? 'taux';
-                                if ($typeTva === 'taux') {
-                                    $tauxTva = (float) ($get('taux_tva') ?? 0);
-                                    $montantTva = $brut * ($tauxTva / 100);
-                                    $labelTva = "TVA ({$tauxTva}%)";
-                                } else {
-                                    $montantTva = (float) ($get('montant_tva') ?? 0);
-                                    $labelTva = "TVA (forfait)";
+                                if ($brut <= 0) {
+                                    return 'Veuillez saisir un montant brut';
                                 }
 
-                                // Redevance audiovisuelle
+                                // Calculer HT
+                                $montantHT = $brut / (1 + ($tauxTva / 100));
+
+                                // Calculer TVA
+                                $montantTva = $montantHT * ($tauxTva / 100);
+
+                                // CNPS (sur HT)
+                                $tauxCnps = (float) ($get('taux_cnps') ?? 0);
+                                $montantCnps = $montantHT * ($tauxCnps / 100);
+
+                                // IRNC (sur HT)
+                                $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
+                                $montantIrnc = $montantHT * ($tauxIrnc / 100);
+
+                                // Redevance
                                 $typeRedevance = $get('type_redevance_audiovisuelle') ?? 'forfait';
                                 if ($typeRedevance === 'taux') {
                                     $tauxRedevance = (float) ($get('taux_redevance_audiovisuelle') ?? 0);
-                                    $montantRedevance = $brut * ($tauxRedevance / 100);
+                                    $montantRedevance = $montantHT * ($tauxRedevance / 100);
                                     $labelRedevance = "Redevance audiovisuelle ({$tauxRedevance}%)";
                                 } else {
                                     $montantRedevance = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
@@ -641,7 +805,7 @@ class DecisionAdministrativeResource extends Resource
                                 $typeFeicom = $get('type_feicom') ?? 'forfait';
                                 if ($typeFeicom === 'taux') {
                                     $tauxFeicom = (float) ($get('taux_feicom') ?? 0);
-                                    $montantFeicom = $brut * ($tauxFeicom / 100);
+                                    $montantFeicom = $montantHT * ($tauxFeicom / 100);
                                     $labelFeicom = "FEICOM ({$tauxFeicom}%)";
                                 } else {
                                     $montantFeicom = (float) ($get('montant_feicom') ?? 0);
@@ -651,23 +815,34 @@ class DecisionAdministrativeResource extends Resource
                                 // Autres retenues
                                 $autres = (float) ($get('autres_retenues') ?? 0);
 
-                                // Total taxes et net
-                                $totalTaxes = $montantCnps + $montantIrnc + $montantTva + $montantRedevance + $montantFeicom + $autres;
-                                $net = $brut - $totalTaxes;
+                                // Total retenues et net
+                                $totalRetenues = $montantCnps + $montantIrnc + $montantRedevance + $montantFeicom + $autres;
+                                $net = $montantHT - $totalRetenues;
 
                                 return collect([
-                                    "Montant brut : " . number_format($brut, 0, ',', ' ') . " FCFA",
-                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                    "CNPS ({$tauxCnps}%) : " . number_format($montantCnps, 0, ',', ' ') . " FCFA",
-                                    "IRNC ({$tauxIrnc}%) : " . number_format($montantIrnc, 0, ',', ' ') . " FCFA",
-                                    "{$labelTva} : " . number_format($montantTva, 0, ',', ' ') . " FCFA",
-                                    "{$labelRedevance} : " . number_format($montantRedevance, 0, ',', ' ') . " FCFA",
-                                    "{$labelFeicom} : " . number_format($montantFeicom, 0, ',', ' ') . " FCFA",
-                                    "Autres retenues : " . number_format($autres, 0, ',', ' ') . " FCFA",
-                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                    "TOTAL TAXES : " . number_format($totalTaxes, 0, ',', ' ') . " FCFA",
-                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                    "💰 NET À PAYER : " . number_format($net, 0, ',', ' ') . " FCFA",
+                                    "💰 MONTANT BRUT (TTC) : " . number_format($brut, 0, ',', ' ') . " FCFA",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                    "",
+                                    "📐 DÉCOMPOSITION :",
+                                    "   Montant HT : " . number_format($montantHT, 0, ',', ' ') . " FCFA",
+                                    "   TVA ({$tauxTva}%) : " . number_format($montantTva, 0, ',', ' ') . " FCFA",
+                                    "",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                    "",
+                                    "💸 RETENUES (calculées sur HT = " . number_format($montantHT, 0, ',', ' ') . " FCFA) :",
+                                    "   • CNPS ({$tauxCnps}%) : " . number_format($montantCnps, 0, ',', ' ') . " FCFA",
+                                    "   • IRNC ({$tauxIrnc}%) : " . number_format($montantIrnc, 0, ',', ' ') . " FCFA",
+                                    "   • {$labelRedevance} : " . number_format($montantRedevance, 0, ',', ' ') . " FCFA",
+                                    "   • {$labelFeicom} : " . number_format($montantFeicom, 0, ',', ' ') . " FCFA",
+                                    "   • Autres retenues : " . number_format($autres, 0, ',', ' ') . " FCFA",
+                                    "",
+                                    "   TOTAL RETENUES : " . number_format($totalRetenues, 0, ',', ' ') . " FCFA",
+                                    "",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                    "",
+                                    "✅ NET À PAYER : " . number_format($net, 0, ',', ' ') . " FCFA",
+                                    "",
+                                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                                 ])->implode("\n");
                             })
                             ->columnSpanFull(),

@@ -52,7 +52,13 @@
     } else {
         // ✅ Ajout FEICOM et Redevance Audiovisuelle dans le total pour les décisions
         $totalRetenues =
-            $montantIR + $montantCNPS + $montantIRNC + $montantFEICOM + $montantRedevanceAV + $autresRetenues;
+            $montantIR +
+            $montantTVA +
+            $montantCNPS +
+            $montantIRNC +
+            $montantFEICOM +
+            $montantRedevanceAV +
+            $autresRetenues;
     }
 
     $nomBeneficiaire =
@@ -353,6 +359,13 @@
                                     • IR : {{ number_format($montantIR, 0, ',', ' ') }} FCFA
                                     @if ($montantIR == 0)
                                         <span class="italic">(exonéré)</span>
+                                    @endif
+                                </div>
+                                <div
+                                    class="{{ $montantTVA > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-gray-400' }}">
+                                    • TVA : {{ number_format($montantTVA, 0, ',', ' ') }} FCFA
+                                    @if ($montantTVA == 0)
+                                        <span class="italic">(non applicable)</span>
                                     @endif
                                 </div>
                                 <div

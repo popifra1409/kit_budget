@@ -95,29 +95,22 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->requiresConfirmation()
                 ->modalHeading('Annuler la décision')
                 ->modalDescription('Confirmer l\'annulation de cette décision ? Si le budget est engagé, il sera désengagé automatiquement.')
-
-                // ✅ AJOUT : Gestion d'erreur avec try-catch
                 ->action(function ($record) {
                     try {
-                        // Tenter d'annuler la décision
                         $record->annuler();
-
-                        // ✅ SUCCÈS : Afficher notification de succès
                         Notification::make()
                             ->title('Décision annulée')
                             ->success()
                             ->body('La décision a été annulée avec succès.')
                             ->send();
                     } catch (\Exception $e) {
-                        // ✅ ERREUR : Capturer l'exception et afficher un message clair
                         Notification::make()
                             ->title('Impossible d\'annuler')
                             ->danger()
-                            ->body($e->getMessage()) // Message de l'exception
-                            ->persistent() 
+                            ->body($e->getMessage())
+                            ->persistent()
                             ->send();
 
-                        // Optionnel : Logger l'erreur
                         \Log::warning('Tentative d\'annulation échouée', [
                             'decision_id' => $record->id,
                             'decision_numero' => $record->numero,
@@ -189,46 +182,127 @@ class ViewDecisionAdministrative extends ViewRecord
                     ])
                     ->columns(3),
 
-                Infolists\Components\Section::make('Personnel concerné')
+                // ✅ NOUVELLE SECTION : Bénéficiaire (Personnel OU Fournisseur)
+                Infolists\Components\Section::make('Bénéficiaire')
                     ->schema([
+                        // Type de bénéficiaire
+                        Infolists\Components\TextEntry::make('type_beneficiaire')
+                            ->label('Type')
+                            ->badge()
+                            ->formatStateUsing(fn($state) => match ($state) {
+                                'personnel' => 'Personnel (personne physique)',
+                                'fournisseur' => 'Fournisseur (personne morale)',
+                                default => $state,
+                            })
+                            ->icon(fn($state) => match ($state) {
+                                'personnel' => 'heroicon-o-user',
+                                'fournisseur' => 'heroicon-o-building-office',
+                                default => null,
+                            })
+                            ->color(fn($state) => match ($state) {
+                                'personnel' => 'info',
+                                'fournisseur' => 'success',
+                                default => 'gray',
+                            })
+                            ->columnSpanFull(),
+
+                        // ✅ PERSONNEL (visible si type = personnel)
                         Infolists\Components\TextEntry::make('personnel.nom_complet')
-                            ->label('Nom')
+                            ->label('Nom complet')
                             ->default('Non renseigné')
-                            ->weight('bold'),
+                            ->weight('bold')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'personnel'),
 
                         Infolists\Components\TextEntry::make('personnel.matricule')
                             ->label('Matricule')
-                            ->badge(),
+                            ->badge()
+                            ->visible(fn($record) => $record->type_beneficiaire === 'personnel'),
 
                         Infolists\Components\TextEntry::make('personnel.fonction')
-                            ->label('Fonction'),
+                            ->label('Fonction')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'personnel'),
 
                         Infolists\Components\TextEntry::make('personnel.service.nom')
-                            ->label('Service'),
-                    ])
-                    ->columns(2)
-                    ->visible(fn($record) => $record->personnel_id),
+                            ->label('Service')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'personnel'),
 
+                        // ✅ FOURNISSEUR (visible si type = fournisseur)
+                        Infolists\Components\TextEntry::make('fournisseur.raison_sociale')
+                            ->label('Raison sociale')
+                            ->default('Non renseigné')
+                            ->weight('bold')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'fournisseur'),
+
+                        Infolists\Components\TextEntry::make('fournisseur.sigle')
+                            ->label('Sigle')
+                            ->placeholder('Non renseigné')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'fournisseur'),
+
+                        Infolists\Components\TextEntry::make('fournisseur.numero_contribuable')
+                            ->label('N° Contribuable')
+                            ->placeholder('Non renseigné')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'fournisseur'),
+
+                        Infolists\Components\TextEntry::make('fournisseur.regimeFiscal.libelle')
+                            ->label('Régime fiscal')
+                            ->badge()
+                            ->color('warning')
+                            ->visible(fn($record) => $record->type_beneficiaire === 'fournisseur'),
+                    ])
+                    ->columns(2),
+
+                // ✅ SECTION MODIFIÉE : Montants avec HT
                 Infolists\Components\Section::make('Montants et retenues')
                     ->schema([
-                        // Montant brut
+                        // Montant brut (TTC)
                         Infolists\Components\TextEntry::make('montant_brut')
-                            ->label('💰 Montant brut')
+                            ->label('💰 Montant brut (TTC)')
                             ->formatStateUsing(
                                 fn($state) =>
                                 number_format((float) $state, 0, ',', ' ') . ' FCFA'
                             )
                             ->color('info')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                            ->weight('bold'),
+
+                        // ✅ NOUVEAU : Montant HT
+                        Infolists\Components\TextEntry::make('montant_ht')
+                            ->label('📐 Montant HT')
+                            ->formatStateUsing(
+                                fn($state) =>
+                                number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA'
+                            )
+                            ->color('primary')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold')
-                            ->columnSpanFull(),
+                            ->helperText('Base de calcul des retenues'),
+
+                        // ✅ TVA (montant)
+                        Infolists\Components\TextEntry::make('montant_tva_calcule')
+                            ->label(
+                                function ($record) {
+                                    $tauxTva = $record->taux_tva ?? 0;
+                                    return "TVA ({$tauxTva}%)";
+                                }
+                            )
+                            ->formatStateUsing(function ($record) {
+                                // ✅ CALCUL CORRECT : TVA = Brut - HT
+                                $brut = (float) ($record->montant_brut ?? 0);
+                                $ht = (float) ($record->montant_ht ?? 0);
+                                $montantTva = $brut - $ht;
+
+                                return number_format($montantTva, 0, ',', ' ') . ' FCFA';
+                            })
+                            ->color('gray')
+                            ->helperText('Montant de la TVA incluse dans le brut')
+                            ->visible(fn($record) => ($record->taux_tva ?? 0) > 0),
 
                         // Séparateur
                         Infolists\Components\TextEntry::make('separator_retenues')
-                            ->label('📊 Retenues et taxes')
+                            ->label('💸 Retenues (calculées sur HT)')
                             ->default('')
                             ->columnSpanFull()
-                            ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 dark:text-gray-300']),
+                            ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
 
                         // CNPS
                         Infolists\Components\TextEntry::make('montant_cnps')
@@ -256,29 +330,7 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
-                        // ========================================
-                        // TVA
-                        // ========================================
-                        Infolists\Components\TextEntry::make('montant_tva_calcule')
-                            ->label(
-                                function ($record) {
-                                    if ($record->type_tva === 'taux') {
-                                        return 'TVA (' . number_format($record->taux_tva ?? 0, 2) . '%)';
-                                    } else {
-                                        return 'TVA (forfait)';
-                                    }
-                                }
-                            )
-                            ->formatStateUsing(
-                                fn($state, $record) =>
-                                number_format((float) $record->montant_tva_calcule, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('warning')
-                            ->visible(fn($record) => ($record->montant_tva_calcule ?? 0) > 0),
-
-                        // ========================================
                         // Redevance audiovisuelle
-                        // ========================================
                         Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle_calcule')
                             ->label(
                                 function ($record) {
@@ -296,9 +348,7 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
 
-                        // ========================================
                         // FEICOM
-                        // ========================================
                         Infolists\Components\TextEntry::make('montant_feicom_calcule')
                             ->label(
                                 function ($record) {
@@ -326,16 +376,17 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
 
-                        // Total taxes
+                        // Total retenues
                         Infolists\Components\TextEntry::make('total_taxes')
-                            ->label('📊 Total retenues et taxes')
+                            ->label('📊 Total retenues')
                             ->formatStateUsing(
                                 fn($state) =>
                                 number_format((float) $state, 0, ',', ' ') . ' FCFA'
                             )
                             ->color('danger')
                             ->weight('bold')
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->extraAttributes(['class' => 'border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
 
                         // Montant net
                         Infolists\Components\TextEntry::make('montant_net')
@@ -347,7 +398,8 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('success')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold')
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->extraAttributes(['class' => 'border-t-2 border-green-500 dark:border-green-600 pt-3 mt-2']),
                     ])
                     ->columns(3),
 

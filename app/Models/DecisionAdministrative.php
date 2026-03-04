@@ -23,7 +23,9 @@ class DecisionAdministrative extends Model
         'exercice_id',
         'numero',
         'budget_id',
+        'type_beneficiaire',
         'personnel_id',
+        'fournisseur_id',
         'nom_personnel',
         'matricule',
         'fonction',
@@ -33,6 +35,7 @@ class DecisionAdministrative extends Model
         'date_fin',
         'objet',
         'montant_brut',
+        'montant_ht',
 
         // Taxes CNPS et IRNC
         'taux_cnps',
@@ -77,6 +80,7 @@ class DecisionAdministrative extends Model
 
         // Montants de base
         'montant_brut' => 'decimal:2',
+        'montant_ht' => 'decimal:2',
         'montant_cnps' => 'decimal:2',
         'montant_irnc' => 'decimal:2',
         'autres_retenues' => 'decimal:2',
@@ -241,6 +245,11 @@ class DecisionAdministrative extends Model
         return $this->morphOne(Engagement::class, 'engageable');
     }
 
+    public function fournisseur(): BelongsTo
+    {
+        return $this->belongsTo(Fournisseur::class, 'fournisseur_id');
+    }
+
     /**
      * Relation polymorphique : Transmissions
      */
@@ -286,10 +295,11 @@ class DecisionAdministrative extends Model
      */
     public function getMontantCnpsCalculeAttribute(): float
     {
-        $brut = (float) ($this->montant_brut ?? 0);
+        // $brut = (float) ($this->montant_brut ?? 0);
+        $ht = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_cnps ?? 0);
 
-        return $brut * ($taux / 100);
+        return $ht * ($taux / 100);
     }
 
     /**
@@ -297,10 +307,11 @@ class DecisionAdministrative extends Model
      */
     public function getMontantIrncCalculeAttribute(): float
     {
-        $brut = (float) ($this->montant_brut ?? 0);
+        // $brut = (float) ($this->montant_brut ?? 0);
         $taux = (float) ($this->taux_irnc ?? 0);
+        $ht = (float) ($this->montant_ht ?? 0);
 
-        return $brut * ($taux / 100);
+        return $ht * ($taux / 100);
     }
 
     /**
@@ -314,9 +325,9 @@ class DecisionAdministrative extends Model
 
         // Type = taux
         $brut = (float) ($this->montant_brut ?? 0);
-        $taux = (float) ($this->taux_tva ?? 0);
+        $ht = (float) ($this->montant_ht ?? 0);
 
-        return $brut * ($taux / 100);
+        return $brut - $ht;
     }
 
     /**
@@ -329,10 +340,11 @@ class DecisionAdministrative extends Model
         }
 
         // Type = taux
-        $brut = (float) ($this->montant_brut ?? 0);
+        // $brut = (float) ($this->montant_brut ?? 0);
+        $ht = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_redevance_audiovisuelle ?? 0);
 
-        return $brut * ($taux / 100);
+        return $ht * ($taux / 100);
     }
 
     /**
@@ -345,10 +357,11 @@ class DecisionAdministrative extends Model
         }
 
         // Type = taux
-        $brut = (float) ($this->montant_brut ?? 0);
+        // $brut = (float) ($this->montant_brut ?? 0);
+        $ht = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_feicom ?? 0);
 
-        return $brut * ($taux / 100);
+        return $ht * ($taux / 100);
     }
 
     /**
@@ -410,51 +423,90 @@ class DecisionAdministrative extends Model
     {
         $brut = (float) ($this->montant_brut ?? 0);
 
-        // CNPS
-        $tauxCnps = (float) ($this->taux_cnps ?? 4.2);
-        $this->montant_cnps = $brut * ($tauxCnps / 100);
+        if ($brut <= 0) {
+            $this->montant_ht = 0;
+            $this->montant_cnps = 0;
+            $this->montant_irnc = 0;
+            $this->total_taxes = 0;
+            $this->montant_net = 0;
+            return;
+        }
 
-        // IRNC  
-        $tauxIrnc = (float) ($this->taux_irnc ?? 11);
-        $this->montant_irnc = $brut * ($tauxIrnc / 100);
+        // ========================================
+        // ÉTAPE 1 : CALCULER LE MONTANT HT
+        // ========================================
+        // Le montant brut est le TTC (incluant la TVA)
+        // Formule : HT = Brut / (1 + TVA/100)
 
-        // TVA
+        $tauxTva = 0;
         if ($this->type_tva === 'taux') {
             $tauxTva = (float) ($this->taux_tva ?? 0);
-            $montantTva = $brut * ($tauxTva / 100);
-            // On stocke le montant calculé
+        }
+
+        // Calculer HT
+        if ($tauxTva > 0) {
+            $this->montant_ht = $brut / (1 + ($tauxTva / 100));
+        } else {
+            // Si pas de TVA, HT = Brut
+            $this->montant_ht = $brut;
+        }
+
+        // Arrondir à 2 décimales
+        $montantHT = round($this->montant_ht, 2);
+        $this->montant_ht = $montantHT;
+
+        // ========================================
+        // ÉTAPE 2 : CALCULER LES TAXES SUR HT
+        // ========================================
+
+        // CNPS (calculée sur HT)
+        $tauxCnps = (float) ($this->taux_cnps ?? 0);
+        $this->montant_cnps = round($montantHT * ($tauxCnps / 100), 2);
+
+        // IRNC (calculée sur HT)
+        $tauxIrnc = (float) ($this->taux_irnc ?? 0);
+        $this->montant_irnc = round($montantHT * ($tauxIrnc / 100), 2);
+
+        // TVA (montant de la TVA elle-même)
+        if ($this->type_tva === 'taux') {
+            // TVA = HT × (taux/100)
+            $montantTva = round($montantHT * ($tauxTva / 100), 2);
             $this->attributes['montant_tva'] = $montantTva;
         }
         // Si type = forfait, on garde la valeur saisie manuellement
 
-        // Redevance audiovisuelle
+        // Redevance audiovisuelle (calculée sur HT)
         if ($this->type_redevance_audiovisuelle === 'taux') {
             $tauxRedevance = (float) ($this->taux_redevance_audiovisuelle ?? 0);
-            $montantRedevance = $brut * ($tauxRedevance / 100);
+            $montantRedevance = round($montantHT * ($tauxRedevance / 100), 2);
             $this->attributes['montant_redevance_audiovisuelle'] = $montantRedevance;
         }
 
-        // FEICOM
+        // FEICOM (calculé sur HT)
         if ($this->type_feicom === 'taux') {
             $tauxFeicom = (float) ($this->taux_feicom ?? 0);
-            $montantFeicom = $brut * ($tauxFeicom / 100);
+            $montantFeicom = round($montantHT * ($tauxFeicom / 100), 2);
             $this->attributes['montant_feicom'] = $montantFeicom;
         }
 
         // Autres retenues
         $autresRetenues = (float) ($this->autres_retenues ?? 0);
 
-        // Total taxes
+        // ========================================
+        // ÉTAPE 3 : CALCULER LE TOTAL DES RETENUES ET LE NET
+        // ========================================
+
+        // Total des retenues (SANS la TVA car elle est déjà dans le brut)
         $this->total_taxes =
             $this->montant_cnps +
             $this->montant_irnc +
-            ((float) ($this->attributes['montant_tva'] ?? 0)) +
             ((float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0)) +
             ((float) ($this->attributes['montant_feicom'] ?? 0)) +
             $autresRetenues;
 
-        // Montant net
-        $this->montant_net = $brut - $this->total_taxes;
+        // Montant net = HT - Retenues
+        // (on ne soustrait PAS la TVA car elle est déjà déduite dans le calcul du HT)
+        $this->montant_net = round($montantHT - $this->total_taxes, 2);
     }
 
     /**
@@ -531,7 +583,13 @@ class DecisionAdministrative extends Model
                 'reference_document' => $this->numero,
                 'engageable_type' => 'decision_administrative',
                 'engageable_id' => $this->id,
-                'beneficiaire_type' => 'App\Models\Personnel',
+                // 'beneficiaire_type' => 'App\Models\Personnel',
+                'beneficiaire_type' => $this->type_beneficiaire === 'fournisseur'
+                    ? 'App\Models\Fournisseur'
+                    : 'App\Models\Personnel',
+                'beneficiaire_id' => $this->type_beneficiaire === 'fournisseur'
+                    ? $this->fournisseur_id
+                    : $this->personnel_id,
                 'beneficiaire_id' => $this->personnel_id,
                 'date_engagement' => now(),
                 'exercice' => $this->exercice?->annee ?? now()->year,
@@ -666,10 +724,17 @@ class DecisionAdministrative extends Model
      */
     public function getNomCompletPersonnel(): string
     {
+        // Si c'est un fournisseur
+        if ($this->type_beneficiaire === 'fournisseur' && $this->fournisseur) {
+            return $this->fournisseur->raison_sociale;
+        }
+
+        // Si c'est un personnel
         if ($this->personnel && !empty($this->personnel->nom_complet)) {
             return $this->personnel->nom_complet;
         }
 
+        // Ancien système (compatibilité)
         if (!empty($this->personnel_id_ancien)) {
             $user = User::find($this->personnel_id_ancien);
             if ($user && !empty($user->name)) {
@@ -677,7 +742,7 @@ class DecisionAdministrative extends Model
             }
         }
 
-        return ''; // valeur par défaut obligatoire
+        return '';
     }
 
     // ========================================
