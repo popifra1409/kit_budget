@@ -881,26 +881,26 @@ class DecisionAdministrativeResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\BadgeColumn::make('exercice.annee')
-                    ->label('Exercice')
-                    ->sortable()
-                    ->colors([
-                        'success' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                        'warning' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                        'danger' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                        'gray' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
-                    ])
-                    ->tooltip(
-                        fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice
-                            ? $record->exercice->libelle
-                            : null
-                    )
-                    ->toggleable(),
+                // Tables\Columns\BadgeColumn::make('exercice.annee')
+                //     ->label('Exercice')
+                //     ->sortable()
+                //     ->colors([
+                //         'success' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                //         'warning' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                //         'danger' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                //         'gray' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                //     ])
+                //     ->tooltip(
+                //         fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice
+                //             ? $record->exercice->libelle
+                //             : null
+                //     )
+                //     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° DA')
@@ -909,11 +909,11 @@ class DecisionAdministrativeResource extends Resource
                     ->weight('bold')
                     ->copyable(),
 
-                Tables\Columns\TextColumn::make('budget.code')
-                    ->label('Budget')
-                    ->searchable()
-                    ->badge()
-                    ->color('info'),
+                // Tables\Columns\TextColumn::make('budget.code')
+                //     ->label('Budget')
+                //     ->searchable()
+                //     ->badge()
+                //     ->color('info'),
 
                 Tables\Columns\TextColumn::make('typeDecision.libelle')
                     ->label('Type')
@@ -1041,6 +1041,110 @@ class DecisionAdministrativeResource extends Resource
                     ->toggle()
                     ->default(fn() => false)
                     ->indicateUsing(fn() => 'Créées par moi'),
+
+                Tables\Filters\Filter::make('date_decision')
+                    ->form([
+                        Forms\Components\DatePicker::make('date_decision_from')
+                            ->label('Date d\'émission du')
+                            ->placeholder('JJ/MM/AAAA'),
+                        Forms\Components\DatePicker::make('date_decision_until')
+                            ->label('Date d\'émission au')
+                            ->placeholder('JJ/MM/AAAA'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        return $query
+                            ->when($data['date_decision_from'], fn($q, $date) =>
+                            $q->whereDate('date_decision', '>=', $date))
+                            ->when($data['date_decision_until'], fn($q, $date) =>
+                            $q->whereDate('date_decision', '<=', $date));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['date_emission_from'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Émis depuis le ' . \Carbon\Carbon::parse($data['date_decision_from'])->format('d/m/Y'))
+                                ->removeField('date_decision_from');
+                        }
+
+                        if ($data['date_emission_until'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Émis jusqu\'au ' . \Carbon\Carbon::parse($data['date_decision_until'])->format('d/m/Y'))
+                                ->removeField('date_decision_until');
+                        }
+
+                        return $indicators;
+                    }),
+
+                // FILTRE PAR PÉRIODE PRÉDÉFINIE
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période prédéfinie')
+                            ->options([
+                                'today' => 'Aujourd\'hui',
+                                'yesterday' => 'Hier',
+                                'this_week' => 'Cette semaine',
+                                'last_week' => 'Semaine dernière',
+                                'this_month' => 'Ce mois',
+                                'last_month' => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year' => 'Cette année',
+                                'last_year' => 'Année dernière',
+                            ])
+                            ->default('today')
+                            ->placeholder('Sélectionner une période'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        $periode = $data['periode'] ?? 'today';
+
+                        return match ($periode) {
+                            'today' => $query->whereDate('date_decision', today()),
+                            'yesterday' => $query->whereDate('date_decision', today()->subDay()),
+                            'this_week' => $query->whereBetween('date_decision', [
+                                now()->startOfWeek(),
+                                now()->endOfWeek()
+                            ]),
+                            'last_week' => $query->whereBetween('date_decision', [
+                                now()->subWeek()->startOfWeek(),
+                                now()->subWeek()->endOfWeek()
+                            ]),
+                            'this_month' => $query->whereMonth('date_decision', now()->month)
+                                ->whereYear('date_decision', now()->year),
+                            'last_month' => $query->whereMonth('date_decision', now()->subMonth()->month)
+                                ->whereYear('date_decision', now()->subMonth()->year),
+                            'this_quarter' => $query->whereBetween('date_decision', [
+                                now()->startOfQuarter(),
+                                now()->endOfQuarter()
+                            ]),
+                            'last_quarter' => $query->whereBetween('date_decision', [
+                                now()->subQuarter()->startOfQuarter(),
+                                now()->subQuarter()->endOfQuarter()
+                            ]),
+                            'this_year' => $query->whereYear('date_decision', now()->year),
+                            'last_year' => $query->whereYear('date_decision', now()->subYear()->year),
+                            default => $query,
+                        };
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) {
+                            return 'Période : Aujourd\'hui';
+                        }
+
+                        $labels = [
+                            'today' => 'Aujourd\'hui',
+                            'yesterday' => 'Hier',
+                            'this_week' => 'Cette semaine',
+                            'last_week' => 'Semaine dernière',
+                            'this_month' => 'Ce mois',
+                            'last_month' => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year' => 'Cette année',
+                            'last_year' => 'Année dernière',
+                        ];
+
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
 
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')

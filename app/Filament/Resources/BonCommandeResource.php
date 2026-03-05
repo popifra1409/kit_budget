@@ -210,7 +210,7 @@ class BonCommandeResource extends Resource
 
                         Forms\Components\DatePicker::make('date_livraison_prevue')
                             ->label('Date de livraison prévue')
-                            ->nullable() 
+                            ->nullable()
                             ->helperText('Laisser vide si vous préférez indiquer un délai'),
 
                         Forms\Components\TextInput::make('delai_livraison')
@@ -879,25 +879,25 @@ class BonCommandeResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\BadgeColumn::make('exercice.annee')
-                    ->label('Exercice')
-                    ->sortable()
-                    ->colors([
-                        'success' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                        'warning' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                        'danger' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                        'gray' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
-                    ])
-                    ->tooltip(
-                        fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice
-                            ? $record->exercice->libelle
-                            : null
-                    ),
+                // Tables\Columns\BadgeColumn::make('exercice.annee')
+                //     ->label('Exercice')
+                //     ->sortable()
+                //     ->colors([
+                //         'success' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                //         'warning' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                //         'danger' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                //         'gray' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                //     ])
+                //     ->tooltip(
+                //         fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice
+                //             ? $record->exercice->libelle
+                //             : null
+                //     ),
                 // ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
@@ -907,11 +907,11 @@ class BonCommandeResource extends Resource
                     ->weight('bold')
                     ->copyable(),
 
-                Tables\Columns\TextColumn::make('budget.code')
-                    ->label('Budget')
-                    ->searchable()
-                    ->badge()
-                    ->color('info'),
+                // Tables\Columns\TextColumn::make('budget.code')
+                //     ->label('Budget')
+                //     ->searchable()
+                //     ->badge()
+                //     ->color('info'),
 
                 Tables\Columns\TextColumn::make('fournisseur.raison_sociale')
                     ->label('Fournisseur')
@@ -1136,14 +1136,11 @@ class BonCommandeResource extends Resource
                                 'this_year' => 'Cette année',
                                 'last_year' => 'Année dernière',
                             ])
+                            ->default('today')
                             ->placeholder('Sélectionner une période'),
                     ])
                     ->query(function ($query, array $data) {
-                        $periode = $data['periode'] ?? null;
-
-                        if (!$periode) {
-                            return $query;
-                        }
+                        $periode = $data['periode'] ?? 'today';
 
                         return match ($periode) {
                             'today' => $query->whereDate('date_emission', today()),
@@ -1175,7 +1172,7 @@ class BonCommandeResource extends Resource
                     })
                     ->indicateUsing(function (array $data): ?string {
                         if (!($data['periode'] ?? null)) {
-                            return null;
+                            return 'Période : Aujourd\'hui';
                         }
 
                         $labels = [

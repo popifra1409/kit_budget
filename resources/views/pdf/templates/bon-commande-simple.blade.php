@@ -3,6 +3,12 @@
 @php
     $bonCommande = $donnees['_raw'];
     $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+
+    if ($bonCommande->relationLoaded('engagement') === false) {
+        $bonCommande->load('engagement.nomenclaturePrincipale');
+    }
+
+    $nomenclature = $bonCommande->engagement?->nomenclaturePrincipale;
 @endphp
 
 @section('title', 'Bon de Commande ' . $bonCommande->numero)
@@ -51,9 +57,9 @@
             <tr>
                 <td class="label">IMPUTATION :</td>
                 <td class="value">
-                    {{ $bonCommande->engagement->nomenclaturePrincipale->code ?? '' }}
+                    {{ $nomenclature->code ?? '' }}
                     -
-                    {{ $bonCommande->engagement->nomenclaturePrincipale->libelle ?? '' }}
+                    {{ $nomenclature->libelle ?? '' }}
                 </td>
             </tr>
 

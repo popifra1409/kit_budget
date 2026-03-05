@@ -496,6 +496,11 @@ class BonCommande extends Model
         return $this->morphOne(Engagement::class, 'engageable');
     }
 
+    // public function engagement(): BelongsTo
+    // {
+    //     return $this->belongsTo(Engagement::class, 'engagement_id');
+    // }
+
     /**
      * Scope : Par statut
      */

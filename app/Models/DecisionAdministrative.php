@@ -578,10 +578,10 @@ class DecisionAdministrative extends Model
                 'numero' => $numeroEngagement,
                 'exercice_id' => $this->exercice_id,
                 'budget_id' => $this->budget_id,
-                'type_engagement' => 'decision_administrative',
+                'type_engagement' => 'Décision',
                 'nomenclature_principale_id' => $nomenclatureId,
                 'reference_document' => $this->numero,
-                'engageable_type' => 'decision_administrative',
+                'engageable_type' => get_class($this),
                 'engageable_id' => $this->id,
                 // 'beneficiaire_type' => 'App\Models\Personnel',
                 'beneficiaire_type' => $this->type_beneficiaire === 'fournisseur'

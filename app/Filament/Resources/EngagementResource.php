@@ -324,26 +324,26 @@ class EngagementResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\BadgeColumn::make('exercice.annee')
-                    ->label('Exercice')
-                    ->sortable()
-                    ->colors([
-                        'success' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                        'warning' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                        'danger' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                        'gray' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
-                    ])
-                    ->tooltip(
-                        fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice
-                            ? $record->exercice->libelle
-                            : null
-                    )
-                    ->toggleable(),
+                // Tables\Columns\BadgeColumn::make('exercice.annee')
+                //     ->label('Exercice')
+                //     ->sortable()
+                //     ->colors([
+                //         'success' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                //         'warning' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                //         'danger' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                //         'gray' => fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                //     ])
+                //     ->tooltip(
+                //         fn($record) =>
+                //         $record->exercice instanceof \App\Models\Exercice
+                //             ? $record->exercice->libelle
+                //             : null
+                //     )
+                //     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° Engagement')
@@ -352,21 +352,40 @@ class EngagementResource extends Resource
                     ->weight('bold')
                     ->copyable(),
 
-                Tables\Columns\TextColumn::make('budget.code')
-                    ->label('Budget')
-                    ->searchable()
-                    ->badge()
-                    ->color('info'),
+                // Tables\Columns\TextColumn::make('budget.code')
+                //     ->label('Budget')
+                //     ->searchable()
+                //     ->badge()
+                //     ->color('info'),
 
-                Tables\Columns\BadgeColumn::make('type_engagement')
-                    ->label('Type')
-                    ->colors([
-                        'primary' => 'BC',
-                        'success' => fn($state) => in_array($state, ['DA', 'Prime']),
-                        'warning' => fn($state) => in_array($state, ['Mission', 'Formation']),
-                        'info' => 'Avance',
-                        'secondary' => fn($state) => !in_array($state, ['BC', 'DA', 'Prime', 'Mission', 'Formation', 'Avance']),
-                    ]),
+                Tables\Columns\TextColumn::make('engageable_type')
+                    ->label('Source')
+                    ->sortable()
+                    ->formatStateUsing(fn($state) => match ($state) {
+                        'App\Models\BonCommande' => 'BC',
+                        'App\Models\DecisionAdministrative' => 'DA',
+                        null => 'Manuel',
+                        default => 'Autre',
+                    })
+                    ->badge()
+                    ->color('gray')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('document_source')
+                    ->label('N° Document')
+                    ->getStateUsing(function ($record) {
+                        // Utiliser reference_document (plus fiable)
+                        return $record->reference_document ?? $record->engageable?->numero ?? null;
+                    })
+                    ->searchable(['reference_document'])
+                    ->copyable()
+                    ->placeholder('Manuel')
+                    ->badge()
+                    ->color(fn($record) => match ($record->engageable_type) {
+                        'App\Models\BonCommande' => 'info',
+                        'App\Models\DecisionAdministrative' => 'warning',
+                        default => 'gray',
+                    }),
 
                 Tables\Columns\TextColumn::make('nomenclaturePrincipale.code')
                     ->label('Nomenclature')
@@ -406,19 +425,30 @@ class EngagementResource extends Resource
                         default => $state,
                     }),
 
-                Tables\Columns\TextColumn::make('engageable_type')
-                    ->label('Source')
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        'App\Models\BonCommande' => 'BC',
-                        'App\Models\DecisionAdministrative' => 'DA',
-                        null => 'Manuel',
-                        default => 'Autre',
-                    })
-                    ->badge()
-                    ->color('gray')
-                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('engageable_type')
+                    ->label('Source')
+                    ->options([
+                        'all' => 'Tout',
+                        'App\Models\BonCommande' => 'Bon de Commande',
+                        'App\Models\DecisionAdministrative' => 'Décision Administrative',
+                        'manuel' => 'Engagement Manuel',
+                    ])
+                    ->default('all')
+                    ->query(function ($query, $state) {
+                        // Si "Tout" est sélectionné, ne pas filtrer
+                        if ($state['value'] === 'all' || !isset($state['value'])) {
+                            return $query;
+                        }
+
+                        if ($state['value'] === 'manuel') {
+                            return $query->whereNull('engageable_type');
+                        }
+
+                        return $query->where('engageable_type', $state['value']);
+                    }),
+
                 Tables\Filters\Filter::make('date_engagement')
                     ->form([
                         Forms\Components\DatePicker::make('date_engagement_from')
@@ -467,14 +497,12 @@ class EngagementResource extends Resource
                                 'this_year' => 'Cette année',
                                 'last_year' => 'Année dernière',
                             ])
-                            ->placeholder('Sélectionner une période'),
+                            ->default('today')
+                            ->placeholder('Sélectionner une période')
                     ])
                     ->query(function ($query, array $data) {
-                        $periode = $data['periode'] ?? null;
-
-                        if (!$periode) {
-                            return $query;
-                        }
+                        // Utiliser 'today' par défaut si aucune période n'est sélectionnée
+                        $periode = $data['periode'] ?? 'today'; 
 
                         return match ($periode) {
                             'today' => $query->whereDate('date_engagement', today()),
@@ -501,12 +529,12 @@ class EngagementResource extends Resource
                             ]),
                             'this_year' => $query->whereYear('date_engagement', now()->year),
                             'last_year' => $query->whereYear('date_engagement', now()->subYear()->year),
-                            default => $query,
+                            default => $query->whereDate('date_engagement', today()), 
                         };
                     })
                     ->indicateUsing(function (array $data): ?string {
                         if (!($data['periode'] ?? null)) {
-                            return null;
+                            return 'Période : Aujourd\'hui'; 
                         }
 
                         $labels = [
@@ -533,23 +561,12 @@ class EngagementResource extends Resource
                     ->placeholder('Tous les exercices')
                     ->default(fn() => Exercice::getActif()?->id),
 
+
                 Tables\Filters\SelectFilter::make('budget_id')
                     ->label('Budget')
                     ->relationship('budget', 'libelle')
                     ->searchable()
                     ->preload(),
-
-                Tables\Filters\SelectFilter::make('type_engagement')
-                    ->label('Type')
-                    ->options([
-                        'BC' => 'Bon de Commande',
-                        'DA' => 'Décision Administrative',
-                        'Mission' => 'Ordre de mission',
-                        'Avance' => 'Avance',
-                        'Formation' => 'Formation',
-                        'Lettre-commande' => 'Lettre-commande',
-                        'Marché' => 'Marché',
-                    ]),
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
