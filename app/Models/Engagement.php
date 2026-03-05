@@ -310,11 +310,6 @@ class Engagement extends Model
     }
 
     /**
-     * Vérifier si peut être annulé
-     */
-   // Dans App\Models\Engagement.php
-
-    /**
      * ✅ Vérifier si peut être annulé
      */
     public function peutEtreAnnule(): bool

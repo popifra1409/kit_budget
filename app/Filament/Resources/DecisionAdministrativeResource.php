@@ -922,10 +922,24 @@ class DecisionAdministrativeResource extends Resource
                     ->badge()
                     ->color('info'),
 
-                Tables\Columns\TextColumn::make('personnel')
-                    ->label('Personnel')
-                    ->formatStateUsing(fn($record) => $record->getNomCompletPersonnel())
-                    ->searchable()
+                Tables\Columns\TextColumn::make('type_beneficiaire')
+                    ->label('Bénéficiaire')
+                    ->formatStateUsing(function ($record) {
+                        $nom = $record->getNomCompletPersonnel();
+                        $type = match ($record->type_beneficiaire) {
+                            'personnel' => '👤',
+                            'fournisseur' => '🏢',
+                            default => '',
+                        };
+                        return "{$type} {$nom}";
+                    })
+                    ->description(fn($record) => match ($record->type_beneficiaire) {
+                        'personnel' => $record->personnel?->matricule ?? '',
+                        'fournisseur' => $record->fournisseur?->numero_contribuable ?? '',
+                        default => '',
+                    })
+                    ->searchable(['personnel.nom', 'personnel.prenom', 'fournisseur.raison_sociale'])
+                    ->sortable()
                     ->limit(30),
 
                 Tables\Columns\TextColumn::make('date_decision')

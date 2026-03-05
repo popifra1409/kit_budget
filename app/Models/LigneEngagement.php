@@ -31,7 +31,7 @@ class LigneEngagement extends Model
      */
     public function engagement(): BelongsTo
     {
-        return $this->belongsTo(Engagement::class);
+        return $this->belongsTo(Engagement::class, 'engagement_id');
     }
 
     /**
@@ -39,6 +39,6 @@ class LigneEngagement extends Model
      */
     public function nomenclature(): BelongsTo
     {
-        return $this->belongsTo(NomenclatureBudgetaire::class);
+        return $this->belongsTo(NomenclatureBudgetaire::class, 'nomenclature_id');
     }
 }

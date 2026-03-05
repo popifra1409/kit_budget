@@ -590,7 +590,7 @@ class DecisionAdministrative extends Model
                 'beneficiaire_id' => $this->type_beneficiaire === 'fournisseur'
                     ? $this->fournisseur_id
                     : $this->personnel_id,
-                'beneficiaire_id' => $this->personnel_id,
+                // 'beneficiaire_id' => $this->personnel_id,
                 'date_engagement' => now(),
                 'exercice' => $this->exercice?->annee ?? now()->year,
                 'objet' => $this->objet,

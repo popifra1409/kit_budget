@@ -54,4 +54,4 @@
     </tr>
 </table>
 
-<div style="border-bottom: 2px solid #000; margin-bottom: 10px;"></div>
+{{-- <div style="border-bottom: 2px solid #000; margin-bottom: 10px;"></div> --}}

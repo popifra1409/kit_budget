@@ -60,7 +60,7 @@
             <tr>
                 <td class="label">OBJET :</td>
                 <td class="value">
-                    {{ $bonCommande->engagement->objet ?? '' }}
+                    {{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}
                 </td>
             </tr>
         </table>
