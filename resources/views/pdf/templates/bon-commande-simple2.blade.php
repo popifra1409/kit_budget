@@ -185,6 +185,55 @@
             <div class="date-line">{{ \Carbon\Carbon::parse($bonCommande->date_emission)->format('d/m/Y') }}
             </div>
         </div>
+        {{-- Informations du bon de commande --}}
+        <div class="info">
+            <table class="info-table">
+                <tr>
+                    <td class="label">Nom ou raison du Prestataire :</td>
+                    <td class="value">
+                        {{ $bonCommande->fournisseur->raison_sociale ?? '' }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="label">
+                        Livraison - Reception<br>
+                        de 7h30 a 12h du Lundi au Mercredi<br>
+                        (Sauf urgence)
+                    </td>
+                    <td class="value">
+                        {{ $bonCommande->serviceDemandeur->nom ?? '' }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="label">DELAI :</td>
+                    <td class="value">
+                        le plus court possible et a nous confirmer au plus tard le _____________
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="label">IMPUTATION :</td>
+                    <td class="value">
+                        @php
+                            $bonCommande = $donnees['bon_commande'];
+                            $nomenclature = $bonCommande->getNomenclaturePrincipale();
+                        @endphp
+
+                        {{ $nomenclature?->code ?? 'N/A' }} - {{ $nomenclature?->libelle ?? 'Non définie' }}
+                    </td>
+                </tr>
+                </tr>
+
+                <tr>
+                    <td class="label">OBJET :</td>
+                    <td class="value">
+                        {{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}
+                    </td>
+                </tr>
+            </table>
+        </div>
 
         <table class="lignes-table">
             @foreach ($bonCommande->lignes as $index => $ligne)
@@ -234,7 +283,7 @@
 
                 {{-- ✅ Ligne TOTAL finale avec le montant TTC --}}
                 <tr class="ligne-finale">
-                     <td class=""></td>
+                    <td class=""></td>
                     <td class=""></td>
                     <td class="montant-col">{{ number_format($bonCommande->montant_ttc, 0, ',', ' ') }}</td>
                 </tr>
