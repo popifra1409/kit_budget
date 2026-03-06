@@ -241,6 +241,7 @@ class BonCommandeResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('type_engagement_id')
                             ->label('Type d\'engagement')
+                            ->required()
                             ->relationship('typeEngagement', 'libelle')
                             ->searchable()
                             ->preload()
@@ -507,6 +508,14 @@ class BonCommandeResource extends Resource
                             ->searchable()
                             ->preload()
                             ->live()
+                            ->afterStateHydrated(function ($state, callable $set, callable $get, $record) {
+                                if ($record && !$state) {
+                                    $premiereLigne = $record->lignes()->first();
+                                    if ($premiereLigne && $premiereLigne->nomenclature_id) {
+                                        $set('nomenclature_commune_id', $premiereLigne->nomenclature_id);
+                                    }
+                                }
+                            })
                             ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                 // Copier la nomenclature dans toutes les lignes existantes
                                 $lignes = $get('lignes') ?? [];
@@ -672,7 +681,10 @@ class BonCommandeResource extends Resource
                                 Forms\Components\Hidden::make('montant_tsr')->default(0),
                                 Forms\Components\Hidden::make('montant_ttc')->default(0),
                                 Forms\Components\Hidden::make('net_a_payer')->default(0),
-                                Forms\Components\Hidden::make('nomenclature_id'), // ← Récupéré de nomenclature_commune_id
+                                Forms\Components\Hidden::make('nomenclature_id')
+                                    ->default(function (callable $get) {
+                                        return $get('../../nomenclature_commune_id');
+                                    }),
                                 Forms\Components\Hidden::make('quantite_livree')->default(0),
                                 Forms\Components\Hidden::make('quantite_restante')
                                     ->default(fn(callable $get) => $get('quantite') ?? 0),
@@ -711,11 +723,22 @@ class BonCommandeResource extends Resource
                                 static::recalculerTotaux($state, $set);
                             })
                             ->mutateRelationshipDataBeforeCreateUsing(function (array $data, callable $get): array {
-                                // Assigner la nomenclature commune lors de la création de nouvelles lignes
+                                // 1. Nomenclature
                                 $nomenclatureCommuneId = $get('nomenclature_commune_id');
-                                if ($nomenclatureCommuneId) {
+                                if ($nomenclatureCommuneId && empty($data['nomenclature_id'])) {
                                     $data['nomenclature_id'] = $nomenclatureCommuneId;
                                 }
+
+                                // 2. TVA selon exonération
+                                if (!isset($data['taux_tva']) || $data['taux_tva'] === null) {
+                                    $data['taux_tva'] = $get('exonere_tva') ? 0 : 19.25;
+                                }
+
+                                // 3. IR selon exonération
+                                if (!isset($data['taux_ir']) || $data['taux_ir'] === null) {
+                                    $data['taux_ir'] = $get('exonere_ir') ? 0 : 5.5;
+                                }
+
                                 return $data;
                             })
                             ->mutateRelationshipDataBeforeFillUsing(function (array $data, callable $get): array {
