@@ -41,7 +41,7 @@ class BonCommandePdfService
         } else {
             $template = match ($typeEtat) {
                 'simple' => 'pdf.templates.bon-commande-simple',
-                'simple_preimprime' => 'pdf.templates.bon-commande-simple2', 
+                'simple_preimprime' => 'pdf.templates.bon-commande-simple2',
                 'complet' => 'pdf.templates.bon-commande',
                 default => 'pdf.templates.bon-commande-simple',
             };
@@ -60,17 +60,17 @@ class BonCommandePdfService
         \Log::info('Template final utilisé', ['template' => $template]);
 
         // Charger les relations
-        if (!$bonCommande->relationLoaded('fournisseur')) {
-            $bonCommande->load([
-                'exercice',
-                'budget',
-                'fournisseur.regimeFiscal',
-                'serviceDemandeur',
-                'lignes.nomenclature',
-                'engagement.nomenclaturePrincipale',
-                'typeEngagement',
-            ]);
-        }
+        //if (!$bonCommande->relationLoaded('fournisseur')) {
+        $bonCommande->load([
+            'exercice',
+            'budget',
+            'fournisseur.regimeFiscal',
+            'serviceDemandeur',
+            'lignes.nomenclature',
+            'engagement.nomenclaturePrincipale',
+            'typeEngagement',
+        ]);
+        //}
 
         // Préparer les données
         $donnees = [
@@ -83,6 +83,7 @@ class BonCommandePdfService
 
         // Générer le PDF
         $pdf = Pdf::loadView($template, compact('donnees'));
+        //$pdf = Pdf::loadView($template, $donnees);
 
         $pdf->setOptions([
             'isHtml5ParserEnabled' => true,

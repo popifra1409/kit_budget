@@ -991,6 +991,15 @@ class BonCommande extends Model
         return trim(strtolower($this->statut)) === 'brouillon';
     }
 
+    public function getNomenclaturePrincipale()
+    {
+        if ($this->lignes && $this->lignes->count() > 0) {
+            return $this->lignes->first()->nomenclature;
+        }
+
+        return $this->engagement?->nomenclaturePrincipale;
+    }
+
     /**
      * Obtenir le nombre de lignes
      */

@@ -1027,20 +1027,6 @@ class DecisionAdministrativeResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
-                Tables\Filters\Filter::make('mes_decisions')
-                    ->label('Mes décisions uniquement')
-                    ->query(function (Builder $query) {
-                        $userId = auth()->id();
-
-                        if (!$userId) {
-                            return $query->whereRaw('1 = 0');
-                        }
-
-                        return $query->where('created_by', $userId);
-                    })
-                    ->toggle()
-                    ->default(fn() => false)
-                    ->indicateUsing(fn() => 'Créées par moi'),
 
                 Tables\Filters\Filter::make('date_decision')
                     ->form([
@@ -1146,6 +1132,76 @@ class DecisionAdministrativeResource extends Resource
                         return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
 
+                Tables\Filters\Filter::make('mes_decisions')
+                    ->label('📌 Mes décisions actifs')
+                    ->query(function ($query) {
+                        $userId = auth()->id();
+
+                        return $query->where(function ($q) use ($userId) {
+                            // 1. Mes brouillons (pas encore transmis)
+                            $q->where(function ($subQ) use ($userId) {
+                                $subQ->where('created_by', $userId)
+                                    ->where('statut', 'brouillon')
+                                    ->whereDoesntHave('transmissions', function ($t) {
+                                        $t->where('statut', 'en_attente');
+                                    });
+                            })
+                                // OU
+                                // 2. Transmis À MOI (en attente de mon action)
+                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                })
+                                // OU
+                                // 3. Retournés À MOI pour correction
+                                ->orWhere(function ($subQ) use ($userId) {
+                                    $subQ->where('created_by', $userId)
+                                        ->whereHas('transmissions', function ($transmission) {
+                                            $transmission->where('statut', 'retourne')
+                                                ->latest()
+                                                ->limit(1);
+                                        });
+                                });
+                        });
+                    })
+                    ->toggle()
+                    ->default(true) // ✅ ACTIVÉ par défaut
+                    ->indicateUsing(fn() => '📌 Décisions nécessitant mon action'),
+
+                Tables\Filters\Filter::make('mes_transmissions')
+                    ->label('📤 Mes transmissions envoyées')
+                    ->query(function ($query) {
+                        return $query->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('expediteur_id', auth()->id())
+                                ->where('statut', 'en_attente');
+                        });
+                    })
+                    ->toggle()
+                    ->default(false) // ✅ DÉSACTIVÉ par défaut (cache les transmissions)
+                    ->indicateUsing(fn() => '📤 Transmissions envoyées en attente'),
+
+                Tables\Filters\Filter::make('a_traiter')
+                    ->label('À traiter par moi')
+                    ->query(function ($query) {
+                        $userId = auth()->id();
+
+                        return $query->where(function ($q) use ($userId) {
+                            // 1. Décisions créées par moi et en brouillon
+                            $q->where(function ($subQ) use ($userId) {
+                                $subQ->where('created_by', $userId)
+                                    ->where('statut', 'brouillon');
+                            })
+                                // OU
+                                // 2. Décisions transmises à moi (en attente)
+                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                });
+                        });
+                    })
+                    ->toggle()
+                    ->default(false), // Activé par défaut
+
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
@@ -1190,38 +1246,6 @@ class DecisionAdministrativeResource extends Resource
                     ->placeholder('Toutes')
                     ->trueLabel('Engagées')
                     ->falseLabel('Non engagées'),
-
-                Tables\Filters\Filter::make('mes_transmissions')
-                    ->label('Mes transmissions envoyées')
-                    ->query(function ($query) {
-                        return $query->whereHas('transmissions', function ($transmission) {
-                            $transmission->where('expediteur_id', auth()->id())
-                                ->where('statut', 'en_attente');
-                        });
-                    })
-                    ->toggle(),
-
-                Tables\Filters\Filter::make('a_traiter')
-                    ->label('À traiter par moi')
-                    ->query(function ($query) {
-                        $userId = auth()->id();
-
-                        return $query->where(function ($q) use ($userId) {
-                            // 1. Décisions créées par moi et en brouillon
-                            $q->where(function ($subQ) use ($userId) {
-                                $subQ->where('created_by', $userId)
-                                    ->where('statut', 'brouillon');
-                            })
-                                // OU
-                                // 2. Décisions transmises à moi (en attente)
-                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
-                                });
-                        });
-                    })
-                    ->toggle()
-                    ->default(false), // Activé par défaut
             ])
             ->actions(
                 WorkflowActions::make(

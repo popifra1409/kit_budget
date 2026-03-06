@@ -101,16 +101,13 @@
                 <td class="label">IMPUTATION :</td>
                 <td class="value">
                     @php
-                        $nomenclature = $bonCommande->engagement?->nomenclaturePrincipale;
-                        if (!$nomenclature && $bonCommande->engagement?->lignes?->count() > 0) {
-                            $nomenclature = $bonCommande->engagement->lignes->first()->nomenclature;
-                        }
+                        $bonCommande = $donnees['bon_commande'];
+                        $nomenclature = $bonCommande->getNomenclaturePrincipale();
                     @endphp
 
-                    @if ($nomenclature)
-                        {{ $nomenclature->code }} - {{ $nomenclature->libelle }}
-                    @endif
+                    {{ $nomenclature?->code ?? 'N/A' }} - {{ $nomenclature?->libelle ?? 'Non définie' }}
                 </td>
+            </tr>
             </tr>
 
             <tr>
