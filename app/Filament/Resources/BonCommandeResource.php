@@ -1095,20 +1095,6 @@ class BonCommandeResource extends Resource
 
             ])
             ->filters([
-                Tables\Filters\Filter::make('mes_bons')
-                    ->label('Mes bons de commande')
-                    ->query(function ($query) {
-                        $user = auth()->user();
-
-                        if (!$user || $user->hasRole('super_admin')) {
-                            return $query;
-                        }
-
-                        return $query->where('created_by', $user->id);
-                    })
-                    ->toggle()
-                    ->default(fn() => !auth()->user()?->hasRole('super_admin'))
-                    ->indicateUsing(fn() => 'Mes bons uniquement'),
 
                 Tables\Filters\Filter::make('date_emission')
                     ->form([
@@ -1214,6 +1200,63 @@ class BonCommandeResource extends Resource
                         return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
 
+                Tables\Filters\Filter::make('mes_bons')
+                    ->label('📁 Tous mes bons')
+                    ->query(function ($query) {
+                        return $query->where('created_by', auth()->id());
+                    })
+                    ->toggle()
+                    ->default(false)
+                    ->indicateUsing(fn() => '📁 Tous les bons (créés par moi)'),
+
+                Tables\Filters\Filter::make('à_traiter')
+                    ->label('📌 A traiter par moi')
+                    ->query(function ($query) {
+                        $userId = auth()->id();
+
+                        return $query->where(function ($q) use ($userId) {
+                            // 1. Mes brouillons (pas encore transmis)
+                            $q->where(function ($subQ) use ($userId) {
+                                $subQ->where('created_by', $userId)
+                                    ->where('statut', 'brouillon')
+                                    ->whereDoesntHave('transmissions', function ($t) {
+                                        $t->where('statut', 'en_attente');
+                                    });
+                            })
+                                // OU
+                                // 2. Transmis À MOI (en attente de mon action)
+                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                })
+                                // OU
+                                // 3. Retournés À MOI pour correction
+                                ->orWhere(function ($subQ) use ($userId) {
+                                    $subQ->where('created_by', $userId)
+                                        ->whereHas('transmissions', function ($transmission) {
+                                            $transmission->where('statut', 'retourne')
+                                                ->latest()
+                                                ->limit(1);
+                                        });
+                                });
+                        });
+                    })
+                    ->toggle()
+                    ->default(true) // ✅ ACTIVÉ par défaut
+                    ->indicateUsing(fn() => '📌 Bons nécessitant mon action'),
+
+                Tables\Filters\Filter::make('mes_transmissions')
+                    ->label('📤 Mes transmissions envoyées')
+                    ->query(function ($query) {
+                        return $query->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('expediteur_id', auth()->id())
+                                ->where('statut', 'en_attente');
+                        });
+                    })
+                    ->toggle()
+                    ->default(false) // ✅ DÉSACTIVÉ par défaut (cache les transmissions)
+                    ->indicateUsing(fn() => '📤 Transmissions envoyées en attente'),
+
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
@@ -1245,39 +1288,6 @@ class BonCommandeResource extends Resource
                     ->placeholder('Tous')
                     ->trueLabel('Engagés')
                     ->falseLabel('Non engagés'),
-
-                Tables\Filters\Filter::make('mes_transmissions')
-                    ->label('Mes transmissions envoyées')
-                    ->query(function ($query) {
-                        return $query->whereHas('transmissions', function ($transmission) {
-                            $transmission->where('expediteur_id', auth()->id())
-                                ->where('statut', 'en_attente');
-                        });
-                    })
-                    ->toggle(),
-                Tables\Filters\Filter::make('a_traiter')
-                    ->label('À traiter par moi')
-                    ->query(function ($query) {
-                        $userId = auth()->id();
-
-                        return $query->where(function ($q) use ($userId) {
-                            // 1. Documents créés par moi ET en brouillon
-                            $q->where(function ($subQ) use ($userId) {
-                                $subQ->where('created_by', $userId)
-                                    ->where('statut', 'brouillon');
-                            })
-                                // OU
-                                // 2. Documents transmis à moi (en attente de traitement)
-                                ->orWhere(function ($subQ) use ($userId) {
-                                    $subQ->whereHas('transmissions', function ($transmission) use ($userId) {
-                                        $transmission->where('destinataire_id', $userId)
-                                            ->where('statut', 'en_attente');
-                                    });
-                                });
-                        });
-                    })
-                    ->toggle()
-                    ->default(false),
             ])
             ->actions(
                 WorkflowActions::make(

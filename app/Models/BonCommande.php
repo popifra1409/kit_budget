@@ -314,19 +314,113 @@ class BonCommande extends Model
     /**
      * Vérifier si l'utilisateur actuel peut modifier ce BC
      */
+
     public function peutEtreModifiePar(?int $userId = null): bool
     {
         $userId = $userId ?? auth()->id();
+        $user = \App\Models\User::find($userId);
 
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        if ($this->estEnCoursDeTransmission()) {
+        if (!$user) {
             return false;
         }
 
-        return $this->estModifiable();
+        // 1. Super admin peut TOUT modifier
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        // 2. Permission force_update bypass toutes les règles
+        // ✅ ADAPTER selon le modèle :
+        // Pour BonCommande : 'force_update_bon_commande'
+        // Pour DecisionAdministrative : 'force_update_decision_administrative'
+        if ($user->can('force_update_bon_commande')) { // ← CHANGER ICI
+            return true;
+        }
+
+        // 3. Si transmis à quelqu'un d'autre, on ne peut PAS modifier
+        if ($this->estEnCoursDeTransmissionPourAutrui($userId)) {
+            return false;
+        }
+
+        // 4. Si statut brouillon, le créateur peut modifier
+        if ($this->statut === 'brouillon' && $this->created_by === $userId) {
+            return true;
+        }
+
+        // 5. Si document retourné pour correction, le créateur peut modifier
+        if ($this->estRetournePourCorrection() && $this->created_by === $userId) {
+            return true;
+        }
+
+        // 6. Si validé/engagé, PERSONNE ne peut modifier (sauf force_update)
+        // ✅ ADAPTER selon le modèle :
+        // BonCommande : ['valide', 'engage']
+        // DecisionAdministrative : ['validee', 'engagee']
+        if (in_array($this->statut, ['valide', 'engage'])) { // ← CHANGER ICI
+            return false;
+        }
+
+        // Par défaut : non modifiable
+        return false;
+    }
+
+
+    /**
+     * Vérifier si le document est transmis à quelqu'un d'autre
+     * (pas à moi, mais à une autre personne)
+     * 
+     * @param int|null $userId ID de l'utilisateur (null = utilisateur connecté)
+     * @return bool
+     */
+    public function estEnCoursDeTransmissionPourAutrui(?int $userId = null): bool
+    {
+        $userId = $userId ?? auth()->id();
+
+        $transmission = $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+
+        if (!$transmission) {
+            return false;
+        }
+
+        // Si JE suis le destinataire, ce n'est PAS pour autrui
+        if ($transmission->destinataire_id === $userId) {
+            return false;
+        }
+
+        // Si JE suis l'expéditeur OU une autre personne, c'est pour autrui
+        return true;
+    }
+
+    /**
+     * Vérifier si le document est retourné pour correction
+     * 
+     * @return bool
+     */
+    public function estRetournePourCorrection(): bool
+    {
+        $derniereTransmission = $this->transmissions()
+            ->latest()
+            ->first();
+
+        return $derniereTransmission && $derniereTransmission->statut === 'retourne';
+    }
+
+    /**
+     * Vérifier si je suis l'émetteur de la transmission en cours
+     * 
+     * @return bool
+     */
+    public function suisEmetteurTransmissionEnCours(): bool
+    {
+        $transmission = $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->latest()
+            ->first();
+
+        return $transmission && $transmission->expediteur_id === auth()->id();
     }
 
     protected static function booted(): void

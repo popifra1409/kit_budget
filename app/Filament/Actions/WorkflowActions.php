@@ -32,13 +32,19 @@ class WorkflowActions
         bool $avecEngagement = false,
         ?string $pdfServiceClass = null,
         ?string $pdfRouteName = null,
-        bool $avecModalEngagement = true // ✅ NOUVEAU PARAMÈTRE
+        bool $avecModalEngagement = true
     ): array {
         $actions = [
-            Tables\Actions\ViewAction::make(),
-
             Tables\Actions\EditAction::make()
-                ->visible(fn($record) => $record->estModifiable() && !$record->estEnCoursDeTransmission()),
+                ->visible(function ($record) {
+                    // Vérifier si le document peut être modifié par l'utilisateur connecté
+                    if (method_exists($record, 'peutEtreModifiePar')) {
+                        return $record->peutEtreModifiePar();
+                    }
+
+                    // Fallback sur l'ancienne logique si la méthode n'existe pas encore
+                    return $record->estModifiable() && !$record->estEnCoursDeTransmission();
+                }),
         ];
 
         // Actions PDF (si service fourni)
@@ -142,9 +148,35 @@ class WorkflowActions
             ->icon('heroicon-o-check-circle')
             ->color('warning')
             ->visible(function ($record) {
-                return auth()->user()?->can('valider_bon_commande')
-                    && $record->statut === 'brouillon'
-                    && !$record->estEnCoursDeTransmission();
+                // Doit avoir la permission
+                if (!auth()->user()?->can('valider_bon_commande')) {
+                    return false;
+                }
+
+                // Doit être en brouillon
+                if ($record->statut !== 'brouillon') {
+                    return false;
+                }
+
+                // CAS 1 : Je suis le destinataire et c'est transmis à moi pour validation
+                if (method_exists($record, 'estDestinataireActuel') && $record->estDestinataireActuel()) {
+                    $transmission = $record->transmissionEnCours();
+                    if ($transmission && $transmission->action_attendue === 'validation') {
+                        return true;
+                    }
+                }
+
+                // CAS 2 : Je suis le créateur et le document n'est PAS transmis ailleurs
+                if ($record->created_by === auth()->id()) {
+                    if (method_exists($record, 'estEnCoursDeTransmissionPourAutrui')) {
+                        // Si transmis à quelqu'un d'autre, je ne peux PAS valider
+                        return !$record->estEnCoursDeTransmissionPourAutrui();
+                    }
+                    // Fallback : utiliser l'ancienne méthode
+                    return !$record->estEnCoursDeTransmission();
+                }
+
+                return false;
             })
             ->requiresConfirmation()
             ->action(function ($record) {
@@ -176,16 +208,38 @@ class WorkflowActions
             ->icon('heroicon-o-currency-dollar')
             ->color('success')
             ->visible(function ($record) {
-                if ($record instanceof \App\Models\BonCommande) {
-                    return $record->statut === 'valide'
-                        && !$record->engagement_id
-                        && auth()->user()?->can('engager_bon_commande');
+                if (!($record instanceof \App\Models\BonCommande)) {
+                    return false;
                 }
+
+                // Doit avoir la permission
+                if (!auth()->user()?->can('engager_bon_commande')) {
+                    return false;
+                }
+
+                // Doit être validé et pas encore engagé
+                if ($record->statut !== 'valide' || $record->engagement_id) {
+                    return false;
+                }
+
+                // CAS 1 : Je suis le destinataire et c'est transmis à moi pour engagement
+                if (method_exists($record, 'estDestinataireActuel') && $record->estDestinataireActuel()) {
+                    $transmission = $record->transmissionEnCours();
+                    if ($transmission && $transmission->action_attendue === 'engagement') {
+                        return true;
+                    }
+                }
+
+                // CAS 2 : Je suis le créateur et le document n'est PAS transmis ailleurs
+                if ($record->created_by === auth()->id()) {
+                    if (method_exists($record, 'estEnCoursDeTransmissionPourAutrui')) {
+                        return !$record->estEnCoursDeTransmissionPourAutrui();
+                    }
+                    return !$record->estEnCoursDeTransmission();
+                }
+
                 return false;
             })
-            // ❌ RETIRER CETTE LIGNE
-            // ->requiresConfirmation()
-
             ->modalHeading(fn($record) => "Engagement budgétaire - BC N° {$record->numero}")
             ->modalDescription('Vérification de la disponibilité budgétaire')
             ->modalWidth('5xl')
@@ -278,11 +332,34 @@ class WorkflowActions
             ->label('Engager')
             ->icon('heroicon-o-banknotes')
             ->color('primary')
-            ->visible(
-                fn($record) =>
-                in_array($record->statut, ['valide', 'validee'])
-                    && !($record->engage ?? $record->engagee ?? false)
-            )
+            ->visible(function ($record) {
+
+                // Doit être validé/validee et pas encore engagé
+                if (!in_array($record->statut, ['valide', 'validee'])) {
+                    return false;
+                }
+
+                if ($record->engage ?? $record->engagee ?? false) {
+                    return false;
+                }
+
+                // CAS 1 : Je suis le destinataire pour engagement
+                if (method_exists($record, 'estDestinataireActuel') && $record->estDestinataireActuel()) {
+                    $transmission = $record->transmissionEnCours();
+                    if ($transmission && $transmission->action_attendue === 'engagement') {
+                        return true;
+                    }
+                }
+
+                // CAS 2 : Je suis le créateur et pas transmis ailleurs
+                if ($record->created_by === auth()->id()) {
+                    if (method_exists($record, 'estEnCoursDeTransmissionPourAutrui')) {
+                        return !$record->estEnCoursDeTransmissionPourAutrui();
+                    }
+                }
+
+                return true;
+            })
             ->requiresConfirmation()
             ->modalHeading('Engager le budget')
             ->modalDescription(fn($record) => "Créer un engagement budgétaire pour " . ($record->numero ?? 'ce document'))
