@@ -67,19 +67,15 @@ class OrdonnancePaiement extends Model
 
     protected static function booted(): void
     {
-        static::creating(function ($ordonnance) {
-            // ✅ Générer le numéro d'émission automatiquement
-            if (!$ordonnance->numero_emission) {
-                $ordonnance->numero_emission = static::genererNumeroEmission();
+        static::creating(function ($op) {
+            if (!$op->numero) {
+                $op->numero = $op->genererNumero();
             }
 
-            // Générer le numéro si non défini
-            if (!$ordonnance->numero) {
-                $type = $ordonnance->type_ordonnance ?? 'standard';
-                $ordonnance->numero = static::genererNumero($type);
+            // Assigner automatiquement le créateur
+            if (!$op->created_by) {
+                $op->created_by = auth()->id();
             }
-
-            $ordonnance->created_by = auth()->id();
         });
 
         static::updating(function ($ordonnance) {
@@ -219,8 +215,8 @@ class OrdonnancePaiement extends Model
                 'tsr' => 0,
                 'cnps' => 0,
                 'irnc' => 0,
-                'redevance' => 0,  
-                'feicom' => 0,     
+                'redevance' => 0,
+                'feicom' => 0,
                 'autres' => 0,
                 'total' => 0,
             ];
@@ -235,8 +231,8 @@ class OrdonnancePaiement extends Model
         $tsr = $donnees['montant_tsr'] ?? 0;
         $cnps = $donnees['montant_cnps'] ?? 0;
         $irnc = $donnees['montant_irnc'] ?? 0;
-        $redevance = $donnees['montant_redevance'] ?? 0;  
-        $feicom = $donnees['montant_feicom'] ?? 0; 
+        $redevance = $donnees['montant_redevance'] ?? 0;
+        $feicom = $donnees['montant_feicom'] ?? 0;
         $autres = $donnees['autres_retenues'] ?? 0;
 
         // ✅ CORRIGÉ : Calculer le total selon le type de document
@@ -254,8 +250,8 @@ class OrdonnancePaiement extends Model
             'tsr' => $tsr,
             'cnps' => $cnps,
             'irnc' => $irnc,
-            'redevance' => $redevance,  
-            'feicom' => $feicom,    
+            'redevance' => $redevance,
+            'feicom' => $feicom,
             'autres' => $autres,
             'total' => $total,
         ];
@@ -274,23 +270,60 @@ class OrdonnancePaiement extends Model
     | MÉTHODES
     |--------------------------------------------------------------------------
     */
-    public static function genererNumero(string $type = 'standard'): string
+    public static function genererNumero($engagement, string $type = 'standard'): string
     {
-        $annee = Carbon::now()->format('y'); // 26
-        $prefix = $type === 'impot' ? 'OPT' : 'OP';
+        // Préfixe selon le type
+        $prefixe = $type === 'impot' ? 'OPT-' : 'OP-';
 
-        $pattern = "{$prefix}{$annee}-%";
+        // Si ID, charger l'engagement
+        if (is_numeric($engagement)) {
+            $engagement = \App\Models\Engagement::with('engageable')->find($engagement);
+        }
 
-        $dernier = static::where('numero', 'like', $pattern)
-            ->orderBy('numero', 'desc')
-            ->value('numero');
+        if (!$engagement) {
+            throw new \Exception("L'engagement est requis.");
+        }
 
-        $sequence = $dernier
-            ? ((int) substr($dernier, -5)) + 1
-            : 1;
+        // Charger engageable si nécessaire
+        if (!$engagement->relationLoaded('engageable')) {
+            $engagement->load('engageable');
+        }
 
-        return sprintf('%s%s-%05d', $prefix, $annee, $sequence);
+        // Obtenir le numéro du document source
+        $numeroDocumentSource = $engagement->engageable?->numero
+            ?? $engagement->reference_document;
+
+        // Si pas de numéro source, générer format par défaut
+        if (!$numeroDocumentSource) {
+            $annee = now()->format('y');
+            $sequence = static::where('type', $type)
+                ->whereYear('created_at', now()->year)
+                ->count() + 1;
+
+            return $prefixe . $annee . '-' . sprintf('%05d', $sequence);
+        }
+
+        // Format final : OP-BC26-00001
+        return $prefixe . $numeroDocumentSource;
     }
+
+    // public static function genererNumero(string $type = 'standard'): string
+    // {
+    //     $annee = Carbon::now()->format('y'); // 26
+    //     $prefix = $type === 'impot' ? 'OPT' : 'OP';
+
+    //     $pattern = "{$prefix}{$annee}-%";
+
+    //     $dernier = static::where('numero', 'like', $pattern)
+    //         ->orderBy('numero', 'desc')
+    //         ->value('numero');
+
+    //     $sequence = $dernier
+    //         ? ((int) substr($dernier, -5)) + 1
+    //         : 1;
+
+    //     return sprintf('%s%s-%05d', $prefix, $annee, $sequence);
+    // }
 
     public static function genererNumeroEmission(): string
     {

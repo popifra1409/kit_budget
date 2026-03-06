@@ -73,10 +73,16 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->action(function ($record, array $data) {
                     try {
                         $record->engagerBudget($data['nomenclature_id']);
+
+                        // ✅ AJOUTER CES 2 LIGNES
+                        $record->refresh();
+                        $record->load('engagement');
+
+                        // ✅ MODIFIER CETTE LIGNE (ajouter ?->)
                         Notification::make()
                             ->title('Budget engagé avec succès')
                             ->success()
-                            ->body("Engagement créé : " . $record->engagement->numero)
+                            ->body("Engagement créé : " . ($record->engagement?->numero ?? 'N/A'))
                             ->send();
                     } catch (\Exception $e) {
                         Notification::make()

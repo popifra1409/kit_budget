@@ -561,24 +561,7 @@ class BonCommande extends Model
             throw new \Exception('Le bon de commande n\'a pas de numéro');
         }
 
-        // ✅ Remplacer BC par BE dans le numéro
-        // BC26-00001 → BE26-00001
-        $numeroEngagement = str_replace('BC', 'BE', $this->numero);
-
-        // Si le remplacement n'a pas fonctionné (cas improbable)
-        if ($numeroEngagement === $this->numero) {
-            $numeroEngagement = 'BE-' . $this->numero;
-        }
-
-        // Vérifier l'unicité et ajouter un suffixe si nécessaire
-        $count = 1;
-        $numeroBase = $numeroEngagement;
-        while (Engagement::where('numero', $numeroEngagement)->exists()) {
-            $numeroEngagement = $numeroBase . '-' . $count;
-            $count++;
-        }
-
-        return $numeroEngagement;
+        return 'BE-' . $this->numero;
     }
 
     /**

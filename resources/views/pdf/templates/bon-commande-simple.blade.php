@@ -1,15 +1,18 @@
-@extends('pdf.layouts.master')
-
 @php
+    // ✅ DÉSACTIVER LE FOOTER AUTOMATIQUE DU MASTER
+    $disableFooter = true;
+
     $bonCommande = $donnees['_raw'];
     $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
-    if ($bonCommande->relationLoaded('engagement') === false) {
-        $bonCommande->load('engagement.nomenclaturePrincipale');
-    }
-
-    $nomenclature = $bonCommande->engagement?->nomenclaturePrincipale;
+    // Configuration de la pagination
+    $lignesParPage = 10; // Nombre de lignes par page
+    $totalLignes = $bonCommande->lignes->count();
+    $nombrePages = ceil($totalLignes / $lignesParPage);
+    $lignesChunked = $bonCommande->lignes->chunk($lignesParPage);
 @endphp
+
+@extends('pdf.layouts.master')
 
 @section('title', 'Bon de Commande ' . $bonCommande->numero)
 
@@ -17,7 +20,47 @@
     {{ \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc) }}
 @endsection
 
+{{-- CSS pour la pagination --}}
+@push('styles')
+    <style>
+        /* Forcer le saut de page */
+        .page-break {
+            page-break-after: always;
+            break-after: page;
+        }
+
+        /* En-tête de page suivante */
+        .page-header-continue {
+            text-align: right;
+            margin-bottom: 20px;
+            font-size: 10pt;
+        }
+
+        .commande-box-continue {
+            display: inline-block;
+            border: 2px solid #000;
+            padding: 8px 15px;
+            font-weight: bold;
+            font-size: 12pt;
+            margin-bottom: 10px;
+        }
+
+        /* Numérotation des pages */
+        .page-number {
+            position: fixed;
+            bottom: 1cm;
+            right: 1.5cm;
+            font-size: 9pt;
+            color: #666;
+        }
+    </style>
+@endpush
+
 @section('content')
+    {{-- ========================================
+         PAGE 1 : En-tête complet
+         ======================================== --}}
+
     {{-- Date et numero de commande --}}
     <div style="text-align: right; margin: 15px 0; font-size: 10pt;">
         <div class="commande-box">
@@ -57,9 +100,16 @@
             <tr>
                 <td class="label">IMPUTATION :</td>
                 <td class="value">
-                    {{ $nomenclature->code ?? '' }}
-                    -
-                    {{ $nomenclature->libelle ?? '' }}
+                    @php
+                        $nomenclature = $bonCommande->engagement?->nomenclaturePrincipale;
+                        if (!$nomenclature && $bonCommande->engagement?->lignes?->count() > 0) {
+                            $nomenclature = $bonCommande->engagement->lignes->first()->nomenclature;
+                        }
+                    @endphp
+
+                    @if ($nomenclature)
+                        {{ $nomenclature->code }} - {{ $nomenclature->libelle }}
+                    @endif
                 </td>
             </tr>
 
@@ -72,31 +122,75 @@
         </table>
     </div>
 
-    {{-- Tableau des lignes --}}
-    <table>
-        <thead>
-            <tr>
-                <th>N°</th>
-                <th>REFERENCE</th>
-                <th>DESIGNATION</th>
-                <th>QTES</th>
-                <th>P.U</th>
-                <th>Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach ($bonCommande->lignes as $i => $ligne)
+    {{-- ========================================
+         PAGES : Tableau des lignes avec pagination
+         ======================================== --}}
+    @foreach ($lignesChunked as $pageIndex => $lignesPage)
+        {{-- En-tête simplifié pour les pages suivantes --}}
+        @if ($pageIndex > 0)
+            <div class="page-header-continue">
+                <div class="commande-box-continue">
+                    COMMANDE {{ $parametres->sigle }} N° {{ $bonCommande->numero }}
+                </div>
+                <div style="margin-top: 5px;">
+                    <strong>Suite</strong>
+                </div>
+            </div>
+        @endif
+
+        {{-- Tableau des lignes pour cette page --}}
+        <table>
+            <thead>
                 <tr>
-                    <td class="num">{{ $i + 1 }}</td>
-                    <td class="ref">{{ $ligne->reference ?? '-' }}</td>
-                    <td class="designation">{{ $ligne->designation }}</td>
-                    <td class="num">{{ $ligne->quantite }}</td>
-                    <td class="money">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
-                    <td class="money">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                    <th>REFERENCE</th>
+                    <th>DESIGNATION</th>
+                    <th>QTES</th>
+                    <th>P.U</th>
+                    <th>Total</th>
                 </tr>
-            @endforeach
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach ($lignesPage as $i => $ligne)
+                    <tr>
+                        {{-- <td class="num">{{ $pageIndex * $lignesParPage + $loop->iteration }}</td> --}}
+                        <td class="ref">{{ $ligne->reference ?? '-' }}</td>
+                        <td class="designation">{{ $ligne->designation }}</td>
+                        <td class="num">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
+                        <td class="money">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
+                        <td class="money">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                    </tr>
+                @endforeach
+
+                {{-- Lignes vides pour compléter la page (minimum 10 lignes) --}}
+                {{-- @if ($lignesPage->count() < $lignesParPage)
+                    @for ($i = $lignesPage->count(); $i < $lignesParPage; $i++)
+                        <tr>
+                            <td class="num">&nbsp;</td>
+                            <td class="ref">&nbsp;</td>
+                            <td class="designation">&nbsp;</td>
+                            <td class="num">&nbsp;</td>
+                            <td class="money">&nbsp;</td>
+                            <td class="money">&nbsp;</td>
+                        </tr>
+                    @endfor
+                @endif --}}
+            </tbody>
+        </table>
+
+        {{-- Numérotation de la page --}}
+        <div class="page-number">
+            Page {{ $pageIndex + 1 }} sur {{ $nombrePages }}
+        </div>
+
+        {{-- Saut de page sauf pour la dernière page --}}
+        @if (!$loop->last)
+            <div class="page-break"></div>
+        @endif
+    @endforeach
+
+    {{-- ========================================
+         DERNIÈRE PAGE : Totaux et signature
+         ======================================== --}}
 
     {{-- Totaux --}}
     <div class="totaux">
@@ -127,6 +221,7 @@
             </tr>
         </table>
     </div>
+
     {{-- Montant en lettres --}}
     <div class="montant-lettres">
         Arrete le present bon de commande a la somme de

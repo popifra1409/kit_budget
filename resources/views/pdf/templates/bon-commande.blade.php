@@ -1,6 +1,7 @@
-@extends('pdf.layouts.master')
-
 @php
+    // ✅ DÉSACTIVER LE FOOTER AUTOMATIQUE DU MASTER
+    $disableFooter = true;
+
     // Récupérer les données du bon
     $bonCommande = $donnees['_raw'];
 
@@ -13,7 +14,15 @@
     $prestataireTel = $donnees['prestataire_tel'] ?? ($bonCommande->fournisseur->telephone ?? '......................');
     $prestataireContribuable =
         $donnees['prestataire_contribuable'] ?? ($bonCommande->fournisseur->nif ?? '........................');
+
+    // Configuration de la pagination
+    $lignesParPage = 10; // Nombre de lignes par page
+    $totalLignes = $bonCommande->lignes->count();
+    $nombrePages = ceil($totalLignes / $lignesParPage);
+    $lignesChunked = $bonCommande->lignes->chunk($lignesParPage);
 @endphp
+
+@extends('pdf.layouts.master')
 
 @section('title', 'BCA N° ' . $numeroBca)
 
@@ -21,8 +30,9 @@
     {{ $donnees['montant_lettres'] ?? \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc ?? 0) }}
 @endsection
 
-@section('additional_styles')
+@push('styles')
     <style>
+        /* ================= STYLES GÉNÉRAUX ================= */
         .service-info {
             margin-bottom: 8px;
             font-weight: bold;
@@ -146,10 +156,50 @@
             display: table;
             clear: both;
         }
+
+        .montant-lettres-box {
+            margin-top: 20px;
+            text-align: center;
+            font-style: italic;
+            font-size: 8.5pt;
+        }
+
+        /* ================= STYLES PAGINATION ================= */
+        .page-break {
+            page-break-after: always;
+            break-after: page;
+        }
+
+        .page-header-continue {
+            text-align: right;
+            margin-bottom: 20px;
+            font-size: 10pt;
+        }
+
+        .bca-box-continue {
+            display: inline-block;
+            border: 2px solid #000;
+            padding: 8px 15px;
+            font-weight: bold;
+            font-size: 11pt;
+            margin-bottom: 10px;
+        }
+
+        .page-number {
+            position: fixed;
+            bottom: 1cm;
+            right: 1.5cm;
+            font-size: 9pt;
+            color: #666;
+        }
     </style>
-@endsection
+@endpush
 
 @section('content')
+    {{-- ========================================
+         PAGE 1 : En-tête complet
+         ======================================== --}}
+
     {{-- Service et numéro BCA --}}
     <div class="service-info">
         SERVICE {{ strtoupper($service) }}
@@ -193,40 +243,97 @@
         </table>
     </div>
 
+    {{-- ========================================
+         PAGES : Tableau des lignes avec pagination
+         ======================================== --}}
+    @if (isset($bonCommande->lignes) && $bonCommande->lignes->count() > 0)
+        @foreach ($lignesChunked as $pageIndex => $lignesPage)
+            {{-- En-tête simplifié pour les pages suivantes --}}
+            @if ($pageIndex > 0)
+                <div class="page-header-continue">
+                    <div class="bca-box-continue">
+                        BCA N°: {{ $numeroBca }}
+                    </div>
+                    <div style="margin-top: 5px;">
+                        <strong>Suite</strong>
+                    </div>
+                </div>
+            @endif
 
-    {{-- Tableau des articles --}}
-    <table class="articles-table">
-        <thead>
-            <tr>
-                <th style="width: 5%;">N°</th>
-                <th style="width: 15%;">REFERENCE</th>
-                <th style="width: 40%;">DESIGNATION</th>
-                <th style="width: 10%;">QTES</th>
-                <th style="width: 15%;">P.U</th>
-                <th style="width: 15%;">Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            @if (isset($bonCommande->lignes) && $bonCommande->lignes->count() > 0)
-                @foreach ($bonCommande->lignes as $i => $ligne)
+            {{-- Tableau des lignes pour cette page --}}
+            <table class="articles-table">
+                <thead>
                     <tr>
-                        <td class="center">{{ $i + 1 }}</td>
-                        <td>{{ $ligne->reference ?? '-' }}</td>
-                        <td>{{ $ligne->designation }}</td>
-                        <td class="nombre">{{ $ligne->quantite }}</td>
-                        <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
-                        <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                        <th style="width: 15%;">REFERENCE</th>
+                        <th style="width: 40%;">DESIGNATION</th>
+                        <th style="width: 10%;">QTES</th>
+                        <th style="width: 15%;">P.U</th>
+                        <th style="width: 15%;">Total</th>
                     </tr>
-                @endforeach
-            @else
+                </thead>
+                <tbody>
+                    @foreach ($lignesPage as $i => $ligne)
+                        <tr>
+                            <td>{{ $ligne->reference ?? '-' }}</td>
+                            <td>{{ $ligne->designation }}</td>
+                            <td class="nombre">{{ $ligne->quantite }}</td>
+                            <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
+                            <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                        </tr>
+                    @endforeach
+
+                    {{-- Lignes vides pour compléter la page (minimum 10 lignes) --}}
+                    {{-- @if ($lignesPage->count() < $lignesParPage)
+                        @for ($i = $lignesPage->count(); $i < $lignesParPage; $i++)
+                            <tr>
+                                <td class="nombre">&nbsp;</td>
+                                <td>&nbsp;</td>
+                                <td>&nbsp;</td>
+                                <td class="nombre">&nbsp;</td>
+                                <td class="nombre">&nbsp;</td>
+                                <td class="nombre">&nbsp;</td>
+                            </tr>
+                        @endfor
+                    @endif --}}
+                </tbody>
+            </table>
+
+            {{-- Numérotation de la page --}}
+            <div class="page-number">
+                Page {{ $pageIndex + 1 }} sur {{ $nombrePages }}
+            </div>
+
+            {{-- Saut de page sauf pour la dernière page --}}
+            @if (!$loop->last)
+                <div class="page-break"></div>
+            @endif
+        @endforeach
+    @else
+        {{-- Tableau vide avec message --}}
+        <table class="articles-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">N°</th>
+                    <th style="width: 15%;">REFERENCE</th>
+                    <th style="width: 40%;">DESIGNATION</th>
+                    <th style="width: 10%;">QTES</th>
+                    <th style="width: 15%;">P.U</th>
+                    <th style="width: 15%;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
                 <tr>
                     <td colspan="6" class="text-center" style="padding: 20px; color: #999;">
                         Aucune ligne de commande
                     </td>
                 </tr>
-            @endif
-        </tbody>
-    </table>
+            </tbody>
+        </table>
+    @endif
+
+    {{-- ========================================
+         DERNIÈRE PAGE : Totaux et signatures
+         ======================================== --}}
 
     {{-- Section totaux --}}
     <div class="totaux-section">
@@ -274,7 +381,6 @@
         <strong>@yield('montant_lettres')</strong>
     </div>
 
-
     {{-- Signatures --}}
     <div class="mt-20 clearfix">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
@@ -293,10 +399,15 @@
 
             <div class="signature-block" style="width: 33%;">
                 <div class="font-bold">L'ordonnateur</div>
-                <div class="mt-10 font-bold">{{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}</div>
-                <div style="margin-top: 40px; border-top: 1px solid #000; padding-top: 5px;">
-                    {{ $parametres->nom_ordonnateur ?? '' }}
+                <div class="mt-10 font-bold">
+                    @php
+                        $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+                    @endphp
+                    {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
                 </div>
+                {{-- <div style="margin-top: 40px; border-top: 1px solid #000; padding-top: 5px;">
+                    {{ $parametres->nom_ordonnateur ?? '' }}
+                </div> --}}
             </div>
         </div>
     </div>

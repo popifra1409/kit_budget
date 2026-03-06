@@ -131,7 +131,7 @@
     </div>
 
     <div class="info-line">
-        <strong>Montant en chiffres:</strong> {{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa
+        <strong>Montant TTC en chiffres:</strong> {{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa
     </div>
 
     <div class="info-line">

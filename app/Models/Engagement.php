@@ -491,7 +491,7 @@ class Engagement extends Model
 
             // ===== 1. CRÉER L'OP STANDARD (Bénéficiaire principal) =====
             $opStandard = \App\Models\OrdonnancePaiement::create([
-                'numero' => \App\Models\OrdonnancePaiement::genererNumero('standard'),
+                'numero' => \App\Models\OrdonnancePaiement::genererNumero($this, 'standard'),
                 'numero_emission' => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
                 'type_ordonnance' => 'standard',
                 'engagement_id' => $this->id,
@@ -511,7 +511,7 @@ class Engagement extends Model
 
             \Log::info("OP Standard créée", [
                 'numero' => $opStandard->numero,
-                'montant' => $opStandard->montant_net,  // ✅ Correction : montant_net au lieu de montant_ordonnance
+                'montant' => $opStandard->montant_net,
                 'beneficiaire' => $donnees['beneficiaire']->raison_sociale ?? $donnees['beneficiaire']->name ?? 'N/A',
             ]);
 
@@ -598,7 +598,7 @@ class Engagement extends Model
                 }
 
                 $opImpot = \App\Models\OrdonnancePaiement::create([
-                    'numero' => \App\Models\OrdonnancePaiement::genererNumero('impot'),
+                    'numero' => \App\Models\OrdonnancePaiement::genererNumero($this, 'impot '),
                     'numero_emission' => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
                     'type_ordonnance' => 'impot',
                     'engagement_id' => $this->id,

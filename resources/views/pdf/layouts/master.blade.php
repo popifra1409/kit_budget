@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>@yield('title', 'Document PDF')</title>
+    @stack('styles')
 
     <style>
         @page {
@@ -129,7 +130,7 @@
         }
 
         /* ================= TABLE ================= */
-        
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -257,11 +258,13 @@
         @yield('content')
     </div>
 
-    {{-- Footer personnalisable --}}
-    @if (isset($typeFooter) && View::exists("pdf.partials.footer-{$typeFooter}"))
-        @include("pdf.partials.footer-{$typeFooter}")
-    @else
-        @include('pdf.partials.footer')
+    {{-- Footer personnalisable (peut être désactivé avec $disableFooter) --}}
+    @if (!isset($disableFooter) || !$disableFooter)
+        @if (isset($typeFooter) && View::exists("pdf.partials.footer-{$typeFooter}"))
+            @include("pdf.partials.footer-{$typeFooter}")
+        @else
+            @include('pdf.partials.footer')
+        @endif
     @endif
 </body>
 

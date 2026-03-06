@@ -114,20 +114,20 @@ class DecisionAdministrative extends Model
     // BOOT ET ÉVÉNEMENTS
     // ========================================
 
-    protected static function boot()
-    {
-        parent::boot();
+    // protected static function boot()
+    // {
+    //     parent::boot();
 
-        static::creating(function ($decision) {
-            if (empty($decision->numero)) {
-                $decision->numero = $decision->genererNumero();
-            }
-        });
+    //     static::creating(function ($decision) {
+    //         if (empty($decision->numero)) {
+    //             $decision->numero = $decision->genererNumero();
+    //         }
+    //     });
 
-        static::saving(function ($decision) {
-            $decision->calculerMontants();
-        });
-    }
+    //     static::saving(function ($decision) {
+    //         $decision->calculerMontants();
+    //     });
+    // }
 
     protected static function booted(): void
     {
@@ -135,11 +135,13 @@ class DecisionAdministrative extends Model
             if (!$decision->numero) {
                 $decision->numero = $decision->genererNumero();
             }
-
-            // Assigner automatiquement le créateur
             if (!$decision->created_by) {
                 $decision->created_by = auth()->id();
             }
+        });
+
+        static::saving(function ($decision) {
+            $decision->calculerMontants();
         });
 
         static::updating(function ($decision) {
@@ -416,6 +418,15 @@ class DecisionAdministrative extends Model
         return sprintf('DA%s-%05d', $anneeCourte, $sequence);
     }
 
+    protected function genererNumeroEngagement(): string
+    {
+        if (!$this->numero) {
+            $this->numero = static::genererNumero();
+            $this->saveQuietly();
+        }
+
+        return 'BE-' . $this->numero;
+    }
     /**
      * ✅ Calculer tous les montants (CNPS, IRNC, TVA, Redevance, FEICOM, net)
      */
@@ -564,12 +575,13 @@ class DecisionAdministrative extends Model
             }
 
             // ✅ Générer le numéro d'abord
-            $numeroEngagement = Engagement::genererNumero();
+            //$numeroEngagement = Engagement::genererNumero();
+
+            $numeroEngagement = $this->genererNumeroEngagement();
 
             \Log::info("Création engagement", [
                 'da_numero' => $this->numero,
                 'numero_engagement' => $numeroEngagement,
-                // 'montant' => $this->montant_net,
                 'montant' => $this->montant_brut,
             ]);
 
