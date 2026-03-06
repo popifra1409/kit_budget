@@ -23,7 +23,7 @@ class MemoireDepenseResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Mémoires de Dépenses';
 
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
+    protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?int $navigationSort = 30;
 
