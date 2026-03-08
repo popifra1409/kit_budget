@@ -35,7 +35,7 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->action(function ($record) {
                     $record->valider(auth()->user());
                     Notification::make()
-                        ->title('Décision validée')
+                        ->title('✅ Décision validée') // ✅ AJOUT : Emoji
                         ->success()
                         ->send();
                 }),
@@ -74,24 +74,81 @@ class ViewDecisionAdministrative extends ViewRecord
                     try {
                         $record->engagerBudget($data['nomenclature_id']);
 
-                        // ✅ AJOUTER CES 2 LIGNES
+                        // ✅ CORRECTION CRITIQUE : Recharger l'engagement
                         $record->refresh();
                         $record->load('engagement');
 
-                        // ✅ MODIFIER CETTE LIGNE (ajouter ?->)
                         Notification::make()
-                            ->title('Budget engagé avec succès')
+                            ->title('✅ Budget engagé avec succès') // ✅ AJOUT : Emoji
                             ->success()
                             ->body("Engagement créé : " . ($record->engagement?->numero ?? 'N/A'))
                             ->send();
                     } catch (\Exception $e) {
                         Notification::make()
-                            ->title('Erreur lors de l\'engagement')
+                            ->title('❌ Erreur lors de l\'engagement') // ✅ AJOUT : Emoji
                             ->danger()
                             ->body($e->getMessage())
                             ->send();
                     }
                 }),
+
+            // ✅ NOUVEAU : Voir l'engagement
+            Actions\Action::make('voir_engagement')
+                ->label('Voir l\'Engagement')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->visible(fn($record) => $record->engagement_id && $record->engagement)
+                ->url(fn($record) => route('filament.admin.resources.engagements.view', $record->engagement)),
+
+            // ✅ NOUVEAU : Créer les ordonnances de paiement
+            Actions\Action::make('creer_op')
+                ->label('Créer OP')
+                ->icon('heroicon-o-document-currency-dollar')
+                ->color('success')
+                ->visible(function ($record) {
+                    return $record->engagement
+                        && $record->engagement->statut === 'definitif'
+                        && !$record->engagement->hasOrdonnancesPaiement();
+                })
+                ->requiresConfirmation()
+                ->modalHeading('Créer les ordonnances de paiement')
+                ->modalDescription(fn($record) => "Créer les ordonnances de paiement pour l'engagement {$record->engagement?->numero} ?")
+                ->action(function ($record) {
+                    try {
+                        $ordonnances = $record->engagement->creerOrdonnancesPaiement();
+
+                        $message = "Ordonnances créées avec succès :\n";
+                        if (isset($ordonnances['standard'])) {
+                            $message .= "• OP Standard : {$ordonnances['standard']->numero}\n";
+                        }
+                        if (isset($ordonnances['impot'])) {
+                            $message .= "• OP Impôt : {$ordonnances['impot']->numero}";
+                        }
+
+                        Notification::make()
+                            ->title('✅ Ordonnances créées')
+                            ->success()
+                            ->body($message)
+                            ->duration(8000)
+                            ->send();
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Erreur lors de la création des ordonnances')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
+            // ✅ NOUVEAU : Générer PDF (optionnel - nécessite la route)
+            Actions\Action::make('pdf')
+                ->label('Générer PDF')
+                ->icon('heroicon-o-document-text')
+                ->color('gray')
+                ->visible(fn($record) => $record->statut !== 'brouillon')
+                ->url(fn($record) => route('decisions-administratives.pdf.preview', $record))
+                ->openUrlInNewTab(),
 
             Actions\Action::make('annuler')
                 ->label('Annuler')
@@ -100,18 +157,18 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->visible(fn($record) => !in_array($record->statut, ['annulee', 'payee']))
                 ->requiresConfirmation()
                 ->modalHeading('Annuler la décision')
-                ->modalDescription('Confirmer l\'annulation de cette décision ? Si le budget est engagé, il sera désengagé automatiquement.')
+                ->modalDescription('⚠️ Confirmer l\'annulation de cette décision ? Si le budget est engagé, il sera désengagé automatiquement.') // ✅ AJOUT : Emoji
                 ->action(function ($record) {
                     try {
                         $record->annuler();
                         Notification::make()
-                            ->title('Décision annulée')
+                            ->title('⚠️ Décision annulée') // ✅ AJOUT : Emoji
                             ->success()
                             ->body('La décision a été annulée avec succès.')
                             ->send();
                     } catch (\Exception $e) {
                         Notification::make()
-                            ->title('Impossible d\'annuler')
+                            ->title('❌ Impossible d\'annuler') // ✅ AJOUT : Emoji
                             ->danger()
                             ->body($e->getMessage())
                             ->persistent()
@@ -125,6 +182,11 @@ class ViewDecisionAdministrative extends ViewRecord
                         ]);
                     }
                 }),
+
+            // ✅ NOUVEAU : Supprimer (si brouillon)
+            Actions\DeleteAction::make()
+                ->visible(fn($record) => $record->statut === 'brouillon'
+                    && DecisionAdministrativeResource::canDelete($record)),
         ];
     }
 
@@ -188,10 +250,8 @@ class ViewDecisionAdministrative extends ViewRecord
                     ])
                     ->columns(3),
 
-                // ✅ NOUVELLE SECTION : Bénéficiaire (Personnel OU Fournisseur)
                 Infolists\Components\Section::make('Bénéficiaire')
                     ->schema([
-                        // Type de bénéficiaire
                         Infolists\Components\TextEntry::make('type_beneficiaire')
                             ->label('Type')
                             ->badge()
@@ -212,7 +272,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             })
                             ->columnSpanFull(),
 
-                        // ✅ PERSONNEL (visible si type = personnel)
                         Infolists\Components\TextEntry::make('personnel.nom_complet')
                             ->label('Nom complet')
                             ->default('Non renseigné')
@@ -232,7 +291,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->label('Service')
                             ->visible(fn($record) => $record->type_beneficiaire === 'personnel'),
 
-                        // ✅ FOURNISSEUR (visible si type = fournisseur)
                         Infolists\Components\TextEntry::make('fournisseur.raison_sociale')
                             ->label('Raison sociale')
                             ->default('Non renseigné')
@@ -257,10 +315,8 @@ class ViewDecisionAdministrative extends ViewRecord
                     ])
                     ->columns(2),
 
-                // ✅ SECTION MODIFIÉE : Montants avec HT
                 Infolists\Components\Section::make('Montants et retenues')
                     ->schema([
-                        // Montant brut (TTC)
                         Infolists\Components\TextEntry::make('montant_brut')
                             ->label('💰 Montant brut (TTC)')
                             ->formatStateUsing(
@@ -271,7 +327,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold'),
 
-                        // ✅ NOUVEAU : Montant HT
                         Infolists\Components\TextEntry::make('montant_ht')
                             ->label('📐 Montant HT')
                             ->formatStateUsing(
@@ -283,7 +338,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->weight('bold')
                             ->helperText('Base de calcul des retenues'),
 
-                        // ✅ TVA (montant)
                         Infolists\Components\TextEntry::make('montant_tva_calcule')
                             ->label(
                                 function ($record) {
@@ -292,7 +346,6 @@ class ViewDecisionAdministrative extends ViewRecord
                                 }
                             )
                             ->formatStateUsing(function ($record) {
-                                // ✅ CALCUL CORRECT : TVA = Brut - HT
                                 $brut = (float) ($record->montant_brut ?? 0);
                                 $ht = (float) ($record->montant_ht ?? 0);
                                 $montantTva = $brut - $ht;
@@ -303,14 +356,12 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->helperText('Montant de la TVA incluse dans le brut')
                             ->visible(fn($record) => ($record->taux_tva ?? 0) > 0),
 
-                        // Séparateur
                         Infolists\Components\TextEntry::make('separator_retenues')
                             ->label('💸 Retenues (calculées sur HT)')
                             ->default('')
                             ->columnSpanFull()
                             ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
 
-                        // CNPS
                         Infolists\Components\TextEntry::make('montant_cnps')
                             ->label(
                                 fn($record) =>
@@ -323,7 +374,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_cnps ?? 0) > 0),
 
-                        // IRNC
                         Infolists\Components\TextEntry::make('montant_irnc')
                             ->label(
                                 fn($record) =>
@@ -336,7 +386,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
-                        // Redevance audiovisuelle
                         Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle_calcule')
                             ->label(
                                 function ($record) {
@@ -354,7 +403,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
 
-                        // FEICOM
                         Infolists\Components\TextEntry::make('montant_feicom_calcule')
                             ->label(
                                 function ($record) {
@@ -372,7 +420,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->montant_feicom_calcule ?? 0) > 0),
 
-                        // Autres retenues
                         Infolists\Components\TextEntry::make('autres_retenues')
                             ->label('Autres retenues')
                             ->formatStateUsing(
@@ -382,7 +429,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->color('warning')
                             ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
 
-                        // Total retenues
                         Infolists\Components\TextEntry::make('total_taxes')
                             ->label('📊 Total retenues')
                             ->formatStateUsing(
@@ -394,7 +440,6 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->columnSpanFull()
                             ->extraAttributes(['class' => 'border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
 
-                        // Montant net
                         Infolists\Components\TextEntry::make('montant_net')
                             ->label('✅ Montant net à payer')
                             ->formatStateUsing(
@@ -430,6 +475,11 @@ class ViewDecisionAdministrative extends ViewRecord
                         Infolists\Components\TextEntry::make('engagement.numero')
                             ->label('N° Engagement')
                             ->copyable()
+                            // ✅ AMÉLIORATION : Lien cliquable vers l'engagement
+                            ->url(fn($record) => $record->engagement
+                                ? route('filament.admin.resources.engagements.view', $record->engagement)
+                                : null)
+                            ->color('primary')
                             ->visible(fn($record) => $record->engagement),
                     ])
                     ->columns(4)

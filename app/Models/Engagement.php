@@ -598,7 +598,7 @@ class Engagement extends Model
                 }
 
                 $opImpot = \App\Models\OrdonnancePaiement::create([
-                    'numero' => \App\Models\OrdonnancePaiement::genererNumero($this, 'impot '),
+                    'numero' => \App\Models\OrdonnancePaiement::genererNumero($this, 'impot'),
                     'numero_emission' => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
                     'type_ordonnance' => 'impot',
                     'engagement_id' => $this->id,

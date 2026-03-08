@@ -78,9 +78,9 @@ class OrdonnancePaiement extends Model
             }
         });
 
-        static::updating(function ($ordonnance) {
-            $ordonnance->updated_by = auth()->id();
-        });
+        // static::updating(function ($ordonnance) {
+        //     $ordonnance->updated_by = auth()->id();
+        // });
     }
     /*
     |--------------------------------------------------------------------------

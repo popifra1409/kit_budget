@@ -205,6 +205,9 @@ class OrdonnancePaiementResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° OP')
@@ -307,6 +310,78 @@ class OrdonnancePaiementResource extends Resource
                                 $data['date_emission_until'],
                                 fn($q, $date) => $q->whereDate('date_emission', '<=', $date)
                             );
+                    }),
+
+                // FILTRE PAR PÉRIODE PRÉDÉFINIE
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période prédéfinie')
+                            ->options([
+                                'today' => 'Aujourd\'hui',
+                                'yesterday' => 'Hier',
+                                'this_week' => 'Cette semaine',
+                                'last_week' => 'Semaine dernière',
+                                'this_month' => 'Ce mois',
+                                'last_month' => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year' => 'Cette année',
+                                'last_year' => 'Année dernière',
+                            ])
+                            ->default('today')
+                            ->placeholder('Sélectionner une période'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        $periode = $data['periode'] ?? 'today';
+
+                        return match ($periode) {
+                            'today' => $query->whereDate('date_emission', today()),
+                            'yesterday' => $query->whereDate('date_emission', today()->subDay()),
+                            'this_week' => $query->whereBetween('date_emission', [
+                                now()->startOfWeek(),
+                                now()->endOfWeek()
+                            ]),
+                            'last_week' => $query->whereBetween('date_emission', [
+                                now()->subWeek()->startOfWeek(),
+                                now()->subWeek()->endOfWeek()
+                            ]),
+                            'this_month' => $query->whereMonth('date_emission', now()->month)
+                                ->whereYear('date_emission', now()->year),
+                            'last_month' => $query->whereMonth('date_emission', now()->subMonth()->month)
+                                ->whereYear('date_emission', now()->subMonth()->year),
+                            'this_quarter' => $query->whereBetween('date_emission', [
+                                now()->startOfQuarter(),
+                                now()->endOfQuarter()
+                            ]),
+                            'last_quarter' => $query->whereBetween('date_emission', [
+                                now()->subQuarter()->startOfQuarter(),
+                                now()->subQuarter()->endOfQuarter()
+                            ]),
+                            'this_year' => $query->whereYear('date_emission', now()->year),
+                            'last_year' => $query->whereYear('date_emission', now()->subYear()->year),
+                            default => $query,
+                        };
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) {
+                            return 'Période : Aujourd\'hui';
+                        }
+
+                        $labels = [
+                            'today' => 'Aujourd\'hui',
+                            'yesterday' => 'Hier',
+                            'this_week' => 'Cette semaine',
+                            'last_week' => 'Semaine dernière',
+                            'this_month' => 'Ce mois',
+                            'last_month' => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year' => 'Cette année',
+                            'last_year' => 'Année dernière',
+                        ];
+
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
             ])
             ->actions([

@@ -25,8 +25,34 @@ class CreateMemoireDepense extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // S'assurer que les champs par défaut sont définis
-        $data['statut'] = $data['statut'] ?? 'brouillon';
+        if (!isset($data['lignes']) || !is_array($data['lignes'])) {
+            return $data;
+        }
+
+        foreach ($data['lignes'] as &$ligne) {
+
+            $qte = floatval($ligne['quantite'] ?? 0);
+            $nap = floatval($ligne['montant_nap_input'] ?? 0);
+            $tauxIr = floatval($ligne['taux_ir'] ?? 5.5);
+
+            // Si mode NAP
+            if ($nap > 0 && $qte > 0) {
+
+                $napTotal = $nap * $qte;
+
+                $mht = $napTotal / (1 - ($tauxIr / 100));
+
+                $pu = $mht / $qte;
+
+                $ligne['prix_unitaire'] = round($pu, 2);
+                $ligne['net_a_payer'] = $napTotal;
+            }
+
+            // Sécurité absolue
+            if (!isset($ligne['prix_unitaire'])) {
+                $ligne['prix_unitaire'] = 0;
+            }
+        }
 
         return $data;
     }

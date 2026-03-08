@@ -25,6 +25,7 @@ class MemoireDepense extends Model
         'date_ce',
         'bordereau_engagement_id',
         'bon_commande_id',
+        'decision_administrative_id',
         'objet',
         'observations',
         'montant_ht',
@@ -76,12 +77,14 @@ class MemoireDepense extends Model
         return $this->belongsTo(BordereauEngagement::class);
     }
 
-    /**
-     * ✅ CORRECTION : Spécifier explicitement la clé étrangère
-     */
     public function bonCommande(): BelongsTo
     {
         return $this->belongsTo(BonCommande::class, 'bon_commande_id');
+    }
+
+    public function decisionAdministrative(): BelongsTo
+    {
+        return $this->belongsTo(DecisionAdministrative::class, 'decision_administrative_id');
     }
 
     public function lignes(): HasMany
@@ -91,9 +94,25 @@ class MemoireDepense extends Model
 
     /**
      * Calculer les totaux depuis les lignes
+     * 
+     * Formules conformes au fichier Excel :
+     * - Total MHT = Σ MHT de chaque ligne
+     * - Total TVA = Σ TVA de chaque ligne
+     * - Total TTC = Σ TTC de chaque ligne
+     * - Total IR = Σ IR de chaque ligne
+     * - Total Net (NAP) = Σ Net À Payer de chaque ligne
+     * 
+     * Note : Le montant_net est correctement calculé car chaque ligne
+     * a net_a_payer = MHT - IR (formule conforme au fichier Excel)
      */
     public function calculerTotaux(): void
     {
+        // Charger les lignes si pas déjà chargées
+        if (!$this->relationLoaded('lignes')) {
+            $this->load('lignes');
+        }
+
+        // Calculer les totaux
         $this->montant_ht = $this->lignes->sum('montant_ht');
         $this->montant_tva = $this->lignes->sum('montant_tva');
         $this->montant_ir = $this->lignes->sum('montant_ir');
@@ -105,6 +124,17 @@ class MemoireDepense extends Model
     }
 
     /**
+     * Recalculer les totaux et sauvegarder silencieusement
+     * 
+     * Utilisé par les événements des lignes pour éviter les boucles infinies
+     */
+    public function recalculerTotaux(): void
+    {
+        $this->calculerTotaux();
+        $this->saveQuietly();
+    }
+
+    /**
      * Valider le mémoire
      */
     public function valider(): void
@@ -112,6 +142,79 @@ class MemoireDepense extends Model
         $this->statut = 'valide';
         $this->date_signature = now();
         $this->save();
+    }
+
+    /**
+     * Vérifier si le mémoire peut être transformé en DA
+     */
+    public function peutEtreTransformeEnDA(): bool
+    {
+        return $this->statut === 'valide'
+            && !$this->decision_administrative_id;
+    }
+
+    /**
+     * Accesseurs en lettres
+     */
+    public function getMontantNetEnLettresAttribute(): string
+    {
+        return NombreEnLettres::convertir($this->montant_net);
+    }
+
+    public function getMontantHtEnLettresAttribute(): string
+    {
+        return NombreEnLettres::convertir($this->montant_ht);
+    }
+
+    /**
+     * Accesseurs formatés
+     */
+    public function getMontantHtFormateAttribute(): string
+    {
+        return number_format($this->montant_ht, 0, ',', ' ') . ' FCFA';
+    }
+
+    public function getMontantTvaFormateAttribute(): string
+    {
+        return number_format($this->montant_tva, 0, ',', ' ') . ' FCFA';
+    }
+
+    public function getMontantTtcFormateAttribute(): string
+    {
+        return number_format($this->montant_ttc, 0, ',', ' ') . ' FCFA';
+    }
+
+    public function getMontantIrFormateAttribute(): string
+    {
+        return number_format($this->montant_ir, 0, ',', ' ') . ' FCFA';
+    }
+
+    public function getMontantNetFormateAttribute(): string
+    {
+        return number_format($this->montant_net, 0, ',', ' ') . ' FCFA';
+    }
+
+    /**
+     * Scopes
+     */
+    public function scopeValides($query)
+    {
+        return $query->where('statut', 'valide');
+    }
+
+    public function scopeNonTransformes($query)
+    {
+        return $query->whereNull('decision_administrative_id');
+    }
+
+    public function scopeParExercice($query, int $exercice)
+    {
+        return $query->where('exercice', $exercice);
+    }
+
+    public function scopeParStatut($query, string $statut)
+    {
+        return $query->where('statut', $statut);
     }
 
     /**
@@ -136,6 +239,17 @@ class MemoireDepense extends Model
 
             if (!$memoire->lieu_signature) {
                 $memoire->lieu_signature = 'Yaoundé';
+            }
+
+            if (!$memoire->statut) {
+                $memoire->statut = 'brouillon';
+            }
+        });
+
+        static::saving(function ($memoire) {
+            // Calculer les totaux si les lignes sont chargées
+            if ($memoire->relationLoaded('lignes') && $memoire->lignes->count() > 0) {
+                $memoire->calculerTotaux();
             }
         });
     }
