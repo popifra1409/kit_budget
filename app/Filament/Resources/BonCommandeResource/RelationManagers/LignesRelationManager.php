@@ -19,7 +19,7 @@ class LignesRelationManager extends RelationManager
     protected static ?string $label = 'Ligne';
 
     protected static ?string $pluralLabel = 'Lignes';
-    
+
 
     protected function canCreate(): bool
     {
@@ -50,10 +50,18 @@ class LignesRelationManager extends RelationManager
                         return LigneBudgetaire::where('budget_id', $budgetId)
                             ->with('nomenclature')
                             ->get()
-                            ->mapWithKeys(fn($lb) => [
-                                $lb->nomenclature_id => "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} (Dispo: " .
-                                    number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
-                            ]);
+                            // ✅ CORRECTION : Filtrer les lignes sans nomenclature
+                            ->filter(fn($lb) => $lb->nomenclature !== null)
+                            ->mapWithKeys(function ($lb) {
+                                // ✅ CORRECTION : Vérification null-safe (double sécurité)
+                                $code = $lb->nomenclature?->code ?? 'N/A';
+                                $libelle = $lb->nomenclature?->libelle ?? 'Sans libellé';
+                                $dispo = number_format($lb->disponible_engagement, 0, ',', ' ');
+
+                                return [
+                                    $lb->nomenclature_id => "{$code} - {$libelle} (Dispo: {$dispo} FCFA)"
+                                ];
+                            });
                     })
                     ->required()
                     ->searchable()
@@ -126,6 +134,9 @@ class LignesRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            // ✅ CORRECTION CRITIQUE : Charger la relation nomenclature pour éviter N+1 et erreurs null
+            ->modifyQueryUsing(fn($query) => $query->with('nomenclature'))
+
             ->recordTitleAttribute('designation')
             ->columns([
                 Tables\Columns\TextColumn::make('numero_ligne')
@@ -136,7 +147,10 @@ class LignesRelationManager extends RelationManager
                     ->label('Nomenclature')
                     ->searchable()
                     ->badge()
-                    ->color('warning'),
+                    ->color('warning')
+                    // ✅ CORRECTION : Gérer le cas où nomenclature est null
+                    ->default('N/A')
+                    ->placeholder('Non défini'),
 
                 Tables\Columns\TextColumn::make('designation')
                     ->label('Désignation')
