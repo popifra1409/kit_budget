@@ -8,6 +8,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use App\Models\LigneBudgetaire;
+use App\Models\ReferenceMercuriale;
 use Illuminate\Database\Eloquent\Model;
 
 class LignesRelationManager extends RelationManager
@@ -50,10 +51,8 @@ class LignesRelationManager extends RelationManager
                         return LigneBudgetaire::where('budget_id', $budgetId)
                             ->with('nomenclature')
                             ->get()
-                            // ✅ CORRECTION : Filtrer les lignes sans nomenclature
                             ->filter(fn($lb) => $lb->nomenclature !== null)
                             ->mapWithKeys(function ($lb) {
-                                // ✅ CORRECTION : Vérification null-safe (double sécurité)
                                 $code = $lb->nomenclature?->code ?? 'N/A';
                                 $libelle = $lb->nomenclature?->libelle ?? 'Sans libellé';
                                 $dispo = number_format($lb->disponible_engagement, 0, ',', ' ');
@@ -73,6 +72,44 @@ class LignesRelationManager extends RelationManager
                     ->maxLength(255)
                     ->placeholder('Ex: Ordinateur portable HP EliteBook')
                     ->columnSpanFull(),
+
+                // ✅ Section Références
+                Forms\Components\Section::make('Références')
+                    ->description('Références pour identification et traçabilité')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                // ✅ Référence Mercuriale (Select depuis la table)
+                                Forms\Components\Select::make('reference_mercuriale_id')
+                                    ->label('Référence Mercuriale')
+                                    ->options(function () {
+                                        return ReferenceMercuriale::query()
+                                            ->where('actif', true)
+                                            ->get()
+                                            ->mapWithKeys(function ($ref) {
+                                                // Adapter selon les champs de votre table ReferenceMercuriale
+                                                return [
+                                                    $ref->id => ($ref->code_reference ?? 'N/A') .
+                                                        ($ref->libelle ? ' - ' . $ref->libelle : '')
+                                                ];
+                                            });
+                                    })
+                                    ->searchable()
+                                    ->preload()
+                                    ->helperText('Référence du catalogue Mercuriales')
+                                    ->columnSpan(1),
+
+                                // ✅ Référence Personnalisée (TextInput)
+                                Forms\Components\TextInput::make('reference_personnalisee')
+                                    ->label('Référence personnalisée')
+                                    ->maxLength(255)
+                                    ->placeholder('Ex: REF-INT-2024-001')
+                                    ->helperText('Référence interne de votre entreprise')
+                                    ->columnSpan(1),
+                            ]),
+                    ])
+                    ->collapsible()
+                    ->collapsed(false),
 
                 Forms\Components\Grid::make(4)
                     ->schema([
@@ -134,8 +171,8 @@ class LignesRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            // ✅ CORRECTION CRITIQUE : Charger la relation nomenclature pour éviter N+1 et erreurs null
-            ->modifyQueryUsing(fn($query) => $query->with('nomenclature'))
+            // ✅ Charger les relations nomenclature et referenceMercuriale
+            ->modifyQueryUsing(fn($query) => $query->with(['nomenclature', 'referenceMercuriale']))
 
             ->recordTitleAttribute('designation')
             ->columns([
@@ -143,20 +180,42 @@ class LignesRelationManager extends RelationManager
                     ->label('#')
                     ->sortable(),
 
+                // ✅ Code Nomenclature - Caché par défaut
                 Tables\Columns\TextColumn::make('nomenclature.code')
-                    ->label('Nomenclature')
+                    ->label('Code Nomenclature')
                     ->searchable()
                     ->badge()
                     ->color('warning')
-                    // ✅ CORRECTION : Gérer le cas où nomenclature est null
                     ->default('N/A')
-                    ->placeholder('Non défini'),
+                    ->placeholder('Non défini')
+                    ->toggleable(isToggledHiddenByDefault: true), // ✅ Caché par défaut
 
                 Tables\Columns\TextColumn::make('designation')
                     ->label('Désignation')
                     ->searchable()
                     ->wrap()
                     ->limit(40),
+
+                // ✅ Référence Personnalisée
+                Tables\Columns\TextColumn::make('reference_personnalisee')
+                    ->label('Réf. Personnalisée')
+                    ->searchable()
+                    ->placeholder('N/A')
+                    ->badge()
+                    ->color('info')
+                    ->toggleable()
+                    ->limit(20),
+
+                // ✅ Référence Mercuriale (via relation)
+                Tables\Columns\TextColumn::make('referenceMercuriale.code_reference')
+                    ->label('Réf. Mercuriales')
+                    ->searchable()
+                    ->placeholder('N/A')
+                    ->badge()
+                    ->color('success')
+                    ->toggleable()
+                    ->limit(20)
+                    ->default('N/A'),
 
                 Tables\Columns\TextColumn::make('quantite')
                     ->label('Qté')
@@ -222,7 +281,6 @@ class LignesRelationManager extends RelationManager
                     ->label('Ajouter une ligne')
                     ->visible(fn() => $this->getOwnerRecord()->statut === 'brouillon')
                     ->mutateFormDataUsing(function (array $data): array {
-                        // Auto-incrémenter le numéro de ligne
                         $dernierNumero = $this->getOwnerRecord()
                             ->lignes()
                             ->max('numero_ligne') ?? 0;
