@@ -224,151 +224,151 @@ class DecisionAdministrativeResource extends Resource
                             })
                             ->columnSpanFull(),
 
-                        Forms\Components\Select::make('personnel_id')
-                            ->label('Personnel concerné')
-                            ->options(function () {
-                                return \App\Models\Personnel::query()
-                                    ->where('actif', true)
-                                    ->orderBy('nom')
-                                    ->orderBy('prenoms')
-                                    ->get()
-                                    ->mapWithKeys(function ($personnel) {
-                                        $label = "{$personnel->matricule} - {$personnel->nom} {$personnel->prenoms}";
-                                        if ($personnel->fonction) {
-                                            $label .= " ({$personnel->fonction})";
+                            Forms\Components\Select::make('personnel_id')
+                                ->label('Personnel concerné')
+                                ->options(function () {
+                                    return \App\Models\Personnel::query()
+                                        ->where('actif', true)
+                                        ->orderBy('nom')
+                                        ->orderBy('prenoms')
+                                        ->get()
+                                        ->mapWithKeys(function ($personnel) {
+                                            $label = "{$personnel->matricule} - {$personnel->nom} {$personnel->prenoms}";
+                                            if ($personnel->fonction) {
+                                                $label .= " ({$personnel->fonction})";
+                                            }
+                                            return [$personnel->id => $label];
+                                        });
+                                })
+                                ->searchable()
+                                ->preload()
+                                ->required(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
+                                ->visible(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
+                                ->live()
+                                ->helperText(function ($get) {
+                                    $personnelId = $get('personnel_id');
+                                    if ($personnelId) {
+                                        $personnel = \App\Models\Personnel::find($personnelId);
+                                        if ($personnel) {
+                                            $info = "📋 Matricule: {$personnel->matricule}";
+                                            if ($personnel->fonction) {
+                                                $info .= " | Fonction: {$personnel->fonction}";
+                                            }
+                                            if ($personnel->service) {
+                                                $info .= " | Service: {$personnel->service->nom}";
+                                            }
+                                            return $info;
                                         }
-                                        return [$personnel->id => $label];
-                                    });
-                            })
-                            ->searchable()
-                            ->preload()
-                            ->required(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
-                            ->visible(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
-                            ->live()
-                            ->helperText(function ($get) {
-                                $personnelId = $get('personnel_id');
-                                if ($personnelId) {
-                                    $personnel = \App\Models\Personnel::find($personnelId);
-                                    if ($personnel) {
-                                        $info = "📋 Matricule: {$personnel->matricule}";
-                                        if ($personnel->fonction) {
-                                            $info .= " | Fonction: {$personnel->fonction}";
-                                        }
-                                        if ($personnel->service) {
-                                            $info .= " | Service: {$personnel->service->nom}";
-                                        }
-                                        return $info;
                                     }
-                                }
-                                return 'Sélectionnez un membre du personnel';
-                            })
-                            ->createOptionForm([
-                                Forms\Components\Section::make('Identité')
-                                    ->schema([
-                                        Forms\Components\Grid::make(3)
-                                            ->schema([
-                                                Forms\Components\TextInput::make('matricule')
-                                                    ->label('Matricule')
-                                                    ->default(fn() => \App\Models\Personnel::genererMatricule())
-                                                    ->disabled()
-                                                    ->dehydrated()
-                                                    ->required()
-                                                    ->maxLength(50),
+                                    return 'Sélectionnez un membre du personnel';
+                                })
+                                ->createOptionForm([
+                                    Forms\Components\Section::make('Identité')
+                                        ->schema([
+                                            Forms\Components\Grid::make(3)
+                                                ->schema([
+                                                    Forms\Components\TextInput::make('matricule')
+                                                        ->label('Matricule')
+                                                        ->default(fn() => \App\Models\Personnel::genererMatricule())
+                                                        ->disabled()
+                                                        ->dehydrated()
+                                                        ->required()
+                                                        ->maxLength(50),
 
-                                                Forms\Components\Select::make('civilite')
-                                                    ->label('Civilité')
-                                                    ->options([
-                                                        'M.' => 'M.',
-                                                        'Mme' => 'Mme',
-                                                        'Mlle' => 'Mlle',
-                                                    ]),
+                                                    Forms\Components\Select::make('civilite')
+                                                        ->label('Civilité')
+                                                        ->options([
+                                                            'M.' => 'M.',
+                                                            'Mme' => 'Mme',
+                                                            'Mlle' => 'Mlle',
+                                                        ]),
 
-                                                Forms\Components\Select::make('sexe')
-                                                    ->label('Sexe')
-                                                    ->options([
-                                                        'M' => 'Masculin',
-                                                        'F' => 'Féminin',
-                                                    ])
-                                                    ->required(),
-                                            ]),
+                                                    Forms\Components\Select::make('sexe')
+                                                        ->label('Sexe')
+                                                        ->options([
+                                                            'M' => 'Masculin',
+                                                            'F' => 'Féminin',
+                                                        ])
+                                                        ->required(),
+                                                ]),
 
-                                        Forms\Components\Grid::make(2)
-                                            ->schema([
-                                                Forms\Components\TextInput::make('nom')
-                                                    ->label('Nom')
-                                                    ->required()
-                                                    ->maxLength(255),
+                                            Forms\Components\Grid::make(2)
+                                                ->schema([
+                                                    Forms\Components\TextInput::make('nom')
+                                                        ->label('Nom')
+                                                        ->required()
+                                                        ->maxLength(255),
 
-                                                Forms\Components\TextInput::make('prenoms')
-                                                    ->label('Prénoms')
-                                                    ->required()
-                                                    ->maxLength(255),
-                                            ]),
-                                    ]),
+                                                    Forms\Components\TextInput::make('prenoms')
+                                                        ->label('Prénoms')
+                                                        ->required()
+                                                        ->maxLength(255),
+                                                ]),
+                                        ]),
 
-                                Forms\Components\Section::make('Affectation')
-                                    ->schema([
-                                        Forms\Components\Grid::make(2)
-                                            ->schema([
-                                                Forms\Components\Select::make('service_id')
-                                                    ->label('Service')
-                                                    ->options(\App\Models\Service::where('actif', true)->pluck('nom', 'id'))
-                                                    ->searchable()
-                                                    ->preload(),
+                                    Forms\Components\Section::make('Affectation')
+                                        ->schema([
+                                            Forms\Components\Grid::make(2)
+                                                ->schema([
+                                                    Forms\Components\Select::make('service_id')
+                                                        ->label('Service')
+                                                        ->options(\App\Models\Service::where('actif', true)->pluck('nom', 'id'))
+                                                        ->searchable()
+                                                        ->preload(),
 
-                                                Forms\Components\TextInput::make('fonction')
-                                                    ->label('Fonction')
-                                                    ->maxLength(255)
-                                                    ->required(),
-                                            ]),
+                                                    Forms\Components\TextInput::make('fonction')
+                                                        ->label('Fonction')
+                                                        ->maxLength(255)
+                                                        ->required(),
+                                                ]),
 
-                                        Forms\Components\Grid::make(3)
-                                            ->schema([
-                                                Forms\Components\TextInput::make('grade')
-                                                    ->label('Grade')
-                                                    ->maxLength(255),
+                                            Forms\Components\Grid::make(3)
+                                                ->schema([
+                                                    Forms\Components\TextInput::make('grade')
+                                                        ->label('Grade')
+                                                        ->maxLength(255),
 
-                                                Forms\Components\TextInput::make('categorie')
-                                                    ->label('Catégorie')
-                                                    ->maxLength(255)
-                                                    ->placeholder('A, B, C, D'),
+                                                    Forms\Components\TextInput::make('categorie')
+                                                        ->label('Catégorie')
+                                                        ->maxLength(255)
+                                                        ->placeholder('A, B, C, D'),
 
-                                                Forms\Components\TextInput::make('echelon')
-                                                    ->label('Échelon')
-                                                    ->maxLength(255),
-                                            ]),
-                                    ]),
+                                                    Forms\Components\TextInput::make('echelon')
+                                                        ->label('Échelon')
+                                                        ->maxLength(255),
+                                                ]),
+                                        ]),
 
-                                Forms\Components\Section::make('Contact')
-                                    ->schema([
-                                        Forms\Components\Grid::make(2)
-                                            ->schema([
-                                                Forms\Components\TextInput::make('telephone')
-                                                    ->label('Téléphone')
-                                                    ->tel()
-                                                    ->maxLength(255),
+                                    Forms\Components\Section::make('Contact')
+                                        ->schema([
+                                            Forms\Components\Grid::make(2)
+                                                ->schema([
+                                                    Forms\Components\TextInput::make('telephone')
+                                                        ->label('Téléphone')
+                                                        ->tel()
+                                                        ->maxLength(255),
 
-                                                Forms\Components\TextInput::make('email')
-                                                    ->label('Email')
-                                                    ->email()
-                                                    ->maxLength(255),
-                                            ]),
-                                    ])
-                                    ->collapsible()
-                                    ->collapsed(),
-                            ])
-                            ->createOptionUsing(function (array $data) {
-                                $personnel = \App\Models\Personnel::create($data);
+                                                    Forms\Components\TextInput::make('email')
+                                                        ->label('Email')
+                                                        ->email()
+                                                        ->maxLength(255),
+                                                ]),
+                                        ])
+                                        ->collapsible()
+                                        ->collapsed(),
+                                ])
+                                ->createOptionUsing(function (array $data) {
+                                    $personnel = \App\Models\Personnel::create($data);
 
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Personnel créé')
-                                    ->success()
-                                    ->body("Le personnel {$personnel->nom_complet} a été ajouté.")
-                                    ->send();
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Personnel créé')
+                                        ->success()
+                                        ->body("Le personnel {$personnel->nom_complet} a été ajouté.")
+                                        ->send();
 
-                                return $personnel->id;
-                            })
-                            ->columnSpanFull(),
+                                    return $personnel->id;
+                                })
+                                ->columnSpanFull(),
 
                         Forms\Components\Select::make('fournisseur_id')
                             ->label('Fournisseur concerné')

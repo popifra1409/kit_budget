@@ -675,52 +675,37 @@ class DecisionAdministrative extends Model
      */
     public function desengagerBudget(): void
     {
-        if (!$this->peutEtreDesengagee()) {
-            throw new \Exception("Cette décision administrative ne peut pas être désengagée.");
+        if (!$this->engagee) {
+            return;
         }
 
+        \DB::beginTransaction();
         try {
-            \DB::beginTransaction();
+            // Récupérer l'engagement
+            $engagement = $this->engagement;
 
-            // 1. Libérer les crédits budgétaires
-            if ($this->engagement_id && $this->engagement) {
-                $this->libererCreditsEngagement();
-            }
+            if ($engagement) {
+                // Désengager les lignes budgétaires
+                foreach ($engagement->lignes as $ligne) {
+                    $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
+                        ->where('nomenclature_id', $ligne->nomenclature_id)
+                        ->firstOrFail();
 
-            // 2. Supprimer l'engagement
-            if ($this->engagement) {
-                $numeroEngagement = $this->engagement->numero;
-
-                if ($this->engagement->ordonnancesPaiement()->count() > 0) {
-                    throw new \Exception("Impossible de désengager : des ordonnances de paiement existent.");
+                    $ligneBudgetaire->annulerEngagement($ligne->montant);
                 }
 
-                $this->engagement->delete();
-
-                \Log::info("Engagement {$numeroEngagement} supprimé", [
-                    'da' => $this->numero,
-                ]);
+                // Annuler l'engagement
+                $engagement->annuler();
             }
 
-            // 3. Réinitialiser les champs
-            $this->engagement_id = null;
+            // Marquer la décision comme non engagée
             $this->engagee = false;
-            $this->date_engagement = null;
             $this->montant_engage = 0;
-            $this->statut = 'validee';
-
             $this->save();
 
             \DB::commit();
-
-            \Log::info("DA {$this->numero} désengagée avec succès", [
-                'user' => auth()->id(),
-            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
-
-            \Log::error("Erreur désengagement DA {$this->numero} : " . $e->getMessage());
-
             throw $e;
         }
     }
@@ -728,172 +713,14 @@ class DecisionAdministrative extends Model
     /**
      * Annuler la décision
      */
-    public function annuler(?string $motif = null): void
+    public function annuler(): void
     {
-        try {
-            \DB::beginTransaction();
-
-            // Si la DA est engagée, désengager d'abord
-            if ($this->engagee && $this->engagement_id) {
-                \Log::info("DA {$this->numero} engagée, désengagement automatique avant annulation");
-
-                $this->desengagerBudget();
-                $this->refresh();
-            }
-
-            // Annuler la DA
-            $this->statut = 'annulee';
-
-            if ($motif) {
-                $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
-                    "--- ANNULÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
-                    "Motif : " . $motif . "\n" .
-                    "Par : " . auth()->user()->name;
-            }
-
-            $this->save();
-
-            \DB::commit();
-
-            \Log::info("DA {$this->numero} annulée avec succès", [
-                'user' => auth()->id(),
-                'motif' => $motif,
-            ]);
-        } catch (\Exception $e) {
-            \DB::rollBack();
-
-            \Log::error("Erreur annulation DA {$this->numero} : " . $e->getMessage());
-
-            throw $e;
-        }
-    }
-
-    /**
-     * ✅ Vérifier si la DA peut être récupérée
-     */
-    public function peutEtreRecuperee(): bool
-    {
-        // Doit être annulée
-        if ($this->statut !== 'annulee') {
-            return false;
+        if ($this->engagee) {
+            $this->desengagerBudget();
         }
 
-        // Si l'engagement existe et n'est pas annulé, on ne peut pas récupérer
-        if ($this->engagement && $this->engagement->statut !== 'annule') {
-            return false;
-        }
-
-        return true;
-    }
-
-    public function peutEtreDesengagee(): bool
-    {
-        if (!$this->engagee || !$this->engagement_id) {
-            return false;
-        }
-
-        if ($this->engagement) {
-            if ($this->engagement->ordonnancesPaiement()->count() > 0) {
-                return false;
-            }
-        }
-
-        if ($this->statut === 'annulee') {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * ✅ Récupérer une DA annulée pour la réutiliser
-     * Passe le statut de "annulée" à "brouillon"
-     */
-    public function recuperer(?string $motif = null): void
-    {
-        if (!$this->peutEtreRecuperee()) {
-            throw new \Exception("Seule une DA annulée peut être récupérée.");
-        }
-
-        try {
-            \DB::beginTransaction();
-
-            // Si un engagement existe encore (engagement orphelin)
-            if ($this->engagement_id) {
-                \Log::warning("DA {$this->numero} : Engagement {$this->engagement_id} existe encore, nettoyage...");
-
-                if ($this->engagement) {
-                    if ($this->engagement->ordonnancesPaiement()->count() > 0) {
-                        throw new \Exception("Impossible de récupérer : des ordonnances de paiement existent sur l'engagement.");
-                    }
-
-                    $this->libererCreditsEngagement();
-                    $this->engagement->delete();
-
-                    \Log::info("Engagement nettoyé lors de la récupération de la DA {$this->numero}");
-                }
-            }
-
-            // Réinitialiser tous les champs
-            $this->engagement_id = null;
-            $this->engagee = false;
-            $this->date_engagement = null;
-            $this->montant_engage = 0;
-            $this->validee_par = null;
-            $this->date_validation = null;
-            $this->statut = 'brouillon';
-
-            $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
-                "--- RÉCUPÉRÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
-                "Motif : " . ($motif ?? 'Document récupéré pour modification') . "\n" .
-                "Par : " . auth()->user()->name;
-
-            $this->save();
-
-            \DB::commit();
-
-            \Log::info("DA {$this->numero} récupérée et remise en brouillon", [
-                'user' => auth()->id(),
-                'motif' => $motif,
-            ]);
-        } catch (\Exception $e) {
-            \DB::rollBack();
-
-            \Log::error("Erreur récupération DA {$this->numero} : " . $e->getMessage());
-
-            throw $e;
-        }
-    }
-
-    /**
-     * ✅ Libérer les crédits d'un engagement annulé
-     */
-    protected function libererCreditsEngagement(): void
-    {
-        if (!$this->engagement) {
-            return;
-        }
-
-        $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-            ->where('nomenclature_id', $this->engagement->nomenclature_principale_id)
-            ->first();
-
-        if ($ligneBudgetaire && $this->montant_brut > 0) {
-            $ligneBudgetaire->engage -= $this->montant_brut;
-
-            if ($ligneBudgetaire->engage < 0) {
-                $ligneBudgetaire->engage = 0;
-            }
-
-            $ligneBudgetaire->save();
-
-            \Log::info("Crédit libéré lors du désengagement", [
-                'da' => $this->numero,
-                'nomenclature' => $ligneBudgetaire->nomenclature->code,
-                'montant_libere' => $this->montant_net,
-                'nouveau_engage' => $ligneBudgetaire->engage,
-            ]);
-        }
+        $this->statut = 'annulee';
+        $this->save();
     }
 
     /**

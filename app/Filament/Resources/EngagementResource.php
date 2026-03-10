@@ -396,7 +396,47 @@ class EngagementResource extends Resource
                 Tables\Columns\TextColumn::make('beneficiaire')
                     ->label('Bénéficiaire')
                     ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini')
-                    ->searchable()
+                    ->searchable(query: function ($query, string $search) {
+                        return $query->where(function ($q) use ($search) {
+                            $q->orWhereHas('beneficiaireFournisseur', function ($subQ) use ($search) {
+                                $subQ->where('raison_sociale', 'like', "%{$search}%")
+                                    ->orWhere('code', 'like', "%{$search}%");
+                            })
+                                ->orWhereHas('beneficiairePersonnel', function ($subQ) use ($search) {
+                                    $subQ->where('nom', 'like', "%{$search}%")
+                                        ->orWhere('prenoms', 'like', "%{$search}%")
+                                        ->orWhere('matricule', 'like', "%{$search}%");
+                                });
+                        });
+                    })
+                    ->limit(30),
+
+                Tables\Columns\TextColumn::make('beneficiaire')
+                    ->label('Bénéficiaire')
+                    ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini')
+                    ->searchable(query: function ($query, $search) {
+                        return $query->where(function ($q) use ($search) {
+                            // Recherche fournisseurs (polymorphique)
+                            $q->whereHasMorph(
+                                'beneficiaire',
+                                [\App\Models\Fournisseur::class],
+                                function ($subQ) use ($search) {
+                                    $subQ->where('raison_sociale', 'like', "%{$search}%")
+                                        ->orWhere('code', 'like', "%{$search}%");
+                                }
+                            )
+                                // Recherche personnels (polymorphique)
+                                ->orWhereHasMorph(
+                                    'beneficiaire',
+                                    [\App\Models\Personnel::class],
+                                    function ($subQ) use ($search) {
+                                        $subQ->where('nom', 'like', "%{$search}%")
+                                            ->orWhere('prenoms', 'like', "%{$search}%")
+                                            ->orWhere('matricule', 'like', "%{$search}%");
+                                    }
+                                );
+                        });
+                    })
                     ->limit(30),
 
                 Tables\Columns\TextColumn::make('date_engagement')
@@ -502,7 +542,7 @@ class EngagementResource extends Resource
                     ])
                     ->query(function ($query, array $data) {
                         // Utiliser 'today' par défaut si aucune période n'est sélectionnée
-                        $periode = $data['periode'] ?? 'today'; 
+                        $periode = $data['periode'] ?? 'today';
 
                         return match ($periode) {
                             'today' => $query->whereDate('date_engagement', today()),
@@ -529,12 +569,12 @@ class EngagementResource extends Resource
                             ]),
                             'this_year' => $query->whereYear('date_engagement', now()->year),
                             'last_year' => $query->whereYear('date_engagement', now()->subYear()->year),
-                            default => $query->whereDate('date_engagement', today()), 
+                            default => $query->whereDate('date_engagement', today()),
                         };
                     })
                     ->indicateUsing(function (array $data): ?string {
                         if (!($data['periode'] ?? null)) {
-                            return 'Période : Aujourd\'hui'; 
+                            return 'Période : Aujourd\'hui';
                         }
 
                         $labels = [
