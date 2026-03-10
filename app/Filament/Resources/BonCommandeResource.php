@@ -105,6 +105,16 @@ class BonCommandeResource extends Resource
             );
     }
 
+    public static function canEngager($record): bool
+    {
+        return auth()->user()?->can('engager_bon_commande') ?? false;
+    }
+
+    public static function canDesengager($record): bool
+    {
+        return auth()->user()?->can('desengager_bon_commande') ?? false;
+    }
+
     /**
      * Action spéciale : Valider
      */
@@ -119,6 +129,11 @@ class BonCommandeResource extends Resource
     public static function canAnnuler($record): bool
     {
         return auth()->user()?->can('annuler_bon_commande') ?? false;
+    }
+
+    public static function canRecuperer($record): bool
+    {
+        return auth()->user()?->can('recuperer_bon_commande') ?? false;
     }
 
     public static function form(Form $form): Form

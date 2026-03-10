@@ -121,6 +121,17 @@ class DecisionAdministrativeResource extends Resource
             && auth()->user()->can('annuler_decision_administrative');
     }
 
+    public static function canRecuperer($record): bool
+    {
+        return auth()->user()?->can('recuperer_decision_administrative') ?? false;
+    }
+
+    public static function canEngager($record): bool
+    {
+        return auth()->check() && auth()->user()?->can('engager_decision_administrative') ?? false;
+    }
+
+
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
         $query = parent::getEloquentQuery()->with('exercice');

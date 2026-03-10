@@ -162,13 +162,13 @@ class ViewDecisionAdministrative extends ViewRecord
                     try {
                         $record->annuler();
                         Notification::make()
-                            ->title('⚠️ Décision annulée') // ✅ AJOUT : Emoji
+                            ->title('⚠️ Décision annulée')
                             ->success()
                             ->body('La décision a été annulée avec succès.')
                             ->send();
                     } catch (\Exception $e) {
                         Notification::make()
-                            ->title('❌ Impossible d\'annuler') // ✅ AJOUT : Emoji
+                            ->title('❌ Impossible d\'annuler')
                             ->danger()
                             ->body($e->getMessage())
                             ->persistent()
@@ -183,7 +183,66 @@ class ViewDecisionAdministrative extends ViewRecord
                     }
                 }),
 
-            // ✅ NOUVEAU : Supprimer (si brouillon)
+            Actions\Action::make('recuperer')
+                ->label('Récupérer')
+                ->icon('heroicon-o-arrow-path')
+                ->color('success')
+                ->visible(
+                    fn($record) =>
+                    $record->statut === 'annulee'
+                        && $record->peutEtreRecuperee()
+                        && static::getResource()::canRecuperer($record)
+                )
+                ->requiresConfirmation()
+                ->modalHeading('Récupérer la décision administrative')
+                ->modalDescription(function ($record) {
+                    return "⚠️ Confirmer la récupération de la DA n° {$record->numero} ?\n\n" .
+                        "Cette action va :\n" .
+                        "• Libérer les crédits budgétaires (si engagée)\n" .
+                        "• Réinitialiser la validation et l'engagement\n" .
+                        "• Remettre la DA en statut 'Brouillon'\n" .
+                        "• Permettre la modification de la DA\n\n" .
+                        "Vous pourrez ensuite :\n" .
+                        "• Modifier le bénéficiaire\n" .
+                        "• Modifier les montants\n" .
+                        "• Valider à nouveau\n" .
+                        "• Engager à nouveau";
+                })
+                ->form([
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif de récupération')
+                        ->required()
+                        ->rows(3)
+                        ->placeholder('Ex: Changement de bénéficiaire, correction des montants...')
+                        ->helperText('Indiquez pourquoi vous récupérez ce document'),
+                ])
+                ->modalSubmitActionLabel('🔄 Confirmer la récupération')
+                ->modalCancelActionLabel('Annuler')
+                ->action(function ($record, array $data) {
+                    try {
+                        $record->recuperer($data['motif']);
+                        $record->refresh();
+
+                        Notification::make()
+                            ->title('✅ DA récupérée avec succès')
+                            ->success()
+                            ->body("La DA {$record->numero} a été récupérée et remise en brouillon. Vous pouvez maintenant la modifier.")
+                            ->duration(5000)
+                            ->send();
+
+                        // Rediriger vers la page d'édition
+                        // return redirect()->route('filament.admin.resources.decisions-administratives.edit', ['record' => $record->id]);
+                        return redirect(static::getResource()::getUrl('edit', ['record' => $record->id]));
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Impossible de récupérer la DA')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
             Actions\DeleteAction::make()
                 ->visible(fn($record) => $record->statut === 'brouillon'
                     && DecisionAdministrativeResource::canDelete($record)),

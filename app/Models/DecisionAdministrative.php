@@ -724,6 +724,111 @@ class DecisionAdministrative extends Model
     }
 
     /**
+     * ✅ Vérifier si la DA peut être récupérée
+     */
+    public function peutEtreRecuperee(): bool
+    {
+        // Doit être annulée
+        if ($this->statut !== 'annulee') {
+            return false;
+        }
+
+        // Si l'engagement existe et n'est pas annulé, on ne peut pas récupérer
+        if ($this->engagement && $this->engagement->statut !== 'annule') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * ✅ Récupérer une DA annulée pour la réutiliser
+     * Passe le statut de "annulée" à "brouillon"
+     */
+    public function recuperer(?string $motif = null): void
+    {
+        // Vérifications
+        if (!$this->peutEtreRecuperee()) {
+            throw new \Exception("Cette décision administrative ne peut pas être récupérée.");
+        }
+
+        try {
+            \DB::beginTransaction();
+
+            // ✅ Libérer les crédits si un engagement existe (même annulé)
+            if ($this->engagement_id && $this->engagee) {
+                $this->libererCreditsEngagement();
+            }
+
+            // ✅ Réinitialiser les champs d'engagement
+            $this->engagement_id = null;
+            $this->engagee = false;
+            $this->date_engagement = null;
+            $this->montant_engage = 0;
+
+            // ✅ Réinitialiser la validation
+            $this->validee_par = null;
+            $this->date_validation = null;
+
+            // ✅ Passer en statut brouillon (modifiable)
+            $this->statut = 'brouillon';
+
+            // ✅ Enregistrer le motif de récupération
+            $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
+                "--- RÉCUPÉRÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                "Motif : " . ($motif ?? 'Document récupéré pour modification') . "\n" .
+                "Par : " . auth()->user()->name;
+
+            $this->save();
+
+            \DB::commit();
+
+            \Log::info("DA {$this->numero} récupérée et remise en brouillon", [
+                'user' => auth()->id(),
+                'motif' => $motif,
+            ]);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+
+            \Log::error("Erreur récupération DA {$this->numero} : " . $e->getMessage());
+
+            throw $e;
+        }
+    }
+
+    /**
+     * ✅ Libérer les crédits d'un engagement annulé
+     */
+    protected function libererCreditsEngagement(): void
+    {
+        if (!$this->engagement) {
+            return;
+        }
+
+        $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+            ->where('nomenclature_id', $this->engagement->nomenclature_principale_id)
+            ->first();
+
+        if ($ligneBudgetaire && $this->montant_net > 0) {
+            // Libérer le crédit
+            $ligneBudgetaire->engage -= $this->montant_net;
+
+            // Sécurité : ne pas avoir de montant négatif
+            if ($ligneBudgetaire->engage < 0) {
+                $ligneBudgetaire->engage = 0;
+            }
+
+            $ligneBudgetaire->save();
+
+            \Log::info("Crédit libéré sur DA {$this->numero}", [
+                'nomenclature' => $ligneBudgetaire->nomenclature->code,
+                'montant_libere' => $this->montant_net,
+                'nouveau_engage' => $ligneBudgetaire->engage,
+            ]);
+        }
+    }
+
+    /**
      * Vérifier si la décision est modifiable
      */
     public function estModifiable(): bool

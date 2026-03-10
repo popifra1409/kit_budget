@@ -125,7 +125,7 @@ class BonCommande extends Model
                 ];
             }
 
-            $lignesParNomenclature[$nomenclatureId]['montant_a_engager'] += $ligne->net_a_payer;
+            $lignesParNomenclature[$nomenclatureId]['montant_a_engager'] += $ligne->montant_ttc;
             $lignesParNomenclature[$nomenclatureId]['lignes'][] = $ligne->designation;
         }
 
@@ -364,6 +364,128 @@ class BonCommande extends Model
         return false;
     }
 
+    /**
+     * ✅ Vérifier si le BC peut être récupéré
+     */
+    public function peutEtreRecupere(): bool
+    {
+        // Doit être annulé
+        if ($this->statut !== 'annule') {
+            return false;
+        }
+
+        // Si l'engagement existe et n'est pas annulé, on ne peut pas récupérer
+        if ($this->engagement && $this->engagement->statut !== 'annule') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * ✅ Récupérer un BC annulé pour le réutiliser
+     * Passe le statut de "annulé" à "brouillon"
+     */
+    public function recuperer(?string $motif = null): void
+    {
+        // Vérifications
+        if (!$this->peutEtreRecupere()) {
+            throw new \Exception("Ce bon de commande ne peut pas être récupéré.");
+        }
+
+        try {
+            \DB::beginTransaction();
+
+            // ✅ Si un engagement existe encore (engagement orphelin)
+            if ($this->engagement_id) {
+                \Log::warning("BC {$this->numero} : Engagement {$this->engagement_id} existe encore, nettoyage...");
+
+                // Si l'engagement existe dans la base
+                if ($this->engagement) {
+                    // Vérifier qu'il n'y a pas d'OP
+                    if ($this->engagement->ordonnancesPaiement()->count() > 0) {
+                        throw new \Exception("Impossible de récupérer : des ordonnances de paiement existent sur l'engagement.");
+                    }
+
+                    // Libérer les crédits
+                    $this->libererCreditsEngagement();
+
+                    // Supprimer l'engagement orphelin
+                    $this->engagement->delete();
+
+                    \Log::info("Engagement nettoyé lors de la récupération du BC {$this->numero}");
+                }
+            }
+
+            // Réinitialiser tous les champs d'engagement
+            $this->engagement_id = null;
+            $this->engage = false;
+            $this->date_engagement = null;
+            $this->montant_engage = 0;
+
+            // Réinitialiser la validation
+            $this->valide_par = null;
+            $this->date_validation = null;
+
+            // Passer en statut brouillon (modifiable)
+            $this->statut = 'brouillon';
+
+            // Enregistrer le motif de récupération
+            $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
+                "--- RÉCUPÉRÉ LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                "Motif : " . ($motif ?? 'Document récupéré pour modification') . "\n" .
+                "Par : " . auth()->user()->name;
+
+            $this->save();
+
+            \DB::commit();
+
+            \Log::info("BC {$this->numero} récupéré et remis en brouillon", [
+                'user' => auth()->id(),
+                'motif' => $motif,
+            ]);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+
+            \Log::error("Erreur récupération BC {$this->numero} : " . $e->getMessage());
+
+            throw $e;
+        }
+    }
+
+    /**
+     * ✅ Libérer les crédits d'un engagement annulé
+     */
+    protected function libererCreditsEngagement(): void
+    {
+        $lignesBudgetaires = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+            ->whereIn('nomenclature_id', $this->lignes->pluck('nomenclature_id'))
+            ->get();
+
+        foreach ($lignesBudgetaires as $ligneBudgetaire) {
+            // Calculer le montant engagé pour cette nomenclature
+            $montantEngagePourNomenclature = $this->lignes()
+                ->where('nomenclature_id', $ligneBudgetaire->nomenclature_id)
+                ->sum('montant_ht');
+
+            if ($montantEngagePourNomenclature > 0) {
+                // Libérer le crédit
+                $ligneBudgetaire->engage -= $montantEngagePourNomenclature;
+
+                // Sécurité : ne pas avoir de montant négatif
+                if ($ligneBudgetaire->engage < 0) {
+                    $ligneBudgetaire->engage = 0;
+                }
+
+                $ligneBudgetaire->save();
+
+                \Log::info("Crédit libéré sur {$ligneBudgetaire->nomenclature->code}", [
+                    'montant_libere' => $montantEngagePourNomenclature,
+                    'nouveau_engage' => $ligneBudgetaire->engage,
+                ]);
+            }
+        }
+    }
 
     /**
      * Vérifier si le document est transmis à quelqu'un d'autre
@@ -832,8 +954,12 @@ class BonCommande extends Model
                 }
             }
 
-            // ✅ Lier l'engagement au BC
+            // ✅ MODIFICATION ICI : Lier l'engagement au BC + mettre à jour les champs
             $this->engagement_id = $engagement->id;
+            $this->engage = true;
+            $this->date_engagement = now();
+            $this->montant_engage = $this->montant_ttc;
+            $this->statut = 'engage';
             $this->save();
 
             \DB::commit();
@@ -942,30 +1068,73 @@ class BonCommande extends Model
             && !$this->engagement_id;
     }
 
+    public function peutEtreDesengage(): bool
+    {
+        if (!$this->engage || !$this->engagement_id) {
+            return false;
+        }
+
+        // ✅ Vérifier via l'engagement
+        if ($this->engagement && $this->engagement->ordonnancesPaiement()->count() > 0) {
+            return false;
+        }
+
+        if (in_array($this->statut, ['annule', 'livre'])) {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * Désengager le budget
      */
     public function desengagerBudget(): void
     {
-        if (!$this->engage) {
-            return;
+        if (!$this->peutEtreDesengage()) {
+            throw new \Exception("Ce bon de commande ne peut pas être désengagé.");
         }
 
-        \DB::beginTransaction();
         try {
-            $engagement = $this->engagement;
+            \DB::beginTransaction();
 
-            if ($engagement) {
-                $engagement->annuler();
+            // 1. Libérer les crédits
+            $this->libererCreditsEngagement();
+
+            // 2. Supprimer l'engagement (pas juste l'annuler)
+            if ($this->engagement) {
+                $numeroEngagement = $this->engagement->numero;
+
+                // Supprimer l'engagement
+                $this->engagement->delete();
+
+                // Log
+                \Log::info("Engagement {$numeroEngagement} supprimé", [
+                    'bc' => $this->numero,
+                ]);
             }
 
+            // 3. Réinitialiser les champs
+            $this->engagement_id = null;
             $this->engage = false;
+            $this->date_engagement = null;
             $this->montant_engage = 0;
+            $this->statut = 'valide';  // Retour à validé (pas brouillon)
+
             $this->save();
 
             \DB::commit();
+
+            // Log de succès
+            \Log::info("BC {$this->numero} désengagé avec succès", [
+                'user' => auth()->id(),
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
+
+            // Log d'erreur
+            \Log::error("Erreur désengagement BC {$this->numero} : " . $e->getMessage());
+
             throw $e;
         }
     }
@@ -973,14 +1142,48 @@ class BonCommande extends Model
     /**
      * Annuler le BC
      */
-    public function annuler(): void
+    public function annuler(?string $motif = null): void
     {
-        if ($this->engage) {
-            $this->desengagerBudget();
-        }
+        try {
+            \DB::beginTransaction();
 
-        $this->statut = 'annule';
-        $this->save();
+            // ✅ Si le BC est engagé, désengager d'abord
+            if ($this->engage && $this->engagement_id) {
+                \Log::info("BC {$this->numero} engagé, désengagement automatique avant annulation");
+
+                // Désengager (libère crédits + supprime engagement)
+                $this->desengagerBudget();
+
+                // Recharger le BC pour avoir les valeurs à jour
+                $this->refresh();
+            }
+
+            // Annuler le BC
+            $this->statut = 'annule';
+
+            // Enregistrer le motif
+            if ($motif) {
+                $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
+                    "--- ANNULÉ LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                    "Motif : " . $motif . "\n" .
+                    "Par : " . auth()->user()->name;
+            }
+
+            $this->save();
+
+            \DB::commit();
+
+            \Log::info("BC {$this->numero} annulé avec succès", [
+                'user' => auth()->id(),
+                'motif' => $motif,
+            ]);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+
+            \Log::error("Erreur annulation BC {$this->numero} : " . $e->getMessage());
+
+            throw $e;
+        }
     }
 
     /**

@@ -94,6 +94,9 @@ class RolePermissionSeeder extends Seeder
             'valider_bon_commande',
             'annuler_bon_commande',
             'force_update_bon_commande',
+            'engager_bon_commande',
+            'desengager_bon_commande',
+            'recuperer_bon_commande',
 
             // Engagement
             'valider_engagement',
@@ -103,6 +106,9 @@ class RolePermissionSeeder extends Seeder
             'valider_decision_administrative',
             'annuler_decision_administrative',
             'force_update_decision_administrative',
+            'engager_decision_administrative',
+            'desengager_decision_administrative',
+            'recuperer_decision_administrative',
 
             // ========================================
             // ORDONNANCE DE PAIEMENT - COMPLET

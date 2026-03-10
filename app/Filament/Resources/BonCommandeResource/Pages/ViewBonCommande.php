@@ -4,6 +4,7 @@ namespace App\Filament\Resources\BonCommandeResource\Pages;
 
 use App\Filament\Resources\BonCommandeResource;
 use Filament\Actions;
+use Filament\Forms;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -14,6 +15,16 @@ class ViewBonCommande extends ViewRecord
     protected static string $resource = BonCommandeResource::class;
 
     protected ?array $verificationsCache = null;
+
+    // ✅ AJOUT : Rafraîchir les données après le montage
+    public function mount(int | string $record): void
+    {
+        parent::mount($record);
+
+        // ✅ Rafraîchir pour avoir les montants à jour
+        $this->record->refresh();
+        $this->record->load(['lignes', 'fournisseur', 'budget', 'engagement']);
+    }
 
     protected function getVerifications(): array
     {
@@ -43,27 +54,64 @@ class ViewBonCommande extends ViewRecord
         }
 
         return [
-            Actions\EditAction::make()
-                ->visible(false),
+            // ✅ Voir (toujours visible)
+            Actions\ViewAction::make()
+                ->label('Actualiser')
+                ->icon('heroicon-o-arrow-path')
+                ->color('gray')
+                ->action(function () {
+                    $this->record->refresh();
+                    $this->record->load(['lignes', 'fournisseur', 'budget', 'engagement']);
 
-            Actions\DeleteAction::make()
-                ->visible(fn() => static::getResource()::canDelete($this->record))
-                ->requiresConfirmation(),
-
-            Actions\Action::make('valider')
-                ->label('Valider')
-                ->icon('heroicon-o-check-circle')
-                ->color('warning')
-                ->visible(fn($record) => $record->statut === 'brouillon')
-                ->requiresConfirmation()
-                ->action(function ($record) {
-                    $record->valider(auth()->user());
                     Notification::make()
-                        ->title('BC validé')
+                        ->title('✅ Données actualisées')
                         ->success()
                         ->send();
                 }),
 
+            // ✅ Modifier (seulement si modifiable = pas engagé)
+            Actions\EditAction::make()
+                ->visible(
+                    fn() =>
+                    $this->record->estModifiable()
+                        && static::getResource()::canEdit($this->record)
+                ),
+
+
+            // ✅ Supprimer (si brouillon et droits)
+            Actions\DeleteAction::make()
+                ->visible(
+                    fn() =>
+                    $this->record->statut === 'brouillon'
+                        && static::getResource()::canDelete($this->record)
+                )
+                ->requiresConfirmation(),
+
+            // ✅ Valider (si brouillon ET permission de validation)
+            Actions\Action::make('valider')
+                ->label('Valider')
+                ->icon('heroicon-o-check-circle')
+                ->color('warning')
+                ->visible(
+                    fn($record) =>
+                    $record->statut === 'brouillon'
+                        && static::getResource()::canValider($record)
+                )
+                ->requiresConfirmation()
+                ->modalHeading('Valider le bon de commande')
+                ->modalDescription(fn($record) => "Valider le BC n° {$record->numero} ?")
+                ->action(function ($record) {
+                    $record->valider(auth()->user());
+                    $record->refresh();
+
+                    Notification::make()
+                        ->title('✅ BC validé')
+                        ->success()
+                        ->body("Le bon de commande {$record->numero} a été validé avec succès.")
+                        ->send();
+                }),
+
+            // ✅ Engager (si validé et non engagé ET permission)
             Actions\Action::make('engager')
                 ->label(function ($record) {
                     $verifications = $record->verifierDisponibiliteBudgetaire();
@@ -76,7 +124,12 @@ class ViewBonCommande extends ViewRecord
                     $verifications = $record->verifierDisponibiliteBudgetaire();
                     return $verifications['peut_engager'] ? 'success' : 'danger';
                 })
-                ->visible(fn($record) => $record->statut === 'valide' && !$record->engagement_id)
+                ->visible(
+                    fn($record) =>
+                    $record->statut === 'valide'
+                        && !$record->engagement_id
+                        && static::getResource()::canEngager($record)
+                )
                 ->tooltip(function ($record) {
                     $verifications = $record->verifierDisponibiliteBudgetaire();
                     if (!$verifications['peut_engager']) {
@@ -133,6 +186,7 @@ class ViewBonCommande extends ViewRecord
                         }
 
                         $engagement = $record->engagerBudget($verifications);
+                        $record->refresh();
 
                         Notification::make()
                             ->title('✅ Budget engagé avec succès')
@@ -150,13 +204,131 @@ class ViewBonCommande extends ViewRecord
                     }
                 }),
 
+            Actions\Action::make('desengager')
+                ->label('Désengager')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('warning')
+                ->visible(
+                    fn($record) =>
+                    $record->engage
+                        && $record->peutEtreDesengage()
+                        && static::getResource()::canDesengager($record)
+                )
+                ->requiresConfirmation()
+                ->modalHeading('Désengager le bon de commande')
+                ->modalDescription(function ($record) {
+                    return "⚠️ Confirmer le désengagement du BC n° {$record->numero} ?\n\n" .
+                        "Cette action va :\n" .
+                        "• Annuler l'engagement budgétaire\n" .
+                        "• Libérer les crédits budgétaires\n" .
+                        "• Remettre le BC en statut 'brouillon'\n" .
+                        "• Permettre à nouveau la modification du BC";
+                })
+                ->modalSubmitActionLabel('🔓 Confirmer le désengagement')
+                ->modalCancelActionLabel('Annuler')
+                ->action(function ($record) {
+                    try {
+                        $record->desengagerBudget();
+                        $record->refresh();
+
+                        Notification::make()
+                            ->title('✅ BC désengagé avec succès')
+                            ->success()
+                            ->body("Le BC {$record->numero} a été désengagé. Les crédits budgétaires ont été libérés. Vous pouvez maintenant le modifier.")
+                            ->duration(5000)
+                            ->send();
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Impossible de désengager')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
+            // ✅ Annuler (si permission)
             Actions\Action::make('annuler')
                 ->label('Annuler')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn($record) => ! in_array($record->statut, ['annule', 'livre']))
+                ->visible(
+                    fn($record) =>
+                    !in_array($record->statut, ['annule', 'livre'])
+                        && static::getResource()::canAnnuler($record)
+                )
                 ->requiresConfirmation()
-                ->action(fn($record) => $record->annuler()),
+                ->modalHeading('Annuler le bon de commande')
+                ->modalDescription('⚠️ Cette action annulera le bon de commande.')
+                ->action(function ($record) {
+                    $record->annuler();
+                    $record->refresh();
+
+                    Notification::make()
+                        ->title('⚠️ BC annulé')
+                        ->warning()
+                        ->send();
+                }),
+
+            Actions\Action::make('recuperer')
+                ->label('Récupérer')
+                ->icon('heroicon-o-arrow-path')
+                ->color('success')
+                ->visible(
+                    fn($record) =>
+                    $record->statut === 'annule'
+                        && $record->peutEtreRecupere()
+                        && static::getResource()::canRecuperer($record)
+                )
+                ->requiresConfirmation()
+                ->modalHeading('Récupérer le bon de commande')
+                ->modalDescription(function ($record) {
+                    return "⚠️ Confirmer la récupération du BC n° {$record->numero} ?\n\n" .
+                        "Cette action va :\n" .
+                        "• Libérer les crédits budgétaires (si engagé)\n" .
+                        "• Réinitialiser la validation et l'engagement\n" .
+                        "• Remettre le BC en statut 'Brouillon'\n" .
+                        "• Permettre la modification du BC\n\n" .
+                        "Vous pourrez ensuite :\n" .
+                        "• Modifier le fournisseur/bénéficiaire\n" .
+                        "• Modifier les montants\n" .
+                        "• Valider à nouveau\n" .
+                        "• Engager à nouveau";
+                })
+                ->form([
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif de récupération')
+                        ->required()
+                        ->rows(3)
+                        ->placeholder('Ex: Changement de fournisseur, correction des montants...')
+                        ->helperText('Indiquez pourquoi vous récupérez ce document'),
+                ])
+                ->modalSubmitActionLabel('🔄 Confirmer la récupération')
+                ->modalCancelActionLabel('Annuler')
+                ->action(function ($record, array $data) {
+                    try {
+                        $record->recuperer($data['motif']);
+                        $record->refresh();
+
+                        Notification::make()
+                            ->title('✅ BC récupéré avec succès')
+                            ->success()
+                            ->body("Le BC {$record->numero} a été récupéré et remis en brouillon. Vous pouvez maintenant le modifier.")
+                            ->duration(5000)
+                            ->send();
+
+                        // Rediriger vers la page d'édition
+                        //return redirect()->route('filament.admin.resources.bons-commande.edit', ['record' => $record->id]);
+                        return redirect(static::getResource()::getUrl('edit', ['record' => $record->id]));
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('❌ Impossible de récupérer le BC')
+                            ->danger()
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
         ];
     }
 
@@ -164,6 +336,23 @@ class ViewBonCommande extends ViewRecord
     {
         return $infolist
             ->schema([
+                Infolists\Components\Section::make('État du bon de commande')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('statut_modification')
+                            ->label('')
+                            ->state(function ($record) {
+                                if ($record->engage) {
+                                    return '🔒 Ce bon de commande est engagé et ne peut plus être modifié. Utilisez le bouton "Désengager" pour le rendre modifiable.';
+                                }
+                                return null;
+                            })
+                            ->color('warning')
+                            ->badge()
+                            ->visible(fn($record) => $record->engage)
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn($record) => $record->engage),
+
                 Infolists\Components\Section::make('Vérification budgétaire')
                     ->schema([
                         Infolists\Components\TextEntry::make('credit_disponible')
@@ -209,6 +398,7 @@ class ViewBonCommande extends ViewRecord
                             ->columnSpanFull(),
                     ])
                     ->visible(fn($record) => $record->statut === 'valide'),
+
                 Infolists\Components\Section::make('Informations générales')
                     ->schema([
                         Infolists\Components\TextEntry::make('verrou')
