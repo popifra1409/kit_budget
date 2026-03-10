@@ -466,7 +466,7 @@ class BonCommande extends Model
             // Calculer le montant engagé pour cette nomenclature
             $montantEngagePourNomenclature = $this->lignes()
                 ->where('nomenclature_id', $ligneBudgetaire->nomenclature_id)
-                ->sum('montant_ht');
+                ->sum('montant_ttc');
 
             if ($montantEngagePourNomenclature > 0) {
                 // Libérer le crédit
