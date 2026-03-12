@@ -776,7 +776,7 @@ class BonCommandeResource extends Resource
                                             number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                     ]);
                             })
-                            ->required()  // ✅ Toujours required
+                            ->required()  
                             ->searchable()
                             ->live(debounce: 1000)
                             ->afterStateUpdated(function ($state, callable $set, callable $get) {

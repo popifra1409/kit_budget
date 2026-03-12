@@ -51,11 +51,25 @@ class EditBonCommande extends EditRecord
         ];
     }
 
-    // ✅ MODIFIÉ : Redirection vers 'view' seulement si sauvegarde normale
-    protected function getRedirectUrl(): string
+    protected function afterSave(): void
     {
-        // Si c'est une sauvegarde normale (bouton "Sauvegarder"), rediriger vers view
-        return $this->getResource()::getUrl('view', ['record' => $this->record]);
+        // Recharger le BC avec ses lignes
+        $this->record->refresh();
+        $this->record->load('lignes');
+
+        // ✅ IMPORTANT : Recharger le formulaire
+        $this->fillForm();
+
+        \Log::info("BC rechargé", [
+            'numero' => $this->record->numero,
+            'nb_lignes' => $this->record->lignes->count(),
+        ]);
+    }
+
+
+    protected function getRedirectUrl(): ?string
+    {
+        return null; // Rester sur la même page
     }
 
     // ✅ NOUVEAU : Message personnalisé après sauvegarde
@@ -68,12 +82,59 @@ class EditBonCommande extends EditRecord
             ->duration(3000);
     }
 
-    // ✅ CONSERVÉ : Forcer l'exonération TVA
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // ✅ Forcer l'exonération TVA AVANT sauvegarde
-        return self::forcerExonerationTVA($data);
+        \Log::info("=== AVANT SAUVEGARDE BC ===", [
+            'bc_numero' => $this->record->numero,
+            'nb_lignes_formulaire' => count($data['lignes'] ?? []),
+            'nb_lignes_bd_avant' => $this->record->lignes()->count(),
+            'lignes_formulaire' => collect($data['lignes'] ?? [])->map(fn($l) => [
+                'id' => $l['id'] ?? 'nouveau',
+                'designation' => $l['designation'] ?? '',
+                'quantite' => $l['quantite'] ?? 0,
+            ])->toArray(),
+        ]);
+
+        // Forcer l'exonération TVA
+        $data = self::forcerExonerationTVA($data);
+
+        \Log::info("=== APRÈS mutateFormDataBeforeSave ===", [
+            'nb_lignes' => count($data['lignes'] ?? []),
+        ]);
+
+        return $data;
     }
+
+    // protected function afterSave(): void
+    // {
+    //     // Recharger les lignes depuis la BD
+    //     $this->record->refresh();
+    //     $this->record->load('lignes');
+
+    //     \Log::info("=== APRÈS SAUVEGARDE BC ===", [
+    //         'bc_numero' => $this->record->numero,
+    //         'nb_lignes_bd_apres' => $this->record->lignes()->count(),
+    //         'lignes_bd' => $this->record->lignes->map(fn($l) => [
+    //             'id' => $l->id,
+    //             'designation' => $l->designation,
+    //             'quantite' => $l->quantite,
+    //         ])->toArray(),
+    //     ]);
+
+    //     // Notification avec le nombre de lignes
+    //     \Filament\Notifications\Notification::make()
+    //         ->title('Debug Info')
+    //         ->body("Lignes en BD : {$this->record->lignes()->count()}")
+    //         ->info()
+    //         ->send();
+    // }
+
+    // ✅ CONSERVÉ : Forcer l'exonération TVA
+    // protected function mutateFormDataBeforeSave(array $data): array
+    // {
+    //     // ✅ Forcer l'exonération TVA AVANT sauvegarde
+    //     return self::forcerExonerationTVA($data);
+    // }
 
     // ✅ CONSERVÉ : Méthode de traitement de l'exonération TVA
     protected static function forcerExonerationTVA(array $data): array

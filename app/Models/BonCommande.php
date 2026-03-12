@@ -580,6 +580,9 @@ class BonCommande extends Model
          * AVANT MISE À JOUR
          */
         static::updating(function ($bonCommande) {
+            if ($bonCommande->statut === 'brouillon') {
+                return;
+            }
             // ✅ CORRECTION: Champs autorisés à être modifiés même si le BC n'est pas en brouillon
             // Ces champs font partie du workflow normal (engagement, transitions de statut)
             $champsAutorisesSansRestriction = [
