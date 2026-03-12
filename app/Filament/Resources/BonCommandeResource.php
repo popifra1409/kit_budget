@@ -462,114 +462,287 @@ class BonCommandeResource extends Resource
                     ->columns(2)
                     ->collapsible(),
 
-                Forms\Components\Toggle::make('exonere_tva')
-                    ->label('Exonération de TVA')
-                    ->live(debounce: 1000)
-                    ->reactive()
-                    ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                        // Forcer l'état booléen
-                        $set('exonere_tva', (bool) $state);
+                // Forms\Components\Toggle::make('exonere_tva')
+                //     ->label('Exonération de TVA')
+                //     ->live(debounce: 1000)
+                //     ->reactive()
+                //     ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                //         // Forcer l'état booléen
+                //         $set('exonere_tva', (bool) $state);
 
-                        // Recalculer toutes les lignes lors du chargement
-                        if ($state) {
-                            $lignes = $get('lignes') ?? [];
-                            foreach ($lignes as $index => $ligne) {
-                                $set("lignes.$index.taux_tva", 0);
-                                // Recalculer la ligne
-                                static::recalculerLigne(
-                                    function ($key, $value) use ($set, $index) {
-                                        $set("lignes.$index.$key", $value);
-                                    },
-                                    function ($key) use ($get, $index) {
-                                        return $get("lignes.$index.$key");
-                                    }
-                                );
-                            }
-                        }
-                    })
-                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                        $lignes = $get('lignes') ?? [];
+                //         // Recalculer toutes les lignes lors du chargement
+                //         if ($state) {
+                //             $lignes = $get('lignes') ?? [];
+                //             foreach ($lignes as $index => $ligne) {
+                //                 $set("lignes.$index.taux_tva", 0);
+                //                 // Recalculer la ligne
+                //                 static::recalculerLigne(
+                //                     function ($key, $value) use ($set, $index) {
+                //                         $set("lignes.$index.$key", $value);
+                //                     },
+                //                     function ($key) use ($get, $index) {
+                //                         return $get("lignes.$index.$key");
+                //                     }
+                //                 );
+                //             }
+                //         }
+                //     })
+                //     ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                //         $lignes = $get('lignes') ?? [];
 
-                        foreach ($lignes as $index => $ligne) {
-                            $set("lignes.$index.taux_tva", $state ? 0 : 19.25);
-                            // Recalculer immédiatement chaque ligne
-                            static::recalculerLigne(
-                                function ($key, $value) use ($set, $index) {
-                                    $set("lignes.$index.$key", $value);
-                                },
-                                function ($key) use ($get, $index) {
-                                    return $get("lignes.$index.$key");
-                                }
-                            );
-                        }
+                //         foreach ($lignes as $index => $ligne) {
+                //             $set("lignes.$index.taux_tva", $state ? 0 : 19.25);
+                //             // Recalculer immédiatement chaque ligne
+                //             static::recalculerLigne(
+                //                 function ($key, $value) use ($set, $index) {
+                //                     $set("lignes.$index.$key", $value);
+                //                 },
+                //                 function ($key) use ($get, $index) {
+                //                     return $get("lignes.$index.$key");
+                //                 }
+                //             );
+                //         }
 
-                        // Recalculer les totaux
-                        static::recalculerTotaux($lignes, $set);
-                    }),
+                //         // Recalculer les totaux
+                //         static::recalculerTotaux($lignes, $set);
+                //     }),
 
-                Forms\Components\Toggle::make('exonere_ir')
-                    ->label('Exonération d\'IR')
-                    ->helperText('Forcer l\'IR à 0% (même si le fournisseur est assujetti)')
-                    ->live(debounce: 1000)
-                    ->reactive()
-                    ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                        // Forcer l'état booléen
-                        $set('exonere_ir', (bool) $state);
+                // Forms\Components\Toggle::make('exonere_ir')
+                //     ->label('Exonération d\'IR')
+                //     ->helperText('Forcer l\'IR à 0% (même si le fournisseur est assujetti)')
+                //     ->live(debounce: 1000)
+                //     ->reactive()
+                //     ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                //         // Forcer l'état booléen
+                //         $set('exonere_ir', (bool) $state);
 
-                        // Recalculer toutes les lignes lors du chargement
-                        if ($state) {
-                            $lignes = $get('lignes') ?? [];
-                            foreach ($lignes as $index => $ligne) {
-                                $set("lignes.$index.taux_ir", 0);
-                                // Recalculer la ligne
-                                static::recalculerLigne(
-                                    function ($key, $value) use ($set, $index) {
-                                        $set("lignes.$index.$key", $value);
-                                    },
-                                    function ($key) use ($get, $index) {
-                                        return $get("lignes.$index.$key");
-                                    }
-                                );
-                            }
-                        }
-                    })
-                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                        $lignes = $get('lignes') ?? [];
+                //         // Recalculer toutes les lignes lors du chargement
+                //         if ($state) {
+                //             $lignes = $get('lignes') ?? [];
+                //             foreach ($lignes as $index => $ligne) {
+                //                 $set("lignes.$index.taux_ir", 0);
+                //                 // Recalculer la ligne
+                //                 static::recalculerLigne(
+                //                     function ($key, $value) use ($set, $index) {
+                //                         $set("lignes.$index.$key", $value);
+                //                     },
+                //                     function ($key) use ($get, $index) {
+                //                         return $get("lignes.$index.$key");
+                //                     }
+                //                 );
+                //             }
+                //         }
+                //     })
+                //     ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                //         $lignes = $get('lignes') ?? [];
 
-                        foreach ($lignes as $index => $ligne) {
-                            if ($state) {
-                                // Si exonéré, forcer IR à 0
-                                $set("lignes.$index.taux_ir", 0);
-                            } else {
-                                // Si non exonéré, recalculer l'IR selon le régime fiscal
-                                $typeEngagementId = $get('type_engagement_id');
-                                $fournisseurId = $get('fournisseur_id');
+                //         foreach ($lignes as $index => $ligne) {
+                //             if ($state) {
+                //                 // Si exonéré, forcer IR à 0
+                //                 $set("lignes.$index.taux_ir", 0);
+                //             } else {
+                //                 // Si non exonéré, recalculer l'IR selon le régime fiscal
+                //                 $typeEngagementId = $get('type_engagement_id');
+                //                 $fournisseurId = $get('fournisseur_id');
 
-                                if ($typeEngagementId && $fournisseurId) {
-                                    $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
-                                    $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
+                //                 if ($typeEngagementId && $fournisseurId) {
+                //                     $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
+                //                     $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
 
-                                    if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
-                                        $tauxIR = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
-                                        $set("lignes.$index.taux_ir", $tauxIR);
-                                    }
-                                }
-                            }
+                //                     if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
+                //                         $tauxIR = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
+                //                         $set("lignes.$index.taux_ir", $tauxIR);
+                //                     }
+                //                 }
+                //             }
 
-                            // Recalculer immédiatement chaque ligne
-                            static::recalculerLigne(
-                                function ($key, $value) use ($set, $index) {
-                                    $set("lignes.$index.$key", $value);
-                                },
-                                function ($key) use ($get, $index) {
-                                    return $get("lignes.$index.$key");
-                                }
-                            );
-                        }
+                //             // Recalculer immédiatement chaque ligne
+                //             static::recalculerLigne(
+                //                 function ($key, $value) use ($set, $index) {
+                //                     $set("lignes.$index.$key", $value);
+                //                 },
+                //                 function ($key) use ($get, $index) {
+                //                     return $get("lignes.$index.$key");
+                //                 }
+                //             );
+                //         }
 
-                        // Recalculer les totaux
-                        static::recalculerTotaux($lignes, $set);
-                    }),
+                //         // Recalculer les totaux
+                //         static::recalculerTotaux($lignes, $set);
+                //     }),
+                Forms\Components\Section::make('Taux Communs et Exonérations')
+                    ->description('Appliquez des taux communs à toutes les lignes ou gérez les exonérations')
+                    ->schema([
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                // ===== TVA COMMUNE =====
+                                Forms\Components\TextInput::make('tva_commune')
+                                    ->label('TVA Commune (%)')
+                                    ->numeric()
+                                    ->suffix('%')
+                                    ->default(0)
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->maxValue(100)
+                                    ->placeholder('Ex: 19.25')
+                                    ->live(debounce: 1000)
+                                    ->dehydrated(false)
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        $taux = (float) ($state ?? 0);
+                                        $lignes = $get('lignes') ?? [];
+
+                                        foreach ($lignes as $index => $ligne) {
+                                            $set("lignes.$index.taux_tva", $taux);
+
+                                            // Recalculer la ligne
+                                            static::recalculerLigne(
+                                                function ($key, $value) use ($set, $index) {
+                                                    $set("lignes.$index.$key", $value);
+                                                },
+                                                function ($key) use ($get, $index) {
+                                                    return $get("lignes.$index.$key");
+                                                }
+                                            );
+                                        }
+
+                                        // Recalculer les totaux
+                                        static::recalculerTotaux($lignes, $set);
+                                    })
+                                    ->helperText('0 = Aucune TVA | 19,25 = Standard'),
+
+                                // ===== IR COMMUN =====
+                                Forms\Components\TextInput::make('ir_commun')
+                                    ->label('IR Commun (%)')
+                                    ->numeric()
+                                    ->suffix('%')
+                                    ->default(0)
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->maxValue(100)
+                                    ->placeholder('Ex: 5.5')
+                                    ->live(debounce: 1000)
+                                    ->dehydrated(false)
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        // Vérifier d'abord si l'exonération IR est active
+                                        $exonereIr = $get('exonere_ir');
+                                        if ($exonereIr) {
+                                            \Filament\Notifications\Notification::make()
+                                                ->title('Exonération IR active')
+                                                ->warning()
+                                                ->body('L\'exonération IR est activée. Désactivez-la pour appliquer ce taux.')
+                                                ->send();
+                                            return;
+                                        }
+
+                                        $taux = (float) ($state ?? 0);
+                                        $lignes = $get('lignes') ?? [];
+
+                                        foreach ($lignes as $index => $ligne) {
+                                            $set("lignes.$index.taux_ir", $taux);
+
+                                            // Recalculer la ligne
+                                            static::recalculerLigne(
+                                                function ($key, $value) use ($set, $index) {
+                                                    $set("lignes.$index.$key", $value);
+                                                },
+                                                function ($key) use ($get, $index) {
+                                                    return $get("lignes.$index.$key");
+                                                }
+                                            );
+                                        }
+
+                                        // Recalculer les totaux
+                                        static::recalculerTotaux($lignes, $set);
+                                    })
+                                    ->helperText('0 = Aucun IR | 5.5 = Standard')
+                                    ->disabled(fn(callable $get) => $get('exonere_ir'))
+                                    ->dehydrated(true),
+
+                                // ===== EXONÉRATION IR (Toggle existant) =====
+                                Forms\Components\Toggle::make('exonere_ir')
+                                    ->label('Exonération d\'IR')
+                                    ->helperText('Forcer l\'IR à 0% (prioritaire sur IR Commun)')
+                                    ->live(debounce: 1000)
+                                    ->reactive()
+                                    ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                        // Forcer l'état booléen
+                                        $set('exonere_ir', (bool) $state);
+
+                                        // Si exonéré, désactiver le champ IR Commun
+                                        if ($state) {
+                                            $set('ir_commun', 0);
+                                        }
+
+                                        // Recalculer toutes les lignes lors du chargement
+                                        if ($state) {
+                                            $lignes = $get('lignes') ?? [];
+                                            foreach ($lignes as $index => $ligne) {
+                                                $set("lignes.$index.taux_ir", 0);
+                                                // Recalculer la ligne
+                                                static::recalculerLigne(
+                                                    function ($key, $value) use ($set, $index) {
+                                                        $set("lignes.$index.$key", $value);
+                                                    },
+                                                    function ($key) use ($get, $index) {
+                                                        return $get("lignes.$index.$key");
+                                                    }
+                                                );
+                                            }
+                                        }
+                                    })
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        $lignes = $get('lignes') ?? [];
+
+                                        foreach ($lignes as $index => $ligne) {
+                                            if ($state) {
+                                                // ✅ Si exonéré, forcer IR à 0 ET réinitialiser ir_commun
+                                                $set('ir_commun', 0);
+                                                $set("lignes.$index.taux_ir", 0);
+                                            } else {
+                                                // ✅ Si non exonéré, vérifier dans cet ordre :
+                                                // 1. IR Commun s'il existe
+                                                // 2. Sinon calculer selon le régime fiscal
+
+                                                $irCommun = (float) ($get('ir_commun') ?? 0);
+
+                                                if ($irCommun > 0) {
+                                                    // Appliquer l'IR commun
+                                                    $set("lignes.$index.taux_ir", $irCommun);
+                                                } else {
+                                                    // Recalculer selon le régime fiscal
+                                                    $typeEngagementId = $get('type_engagement_id');
+                                                    $fournisseurId = $get('fournisseur_id');
+
+                                                    if ($typeEngagementId && $fournisseurId) {
+                                                        $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
+                                                        $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
+
+                                                        if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
+                                                            $tauxIR = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
+                                                            $set("lignes.$index.taux_ir", $tauxIR);
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Recalculer immédiatement chaque ligne
+                                            static::recalculerLigne(
+                                                function ($key, $value) use ($set, $index) {
+                                                    $set("lignes.$index.$key", $value);
+                                                },
+                                                function ($key) use ($get, $index) {
+                                                    return $get("lignes.$index.$key");
+                                                }
+                                            );
+                                        }
+
+                                        // Recalculer les totaux
+                                        static::recalculerTotaux($lignes, $set);
+                                    }),
+                            ]),
+                    ])
+                    ->collapsible()
+                    ->collapsed(false),
 
                 Forms\Components\Section::make('Référence')
                     ->schema([
@@ -581,6 +754,7 @@ class BonCommandeResource extends Resource
                     ])
                     ->collapsible()
                     ->collapsed(),
+
                 Forms\Components\Section::make('Lignes du Bon de Commande')
                     ->description('Choisissez d\'abord la nomenclature budgétaire qui sera utilisée pour toutes les lignes, puis ajoutez les articles/services.')
                     ->schema([
@@ -722,7 +896,7 @@ class BonCommandeResource extends Resource
                                             ->numeric()
                                             ->default(19.25)
                                             ->suffix('%')
-                                            ->default(fn(callable $get) => $get('../../exonere_tva') ? 0 : 19.25)
+                                            ->default(fn(callable $get) => (float) ($get('../../tva_commune') ?? 0))
                                             ->disabled(fn(callable $get) => (bool) $get('../../exonere_tva'))
                                             ->dehydrated(true)
                                             ->minValue(0)
@@ -745,7 +919,7 @@ class BonCommandeResource extends Resource
                                             ->live(onBlur: true)
                                             ->afterStateUpdated(fn($state, callable $set, callable $get) => static::recalculerLigne($set, $get))
                                             ->helperText('IR spécifique (0 = auto)')
-                                            ->default(fn(callable $get) => $get('../../exonere_ir') ? 0 : 5.5)
+                                            ->default(fn(callable $get) => (float) ($get('../../ir_commun') ?? 0))
                                             ->disabled(fn(callable $get) => (bool) $get('../../exonere_ir'))
                                             ->dehydrated(true)
                                             ->afterStateHydrated(function ($state, callable $set, callable $get) {

@@ -585,10 +585,15 @@ class BonCommande extends Model
             $champsAutorisesSansRestriction = [
                 'engagement_id',
                 'engage',
+                'montant_engage',
                 'date_engagement',
                 'statut',
+                'observations',
+                'valide_par',
+                'date_validation',
                 'updated_by',
                 'updated_at',
+                'created_at'
             ];
 
             // Vérifier si SEULEMENT des champs autorisés ont été modifiés
@@ -597,7 +602,11 @@ class BonCommande extends Model
 
             // ✅ Si seuls les champs autorisés sont modifiés, autoriser la mise à jour
             if ($modificationAutorisee) {
-                return; // Sortir de l'observer sans lever d'exception
+                \Log::info("BC {$bonCommande->numero} : Modification autorisée", [
+                    'champs' => $champsDirty,
+                    'statut' => $bonCommande->statut,
+                ]);
+                return;
             }
 
             // Vérifier les permissions pour les autres modifications
@@ -606,8 +615,16 @@ class BonCommande extends Model
                 $bonCommande->getOriginal('statut') !== 'brouillon' &&
                 !auth()->user()?->hasRole('super_admin')
             ) {
+                \Log::error("BC {$bonCommande->numero} : Modification interdite", [
+                    'champs_tentes' => $champsDirty,
+                    'user' => auth()->user()?->name,
+                    'statut_original' => $bonCommande->getOriginal('statut'),
+                ]);
+
                 throw new \Exception(
-                    'Modification interdite : bon de commande non brouillon. Seul le super administrateur peut modifier un BC validé.'
+                    'Modification interdite : bon de commande non brouillon. ' .
+                        'Seul le super administrateur peut modifier un BC validé. ' .
+                        'Champs tentés : ' . implode(', ', $champsDirty)
                 );
             }
 
@@ -660,7 +677,7 @@ class BonCommande extends Model
     {
         return $this->belongsTo(NomenclatureBudgetaire::class, 'nomenclature_commune_id');
     }
-    
+
     /**
      * Relation : Budget
      */
@@ -855,7 +872,7 @@ class BonCommande extends Model
         $this->montant_ir = round($totalIR, 2);
         $this->montant_ttc = round($totalTTC, 2);
         $this->net_a_payer = round($totalNetAPayer, 2);
-        $this->net_a_percevoir = round($totalNetAPayer, 2); // ✅ AJOUTÉ
+        $this->net_a_percevoir = round($totalNetAPayer, 2);
 
         $this->saveQuietly();
     }
