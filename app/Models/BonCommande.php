@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
+use App\Traits\HasRecentValues;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Traits\HasWorkflow;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 
 class BonCommande extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity, GereTransmissions;
+    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity, GereTransmissions, HasRecentValues;
 
     protected $table = 'bons_commande';
 

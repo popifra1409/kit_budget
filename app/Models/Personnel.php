@@ -140,19 +140,36 @@ class Personnel extends Model
      */
     public static function genererMatricule(): string
     {
-        $annee = now()->year;
+        return \DB::transaction(function () {
+            $annee = now()->year;
+            $prefixe = "MAT-{$annee}-";
 
-        $dernier = static::where('matricule', 'like', "MAT-{$annee}-%")
-            ->orderBy('matricule', 'desc')
-            ->first();
+            // ✅ LOCK pour éviter les conditions de course
+            // Pendant cette transaction, aucun autre utilisateur ne peut lire ces lignes
+            $personnels = static::where('matricule', 'like', "{$prefixe}%")
+                ->lockForUpdate()
+                ->get();
 
-        if ($dernier && preg_match('/MAT-\d{4}-(\d+)/', $dernier->matricule, $matches)) {
-            $sequence = intval($matches[1]) + 1;
-        } else {
-            $sequence = 1;
-        }
+            // Trouver le numéro maximum
+            $dernierNumero = $personnels
+                ->map(function ($personnel) {
+                    if (preg_match('/MAT-\d{4}-(\d+)$/', $personnel->matricule, $matches)) {
+                        return (int) $matches[1];
+                    }
+                    return 0;
+                })
+                ->max() ?? 0;
 
-        return sprintf('MAT-%s-%04d', $annee, $sequence);
+            $sequence = $dernierNumero + 1;
+            $matricule = sprintf('MAT-%s-%04d', $annee, $sequence);
+
+            // Double vérification (normalement pas nécessaire avec le lock)
+            if (static::where('matricule', $matricule)->exists()) {
+                throw new \Exception("Matricule {$matricule} existe déjà (condition de course détectée)");
+            }
+
+            return $matricule;
+        });
     }
 
     /**
@@ -172,13 +189,41 @@ class Personnel extends Model
     protected static function booted(): void
     {
         static::creating(function ($personnel) {
-            // NE PLUS générer automatiquement le matricule
-            // L'utilisateur doit le saisir manuellement
+            // ✅ Générer automatiquement le matricule si vide
+            if (empty($personnel->matricule)) {
+                $personnel->matricule = static::genererMatricule();
+            } else {
+                // ✅ Si un matricule est fourni, vérifier l'unicité
+                if (static::where('matricule', $personnel->matricule)->exists()) {
+                    throw new \Exception("Le matricule {$personnel->matricule} existe déjà");
+                }
+            }
 
             $personnel->created_by = auth()->id();
         });
 
         static::updating(function ($personnel) {
+            // ✅ Empêcher la modification du matricule (sauf par admin)
+            if ($personnel->isDirty('matricule')) {
+                $ancienMatricule = $personnel->getOriginal('matricule');
+                $nouveauMatricule = $personnel->matricule;
+
+                // Vérifier l'unicité du nouveau matricule
+                if (static::where('matricule', $nouveauMatricule)
+                    ->where('id', '!=', $personnel->id)
+                    ->exists()
+                ) {
+                    throw new \Exception("Le matricule {$nouveauMatricule} existe déjà");
+                }
+
+                \Log::info("Matricule modifié", [
+                    'personnel' => $personnel->id,
+                    'ancien' => $ancienMatricule,
+                    'nouveau' => $nouveauMatricule,
+                    'par' => auth()->id(),
+                ]);
+            }
+
             $personnel->updated_by = auth()->id();
         });
     }

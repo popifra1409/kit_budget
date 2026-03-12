@@ -48,6 +48,15 @@ class Fournisseur extends Model
         'blackliste' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function ($fournisseur) {
+            if (empty($fournisseur->code)) {
+                $fournisseur->code = static::genererCode();
+            }
+        });
+    }
+
     /**
      * Relation : Bons de commande de ce fournisseur
      */
@@ -127,6 +136,25 @@ class Fournisseur extends Model
     public function getNomComplet(): string
     {
         return $this->sigle ?: $this->raison_sociale;
+    }
+
+    public static function genererCode(): string
+    {
+        $annee = now()->year;
+        $prefixe = "FOUR-{$annee}-";
+
+        $dernierNumero = static::where('code', 'like', "{$prefixe}%")
+            ->get()
+            ->map(function ($f) {
+                if (preg_match('/FOUR-\d{4}-(\d+)$/', $f->code, $m)) {
+                    return (int) $m[1];
+                }
+                return 0;
+            })
+            ->max();
+
+        $sequence = ($dernierNumero ?? 0) + 1;
+        return sprintf('FOUR-%s-%04d', $annee, $sequence);
     }
 
     /**

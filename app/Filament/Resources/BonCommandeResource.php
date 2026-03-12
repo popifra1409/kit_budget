@@ -12,6 +12,7 @@ use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Illuminate\Support\Facades\Cache;  
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
@@ -163,13 +164,19 @@ class BonCommandeResource extends Resource
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->live()
+                            ->live(debounce: 1000)
                             ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                 if (!$state) {
                                     return;
                                 }
 
-                                $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($state);
+                                $fournisseur = Cache::remember(
+                                    "fournisseur_{$state}_with_regime",
+                                    now()->addMinutes(5),
+                                    fn() => \App\Models\Fournisseur::with('regimeFiscal')->find($state)
+                                );
+
+                                // $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($state);
 
                                 if (!$fournisseur || !$fournisseur->regimeFiscal) {
                                     return;
@@ -204,6 +211,81 @@ class BonCommandeResource extends Resource
                                     }
                                 }
                                 return 'Sélectionnez un fournisseur';
+                            })
+                            ->createOptionForm([
+                                Forms\Components\Section::make('Identification')
+                                    ->schema([
+                                        // Code fournisseur généré automatiquement
+                                        Forms\Components\TextInput::make('code')
+                                            ->label('Code Fournisseur')
+                                            ->default(fn() => \App\Models\Fournisseur::genererCode())
+                                            ->disabled()
+                                            ->dehydrated(false)
+                                            ->helperText('Généré automatiquement')
+                                            ->columnSpanFull(),
+
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('raison_sociale')
+                                                    ->label('Raison sociale')
+                                                    ->required()
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('sigle')
+                                                    ->label('Sigle')
+                                                    ->maxLength(50),
+                                            ]),
+
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('numero_contribuable')
+                                                    ->label('N° Contribuable')
+                                                    ->maxLength(100),
+
+                                                Forms\Components\Select::make('regime_fiscal_id')
+                                                    ->label('Régime fiscal')
+                                                    ->relationship('regimeFiscal', 'libelle')
+                                                    ->searchable()
+                                                    ->preload()
+                                                    ->required()
+                                                    ->helperText('Obligatoire pour le calcul de l\'IR'),
+                                            ]),
+                                    ]),
+
+                                Forms\Components\Section::make('Contact')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)
+                                            ->schema([
+                                                Forms\Components\TextInput::make('telephone')
+                                                    ->label('Téléphone')
+                                                    ->tel()
+                                                    ->maxLength(255),
+
+                                                Forms\Components\TextInput::make('email')
+                                                    ->label('Email')
+                                                    ->email()
+                                                    ->maxLength(255),
+                                            ]),
+
+                                        Forms\Components\Textarea::make('adresse')
+                                            ->label('Adresse')
+                                            ->rows(2)
+                                            ->maxLength(500),
+                                    ])
+                                    ->collapsible()
+                                    ->collapsed(),
+                            ])
+
+                            ->createOptionUsing(function (array $data) {
+                                $fournisseur = \App\Models\Fournisseur::create($data);
+
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Fournisseur créé')
+                                    ->success()
+                                    ->body("Le fournisseur {$fournisseur->raison_sociale} a été ajouté avec le code {$fournisseur->code}.")
+                                    ->send();
+
+                                return $fournisseur->id;
                             }),
 
                         Forms\Components\Select::make('service_demandeur_id')
@@ -243,6 +325,7 @@ class BonCommandeResource extends Resource
                             ->required()
                             ->rows(3)
                             ->placeholder('Ex: Fourniture de matériel informatique')
+                            ->autocomplete()
                             ->columnSpanFull(),
 
                         Forms\Components\Textarea::make('observations')
@@ -260,7 +343,7 @@ class BonCommandeResource extends Resource
                             ->relationship('typeEngagement', 'libelle')
                             ->searchable()
                             ->preload()
-                            ->live()
+                            ->live(debounce: 1000)
                             ->helperText(function (callable $get) {
                                 $typeId = $get('type_engagement_id');
                                 if ($typeId) {
@@ -285,7 +368,7 @@ class BonCommandeResource extends Resource
                         Forms\Components\Toggle::make('produit_importe')
                             ->label('Produit importé (soumis à TSR)')
                             ->helperText('Activez si les produits viennent de l\'étranger')
-                            ->live()
+                            ->live(debounce: 1000)
                             ->columnSpanFull(),
 
                         Forms\Components\Placeholder::make('info_taxes')
@@ -381,7 +464,7 @@ class BonCommandeResource extends Resource
 
                 Forms\Components\Toggle::make('exonere_tva')
                     ->label('Exonération de TVA')
-                    ->live()
+                    ->live(debounce: 1000)
                     ->reactive()
                     ->afterStateHydrated(function ($state, callable $set, callable $get) {
                         // Forcer l'état booléen
@@ -427,7 +510,7 @@ class BonCommandeResource extends Resource
                 Forms\Components\Toggle::make('exonere_ir')
                     ->label('Exonération d\'IR')
                     ->helperText('Forcer l\'IR à 0% (même si le fournisseur est assujetti)')
-                    ->live()
+                    ->live(debounce: 1000)
                     ->reactive()
                     ->afterStateHydrated(function ($state, callable $set, callable $get) {
                         // Forcer l'état booléen
@@ -522,7 +605,7 @@ class BonCommandeResource extends Resource
                             ->required()
                             ->searchable()
                             ->preload()
-                            ->live()
+                            ->live(debounce: 1000)
                             ->afterStateHydrated(function ($state, callable $set, callable $get, $record) {
                                 if ($record && !$state) {
                                     $premiereLigne = $record->lignes()->first();
@@ -567,7 +650,7 @@ class BonCommandeResource extends Resource
                                     })
                                     ->searchable()
                                     ->preload()
-                                    ->live()
+                                    ->live(debounce: 1000)
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                         if ($state && $state !== 'manual') {
                                             $reference = \App\Models\ReferenceMercuriale::find($state);
@@ -769,7 +852,9 @@ class BonCommandeResource extends Resource
                     ])
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null && $record->lignes()->count() > 0),
-            ]);
+            ])
+            ->statePath('data')
+            ->model(BonCommande::class);
     }
 
     /**

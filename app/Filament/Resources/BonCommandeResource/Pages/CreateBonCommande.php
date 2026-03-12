@@ -6,10 +6,46 @@ use App\Filament\Resources\BonCommandeResource;
 use App\Models\BonCommande;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
+use Filament\Actions;
 
 class CreateBonCommande extends CreateRecord
 {
     protected static string $resource = BonCommandeResource::class;
+
+    // protected function getFormActions(): array
+    // {
+    //     return [
+    //         // Bouton "Enregistrer le brouillon"
+    //         Actions\Action::make('save_draft')
+    //             ->label('Enregistrer brouillon')
+    //             ->icon('heroicon-o-document-duplicate')
+    //             ->color('gray')
+    //             ->action(function () {
+    //                 $data = $this->form->getState();
+
+    //                 // Forcer le statut à brouillon
+    //                 $data['statut'] = 'brouillon';
+
+    //                 // Créer le BC
+    //                 $record = static::getModel()::create($data);
+
+    //                 Notification::make()
+    //                     ->title('Brouillon enregistré')
+    //                     ->success()
+    //                     ->body("Le bon de commande brouillon a été enregistré avec succès.")
+    //                     ->send();
+
+    //                 // Rediriger vers l'édition
+    //                 return redirect()->route('filament.admin.resources.bon-commandes.edit', $record);
+    //             })
+    //             ->keyBindings(['command+s', 'ctrl+s']),  // Raccourci clavier Ctrl+S
+
+    //         // Boutons standard
+    //         $this->getCreateFormAction(),
+    //         $this->getCreateAnotherFormAction(),
+    //         $this->getCancelFormAction(),
+    //     ];
+    // }
 
     /**
      * ===============================
