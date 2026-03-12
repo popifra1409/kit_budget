@@ -10,6 +10,16 @@ class EditBonCommande extends EditRecord
 {
     protected static string $resource = BonCommandeResource::class;
 
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Actions\ViewAction::make(),
+            Actions\DeleteAction::make()
+                ->visible(fn($record) => $record->statut === 'brouillon'),
+        ];
+    }
+
     // ✅ NOUVEAU : Boutons du formulaire avec sauvegarde rapide
     protected function getFormActions(): array
     {
@@ -40,17 +50,6 @@ class EditBonCommande extends EditRecord
                 ->outlined(),
         ];
     }
-
-    protected function getHeaderActions(): array
-    {
-        return [
-            Actions\ViewAction::make(),
-            Actions\DeleteAction::make()
-                ->visible(fn($record) => $record->statut === 'brouillon'),
-        ];
-    }
-
-
 
     // ✅ MODIFIÉ : Redirection vers 'view' seulement si sauvegarde normale
     protected function getRedirectUrl(): string

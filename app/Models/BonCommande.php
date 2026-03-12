@@ -59,6 +59,7 @@ class BonCommande extends Model
         'net_a_percevoir',
         'exonere_tva',
         'exonere_ir',
+        'nomenclature_commune_id',
     ];
 
     protected $casts = [
@@ -93,9 +94,6 @@ class BonCommande extends Model
     {
         return $this->belongsTo(TypeEngagement::class);
     }
-
-
-    // Dans App\Models\BonCommande.php
 
     /**
      * Vérifier la disponibilité budgétaire avant engagement
@@ -657,6 +655,12 @@ class BonCommande extends Model
         });
     }
 
+
+    public function nomenclatureCommune(): BelongsTo
+    {
+        return $this->belongsTo(NomenclatureBudgetaire::class, 'nomenclature_commune_id');
+    }
+    
     /**
      * Relation : Budget
      */

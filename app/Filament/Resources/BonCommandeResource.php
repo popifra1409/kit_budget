@@ -12,7 +12,7 @@ use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Illuminate\Support\Facades\Cache;  
+use Illuminate\Support\Facades\Cache;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
@@ -586,43 +586,33 @@ class BonCommandeResource extends Resource
                     ->schema([
                         // ===== NOMENCLATURE COMMUNE =====
                         Forms\Components\Select::make('nomenclature_commune_id')
+                            ->label('Nomenclature Budgétaire Commune')
                             ->options(function (callable $get) {
                                 $budgetId = $get('budget_id');
                                 if (!$budgetId) {
-                                    return ['Veuillez d\'abord sélectionner un budget'];
+                                    return [];
                                 }
-
                                 return \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
-                                    ->whereNotNull('nomenclature_id') // 
+                                    ->whereNotNull('nomenclature_id')
                                     ->with('nomenclature')
                                     ->get()
-                                    ->filter(fn($lb) => $lb->nomenclature !== null) //
+                                    ->filter(fn($lb) => $lb->nomenclature !== null)
                                     ->mapWithKeys(fn($lb) => [
                                         $lb->nomenclature_id => "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} (Dispo: " .
                                             number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                     ]);
                             })
-                            ->required()
+                            ->required()  // ✅ Toujours required
                             ->searchable()
-                            ->preload()
                             ->live(debounce: 1000)
-                            ->afterStateHydrated(function ($state, callable $set, callable $get, $record) {
-                                if ($record && !$state) {
-                                    $premiereLigne = $record->lignes()->first();
-                                    if ($premiereLigne && $premiereLigne->nomenclature_id) {
-                                        $set('nomenclature_commune_id', $premiereLigne->nomenclature_id);
-                                    }
-                                }
-                            })
                             ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                                // Copier la nomenclature dans toutes les lignes existantes
+                                // Propager aux lignes
                                 $lignes = $get('lignes') ?? [];
-
                                 foreach ($lignes as $index => $ligne) {
                                     $set("lignes.{$index}.nomenclature_id", $state);
                                 }
                             })
-                            ->helperText('Cette nomenclature sera automatiquement assignée à toutes les lignes ci-dessous')
+                            ->helperText('Cette nomenclature sera assignée à toutes les lignes')
                             ->columnSpanFull(),
 
                         Forms\Components\Repeater::make('lignes')
