@@ -323,6 +323,9 @@ class EngagementResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession()
             ->columns([
                 // Tables\Columns\BadgeColumn::make('exercice.annee')
                 //     ->label('Exercice')
