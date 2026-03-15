@@ -76,7 +76,7 @@
             font-weight: bold;
         }
 
-        .font-normal{
+        .font-normal {
             font-weight: 400;
         }
 
@@ -261,10 +261,10 @@
                 <thead>
                     <tr>
                         <th style="width: 15%;">REFERENCE</th>
-                        <th style="width: 40%;">DESIGNATION</th>
-                        <th style="width: 10%;">QTES</th>
-                        <th style="width: 15%;">P.U</th>
-                        <th style="width: 15%;">Total</th>
+                        <th style="width: 57%;">DESIGNATION</th>
+                        <th style="width: 8%;">QTES</th>
+                        <th style="width: 10%;">P.U</th>
+                        <th style="width: 10%;">Total</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -272,7 +272,7 @@
                         <tr>
                             <td>{{ $ligne->reference ?? '-' }}</td>
                             <td>{{ $ligne->designation }}</td>
-                            <td class="nombre">{{ $ligne->quantite }}</td>
+                            <td class="nombre">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
                             <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
                             <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                         </tr>
@@ -380,7 +380,7 @@
     {{-- Signatures --}}
     <div class="mt-20 clearfix">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
-            Yaoundé Le..............................................
+            Yaoundé Le__________________________
         </div>
 
         <div class="signature-container">
