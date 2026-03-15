@@ -15,45 +15,86 @@
 
     $nomenclature = $engagement->nomenclaturePrincipale;
 
+    // Récupérer les données du bon
+    $bonCommande = $donnees['_raw'];
+    $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
+
+    // Récupérer la ligne budgétaire
+    $ligneBudgetaire = null;
+    $dotationInitiale = 0;
+    $disponibleAvant = 0;
+    $disponibleApres = 0;
+
+    if ($nomenclature) {
+        // Récupérer la ligne budgétaire associée
+        $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
+            ->where('nomenclature_id', $nomenclature->id)
+            ->first();
+
+        if ($ligneBudgetaire) {
+            // Dotation initiale
+            $dotationInitiale = $ligneBudgetaire->budget_initial ?? ($ligneBudgetaire->montant_initial ?? 0);
+
+            // Disponible AVANT engagement
+            $disponibleAvant = $ligneBudgetaire->disponible_engagement ?? 0;
+
+            // Disponible APRÈS engagement (disponible - montant engagé)
+            $montantEngage = $engagement->montant_engage ?? 0;
+            $disponibleApres = $disponibleAvant - $montantEngage;
+        }
+    }
+
     $tache = null;
     $activite = null;
     $action = null;
     $programme = null;
+    $sousProgramme = null;
     $objectif = null;
 
     if ($nomenclature) {
         $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
 
         if ($tache) {
-            $tache->load('activite.action.programme');
+            $tache->load('activite.action.programme.parent');
 
             $activite = $tache->activite;
             $action = $activite?->action;
             $programme = $action?->programme;
 
             if ($programme) {
-                try {
-                    if (method_exists($programme, 'objectifPrincipal')) {
-                        $objectif = $programme->objectifPrincipal;
-                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                        $objectifs = $programme->objectifsPrincipaux;
-                        if ($objectifs instanceof \Illuminate\Support\Collection) {
-                            $objectif = $objectifs->first();
-                        } else {
-                            $objectif = $objectifs;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    \Log::warning('Erreur récupération objectif (Autorisation)', [
-                        'programme_id' => $programme->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    $objectif = null;
+                if ($programme->estSousProgramme()) {
+                    // C'est un sous-programme
+                $sousProgramme = $programme;
+                $programme = $programme->parent;
+            } else {
+                // C'est un programme principal
+                    $sousProgramme = null;
                 }
+
+                // Récupérer l'objectif
+            try {
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    if ($objectifs instanceof \Illuminate\Support\Collection) {
+                        $objectif = $objectifs->first();
+                    } else {
+                        $objectif = $objectifs;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur récupération objectif', [
+                    'programme_id' => $programme->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $objectif = null;
             }
         }
     }
-    $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
+}
+
+$nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 @endphp
 
 @section('title', 'Autorisation d\'Engagement')
@@ -68,36 +109,32 @@
             text-align: center;
             font-size: 11pt;
             font-weight: bold;
-            margin: 15px 0 20px 0;
-            text-decoration: underline;
+            margin: 10px auto 20px auto;
+            padding: 6px 12px;
+            border: 1px solid #000;
+            display: inline-block;
+            text-decoration: none;
         }
 
-        .type-etat {
-            display: flex;
-            justify-content: space-between;
-            margin: 10px 0;
+        .section-title {
+            font-weight: bold;
             font-size: 9pt;
+            margin: 10px 0 6px 0;
         }
 
         .info-line {
             margin: 6px 0;
-            font-size: 9pt;
-            line-height: 1.4;
+            font-size: 11pt;
+            line-height: 1.3;
         }
 
         .info-line strong {
             font-weight: bold;
         }
 
-        .section-title {
-            font-weight: bold;
-            font-size: 9pt;
-            margin: 12px 0 6px 0;
-        }
-
         .hierarchie-table {
             width: 100%;
-            margin: 15px 0;
+            margin: 10px 0;
             border-collapse: collapse;
             font-size: 9.5pt;
         }
@@ -114,13 +151,6 @@
             background-color: #f0f0f0;
             font-weight: bold;
             width: 20%;
-        }
-
-        .visa-section {
-            margin-top: 25px;
-            text-align: right;
-            font-weight: bold;
-            font-size: 9pt;
         }
     </style>
 @endsection
@@ -159,7 +189,9 @@
     </div>
 
     {{-- Référence et signature --}}
-    <div class="section-title">Référence</div>
+    <div class="info-line">
+        <strong>Référence:</strong> {{ $numeroBca ?? 'BON DE COMMANDE' }}
+    </div>
 
     <div class="info-line">
         <strong>Date d'émission:</strong>
@@ -171,58 +203,80 @@
     </div>
 
     <div class="info-line">
-        <strong>Objet:</strong> {{ $engagement->objet ?? 'N/A' }}
+        <strong>OBJET:</strong> {{ $engagement->objet ?? 'N/A' }}
     </div>
 
     {{-- ✅ CORRIGER LIGNE 182 - Utiliser la variable calculée --}}
     <div class="info-line">
-        <strong>Bénéficiaire:</strong> {{ $nomBeneficiaire }}
+        <strong>BENEFICAIRE:</strong> {{ $nomBeneficiaire }}
     </div>
 
     {{-- Imputation --}}
-    <div class="section-title">
-        Cette autorisation sera imputée de la manière suivante:
+    <div class="info-line">
+        Cette autorisation d'Engagement est imputée de la manière suivante:
     </div>
 
     @if ($nomenclature)
         <div class="info-line">
-            <strong>Chapitre:</strong> {{ substr($nomenclature->code, 0, 2) }}
+            <strong>CHAPITRE:</strong> {{ substr($nomenclature->code, 0, 2) }}
         </div>
 
         <div class="info-line">
-            <strong>Article:</strong> {{ substr($nomenclature->code, 0, 3) }}
-        </div>
-
-        <div class="info-line">
-            <strong>Paragraphe:</strong> {{ $nomenclature->code }} - {{ $nomenclature->libelle }}
-        </div>
-    @else
-        <div class="info-line">
-            <strong>Nomenclature:</strong> Non définie
+            <strong>PARAGRAPHE/COMPTE/CODE:</strong> ({{ $nomenclature->code }}) - {{ $nomenclature->libelle }}
         </div>
     @endif
 
     {{-- Tableau hiérarchique --}}
     <table class="hierarchie-table">
-        <tr>
-            <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
-        </tr>
+        {{-- ✅ CORRECTION : Afficher sous-programme OU programme (priorité au sous-programme) --}}
+        @if ($sousProgramme)
+            {{-- Si sous-programme existe, afficher SEULEMENT le sous-programme --}}
+            <tr>
+                <th>SOUS-PROGRAMME:</th>
+                <td>{{ $sousProgramme->code }} - {{ $sousProgramme->libelle }}</td>
+            </tr>
+        @elseif ($programme)
+            {{-- Si PAS de sous-programme, afficher le programme --}}
+            <tr>
+                <th>PROGRAMME:</th>
+                <td>{{ $programme->code }} - {{ $programme->libelle }}</td>
+            </tr>
+        @endif
+
+        {{-- ✅ Chaque ligne s'affiche seulement si données existent --}}
+        @if ($nomenclature)
+            <tr>
+                <th>ARTICLE:</th>
+                <td>{{ $nomenclature->getCodeArticle() }}</td>
+            </tr>
+        @endif
+
+        @if ($objectif)
+            <tr>
+                <th>OBJECTIF:</th>
+                <td>{{ $objectif->libelle }}</td>
+            </tr>
+        @endif
+
+        @if ($action)
+            <tr>
+                <th>ACTION:</th>
+                <td>{{ $action->libelle }}</td>
+            </tr>
+        @endif
+
+        @if ($activite)
+            <tr>
+                <th>ACTIVITÉ:</th>
+                <td>{{ $activite->libelle }}</td>
+            </tr>
+        @endif
+
+        @if ($tache)
+            <tr>
+                <th>TÂCHE:</th>
+                <td>{{ $tache->libelle }}</td>
+            </tr>
+        @endif
     </table>
 @endsection

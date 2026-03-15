@@ -107,7 +107,7 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
     <style>
         .doc-title {
             text-align: center;
-            font-size: 11pt;
+            font-size: 10pt;
             font-weight: bold;
             margin: 10px auto 20px auto;
             padding: 6px 12px;
@@ -124,8 +124,8 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 
         .info-line {
             margin: 6px 0;
-            font-size: 11pt;
-            line-height: 1.3;
+            font-size: 10pt;
+            line-height: 1.2;
         }
 
         .info-line strong {
@@ -165,7 +165,7 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
         <strong>Type d'engagement:</strong> {{ $engagement->type_engagement }} -
         N°
         @if ($engagement->type_engagement === 'BC')
-            {{ $bonCommande->numero ?? 'N/A' }}
+            {{ $bonCommande->reference_document ?? 'N/A' }}
         @elseif($engagement->type_engagement === 'DA')
             {{ $decisionAdministrative->numero ?? 'N/A' }}
         @else
