@@ -15,6 +15,9 @@
                 </div> --}}
             </td>
             <td style="width: 50%; border: none; padding: 0; vertical-align: top;">
+                <div style="text-align: center; font-weight: 400; font-size: 9pt; margin-bottom:20px">
+                    YAOUNDE, Le _______________
+                </div>
                 <div style="text-align: center; font-weight: bold; font-size: 9pt;">
                     VISA DE L'ORDONNATEUR.
                 </div>

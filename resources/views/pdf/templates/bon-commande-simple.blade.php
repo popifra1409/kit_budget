@@ -221,7 +221,7 @@
 
     {{-- Montant en lettres --}}
     <div class="montant-lettres">
-        Arrete le present bon de commande a la somme de
+        Arrete le present bon de commande a la somme TTC de
         <strong>@yield('montant_lettres')</strong>
     </div>
 

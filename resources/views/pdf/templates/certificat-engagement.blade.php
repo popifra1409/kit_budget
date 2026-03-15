@@ -19,46 +19,82 @@
     $bonCommande = $donnees['_raw'];
     $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
 
+    // Récupérer la ligne budgétaire
+    $ligneBudgetaire = null;
+    $dotationInitiale = 0;
+    $disponibleAvant = 0;
+    $disponibleApres = 0;
+
+    if ($nomenclature) {
+        // Récupérer la ligne budgétaire associée
+        $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
+            ->where('nomenclature_id', $nomenclature->id)
+            ->first();
+
+        if ($ligneBudgetaire) {
+            // Dotation initiale
+            $dotationInitiale = $ligneBudgetaire->budget_initial ?? ($ligneBudgetaire->montant_initial ?? 0);
+
+            // Disponible AVANT engagement
+            $disponibleAvant = $ligneBudgetaire->disponible_engagement ?? 0;
+
+            // Disponible APRÈS engagement (disponible - montant engagé)
+            $montantEngage = $engagement->montant_engage ?? 0;
+            $disponibleApres = $disponibleAvant - $montantEngage;
+        }
+    }
+
     $tache = null;
     $activite = null;
     $action = null;
     $programme = null;
+    $sousProgramme = null;
     $objectif = null;
 
     if ($nomenclature) {
         $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
 
         if ($tache) {
-            $tache->load('activite.action.programme');
+            $tache->load('activite.action.programme.parent');
 
             $activite = $tache->activite;
             $action = $activite?->action;
             $programme = $action?->programme;
 
             if ($programme) {
-                try {
-                    if (method_exists($programme, 'objectifPrincipal')) {
-                        $objectif = $programme->objectifPrincipal;
-                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                        $objectifs = $programme->objectifsPrincipaux;
-                        if ($objectifs instanceof \Illuminate\Support\Collection) {
-                            $objectif = $objectifs->first();
-                        } else {
-                            $objectif = $objectifs;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    \Log::warning('Erreur récupération objectif', [
-                        'programme_id' => $programme->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    $objectif = null;
+                if ($programme->estSousProgramme()) {
+                    // C'est un sous-programme
+                $sousProgramme = $programme;
+                $programme = $programme->parent;
+            } else {
+                // C'est un programme principal
+                    $sousProgramme = null;
                 }
+
+                // Récupérer l'objectif
+            try {
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    if ($objectifs instanceof \Illuminate\Support\Collection) {
+                        $objectif = $objectifs->first();
+                    } else {
+                        $objectif = $objectifs;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur récupération objectif', [
+                    'programme_id' => $programme->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $objectif = null;
             }
         }
     }
+}
 
-    $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
+$nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 @endphp
 
 @section('title', 'Certificat d\'Engagement')
@@ -125,18 +161,60 @@
         CERTIFICAT D'ENGAGEMENT
     </div>
 
+    <div class="info-line">
+        <strong>Type d'engagement:</strong> {{ $engagement->type_engagement }} - N° {{ $bonCommande->numero }}
+    </div>
+
+
     {{-- Introduction --}}
     <div class="info-line">
-        Une Autorisation d'Engagement d'un montant de:
+        <strong>Imputation budgétaire de l'engagement </strong>: BUDGET PROGRAMME DU <strong>{{ $parametres->sigle }}
+        </strong>DE L'EXERCICE
+        <strong> {{ $engagement->exercice }} </strong>
     </div>
 
-    <div class="info-line">
-        <strong>Montant TTC en chiffres:</strong> {{ number_format($engagement->montant_engage, 0, ',', ' ') }} F cfa
-    </div>
+    @if ($ligneBudgetaire)
+        <div class="info-line">
+            <strong>DOTATION INITIALE:</strong> {{ number_format($dotationInitiale, 0, ',', ' ') }} F CFA
+        </div>
 
-    <div class="info-line">
-        <strong>En lettres:</strong> @yield('montant_lettres')
-    </div>
+        <div class="info-line">
+            <strong>Montant disponible:</strong> {{ number_format($disponibleAvant, 0, ',', ' ') }} F CFA
+            <div class="info-line" style="font-size:9px; font-style:italic">
+                (Avant engagement)
+            </div>
+        </div>
+
+        <div class="info-line">
+            Une Autorisation d'Engagement d'un montant de :
+        </div>
+
+        <div class="info-line">
+            <strong>Montant TTC de l'engagement (en chiffres):</strong>
+            {{ number_format($engagement->montant_engage, 0, ',', ' ') }} F
+            CFA
+            <div class="info-line">
+                <strong>En lettres:</strong> @yield('montant_lettres')
+            </div>
+        </div>
+
+        <div class="info-line">
+            <strong>Nouveau montant disponible :</strong>
+            <span style="{{ $disponibleApres < 0 ? 'color: red; font-weight: bold;' : '' }}">
+                {{ number_format($disponibleApres, 0, ',', ' ') }} F CFA
+            </span>
+            <div class="info-line" style="font-size:9px; font-style:italic">
+                (Après engagement)
+            </div>
+            @if ($disponibleApres < 0)
+                <span style="color: red; font-size: 8pt;"> (⚠️ Dépassement)</span>
+            @endif
+        </div>
+    @else
+        <div class="info-line" style="color: red;">
+            ⚠️ Ligne budgétaire non trouvée
+        </div>
+    @endif
 
     {{-- Réservation --}}
     <div class="section-title">
@@ -157,54 +235,81 @@
     </div>
 
     <div class="info-line">
-        <strong>Objet:</strong> {{ $engagement->objet }}
+        <strong>OBJET:</strong> {{ $engagement->objet }}
     </div>
 
     {{-- ✅ CORRIGER ICI - Utiliser la variable calculée --}}
     <div class="info-line">
-        <strong>Bénéficiaire:</strong> {{ $nomBeneficiaire }}
+        <strong>BENEFICIAIRE:</strong> {{ $nomBeneficiaire }}
     </div>
 
     {{-- Imputation --}}
-    <div class="section-title">
+    <div class="info-line">
         Cette autorisation d'Engagement est imputée de la manière suivante:
     </div>
 
     @if ($nomenclature)
         <div class="info-line">
-            <strong>Chapitre:</strong> {{ substr($nomenclature->code, 0, 2) }}
+            <strong>CHAPITRE:</strong> {{ substr($nomenclature->code, 0, 2) }}
         </div>
 
         <div class="info-line">
-            <strong>Article:</strong> {{ substr($nomenclature->code, 0, 3) }}
-        </div>
-
-        <div class="info-line">
-            <strong>Paragraphe:</strong> {{ $nomenclature->code }} - {{ $nomenclature->libelle }}
+            <strong>PARAGRAPHE/COMPTE/CODE:</strong> ({{ $nomenclature->code }}) - {{ $nomenclature->libelle }}
         </div>
     @endif
 
     {{-- Tableau hiérarchique --}}
     <table class="hierarchie-table">
-        <tr>
-            <th>PROGRAMME:</th>
-            <td>{{ $programme?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>OBJECTIF:</th>
-            <td>{{ $objectif?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>ACTION:</th>
-            <td>{{ $action?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>ACTIVITÉ:</th>
-            <td>{{ $activite?->libelle ?? 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>TACHE:</th>
-            <td>{{ $tache?->libelle ?? ($nomenclature?->libelle ?? 'N/A') }}</td>
-        </tr>
+        {{-- ✅ Programme (toujours si existe) --}}
+        @if ($programme)
+            <tr>
+                <th>PROGRAMME:</th>
+                <td>{{ $programme->code }} - {{ $programme->libelle }}</td>
+            </tr>
+        @endif
+
+        {{-- ✅ Sous-programme (seulement s'il existe) --}}
+        @if ($sousProgramme)
+            <tr>
+                <th>SOUS-PROGRAMME:</th>
+                <td>{{ $sousProgramme->code }} - {{ $sousProgramme->libelle }}</td>
+            </tr>
+        @endif
+
+        {{-- ✅ Chaque ligne s'affiche seulement si données existent --}}
+        @if ($nomenclature)
+            <tr>
+                <th>ARTICLE:</th>
+                <td>{{ $nomenclature->getCodeArticle() }}</td>
+            </tr>
+        @endif
+
+        @if ($objectif)
+            <tr>
+                <th>OBJECTIF:</th>
+                <td>{{ $objectif->libelle }}</td>
+            </tr>
+        @endif
+
+        @if ($action)
+            <tr>
+                <th>ACTION:</th>
+                <td>{{ $action->libelle }}</td>
+            </tr>
+        @endif
+
+        @if ($activite)
+            <tr>
+                <th>ACTIVITÉ:</th>
+                <td>{{ $activite->libelle }}</td>
+            </tr>
+        @endif
+
+        @if ($tache)
+            <tr>
+                <th>TÂCHE:</th>
+                <td>{{ $tache->libelle }}</td>
+            </tr>
+        @endif
     </table>
 @endsection

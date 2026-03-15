@@ -208,4 +208,37 @@ class NomenclatureBudgetaire extends Model
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
+
+    /**
+     * Obtenir le code de l'article (nomenclature de niveau 'article')
+     * Remonte la hiérarchie si nécessaire
+     */
+    public function getCodeArticle(): string
+    {
+        // Si c'est déjà un article, retourner son code
+        if ($this->niveau === 'article') {
+            return $this->code;
+        }
+
+        // Si c'est un paragraphe, l'article est le parent direct
+        if ($this->niveau === 'paragraphe' && $this->parent) {
+            if ($this->parent->niveau === 'article') {
+                return $this->parent->code;
+            }
+        }
+
+        // Si c'est une ligne, remonter de 2 niveaux
+        if ($this->niveau === 'ligne' && $this->parent) {
+            // Parent = paragraphe
+            if ($this->parent->parent) {
+                // Grand-parent = article
+                if ($this->parent->parent->niveau === 'article') {
+                    return $this->parent->parent->code;
+                }
+            }
+        }
+
+        // Si on n'a pas trouvé d'article, fallback sur les 3 premiers caractères
+        return substr($this->code, 0, 3);
+    }
 }

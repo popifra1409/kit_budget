@@ -6,7 +6,7 @@
     $bonCommande = $donnees['_raw'];
 
     // Définir des valeurs par défaut
-    $service = $donnees['service'] ?? ($bonCommande->serviceDemandeur->nom ?? 'RESSOURCES HUMAINES');
+    $service = $donnees['service'] ?? ($bonCommande->serviceDemandeur->nom ?? 'DIRECTION GENERALE');
     $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
     $dateImpression = $donnees['date_impression'] ?? date('d/m/Y');
     $prestataireNom = $donnees['prestataire_nom'] ?? ($bonCommande->fournisseur->raison_sociale ?? '');
@@ -74,6 +74,10 @@
 
         .font-bold {
             font-weight: bold;
+        }
+
+        .font-normal{
+            font-weight: 400;
         }
 
         .text-right {
@@ -202,7 +206,7 @@
 
     {{-- Service et numéro BCA --}}
     <div class="service-info">
-        SERVICE {{ strtoupper($service) }}
+        DEMANDEUR: <span class="font-normal">{{ strtoupper($service) }}</span>
     </div>
 
     <div class="bca-numero">
@@ -225,20 +229,12 @@
     <div class="mb-15">
         <table class="simple">
             <tr>
+                <td><strong>Objet du bon de commande: </strong></td>
+                <td class="font-normal">{{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}</td>
+            </tr>
+            <tr>
                 <td><strong>Nom ou raison du Prestataire</strong></td>
                 <td class="font-bold">{{ $prestataireNom }}</td>
-            </tr>
-            <tr>
-                <td>Adresse</td>
-                <td>{{ $prestataireAdresse }}</td>
-            </tr>
-            <tr>
-                <td></td>
-                <td>Tél: {{ $prestataireTel }}</td>
-            </tr>
-            <tr>
-                <td>N° contribuable</td>
-                <td>{{ $prestataireContribuable }}</td>
             </tr>
         </table>
     </div>
@@ -377,20 +373,20 @@
 
     {{-- Montant en lettres --}}
     <div class="montant-lettres-box">
-        Arrêté le présent bon de commande à la somme de
+        Arrêté le présent bon de commande administratif à la somme TTC de
         <strong>@yield('montant_lettres')</strong>
     </div>
 
     {{-- Signatures --}}
     <div class="mt-20 clearfix">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
-            1/1 Signé à Yaoundé Le..............................................
+            Yaoundé Le..............................................
         </div>
 
         <div class="signature-container">
             <div class="signature-block" style="width: 33%;">
                 <div class="font-bold">Le Prestataire</div>
-                <div class="mt-10 font-bold">{{ $prestataireNom }}</div>
+                {{-- <div class="mt-10 font-bold">{{ $prestataireNom }}</div> --}}
             </div>
 
             <div class="signature-block" style="width: 33%;">
@@ -398,7 +394,7 @@
             </div>
 
             <div class="signature-block" style="width: 33%;">
-                <div class="font-bold">L'ordonnateur</div>
+                {{-- <div class="font-bold">L'ordonnateur</div> --}}
                 <div class="mt-10 font-bold">
                     @php
                         $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
