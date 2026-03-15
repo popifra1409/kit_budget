@@ -32,6 +32,23 @@
 {{-- ✅ CSS pour la pagination (comme le bon de commande) --}}
 @push('styles')
     <style>
+        @page {
+            margin-top: 2cm;
+            margin-bottom: 2cm;
+            margin-left: 1.5cm;
+            margin-right: 1.5cm;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        @section('content')
+            {
+            padding-top: 1cm;
+        }
+
         /* ================= STYLES GÉNÉRAUX ================= */
         .service-info {
             margin-bottom: 8px;
@@ -131,12 +148,6 @@
             text-align: right;
             margin-bottom: 20px;
             font-size: 10pt;
-            position: fixed;
-            bottom: 1cm;
-            right: 1.5cm;
-            font-size: 9pt;
-            color: #666;
-            z-index: 1000;
         }
 
         .bca-box-continue {
