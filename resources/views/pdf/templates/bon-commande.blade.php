@@ -131,6 +131,12 @@
             text-align: right;
             margin-bottom: 20px;
             font-size: 10pt;
+            position: fixed;
+            bottom: 1cm;
+            right: 1.5cm;
+            font-size: 9pt;
+            color: #666;
+            z-index: 1000;
         }
 
         .bca-box-continue {
