@@ -157,20 +157,6 @@
                         <td class="money">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                     </tr>
                 @endforeach
-
-                {{-- Lignes vides pour compléter la page (minimum 10 lignes) --}}
-                {{-- @if ($lignesPage->count() < $lignesParPage)
-                    @for ($i = $lignesPage->count(); $i < $lignesParPage; $i++)
-                        <tr>
-                            <td class="num">&nbsp;</td>
-                            <td class="ref">&nbsp;</td>
-                            <td class="designation">&nbsp;</td>
-                            <td class="num">&nbsp;</td>
-                            <td class="money">&nbsp;</td>
-                            <td class="money">&nbsp;</td>
-                        </tr>
-                    @endfor
-                @endif --}}
             </tbody>
         </table>
 
@@ -221,7 +207,7 @@
 
     {{-- Montant en lettres --}}
     <div class="montant-lettres">
-        Arrete le present bon de commande a la somme TTC de
+        Arrete le present bon de commande a la somme de
         <strong>@yield('montant_lettres')</strong>
     </div>
 
@@ -239,9 +225,9 @@
                 <div class="fonction">
                     {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
                 </div>
-                {{-- <div class="nom">
+                <div class="nom">
                     {{ $parametres->nom_ordonnateur ?? '' }}
-                </div> --}}
+                </div>
             </div>
         </div>
     </div>
