@@ -223,62 +223,65 @@
          PAGE 1 : En-tête complet
          ======================================== --}}
 
-    {{-- Service et numéro BCA --}}
-    <div class="service-info">
-        DEMANDEUR: <span class="font-normal">{{ strtoupper($service) }}</span>
-    </div>
-
-    <div class="bca-numero">
-        BCA N°: {{ $numeroBca }}
-    </div>
-
-    <div class="date-impression">
-        Imprimé le {{ $dateImpression }}
-    </div>
-
-    {{-- Section: Pour les objets et matières ci-après --}}
-    <div class="text-center font-bold mb-15">
-        BON DE COMMANDE ADMINISTRATIF
-    </div>
-    <div class="text-center font-bold mb-15">
-        Pour les objets et matières ci-après:
-    </div>
-
-    {{-- Informations prestataire --}}
-    <div class="mb-15">
-        <table class="simple">
-            <tr>
-                <td><strong>Objet du bon de commande: </strong></td>
-                <td class="font-normal">{{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}</td>
-            </tr>
-            <tr>
-                <td><strong>Nom ou raison du Prestataire</strong></td>
-                <td class="font-bold">{{ $prestataireNom }}</td>
-            </tr>
-        </table>
-    </div>
-
-    {{-- ========================================
-         ✅ TABLEAU UNIQUE : Lignes + Totaux
-         ======================================== --}}
     @if (isset($bonCommande->lignes) && $bonCommande->lignes->count() > 0)
         @foreach ($lignesChunked as $pageIndex => $lignesPage)
+            {{-- ✅ EN-TÊTE COMPLET SUR CHAQUE PAGE --}}
+            <div class="service-info">
+                DEMANDEUR: <span class="font-normal">{{ strtoupper($service) }}</span>
+            </div>
+
+            <div class="bca-numero">
+                BCA N°: {{ $numeroBca }}
+            </div>
+
+            <div class="date-impression">
+                Imprimé le {{ $dateImpression }}
+            </div>
+
+            <div class="text-center font-bold mb-15">
+                BON DE COMMANDE ADMINISTRATIF
+            </div>
+
+            {{-- ✅ Afficher "Suite" seulement si page > 1 --}}
             @if ($pageIndex > 0)
-                <div class="page-header-continue">
-                    <div class="bca-box-continue">BCA N°: {{ $numeroBca }}</div>
-                    <div style="margin-top: 5px;"><strong>Suite</strong></div>
+                <div class="text-center font-bold mb-15" style="color: #666;">
+                    (Suite - Page {{ $pageIndex + 1 }})
+                </div>
+            @else
+                <div class="text-center font-bold mb-15">
+                    Pour les objets et matières ci-après:
                 </div>
             @endif
 
+            {{-- ✅ Infos prestataire (seulement sur la première page) --}}
+            @if ($pageIndex == 0)
+                <div class="mb-15">
+                    <table class="simple">
+                        <tr>
+                            <td><strong>Objet du bon de commande: </strong></td>
+                            <td class="font-normal">{{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Nom ou raison du Prestataire</strong></td>
+                            <td class="font-bold">{{ $prestataireNom }}</td>
+                        </tr>
+                    </table>
+                </div>
+            @endif
+
+            {{-- ========================================
+         ✅ TABLEAU UNIQUE : Lignes + Totaux
+         ======================================== --}}
             {{-- ✅ TABLEAU UNIQUE : Lignes + Totaux --}}
             <table class="articles-table" style="page-break-inside: auto;">
                 <thead>
                     <tr>
                         <th style="width: 16%;">REFERENCE</th>
-                        <th style="width: 53%;">DESIGNATION</th>
-                        <th style="width: 8%;">QTES</th>
-                        <th style="width: 10%;">P.U</th>
-                        <th style="width: 13%;">Total</th>
+                        <th style="width: 46%;">DESIGNATION</th>
+                        <th style="width: 10%;">QTES</th>
+                        <th style="width: 14%;">P.U</th>
+                        <th style="width: 14%;">Total</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -295,46 +298,36 @@
 
                     {{-- ✅ TOTAUX (dernière page seulement) --}}
                     @if ($loop->last)
-                        {{-- ✅ IMPORTANT : page-break-inside: avoid sur les totaux --}}
-                        <tr style="page-break-before: auto; page-break-after: avoid; page-break-inside: avoid;">
+                        <tr style="page-break-inside: avoid;">
                             <td colspan="5" style="border-top: 2px solid #000; padding: 0; height: 2px;"></td>
                         </tr>
 
-                        {{-- MONTANT HT --}}
                         <tr style="page-break-inside: avoid;">
                             <td style="text-align: right; font-weight: bold;" colspan="3">MONTANT HT</td>
-                            <td class="nombre font-bold" colspan="2">
-                                {{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
+                            <td class="nombre font-bold" colspan="2">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
                                 FCFA</td>
                         </tr>
 
-                        {{-- MONTANT TVA --}}
                         <tr style="page-break-inside: avoid;">
                             <td style="text-align: right; font-weight: bold;" colspan="3">MONTANT TVA</td>
-                            <td class="nombre font-bold" colspan="2">
-                                {{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }}
+                            <td class="nombre font-bold" colspan="2">{{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }}
                                 FCFA</td>
                         </tr>
 
-                        {{-- MONTANT IR --}}
                         <tr style="page-break-inside: avoid;">
                             <td style="text-align: right; font-weight: bold;" colspan="3">MONTANT IR</td>
-                            <td class="nombre font-bold" colspan="2">
-                                {{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }}
+                            <td class="nombre font-bold" colspan="2">{{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }}
                                 FCFA</td>
                         </tr>
 
-                        {{-- NET À PAYER --}}
                         <tr style="background-color: #f0f0f0; page-break-inside: avoid;">
                             <td style="text-align: right; font-weight: bold;" colspan="3">NET À PAYER</td>
                             <td class="nombre font-bold" colspan="2">
                                 {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
                         </tr>
 
-                        {{-- MONTANT TOTAL TTC --}}
                         <tr style="background-color: #e8e8e8; page-break-inside: avoid;">
-                            <td style="text-align: right; font-weight: bold; font-size: 10pt;" colspan="3">MONTANT TOTAL
-                                TTC</td>
+                            <td style="text-align: right; font-weight: bold; font-size: 10pt;" colspan="3">MONTANT TOTAL TTC</td>
                             <td class="nombre font-bold" style="font-size: 10pt;" colspan="2">
                                 {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
                         </tr>
@@ -361,15 +354,47 @@
             @endif
         @endforeach
     @else
-        {{-- Tableau vide --}}
+        {{-- Cas sans lignes --}}
+        <div class="service-info">
+            DEMANDEUR: <span class="font-normal">{{ strtoupper($service) }}</span>
+        </div>
+
+        <div class="bca-numero">
+            BCA N°: {{ $numeroBca }}
+        </div>
+
+        <div class="date-impression">
+            Imprimé le {{ $dateImpression }}
+        </div>
+
+        <div class="text-center font-bold mb-15">
+            BON DE COMMANDE ADMINISTRATIF
+        </div>
+        <div class="text-center font-bold mb-15">
+            Pour les objets et matières ci-après:
+        </div>
+
+        <div class="mb-15">
+            <table class="simple">
+                <tr>
+                    <td><strong>Objet du bon de commande: </strong></td>
+                    <td class="font-normal">{{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}</td>
+                </tr>
+                <tr>
+                    <td><strong>Nom ou raison du Prestataire</strong></td>
+                    <td class="font-bold">{{ $prestataireNom }}</td>
+                </tr>
+            </table>
+        </div>
+
         <table class="articles-table">
             <thead>
                 <tr>
                     <th style="width: 16%;">REFERENCE</th>
-                    <th style="width: 53%;">DESIGNATION</th>
-                    <th style="width: 8%;">QTES</th>
-                    <th style="width: 10%;">P.U</th>
-                    <th style="width: 13%;">Total</th>
+                    <th style="width: 46%;">DESIGNATION</th>
+                    <th style="width: 10%;">QTES</th>
+                    <th style="width: 14%;">P.U</th>
+                    <th style="width: 14%;">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -384,9 +409,7 @@
         <div class="page-number">Page 1 sur 1</div>
     @endif
 
-    {{-- ========================================
-         ✅ SIGNATURES (flux normal, pas fixed)
-         ======================================== --}}
+    {{-- Signatures --}}
     <div style="margin-top: 60px; page-break-inside: avoid;">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
             Yaoundé Le__________________________
@@ -411,11 +434,4 @@
             </div>
         </div>
     </div>
-
-    {{-- ✅ Numérotation finale (si totaux sur nouvelle page) --}}
-    @if ($totauxSurNouvellePage && $totalLignes > 0)
-        <div class="page-number">
-            Page {{ $nombrePages }} sur {{ $nombrePages }}
-        </div>
-    @endif
 @endsection
