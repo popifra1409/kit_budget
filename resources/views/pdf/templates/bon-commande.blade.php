@@ -16,10 +16,12 @@
         $donnees['prestataire_contribuable'] ?? ($bonCommande->fournisseur->nif ?? '........................');
 
     // Configuration de la pagination
-    $lignesParPage = 10; // Nombre de lignes par page
+    $lignesParPage = 10;
     $totalLignes = $bonCommande->lignes->count();
     $nombrePages = ceil($totalLignes / $lignesParPage);
+    $nombrePages = $nombrePages > 0 ? $nombrePages : 1; // Au moins 1 page
     $lignesChunked = $bonCommande->lignes->chunk($lignesParPage);
+
 @endphp
 
 @extends('pdf.layouts.master')
@@ -135,7 +137,7 @@
         }
 
         .totaux-table td.label {
-            width: 60%;
+            width: 50%;
             padding: 4px;
         }
 
@@ -260,11 +262,11 @@
             <table class="articles-table">
                 <thead>
                     <tr>
-                        <th style="width: 15%;">REFERENCE</th>
-                        <th style="width: 57%;">DESIGNATION</th>
+                        <th style="width: 16%;">REFERENCE</th>
+                        <th style="width: 53%;">DESIGNATION</th>
                         <th style="width: 8%;">QTES</th>
                         <th style="width: 10%;">P.U</th>
-                        <th style="width: 10%;">Total</th>
+                        <th style="width: 13%;">Total</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -277,22 +279,57 @@
                             <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                         </tr>
                     @endforeach
-
-                    {{-- Lignes vides pour compléter la page (minimum 10 lignes) --}}
-                    {{-- @if ($lignesPage->count() < $lignesParPage)
-                        @for ($i = $lignesPage->count(); $i < $lignesParPage; $i++)
-                            <tr>
-                                <td class="nombre">&nbsp;</td>
-                                <td>&nbsp;</td>
-                                <td>&nbsp;</td>
-                                <td class="nombre">&nbsp;</td>
-                                <td class="nombre">&nbsp;</td>
-                                <td class="nombre">&nbsp;</td>
-                            </tr>
-                        @endfor
-                    @endif --}}
                 </tbody>
             </table>
+
+            @if ($loop->last)
+                {{-- ✅ TOTAUX immédiatement après le tableau (pas de saut de page) --}}
+                <div class="totaux-section" style="margin-top: 15px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="width: 50%; vertical-align: top;">
+                                {{-- Espace vide ou informations supplémentaires --}}
+                            </td>
+                            <td style="width: 50%; vertical-align: top;">
+                                <table class="simple" style="width: 100%;">
+                                    <tr>
+                                        <td class="label">MONTANT HT</td>
+                                        <td class="valeur font-bold">
+                                            {{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }} FCFA</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="label">MONTANT TVA</td>
+                                        <td class="valeur font-bold">
+                                            {{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }} FCFA</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="label">MONTANT IR</td>
+                                        <td class="valeur font-bold">
+                                            {{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }} FCFA</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="label font-bold" style="background-color: #e8e8e8;">NET A PAYER</td>
+                                        <td class="valeur font-bold" style="background-color: #e8e8e8;">
+                                            {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="label font-bold" style="background-color: #e8e8e8;">MONTANT TOTAL TTC
+                                        </td>
+                                        <td class="valeur font-bold" style="background-color: #e8e8e8;">
+                                            {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                {{-- ✅ MONTANT EN LETTRES immédiatement après les totaux --}}
+                <div class="montant-lettres-box" style="margin-top: 15px;">
+                    Arrêté le présent bon de commande administratif à la somme TTC de
+                    <strong>@yield('montant_lettres')</strong>
+                </div>
+            @endif
 
             {{-- Numérotation de la page --}}
             <div class="page-number">
@@ -309,101 +346,68 @@
         <table class="articles-table">
             <thead>
                 <tr>
-                    <th style="width: 5%;">N°</th>
-                    <th style="width: 15%;">REFERENCE</th>
-                    <th style="width: 40%;">DESIGNATION</th>
-                    <th style="width: 10%;">QTES</th>
-                    <th style="width: 15%;">P.U</th>
-                    <th style="width: 15%;">Total</th>
+                    <th style="width: 16%;">REFERENCE</th>
+                    <th style="width: 53%;">DESIGNATION</th>
+                    <th style="width: 8%;">QTES</th>
+                    <th style="width: 10%;">P.U</th>
+                    <th style="width: 13%;">Total</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td colspan="6" class="text-center" style="padding: 20px; color: #999;">
+                    <td colspan="5" class="text-center" style="padding: 20px; color: #999;">
                         Aucune ligne de commande
                     </td>
                 </tr>
             </tbody>
         </table>
+
+        {{-- Totaux même si pas de lignes --}}
+        <div class="totaux-section" style="margin-top: 15px;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="width: 50%;"></td>
+                    <td style="width: 50%;">
+                        <table class="simple" style="width: 100%;">
+                            <tr>
+                                <td class="label font-bold" style="background-color: #e8e8e8;">MONTANT TOTAL TTC</td>
+                                <td class="valeur font-bold" style="background-color: #e8e8e8;">0 FCFA</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="page-number">
+            Page 1 sur {{ $nombrePages }}
+        </div>
     @endif
 
     {{-- ========================================
-         DERNIÈRE PAGE : Totaux et signatures
+         ✅ SIGNATURES EN BAS DE PAGE (position fixe)
          ======================================== --}}
-
-    {{-- Section totaux --}}
-    <div class="totaux-section">
-        <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-                <td style="width: 50%; vertical-align: top;">
-                    {{-- Espace vide ou informations supplémentaires --}}
-                </td>
-                <td style="width: 50%; vertical-align: top;">
-                    <table class="simple" style="width: 100%;">
-                        <tr>
-                            <td class="label">MONTANT HT</td>
-                            <td class="valeur font-bold">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
-                                FCFA</td>
-                        </tr>
-                        <tr>
-                            <td class="label">MONTANT TVA</td>
-                            <td class="valeur font-bold">{{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }}
-                                FCFA</td>
-                        </tr>
-                        <tr>
-                            <td class="label">MONTANT IR</td>
-                            <td class="valeur font-bold">{{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }}
-                                FCFA</td>
-                        </tr>
-                        <tr>
-                            <td class="label font-bold" style="background-color: #e8e8e8;">NET A PAYER</td>
-                            <td class="valeur font-bold" style="background-color: #e8e8e8;">
-                                {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
-                        </tr>
-                        <tr>
-                            <td class="label font-bold" style="background-color: #e8e8e8;">MONTANT TOTAL TTC</td>
-                            <td class="valeur font-bold" style="background-color: #e8e8e8;">
-                                {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </div>
-
-    {{-- Montant en lettres --}}
-    <div class="montant-lettres-box">
-        Arrêté le présent bon de commande administratif à la somme TTC de
-        <strong>@yield('montant_lettres')</strong>
-    </div>
-
-    {{-- Signatures --}}
-    <div class="mt-20 clearfix">
+    <div style="position: fixed; bottom: 2cm; left: 1.5cm; right: 1.5cm; width: calc(100% - 3cm);">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
             Yaoundé Le__________________________
         </div>
 
-        <div class="signature-container">
-            <div class="signature-block" style="width: 33%;">
+        <div class="clearfix">
+            <div style="width: 33%; float: left; text-align: center;">
                 <div class="font-bold">Le Prestataire</div>
-                {{-- <div class="mt-10 font-bold">{{ $prestataireNom }}</div> --}}
             </div>
 
-            <div class="signature-block" style="width: 33%;">
+            <div style="width: 33%; float: left;">
                 <!-- Vide -->
             </div>
 
-            <div class="signature-block" style="width: 33%;">
-                {{-- <div class="font-bold">L'ordonnateur</div> --}}
+            <div style="width: 33%; float: left; text-align: center;">
                 <div class="mt-10 font-bold">
                     @php
                         $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                     @endphp
                     {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
                 </div>
-                {{-- <div style="margin-top: 40px; border-top: 1px solid #000; padding-top: 5px;">
-                    {{ $parametres->nom_ordonnateur ?? '' }}
-                </div> --}}
             </div>
         </div>
     </div>
