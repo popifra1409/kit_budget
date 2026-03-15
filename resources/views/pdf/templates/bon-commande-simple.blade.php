@@ -239,9 +239,9 @@
                 <div class="fonction">
                     {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
                 </div>
-                <div class="nom">
+                {{-- <div class="nom">
                     {{ $parametres->nom_ordonnateur ?? '' }}
-                </div>
+                </div> --}}
             </div>
         </div>
     </div>

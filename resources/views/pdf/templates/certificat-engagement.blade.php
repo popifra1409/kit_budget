@@ -162,9 +162,16 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
     </div>
 
     <div class="info-line">
-        <strong>Type d'engagement:</strong> {{ $engagement->type_engagement }} - N° {{ $bonCommande->numero }}
+        <strong>Type d'engagement:</strong> {{ $engagement->type_engagement }} -
+        N°
+        @if ($engagement->type_engagement === 'BC')
+            {{ $bonCommande->numero ?? 'N/A' }}
+        @elseif($engagement->type_engagement === 'DA')
+            {{ $decisionAdministrative->numero ?? 'N/A' }}
+        @else
+            {{ $engagement->engageable->numero ?? 'N/A' }}
+        @endif
     </div>
-
 
     {{-- Introduction --}}
     <div class="info-line">
@@ -180,9 +187,9 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 
         <div class="info-line">
             <strong>Montant disponible:</strong> {{ number_format($disponibleAvant, 0, ',', ' ') }} F CFA
-            <div class="info-line" style="font-size:9px; font-style:italic">
+            <span class="info-line" style="font-size:9px; font-style:italic">
                 (Avant engagement)
-            </div>
+            </span>
         </div>
 
         <div class="info-line">
@@ -203,9 +210,9 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
             <span style="{{ $disponibleApres < 0 ? 'color: red; font-weight: bold;' : '' }}">
                 {{ number_format($disponibleApres, 0, ',', ' ') }} F CFA
             </span>
-            <div class="info-line" style="font-size:9px; font-style:italic">
+            <span class="info-line" style="font-size:9px; font-style:italic">
                 (Après engagement)
-            </div>
+            </span>
             @if ($disponibleApres < 0)
                 <span style="color: red; font-size: 8pt;"> (⚠️ Dépassement)</span>
             @endif
@@ -217,7 +224,7 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
     @endif
 
     {{-- Réservation --}}
-    <div class="section-title">
+    <div class="info-line">
         Est réservée pour l'acte Administratif ci-après:
     </div>
 
@@ -260,19 +267,18 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 
     {{-- Tableau hiérarchique --}}
     <table class="hierarchie-table">
-        {{-- ✅ Programme (toujours si existe) --}}
-        @if ($programme)
-            <tr>
-                <th>PROGRAMME:</th>
-                <td>{{ $programme->code }} - {{ $programme->libelle }}</td>
-            </tr>
-        @endif
-
-        {{-- ✅ Sous-programme (seulement s'il existe) --}}
+        {{-- ✅ CORRECTION : Afficher sous-programme OU programme (priorité au sous-programme) --}}
         @if ($sousProgramme)
+            {{-- Si sous-programme existe, afficher SEULEMENT le sous-programme --}}
             <tr>
                 <th>SOUS-PROGRAMME:</th>
                 <td>{{ $sousProgramme->code }} - {{ $sousProgramme->libelle }}</td>
+            </tr>
+        @elseif ($programme)
+            {{-- Si PAS de sous-programme, afficher le programme --}}
+            <tr>
+                <th>PROGRAMME:</th>
+                <td>{{ $programme->code }} - {{ $programme->libelle }}</td>
             </tr>
         @endif
 
