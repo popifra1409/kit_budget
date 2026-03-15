@@ -32,21 +32,31 @@
 {{-- ✅ CSS pour la pagination (comme le bon de commande) --}}
 @push('styles')
     <style>
+        /* ✅ MARGES DE PAGE POUR IMPRESSION PDF */
         @page {
+            size: A4;
             margin-top: 2cm;
-            margin-bottom: 2cm;
+            margin-bottom: 2.5cm;
             margin-left: 1.5cm;
             margin-right: 1.5cm;
         }
 
-        body {
+        /* * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
         }
 
-        @section('content')
-            {
-            padding-top: 1cm;
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+        } */
+
+        /* ✅ Container principal avec marges internes */
+        .content-wrapper {
+            padding-top: 0.5cm;
+            min-height: 100vh;
         }
 
         /* ================= STYLES GÉNÉRAUX ================= */
