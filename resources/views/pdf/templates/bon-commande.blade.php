@@ -18,10 +18,27 @@
     // Configuration de la pagination
     $lignesParPage = 10;
     $totalLignes = $bonCommande->lignes->count();
-    $nombrePages = ceil($totalLignes / $lignesParPage);
-    $nombrePages = $nombrePages > 0 ? $nombrePages : 1; // Au moins 1 page
-    $lignesChunked = $bonCommande->lignes->chunk($lignesParPage);
+    $nombrePagesLignes = ceil($totalLignes / $lignesParPage);
 
+    // ✅ Calcul intelligent : si on a 8+ lignes sur la dernière page, les totaux sauteront
+    $lignesSurDernierePage = $totalLignes % $lignesParPage;
+    if ($lignesSurDernierePage == 0 && $totalLignes > 0) {
+        $lignesSurDernierePage = $lignesParPage;
+    }
+
+    // Si 8+ lignes sur la dernière page OU pages multiples, les totaux sauteront probablement
+    $totauxSurNouvellePage = $lignesSurDernierePage >= 8 || $nombrePagesLignes > 1;
+
+    // Nombre total de pages
+    $nombrePages = $nombrePagesLignes;
+    if ($totauxSurNouvellePage) {
+        $nombrePages = $nombrePagesLignes + 1;
+    }
+
+    // S'assurer d'avoir au moins 1 page
+    $nombrePages = max($nombrePages, 1);
+
+    $lignesChunked = $bonCommande->lignes->chunk($lignesParPage);
 @endphp
 
 @extends('pdf.layouts.master')
@@ -253,8 +270,8 @@
                 </div>
             @endif
 
-            {{-- ✅ TABLEAU UNIQUE --}}
-            <table class="articles-table">
+            {{-- ✅ TABLEAU UNIQUE : Lignes + Totaux --}}
+            <table class="articles-table" style="page-break-inside: auto;">
                 <thead>
                     <tr>
                         <th style="width: 16%;">REFERENCE</th>
@@ -276,57 +293,48 @@
                         </tr>
                     @endforeach
 
-                    {{-- ✅ TOTAUX dans le même tableau (dernière page seulement) --}}
+                    {{-- ✅ TOTAUX (dernière page seulement) --}}
                     @if ($loop->last)
-                        {{-- Ligne de séparation --}}
-                        <tr>
+                        {{-- ✅ IMPORTANT : page-break-inside: avoid sur les totaux --}}
+                        <tr style="page-break-before: auto; page-break-after: avoid; page-break-inside: avoid;">
                             <td colspan="5" style="border-top: 2px solid #000; padding: 0; height: 2px;"></td>
                         </tr>
 
                         {{-- MONTANT HT --}}
-                        <tr>
-                            <td></td>
-                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">MONTANT
-                                HT</td>
-                            <td class="nombre font-bold" colspan="2">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
+                        <tr style="page-break-inside: avoid;">
+                            <td style="text-align: right; font-weight: bold;" colspan="3">MONTANT HT</td>
+                            <td class="nombre font-bold" colspan="2">
+                                {{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
                                 FCFA</td>
                         </tr>
 
                         {{-- MONTANT TVA --}}
-                        <tr>
-                            <td></td>
-                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">MONTANT
-                                TVA</td>
+                        <tr style="page-break-inside: avoid;">
+                            <td style="text-align: right; font-weight: bold;" colspan="3">MONTANT TVA</td>
                             <td class="nombre font-bold" colspan="2">
                                 {{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }}
                                 FCFA</td>
                         </tr>
 
                         {{-- MONTANT IR --}}
-                        <tr>
-                            <td></td>
-                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">MONTANT
-                                IR</td>
+                        <tr style="page-break-inside: avoid;">
+                            <td style="text-align: right; font-weight: bold;" colspan="3">MONTANT IR</td>
                             <td class="nombre font-bold" colspan="2">
                                 {{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }}
                                 FCFA</td>
                         </tr>
 
                         {{-- NET À PAYER --}}
-                        <tr style="background-color: #f0f0f0;">
-                            <td></td>
-                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">NET À
-                                PAYER</td>
+                        <tr style="background-color: #f0f0f0; page-break-inside: avoid;">
+                            <td style="text-align: right; font-weight: bold;" colspan="3">NET À PAYER</td>
                             <td class="nombre font-bold" colspan="2">
                                 {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
                         </tr>
 
                         {{-- MONTANT TOTAL TTC --}}
-                        <tr style="background-color: #e8e8e8;">
-                            <td></td>
-                            <td class="label font-bold" style="text-align: left; padding-left:300px; font-size: 10pt;"
-                                colspan="2">MONTANT
-                                TOTAL TTC</td>
+                        <tr style="background-color: #e8e8e8; page-break-inside: avoid;">
+                            <td style="text-align: right; font-weight: bold; font-size: 10pt;" colspan="3">MONTANT TOTAL
+                                TTC</td>
                             <td class="nombre font-bold" style="font-size: 10pt;" colspan="2">
                                 {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
                         </tr>
@@ -334,19 +342,20 @@
                 </tbody>
             </table>
 
-            {{-- Montant en lettres (après le tableau, dernière page) --}}
+            {{-- Montant en lettres (dernière page) --}}
             @if ($loop->last)
-                <div class="montant-lettres-box" style="margin-top: 15px;">
+                <div class="montant-lettres-box" style="margin-top: 15px; page-break-inside: avoid;">
                     Arrêté le présent bon de commande administratif à la somme TTC de
                     <strong>@yield('montant_lettres')</strong>
                 </div>
             @endif
 
-            {{-- Numérotation --}}
+            {{-- ✅ Numérotation corrigée --}}
             <div class="page-number">
                 Page {{ $pageIndex + 1 }} sur {{ $nombrePages }}
             </div>
 
+            {{-- Saut de page sauf dernière --}}
             @if (!$loop->last)
                 <div class="page-break"></div>
             @endif
@@ -372,11 +381,13 @@
             </tbody>
         </table>
 
-        <div class="page-number">Page 1 sur {{ $nombrePages }}</div>
+        <div class="page-number">Page 1 sur 1</div>
     @endif
 
-    {{-- ✅ SIGNATURES : Position absolue en bas SANS fixed --}}
-    <div style="margin-top: 50px; page-break-inside: avoid;">
+    {{-- ========================================
+         ✅ SIGNATURES (flux normal, pas fixed)
+         ======================================== --}}
+    <div style="margin-top: 60px; page-break-inside: avoid;">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
             Yaoundé Le__________________________
         </div>
@@ -400,4 +411,11 @@
             </div>
         </div>
     </div>
+
+    {{-- ✅ Numérotation finale (si totaux sur nouvelle page) --}}
+    @if ($totauxSurNouvellePage && $totalLignes > 0)
+        <div class="page-number">
+            Page {{ $nombrePages }} sur {{ $nombrePages }}
+        </div>
+    @endif
 @endsection
