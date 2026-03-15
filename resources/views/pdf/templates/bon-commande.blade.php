@@ -167,7 +167,7 @@
             margin-top: 20px;
             text-align: center;
             font-style: italic;
-            font-size: 8.5pt;
+            font-size: 10.5pt;
         }
 
         /* ================= STYLES PAGINATION ================= */
@@ -242,23 +242,18 @@
     </div>
 
     {{-- ========================================
-         PAGES : Tableau des lignes avec pagination
+         ✅ TABLEAU UNIQUE : Lignes + Totaux
          ======================================== --}}
     @if (isset($bonCommande->lignes) && $bonCommande->lignes->count() > 0)
         @foreach ($lignesChunked as $pageIndex => $lignesPage)
-            {{-- En-tête simplifié pour les pages suivantes --}}
             @if ($pageIndex > 0)
                 <div class="page-header-continue">
-                    <div class="bca-box-continue">
-                        BCA N°: {{ $numeroBca }}
-                    </div>
-                    <div style="margin-top: 5px;">
-                        <strong>Suite</strong>
-                    </div>
+                    <div class="bca-box-continue">BCA N°: {{ $numeroBca }}</div>
+                    <div style="margin-top: 5px;"><strong>Suite</strong></div>
                 </div>
             @endif
 
-            {{-- Tableau des lignes pour cette page --}}
+            {{-- ✅ TABLEAU UNIQUE --}}
             <table class="articles-table">
                 <thead>
                     <tr>
@@ -270,6 +265,7 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {{-- Lignes de commande --}}
                     @foreach ($lignesPage as $i => $ligne)
                         <tr>
                             <td>{{ $ligne->reference ?? '-' }}</td>
@@ -279,70 +275,84 @@
                             <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
                         </tr>
                     @endforeach
+
+                    {{-- ✅ TOTAUX dans le même tableau (dernière page seulement) --}}
+                    @if ($loop->last)
+                        {{-- Ligne de séparation --}}
+                        <tr>
+                            <td colspan="5" style="border-top: 2px solid #000; padding: 0; height: 2px;"></td>
+                        </tr>
+
+                        {{-- MONTANT HT --}}
+                        <tr>
+                            <td></td>
+                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">MONTANT
+                                HT</td>
+                            <td class="nombre font-bold" colspan="2">{{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }}
+                                FCFA</td>
+                        </tr>
+
+                        {{-- MONTANT TVA --}}
+                        <tr>
+                            <td></td>
+                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">MONTANT
+                                TVA</td>
+                            <td class="nombre font-bold" colspan="2">
+                                {{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }}
+                                FCFA</td>
+                        </tr>
+
+                        {{-- MONTANT IR --}}
+                        <tr>
+                            <td></td>
+                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">MONTANT
+                                IR</td>
+                            <td class="nombre font-bold" colspan="2">
+                                {{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }}
+                                FCFA</td>
+                        </tr>
+
+                        {{-- NET À PAYER --}}
+                        <tr style="background-color: #f0f0f0;">
+                            <td></td>
+                            <td class="label font-bold" style="text-align: left; padding-left:300px;" colspan="2">NET À
+                                PAYER</td>
+                            <td class="nombre font-bold" colspan="2">
+                                {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
+                        </tr>
+
+                        {{-- MONTANT TOTAL TTC --}}
+                        <tr style="background-color: #e8e8e8;">
+                            <td></td>
+                            <td class="label font-bold" style="text-align: left; padding-left:300px; font-size: 10pt;"
+                                colspan="2">MONTANT
+                                TOTAL TTC</td>
+                            <td class="nombre font-bold" style="font-size: 10pt;" colspan="2">
+                                {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
+                        </tr>
+                    @endif
                 </tbody>
             </table>
 
+            {{-- Montant en lettres (après le tableau, dernière page) --}}
             @if ($loop->last)
-                {{-- ✅ TOTAUX immédiatement après le tableau (pas de saut de page) --}}
-                <div class="totaux-section" style="margin-top: 15px;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr>
-                            <td style="width: 50%; vertical-align: top;">
-                                {{-- Espace vide ou informations supplémentaires --}}
-                            </td>
-                            <td style="width: 50%; vertical-align: top;">
-                                <table class="simple" style="width: 100%;">
-                                    <tr>
-                                        <td class="label">MONTANT HT</td>
-                                        <td class="valeur font-bold">
-                                            {{ number_format($bonCommande->montant_ht ?? 0, 0, ',', ' ') }} FCFA</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="label">MONTANT TVA</td>
-                                        <td class="valeur font-bold">
-                                            {{ number_format($bonCommande->montant_tva ?? 0, 0, ',', ' ') }} FCFA</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="label">MONTANT IR</td>
-                                        <td class="valeur font-bold">
-                                            {{ number_format($bonCommande->montant_ir ?? 0, 0, ',', ' ') }} FCFA</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="label font-bold" style="background-color: #e8e8e8;">NET A PAYER</td>
-                                        <td class="valeur font-bold" style="background-color: #e8e8e8;">
-                                            {{ number_format($bonCommande->net_a_percevoir ?? 0, 0, ',', ' ') }} FCFA</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="label font-bold" style="background-color: #e8e8e8;">MONTANT TOTAL TTC
-                                        </td>
-                                        <td class="valeur font-bold" style="background-color: #e8e8e8;">
-                                            {{ number_format($bonCommande->montant_ttc ?? 0, 0, ',', ' ') }} FCFA</td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-
-                {{-- ✅ MONTANT EN LETTRES immédiatement après les totaux --}}
                 <div class="montant-lettres-box" style="margin-top: 15px;">
                     Arrêté le présent bon de commande administratif à la somme TTC de
                     <strong>@yield('montant_lettres')</strong>
                 </div>
             @endif
 
-            {{-- Numérotation de la page --}}
+            {{-- Numérotation --}}
             <div class="page-number">
                 Page {{ $pageIndex + 1 }} sur {{ $nombrePages }}
             </div>
 
-            {{-- Saut de page sauf pour la dernière page --}}
             @if (!$loop->last)
                 <div class="page-break"></div>
             @endif
         @endforeach
     @else
-        {{-- Tableau vide avec message --}}
+        {{-- Tableau vide --}}
         <table class="articles-table">
             <thead>
                 <tr>
@@ -362,32 +372,11 @@
             </tbody>
         </table>
 
-        {{-- Totaux même si pas de lignes --}}
-        <div class="totaux-section" style="margin-top: 15px;">
-            <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                    <td style="width: 50%;"></td>
-                    <td style="width: 50%;">
-                        <table class="simple" style="width: 100%;">
-                            <tr>
-                                <td class="label font-bold" style="background-color: #e8e8e8;">MONTANT TOTAL TTC</td>
-                                <td class="valeur font-bold" style="background-color: #e8e8e8;">0 FCFA</td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </div>
-
-        <div class="page-number">
-            Page 1 sur {{ $nombrePages }}
-        </div>
+        <div class="page-number">Page 1 sur {{ $nombrePages }}</div>
     @endif
 
-    {{-- ========================================
-         ✅ SIGNATURES EN BAS DE PAGE (position fixe)
-         ======================================== --}}
-    <div style="position: fixed; bottom: 2cm; left: 1.5cm; right: 1.5cm; width: calc(100% - 3cm);">
+    {{-- ✅ SIGNATURES : Position absolue en bas SANS fixed --}}
+    <div style="margin-top: 50px; page-break-inside: avoid;">
         <div class="text-right" style="margin-bottom: 20px; font-size: 8pt;">
             Yaoundé Le__________________________
         </div>
