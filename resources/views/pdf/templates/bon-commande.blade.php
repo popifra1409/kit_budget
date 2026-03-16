@@ -7,6 +7,7 @@
 
     // Définir des valeurs par défaut
     $service = $donnees['service'] ?? ($bonCommande->serviceDemandeur->nom ?? 'DIRECTION GENERALE');
+
     $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
     $dateImpression = $donnees['date_impression'] ?? date('d/m/Y');
     $prestataireNom = $donnees['prestataire_nom'] ?? ($bonCommande->fournisseur->raison_sociale ?? '');
@@ -15,10 +16,35 @@
     $prestataireContribuable =
         $donnees['prestataire_contribuable'] ?? ($bonCommande->fournisseur->nif ?? '........................');
 
-    $lignesParPage = 10;
+    $lignesPage1 = 20; // Page 1 avec en-tête complet
+    $lignesPagesSuivantes = 25; // Pages suivantes avec en-tête mini
+
     $totalLignes = $bonCommande->lignes->count();
-    $nombrePages = $totalLignes > 0 ? ceil($totalLignes / $lignesParPage) : 1;
-    $lignesChunked = $bonCommande->lignes->chunk($lignesParPage);
+
+    // ✅ Découper intelligemment les lignes
+    $lignesChunked = collect();
+    $lignesRestantes = $bonCommande->lignes;
+
+    if ($totalLignes > 0) {
+        // Première page : prendre les X premières lignes
+        $lignesChunked->push($lignesRestantes->take($lignesPage1));
+        $lignesRestantes = $lignesRestantes->skip($lignesPage1);
+
+        // Pages suivantes : découper par chunks de Y lignes
+        while ($lignesRestantes->count() > 0) {
+            $lignesChunked->push($lignesRestantes->take($lignesPagesSuivantes));
+            $lignesRestantes = $lignesRestantes->skip($lignesPagesSuivantes);
+        }
+    }
+
+    $nombrePages = $lignesChunked->count();
+
+    $derniereLigneCount = $lignesChunked->last()?->count() ?? 0;
+    // Si la dernière page a plus de 30 lignes, les totaux vont probablement sauter
+    $totauxVontSauter = $derniereLigneCount >= 25;
+
+    $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+
 @endphp
 
 @extends('pdf.layouts.master')
@@ -33,31 +59,19 @@
 @push('styles')
     <style>
         /* ✅ MARGES DE PAGE POUR IMPRESSION PDF */
-        @page {
-            size: A4;
-            margin-top: 2cm;
-            margin-bottom: 2.5cm;
-            margin-left: 1.5cm;
-            margin-right: 1.5cm;
-        }
+            @page {
+                size: A4;
+                margin-top: 2cm;
+                margin-bottom: 2cm;
+                margin-left: 1.5cm;
+                margin-right: 1.5cm;
+            }
 
-        /* * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 10pt;
-            line-height: 1.4;
-        } */
-
-        /* ✅ Container principal avec marges internes */
-        .content-wrapper {
-            padding-top: 0.5cm;
-            min-height: 100vh;
-        }
+            /* ✅ Container principal avec marges internes */
+            .content-wrapper {
+                padding-top: 1.5cm;
+                min-height: 100vh;
+            }
 
         /* ================= STYLES GÉNÉRAUX ================= */
         .service-info {
@@ -198,12 +212,12 @@
         {{-- ✅ EN-TÊTE COMPLET sur chaque page --}}
         @if ($pageIndex > 0)
             {{-- Pages suivantes : en-tête simplifié --}}
+            <div style="margin-top: 15px;">
+                <strong>Suite - Page {{ $pageIndex + 1 }}</strong>
+            </div>
             <div class="page-header-continue">
                 <div class="bca-box-continue">
                     BCA N°: {{ $numeroBca }}
-                </div>
-                <div style="margin-top: 5px;">
-                    <strong>Suite - Page {{ $pageIndex + 1 }}</strong>
                 </div>
             </div>
         @else
@@ -247,10 +261,10 @@
             <thead>
                 <tr>
                     <th style="width: 16%;">REFERENCE</th>
-                    <th style="width: 53%;">DESIGNATION</th>
-                    <th style="width: 8%;">QTES</th>
-                    <th style="width: 10%;">P.U</th>
-                    <th style="width: 13%;">Total</th>
+                    <th style="width: 46%;">DESIGNATION</th>
+                    <th style="width: 10%;">QTES</th>
+                    <th style="width: 14%;">P.U</th>
+                    <th style="width: 14%;">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -267,9 +281,25 @@
             </tbody>
         </table>
 
-        {{-- ✅ TOTAUX (dernière page seulement) --}}
+        {{-- ✅ TOTAUX + MONTANT + SIGNATURES (dernière page, dans un bloc) --}}
         @if ($loop->last)
-            <div class="totaux">
+            {{-- ✅ Afficher l'en-tête SEULEMENT si totaux vont sauter --}}
+            @if ($totauxVontSauter)
+                <div style="page-break-after: avoid; margin-top: 15px; margin-bottom: 10px;">
+                    <div style="text-align: right;">
+                        <div
+                            style="display: inline-block; border: 2px solid #000; padding: 6px 12px; font-weight: bold; font-size: 10pt;">
+                            BCA N°: {{ $numeroBca }}
+                        </div>
+                        <div style="margin-top: 3px; font-size: 9pt;">
+                            <strong>Récapitulatif</strong>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            {{-- Totaux --}}
+            <div class="totaux" style="page-break-inside: avoid;">
                 <table>
                     <tr>
                         <td>MONTANT HT</td>
@@ -297,49 +327,40 @@
                     </tr>
                 </table>
             </div>
-        @endif
 
-        {{-- ✅ Numérotation fixe (comme le bon de commande) --}}
+            {{-- Montant en lettres --}}
+            <div class="montant-lettres-box" style="page-break-inside: avoid;">
+                Arrêté le présent bon de commande administratif à la somme TTC de
+                <strong style="text-transform: uppercase;">@yield('montant_lettres')</strong>
+            </div>
+
+            {{-- Signatures --}}
+            <div class="signature-container clearfix" style="page-break-inside: avoid;">
+                <div style="text-align: right; margin-bottom: 20px; font-size: 8pt;">
+                    Yaoundé Le__________________________
+                </div>
+
+                <div style="width: 100%;">
+                    <div style="width: 33%; float: left; text-align: center;">
+                        <div class="font-bold">Le Prestataire</div>
+                    </div>
+                    <div style="width: 33%; float: left;"></div>
+                    <div style="width: 33%; float: left; text-align: center;">
+                        @php
+                            $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+                        @endphp
+                        <div class="font-bold" style="margin-top: 10px;">
+                            {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
         <div class="page-number">
             Page {{ $pageIndex + 1 }} sur {{ $nombrePages }}
         </div>
-
-        {{-- ✅ Saut de page sauf dernière --}}
         @if (!$loop->last)
             <div class="page-break"></div>
         @endif
     @endforeach
-
-    {{-- ========================================
-         APRÈS LA BOUCLE : Montant lettres + Signatures
-         ======================================== --}}
-
-    {{-- Montant en lettres --}}
-    <div class="montant-lettres-box">
-        Arrêté le présent bon de commande administratif à la somme TTC de
-        <strong style="text-transform: uppercase;">@yield('montant_lettres')</strong>
-    </div>
-
-    {{-- ✅ Signatures (page-break-inside: avoid) --}}
-    <div class="signature-container clearfix">
-        <div style="text-align: right; margin-bottom: 20px; font-size: 8pt;">
-            Yaoundé Le__________________________
-        </div>
-
-        <div style="width: 100%;">
-            <div style="width: 33%; float: left; text-align: center;">
-                <div class="font-bold">Le Prestataire</div>
-            </div>
-
-            <div style="width: 33%; float: left;">
-                <!-- Vide -->
-            </div>
-
-            <div style="width: 33%; float: left; text-align: center;">
-                <div class="font-bold" style="margin-top: 10px;">
-                    {{ $parametres->fonction_ordonnateur ?? 'LE DIRECTEUR GENERAL' }}
-                </div>
-            </div>
-        </div>
-    </div>
 @endsection
