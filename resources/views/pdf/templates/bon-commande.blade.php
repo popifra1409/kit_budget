@@ -16,7 +16,7 @@
     $prestataireContribuable =
         $donnees['prestataire_contribuable'] ?? ($bonCommande->fournisseur->nif ?? '........................');
 
-    $lignesPage1 = 17; // Page 1 avec en-tête complet
+    $lignesPage1 = 16; // Page 1 avec en-tête complet
     $lignesPagesSuivantes = 25; // Pages suivantes avec en-tête mini
 
     $totalLignes = $bonCommande->lignes->count();
