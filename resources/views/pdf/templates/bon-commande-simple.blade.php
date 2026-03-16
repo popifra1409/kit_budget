@@ -6,7 +6,7 @@
     $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
     // ✅ PAGINATION DYNAMIQUE
-    $lignesPage1 = 20;
+    $lignesPage1 = 17;
     $lignesPagesSuivantes = 25;
 
     $totalLignes = $bonCommande->lignes->count();
