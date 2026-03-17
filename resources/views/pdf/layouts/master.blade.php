@@ -8,8 +8,13 @@
 
     <style>
         @page {
-            size: A4 portrait;
-            margin: 0mm 15mm 18mm 15mm;
+            @if (isset($orientation) && $orientation === 'landscape')
+                size: A4 landscape;
+                margin: 10mm 8mm;
+            @else
+                size: A4 portrait;
+                margin: 2cm 1.5cm;
+            @endif
         }
 
         body {

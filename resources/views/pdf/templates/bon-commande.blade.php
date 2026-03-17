@@ -47,7 +47,7 @@
 
 @endphp
 
-@extends('pdf.layouts.master')
+@extends('pdf.layouts.master', ['orientation' => 'landscape'])
 
 @section('title', 'BCA N° ' . $numeroBca)
 
@@ -59,19 +59,19 @@
 @push('styles')
     <style>
         /* ✅ MARGES DE PAGE POUR IMPRESSION PDF */
-            @page {
-                size: A4;
-                margin-top: 2cm;
-                margin-bottom: 2cm;
-                margin-left: 1.5cm;
-                margin-right: 1.5cm;
-            }
+        @page {
+            size: A4 portrait !important;
+            margin-top: 2cm;
+            margin-bottom: 2cm;
+            margin-left: 1.5cm;
+            margin-right: 1.5cm;
+        }
 
-            /* ✅ Container principal avec marges internes */
-            .content-wrapper {
-                padding-top: 1.5cm;
-                min-height: 100vh;
-            }
+        /* ✅ Container principal avec marges internes */
+        .content-wrapper {
+            padding-top: 1.5cm;
+            min-height: 100vh;
+        }
 
         /* ================= STYLES GÉNÉRAUX ================= */
         .service-info {

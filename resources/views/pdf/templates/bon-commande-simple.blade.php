@@ -46,7 +46,7 @@
 @push('styles')
     <style>
         @page {
-            size: A4;
+            size: A4 portrait !important;
             margin-top: 2cm;
             margin-bottom: 2cm;
             margin-left: 1.5cm;
