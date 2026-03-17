@@ -1509,7 +1509,7 @@ class BonCommandeResource extends Resource
                         });
                     })
                     ->toggle()
-                    ->default(true) // ✅ ACTIVÉ par défaut
+                    ->default(true)
                     ->indicateUsing(fn() => '📌 Bons nécessitant mon action'),
 
                 Tables\Filters\Filter::make('mes_transmissions')
