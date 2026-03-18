@@ -251,9 +251,9 @@ class ReferenceMercurialeResource extends Resource
                                 'text/csv',
                                 'text/plain',
                             ])
-                            ->maxSize(51200)
+                            ->maxSize(102400)
                             ->required()
-                            ->helperText('Formats acceptés : .xlsx, .csv (max 50MB)')
+                            ->helperText('Formats acceptés : .xlsx, .csv (max 100MB)')
                             ->columnSpanFull(),
 
                         Forms\Components\Placeholder::make('instructions')
