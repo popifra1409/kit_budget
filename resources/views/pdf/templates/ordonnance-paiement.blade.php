@@ -341,6 +341,43 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
             margin: 4px 0;
             font-size: 9pt;
         }
+
+        .objet-block {
+            margin: 3px 0;
+            line-height: 1.05;
+        }
+
+        .objet-titre {
+            font-weight: bold;
+            font-size: 8pt;
+            margin: 0;
+        }
+
+        .objet-sub {
+            font-size: 7pt;
+            font-style: italic;
+            margin: 0;
+        }
+
+        .objet-text {
+            margin-top: 2px;
+            font-size: 8pt;
+            line-height: 1.1;
+
+            /*IMPORTANT */
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .montant-block {
+            margin-top: 5px;
+            line-height: 1.05;
+        }
+
+        .separator {
+            border-bottom: 2px solid #000;
+            margin: 3px 0;
+        }
     </style>
 @endsection
 
@@ -376,31 +413,37 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                         </div>
                     @endif
                 </div>
-                <div>
-                    {{-- Objet de la dépense --}}
-                    <div style="border-bottom: 2px solid #000; margin: 5px 0;"></div>
-                    <div style="margin-top: 3px;">
-                        <div class="font-bold" style="font-size: 8pt;">OBJET DE LA DEPENSE:</div>
-                        <div class="font-tiny" style="font-style: italic;">SUBJECT OF EXPENDITURE</div>
-                        <div style="margin-top: 3px; font-size: 8pt;">
-                            {{ $ordonnance->objet ?? ($documentSource?->objet ?? 'Paiement') }}
+                <div class="objet-block">
+
+                    <div class="separator"></div>
+
+                    <div class="objet-titre">OBJET DE LA DEPENSE:</div>
+                    <div class="objet-sub">SUBJECT OF EXPENDITURE</div>
+
+                    <div class="objet-text">
+                        {{ $ordonnance->objet ?? ($documentSource?->objet ?? 'Paiement') }}
+                    </div>
+
+                    <div class="montant-block">
+                        <div class="objet-titre">
+                            MONTANT TOTAL DE LA DEPENSE:
+                            <strong>{{ number_format($montantBrut, 0, ',', ' ') }} F CFA</strong>
+                        </div>
+
+                        <div class="objet-sub">TOTAL AMOUNT OF EXPENSE</div>
+
+                        <div style="margin-top:4px;">
+                            <div class="objet-titre">Arrêté en toutes lettres:</div>
+                            <div class="objet-sub">Closed at the sum of (in words)</div>
+
+                            <div style="margin-top:2px; text-align:center;">
+                                <strong style="font-size:8pt; text-transform:uppercase;">
+                                    @yield('montant_lettres_ttc')
+                                </strong>
+                            </div>
                         </div>
                     </div>
-                    <div style="margin-top: 8px;">
-                        <div class="font-bold" style="font-size: 8pt;">MONTANT TOTAL DE LA DEPENSE:
-                            <strong>{{ number_format($montantBrut, 0, ',', ' ') }} F CFA </strong>
-                        </div>
-                        <div class="font-tiny" style="font-style: italic;">TOTAL AMOUNT OF EXPENSE</div>
-                        <div style="margin-top: 8px; margin-bottom: 8px;">
-                            <div class="font-bold" style="font-size: 8pt; text-align: left;">Arrêté en toutes lettres:
-                            </div>
-                            <div class="font-tiny" style="font-style: italic; text-align: left;">Closed at the sum of (in
-                                words)</div>
-                            <div style="margin-top: 3px; text-align: center;">
-                                <strong style="font-size: 8pt; text-transform: uppercase;">@yield('montant_lettres_ttc')</strong>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
                 <div>
                     <div style="border-bottom: 2px solid #000; margin: 0;"></div>
