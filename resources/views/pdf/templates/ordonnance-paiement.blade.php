@@ -657,9 +657,6 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                 <div style="margin-top: 10px;">
                     <div class="font-bold" style="font-size: 8pt;">Yaoundé, le _____________</div>
                     <div class="font-tiny" style="font-style: italic;">Yaounde, the</div>
-                    <div style="margin-top: 3px;">
-                        <strong>{{ $ordonnance->date_emission ? \Carbon\Carbon::parse($ordonnance->date_emission)->format('d/m/Y') : '..................' }}</strong>
-                    </div>
                     <div style="margin-top: 15px; text-align: right;">
                         <div class="font-bold" style="font-size: 7.5pt;">(Signature et timbre de l'ordonnateur)</div>
                         <div class="font-tiny" style="font-style: italic;">(Signature and stamp)</div>

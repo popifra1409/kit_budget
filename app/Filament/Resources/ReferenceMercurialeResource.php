@@ -15,6 +15,8 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Imports\ReferenceMercurialeImport;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class ReferenceMercurialeResource extends Resource
 {
@@ -246,53 +248,106 @@ class ReferenceMercurialeResource extends Resource
                                 'text/csv',
                                 'text/plain',
                             ])
-                            ->maxSize(5120) // 5MB
+                            ->maxSize(51200)
                             ->required()
-                            ->helperText('Formats acceptés : .xlsx, .csv (max 5MB)')
+                            ->helperText('Formats acceptés : .xlsx, .csv (max 50MB)')
                             ->columnSpanFull(),
 
                         Forms\Components\Placeholder::make('instructions')
                             ->label('Instructions')
-                            ->content('
-                    Le fichier doit contenir les colonnes suivantes (dans cet ordre) :
-                    1. Code référence
-                    2. Désignation
-                    3. Unité
-                    4. Prix référence
-                    5. Rubrique
-                    6. Sous-rubrique
-                ')
+                            ->content('Le fichier doit contenir : Code référence, Désignation, Unité, Prix référence, Rubrique, Sous-rubrique')
                             ->columnSpanFull(),
                     ])
                     ->action(function (array $data) {
                         try {
-                            $import = new ReferenceMercurialeImport($data['exercice_id']);
+                            if (empty($data['fichier'])) {
+                                throw new \Exception("Aucun fichier uploadé.");
+                            }
 
-                            Excel::import($import, $data['fichier']);
+                            // ✅ TESTER TOUS LES CHEMINS POSSIBLES
+                            $cheminsPossibles = [
+                                storage_path('app/livewire-tmp/' . $data['fichier']),
+                                storage_path('app/' . $data['fichier']),
+                                storage_path('app/public/' . $data['fichier']),
+                                $data['fichier'],
+                            ];
+
+                            $cheminFichier = null;
+                            foreach ($cheminsPossibles as $chemin) {
+                                if (file_exists($chemin)) {
+                                    $cheminFichier = $chemin;
+                                    break;
+                                }
+                            }
+
+                            // Si toujours pas trouvé, chercher dans livewire-tmp
+                            if (!$cheminFichier) {
+                                $nomFichier = basename($data['fichier']);
+                                $fichiers = \Storage::files('livewire-tmp');
+
+                                foreach ($fichiers as $fichier) {
+                                    if (basename($fichier) === $nomFichier) {
+                                        $cheminFichier = storage_path('app/' . $fichier);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (!$cheminFichier || !file_exists($cheminFichier)) {
+                                throw new \Exception("Fichier introuvable. Vérifiez que l'upload s'est bien passé.");
+                            }
+
+                            if (filesize($cheminFichier) === 0) {
+                                throw new \Exception("Le fichier est vide.");
+                            }
+
+                            // ✅ IMPORT
+                            $import = new \App\Imports\ReferenceMercurialeImport($data['exercice_id']);
+                            Excel::import($import, $cheminFichier);
 
                             $failures = $import->getFailures();
 
                             if (count($failures) > 0) {
                                 $erreurs = collect($failures)->map(function ($failure) {
                                     return "Ligne {$failure->row()}: " . implode(', ', $failure->errors());
-                                })->take(5)->implode("\n");
+                                })->take(10)->implode("\n");
 
                                 Notification::make()
-                                    ->title('Import terminé avec des erreurs')
+                                    ->title('Import avec erreurs')
                                     ->warning()
-                                    ->body("Certaines lignes n'ont pas pu être importées :\n\n{$erreurs}")
+                                    ->body("{$erreurs}")
                                     ->persistent()
                                     ->send();
                             } else {
                                 Notification::make()
-                                    ->title('Import réussi')
+                                    ->title('Import réussi ✅')
                                     ->success()
-                                    ->body('Toutes les références mercuriales ont été importées avec succès.')
+                                    ->body('Toutes les références ont été importées.')
                                     ->send();
                             }
-                        } catch (\Exception $e) {
+
+                            // Nettoyage
+                            try {
+                                @unlink($cheminFichier);
+                            } catch (\Exception $e) {
+                            }
+                        } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
+                            $erreurs = [];
+                            foreach ($e->failures() as $failure) {
+                                $erreurs[] = "Ligne {$failure->row()}: " . implode(', ', $failure->errors());
+                            }
+
                             Notification::make()
-                                ->title('Erreur lors de l\'import')
+                                ->title('Erreur de validation')
+                                ->danger()
+                                ->body(implode("\n", array_slice($erreurs, 0, 10)))
+                                ->persistent()
+                                ->send();
+                        } catch (\Exception $e) {
+                            \Log::error('Erreur import', ['error' => $e->getMessage()]);
+
+                            Notification::make()
+                                ->title('Erreur import')
                                 ->danger()
                                 ->body($e->getMessage())
                                 ->persistent()
