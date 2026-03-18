@@ -776,7 +776,7 @@ class BonCommandeResource extends Resource
                                             number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                     ]);
                             })
-                            ->required()  
+                            ->required()
                             ->searchable()
                             ->live(debounce: 1000)
                             ->afterStateUpdated(function ($state, callable $set, callable $get) {
@@ -796,43 +796,69 @@ class BonCommandeResource extends Resource
                                 // ===== Choix Mercuriale ou Saisie Libre =====
                                 Forms\Components\Select::make('reference_mercuriale_id')
                                     ->label('Référence Mercuriale')
-                                    ->options(function (callable $get) {
+                                    ->searchable()
+                                    ->getSearchResultsUsing(function (string $search, callable $get) {
                                         $exerciceId = $get('../../exercice_id');
-                                        if (!$exerciceId) {
-                                            return ['Veuillez d\'abord sélectionner un exercice'];
+
+                                        if (!$exerciceId || strlen($search) < 3) {
+                                            return ['manual' => '➕ Saisie manuelle (tapez au moins 3 caractères)'];
                                         }
 
-                                        $references = \App\Models\ReferenceMercuriale::where('exercice_id', $exerciceId)
-                                            ->where('actif', true)
-                                            ->get()
-                                            ->mapWithKeys(fn($ref) => [
-                                                $ref->id => "{$ref->code_reference} - {$ref->designation} ({$ref->unite}) - " .
-                                                    number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
-                                            ]);
+                                        // ✅ Cache pour 5 minutes
+                                        $cacheKey = "mercuriale_search_{$exerciceId}_" . md5($search);
 
-                                        return ['manual' => '➕ Saisie manuelle (sans mercuriale)'] + $references->toArray();
+                                        return \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($exerciceId, $search) {
+                                            $results = \App\Models\ReferenceMercuriale::where('exercice_id', $exerciceId)
+                                                ->where('actif', true)
+                                                ->where(function ($query) use ($search) {
+                                                    $query->where('code_reference', 'LIKE', "%{$search}%")
+                                                        ->orWhere('designation', 'LIKE', "%{$search}%")
+                                                        ->orWhere('rubrique', 'LIKE', "%{$search}%");
+                                                })
+                                                ->limit(50)
+                                                ->get()
+                                                ->mapWithKeys(fn($ref) => [
+                                                    $ref->id => "{$ref->code_reference} - {$ref->designation} - " .
+                                                        number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
+                                                ]);
+
+                                            return ['manual' => '➕ Saisie manuelle'] + $results->toArray();
+                                        });
                                     })
-                                    ->searchable()
-                                    ->preload()
+                                    ->getOptionLabelUsing(function ($value) {
+                                        if ($value === 'manual') {
+                                            return '➕ Saisie manuelle';
+                                        }
+
+                                        // Cache aussi la récupération du label
+                                        return \Cache::remember("mercuriale_label_{$value}", now()->addMinutes(10), function () use ($value) {
+                                            $ref = \App\Models\ReferenceMercuriale::find($value);
+
+                                            if (!$ref) {
+                                                return "Référence #{$value}";
+                                            }
+
+                                            return "{$ref->code_reference} - {$ref->designation} - " .
+                                                number_format($ref->prix_reference, 0, ',', ' ') . " FCFA";
+                                        });
+                                    })
                                     ->live(debounce: 1000)
-                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                    ->afterStateUpdated(function ($state, callable $set) {
                                         if ($state && $state !== 'manual') {
-                                            $reference = \App\Models\ReferenceMercuriale::find($state);
+                                            // Cache aussi la récupération de la référence
+                                            $reference = \Cache::remember("mercuriale_full_{$state}", now()->addMinutes(10), function () use ($state) {
+                                                return \App\Models\ReferenceMercuriale::find($state);
+                                            });
+
                                             if ($reference) {
                                                 $set('designation', $reference->designation);
                                                 $set('unite', $reference->unite);
                                                 $set('prix_unitaire_ht', $reference->prix_reference);
-                                                $set('reference_personnalisee', null); // Effacer la ref perso
+                                                $set('reference_personnalisee', null);
                                             }
-                                        } else {
-                                            // Réinitialiser pour saisie manuelle
-                                            $set('designation', '');
-                                            $set('unite', 'pièce');
-                                            $set('prix_unitaire_ht', 0);
                                         }
                                     })
-                                    ->dehydrateStateUsing(fn($state) => $state === 'manual' ? null : $state)
-                                    ->helperText('Choisissez une référence mercuriale ou "Saisie manuelle"')
+                                    ->helperText('Tapez au moins 3 caractères pour rechercher')
                                     ->columnSpan(2),
 
                                 // ===== Référence personnalisée (pour saisie manuelle) =====
