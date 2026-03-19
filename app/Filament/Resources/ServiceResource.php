@@ -26,7 +26,7 @@ class ServiceResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Services';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Paramétrage';
 
     protected static ?int $navigationSort = 1;
 

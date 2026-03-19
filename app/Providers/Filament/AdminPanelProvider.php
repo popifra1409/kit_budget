@@ -76,8 +76,9 @@ class AdminPanelProvider extends PanelProvider
                 'Fournisseurs & Documents',
                 'Gestion Budgétaire',
                 'Cadre Logique',
+                'Contrôle & Suivi',
                 'Configuration Budget',
-                'Configuration',
+                'Paramétrage',
                 'Audit',
                 'Administration',
             ])

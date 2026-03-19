@@ -9,6 +9,17 @@
     $labelOPEn = $ordonnance && $ordonnance->type_ordonnance === 'impot' ? 'N° of OPT' : 'N° of OP';
 @endphp
 
+{{-- Header pour Ordonnance de Paiement --}}
+@php
+    $ordonnance = $donnees['_raw'] ?? null;
+    $engagement = $ordonnance->engagement ?? null;
+    $bonCommande = $engagement->bonCommande ?? null;
+
+    // Déterminer le label selon le type
+    $labelOP = $ordonnance && $ordonnance->type_ordonnance === 'impot' ? 'N° OPT:' : 'N° OP:';
+    $labelOPEn = $ordonnance && $ordonnance->type_ordonnance === 'impot' ? 'N° of OPT' : 'N° of OP';
+@endphp
+
 <table style="width: 100%; border: none; margin-top: 5px;">
     <tr>
         <td style="width: 30%; padding: 5px; text-align: center; vertical-align: top;">

@@ -15,6 +15,7 @@ class ParametresStructure extends Model
 
     protected $fillable = [
         'nom_structure',
+        'nom_structure_en',
         'sigle',
         'logo',
         'adresse',

@@ -22,7 +22,7 @@ class ParametresStructureResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Paramètres Structure';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Paramétrage';
 
     protected static ?int $navigationSort = 100;
 
@@ -69,20 +69,27 @@ class ParametresStructureResource extends Resource
             ->schema([
                 Forms\Components\Section::make('Informations Principales')
                     ->schema([
-                        Forms\Components\Grid::make(3)
+                        Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\TextInput::make('nom_structure')
-                                    ->label('Nom de la Structure')
+                                    ->label('Nom de la Structure (Français)')
                                     ->required()
                                     ->maxLength(255)
-                                    ->columnSpan(2)
-                                    ->placeholder('Ex: Centre Hospitalier Universitaire de Yaoundé'),
+                                    ->placeholder('Ex: Centre Hospitalier Universitaire de Yaoundé')
+                                    ->helperText('Nom complet en français'),
 
-                                Forms\Components\TextInput::make('sigle')
-                                    ->label('Sigle')
-                                    ->maxLength(50)
-                                    ->placeholder('Ex: CHUY'),
+                                Forms\Components\TextInput::make('nom_structure_en')
+                                    ->label('Nom de la Structure (Anglais)')
+                                    ->maxLength(255)
+                                    ->placeholder('Ex: Yaoundé University Hospital Center')
+                                    ->helperText('Nom complet en anglais (optionnel)'),
                             ]),
+
+                        Forms\Components\TextInput::make('sigle')
+                            ->label('Sigle')
+                            ->maxLength(50)
+                            ->placeholder('Ex: CHUY')
+                            ->columnSpanFull(),
 
                         Forms\Components\FileUpload::make('logo')
                             ->label('Logo de la Structure')
@@ -352,7 +359,7 @@ class ParametresStructureResource extends Resource
                     ])
                     ->columns(3)
                     ->collapsed(),
-                    
+
                 Forms\Components\Section::make('Journal d\'activité')
                     ->schema([
                         Forms\Components\TextInput::make('duree_conservation_logs')

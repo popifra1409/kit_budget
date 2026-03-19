@@ -22,7 +22,7 @@ class TypeDecisionResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Types de Décision';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Paramétrage';
 
     protected static ?int $navigationSort = 10;
 

@@ -22,7 +22,7 @@ class EtatConfigResource extends Resource
 
     protected static ?string $pluralModelLabel = 'États PDF';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Paramétrage';
 
     protected static ?int $navigationSort = 99;
 

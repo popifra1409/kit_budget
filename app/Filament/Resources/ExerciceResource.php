@@ -24,7 +24,7 @@ class ExerciceResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Exercices Budgétaires';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Paramétrage';
 
     protected static ?int $navigationSort = 1;
 

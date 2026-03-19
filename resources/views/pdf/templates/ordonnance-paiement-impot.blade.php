@@ -10,136 +10,136 @@
     $engagement = $ordonnance->engagement;
     $documentSource = $engagement?->engageable;
 
-// ==========================================
-// ✅ RÉCUPÉRATION DE LA NOMENCLATURE
-// ==========================================
-$nomenclature = null;
-if ($engagement) {
-    $engagement->load('nomenclaturePrincipale');
-    $nomenclature = $engagement->nomenclaturePrincipale;
+    // ==========================================
+    // ✅ RÉCUPÉRATION DE LA NOMENCLATURE
+    // ==========================================
+    $nomenclature = null;
+    if ($engagement) {
+        $engagement->load('nomenclaturePrincipale');
+        $nomenclature = $engagement->nomenclaturePrincipale;
+    }
+
+    // ==========================================
+    // ✅ RÉCUPÉRATION DE LA HIÉRARCHIE BUDGÉTAIRE
+    // ==========================================
+    $tache = null;
+    $activite = null;
+    $action = null;
+    $programme = null;
+    $sousProgramme = null;
+    $objectif = null;
+
+    // Codes budgétaires
+    $codeProgramme = '';
+    $codeSousProgramme = '';
+    $codeAction = '';
+    $codeActivite = '';
+    $codeTache = '';
+    $codeArticle = '';
+    $codeParagraphe = '';
+    $codeChapitre = '';
+
+    if ($nomenclature) {
+        // Tâche
+        $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
+
+        if ($tache) {
+            // Charger toute la hiérarchie
+            $tache->load('activite.action.programme.parent');
+
+            $activite = $tache->activite;
+            $action = $activite?->action;
+            $programme = $action?->programme;
+
+            // ✅ Détection du sous-programme
+            if ($programme) {
+                if ($programme->estSousProgramme()) {
+                    // C'est un sous-programme
+                $sousProgramme = $programme;
+                $programme = $programme->parent;
+            } else {
+                // C'est un programme principal
+                    $sousProgramme = null;
+                }
+
+                // Récupérer l'objectif
+            try {
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    if ($objectifs instanceof \Illuminate\Support\Collection) {
+                        $objectif = $objectifs->first();
+                    } else {
+                        $objectif = $objectifs;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur récupération objectif', [
+                    'programme_id' => $programme->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $objectif = null;
+            }
+        }
+
+        // ✅ EXTRAIRE LES CODES
+        $codeTache = $tache->code ?? '';
+    }
+
+    if ($activite) {
+        $codeActivite = $activite->code ?? '';
+    }
+
+    if ($action) {
+        $codeAction = $action->code ?? '';
+    }
+
+    if ($sousProgramme) {
+        $codeSousProgramme = $sousProgramme->code ?? '';
+    }
+
+    if ($programme) {
+        $codeProgramme = $programme->code ?? '';
+    }
+
+    // ✅ CODES DEPUIS LA NOMENCLATURE
+    // Chapitre : 2 premiers caractères du code
+    $codeChapitre = substr($nomenclature->code, 0, 2);
+
+    // Paragraphe/Compte : code complet
+    $codeParagraphe = $nomenclature->code;
+
+    // Article : méthode getCodeArticle() si elle existe
+    if (method_exists($nomenclature, 'getCodeArticle')) {
+        $codeArticle = $nomenclature->getCodeArticle();
+    } else {
+        // Sinon, extraire depuis le code (exemple: 4 premiers caractères)
+        $codeArticle = substr($nomenclature->code, 0, 4);
+    }
 }
 
-// ==========================================
-// ✅ RÉCUPÉRATION DE LA HIÉRARCHIE BUDGÉTAIRE
-// ==========================================
-$tache = null;
-$activite = null;
-$action = null;
-$programme = null;
-$sousProgramme = null;
-$objectif = null;
-
-// Codes budgétaires
-$codeProgramme = '';
-$codeSousProgramme = '';
-$codeAction = '';
-$codeActivite = '';
-$codeTache = '';
-$codeArticle = '';
-$codeParagraphe = '';
-$codeChapitre = '';
-
-if ($nomenclature) {
-    // Tâche
-    $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
-
-    if ($tache) {
-        // Charger toute la hiérarchie
-        $tache->load('activite.action.programme.parent');
-
-        $activite = $tache->activite;
-        $action = $activite?->action;
-        $programme = $action?->programme;
-
-        // ✅ Détection du sous-programme
-        if ($programme) {
-            if ($programme->estSousProgramme()) {
-                // C'est un sous-programme
-                    $sousProgramme = $programme;
-                    $programme = $programme->parent;
-                } else {
-                    // C'est un programme principal
-                $sousProgramme = null;
-            }
-
-            // Récupérer l'objectif
-                try {
-                    if (method_exists($programme, 'objectifPrincipal')) {
-                        $objectif = $programme->objectifPrincipal;
-                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                        $objectifs = $programme->objectifsPrincipaux;
-                        if ($objectifs instanceof \Illuminate\Support\Collection) {
-                            $objectif = $objectifs->first();
-                        } else {
-                            $objectif = $objectifs;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    \Log::warning('Erreur récupération objectif', [
-                        'programme_id' => $programme->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    $objectif = null;
-                }
-            }
-
-            // ✅ EXTRAIRE LES CODES
-            $codeTache = $tache->code ?? '';
-        }
-
-        if ($activite) {
-            $codeActivite = $activite->code ?? '';
-        }
-
-        if ($action) {
-            $codeAction = $action->code ?? '';
-        }
-
-        if ($sousProgramme) {
-            $codeSousProgramme = $sousProgramme->code ?? '';
-        }
-
-        if ($programme) {
-            $codeProgramme = $programme->code ?? '';
-        }
-
-        // ✅ CODES DEPUIS LA NOMENCLATURE
-        // Chapitre : 2 premiers caractères du code
-        $codeChapitre = substr($nomenclature->code, 0, 2);
-
-        // Paragraphe/Compte : code complet
-        $codeParagraphe = $nomenclature->code;
-
-        // Article : méthode getCodeArticle() si elle existe
-        if (method_exists($nomenclature, 'getCodeArticle')) {
-            $codeArticle = $nomenclature->getCodeArticle();
-        } else {
-            // Sinon, extraire depuis le code (exemple: 4 premiers caractères)
-            $codeArticle = substr($nomenclature->code, 0, 4);
-        }
+// Reverseur
+$reverseur = null;
+if ($engagement && $documentSource) {
+    if ($engagement->estBonCommande()) {
+        $reverseur = $documentSource->fournisseur;
+    } elseif ($engagement->estDecision()) {
+        $reverseur = $documentSource->personnel;
     }
+}
+if (!$reverseur && $ordonnance->beneficiaire) {
+    $reverseur = $ordonnance->beneficiaire;
+}
 
-    // Reverseur
-    $reverseur = null;
-    if ($engagement && $documentSource) {
-        if ($engagement->estBonCommande()) {
-            $reverseur = $documentSource->fournisseur;
-        } elseif ($engagement->estDecision()) {
-            $reverseur = $documentSource->personnel;
-        }
-    }
-    if (!$reverseur && $ordonnance->beneficiaire) {
-        $reverseur = $ordonnance->beneficiaire;
-    }
+$nomReverseur = $reverseur->raison_sociale ?? ($reverseur->nom_complet ?? ($reverseur->name ?? 'N/A'));
+$nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
 
-    $nomReverseur = $reverseur->raison_sociale ?? ($reverseur->nom_complet ?? ($reverseur->name ?? 'N/A'));
-    $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
+// Montants
+$detailImpots = $ordonnance->getDetailImpots();
+$montantTotalImpots = $detailImpots['total'];
 
-    // Montants
-    $detailImpots = $ordonnance->getDetailImpots();
-    $montantTotalImpots = $detailImpots['total'];
-
-    $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+$parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 @endphp
 
 @section('title', 'Ordonnance de Paiement - Impot')
@@ -207,7 +207,7 @@ if ($nomenclature) {
         <tr>
             {{-- ================= LEFT ================= --}}
             <td style="width:30%; vertical-align:top; padding:5px;" class="border-right">
-<div class="font-bold" style="font-size: 8pt; text-align:center;">IMPUTATION BUDGETAIRE</div>
+                <div class="font-bold" style="font-size: 8pt; text-align:center;">IMPUTATION BUDGETAIRE</div>
                 <div class="font-tiny" style="font-style: italic;  text-align:center;">BUDGETARY CHARGE</div>
                 <div style="margin-top: 5px; font-size: 8pt;">
                     @if ($codeProgramme)
@@ -236,7 +236,7 @@ if ($nomenclature) {
                     @endif
                 </div>
                 {{-- Objet de la dépense --}}
-                    <div style="border-bottom: 2px solid #000; margin: 5px 0;"></div>
+                <div style="border-bottom: 2px solid #000; margin: 5px 0;"></div>
                 <div class="font-bold">OBJET DE LA DEPENSE</div>
                 <div class="font-tiny">SUBJECT OF EXPENDITURE</div>
 
@@ -272,6 +272,17 @@ if ($nomenclature) {
                         </tr>
                     </table>
                 </div>
+                <div style="border-bottom: 2px solid #000; margin: 10px 0;"></div>
+                <div style="font-weight: bold; margin-bottom: 2px; line-height: 1.1;">
+                    DESIGNATION DU CREANCIER:
+                    <div style="font-weight: normal; font-style: italic; font-size: 8pt; line-height: 1.1;">
+                        DESIGNATION OF THE CREDITOR:
+                    </div>
+                </div>
+                <div style="margin-top: 8px; font-size: 10pt; font-weight: bold; min-height: 30px; line-height: 1.1;">
+                    {{ $nomBeneficiaire }}
+                </div>
+
                 {{-- VISA --}}
                 <div style="border-bottom:2px solid #000; margin:10px 0 0;"></div>
 
@@ -362,7 +373,7 @@ if ($nomenclature) {
                     </div>
                 </div>
                 {{-- Date et signature --}}
-                <div style="margin-top: 20px;">
+                <div style="margin-top: 80px;">
                     <div class="font-bold" style="font-size: 8pt;">Yaoundé, le _____________</div>
                     <div class="font-tiny" style="font-style: italic;">Yaounde, the</div>
                     <div style="margin-top: 15px; text-align: right;">

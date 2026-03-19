@@ -349,12 +349,12 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
         .objet-titre {
             font-weight: bold;
-            font-size: 8pt;
+            font-size: 7pt;
             margin: 0;
         }
 
         .objet-sub {
-            font-size: 7pt;
+            font-size: 6.5pt;
             font-style: italic;
             margin: 0;
         }
@@ -388,26 +388,48 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                 <div class="font-bold" style="font-size: 8pt; text-align:center;">IMPUTATION BUDGETAIRE</div>
                 <div class="font-tiny" style="font-style: italic;  text-align:center;">BUDGETARY CHARGE</div>
                 <div style="margin-top: 5px; font-size: 8pt;">
-                    @if ($codeProgramme)
-                        <div>• <span class="font-bold" style="font-size: 8pt;">PROGRAMME : </span>{{ $codeProgramme }} -
-                            {{ $programme->libelle ?? '' }}</div>
+                    {{-- PROGRAMME / SOUS-PROGRAMME (hiérarchie complète) --}}
+                    @if ($codeProgramme || $codeSousProgramme)
+                        <div>
+                            • <span class="font-bold" style="font-size: 8pt;">
+                                @if ($codeSousProgramme)
+                                    PROGRAMME / SOUS-PROGRAMME :
+                                @else
+                                    PROGRAMME :
+                                @endif
+                            </span>
+
+                            @if ($codeSousProgramme)
+                                {{-- Afficher Programme > Sous-Programme --}}
+                                <span style="color: #666;">{{ $codeProgramme }} ({{ $programme->libelle ?? '' }})</span>
+                                <span style="font-weight: bold;"> → </span>
+                                <span style="font-weight: bold;">{{ $codeSousProgramme }} -
+                                    {{ $sousProgramme->libelle ?? '' }}</span>
+                            @else
+                                {{-- Afficher seulement Programme --}}
+                                {{ $codeProgramme }} - {{ $programme->libelle ?? '' }}
+                            @endif
+                        </div>
                     @endif
 
-                    @if ($codeSousProgramme)
-                        <div>• <span class="font-bold" style="font-size: 8pt;">SOUS-PROGRAMME :
-                            </span>{{ $codeSousProgramme }} - {{ $sousProgramme->libelle ?? '' }}</div>
-                    @endif
+                    {{-- ACTION --}}
                     @if ($codeAction)
                         <div>• <span class="font-bold" style="font-size: 7.5pt;">ACTION : </span>{{ $codeAction }} -
                             {{ $action->libelle ?? '' }}</div>
                     @endif
+
+                    {{-- ACTIVITÉ --}}
                     @if ($codeActivite)
-                        <div>• <span class="font-bold" style="font-size: 7.5pt;">ACTIVITE : </span>{{ $codeActivite }} -
+                        <div>• <span class="font-bold" style="font-size: 7.5pt;">ACTIVITÉ : </span>{{ $codeActivite }} -
                             {{ $activite->libelle ?? '' }}</div>
                     @endif
+
+                    {{-- ARTICLE --}}
                     @if ($codeArticle)
                         <div>• <span class="font-bold" style="font-size: 7.5pt;">ARTICLE : </span>{{ $codeArticle }}</div>
                     @endif
+
+                    {{-- PARAGRAPHE --}}
                     @if ($codeParagraphe)
                         <div>• <span class="font-bold" style="font-size: 7.5pt;">PARAGRAPHE : </span>{{ $codeParagraphe }}
                         </div>
@@ -635,8 +657,8 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
                     <tr>
                         <td style="padding: 0;">
-                            <div class="font-bold" style="font-size: 8pt; margin:0;">Somme nette à payer ou à virer</div>
-                            <div class="font-tiny" style="font-style: italic; margin:0;">Net sum to be paid or transfer
+                            <div class="font-bold" style="font-size: 8pt; margin:0;">Montant net à payer ou à virer</div>
+                            <div class="font-tiny" style="font-style: italic; margin:0;">Net amount to be paid or transfer
                             </div>
                         </td>
                         <td style="padding: 0;">
