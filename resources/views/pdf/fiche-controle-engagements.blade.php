@@ -121,7 +121,7 @@
         .resume {
             margin: 6px 0;
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(6, 1fr);
             gap: 6px;
         }
 
@@ -275,12 +275,15 @@
         <div class="header">
             <div class="header-top">
                 <div class="logo">
-                    {{-- Logo à ajouter --}}
-                    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="50" cy="50" r="45" fill="#0066cc" />
-                        <text x="50" y="60" font-size="40" font-weight="bold" fill="#fff"
-                            text-anchor="middle">FC</text>
-                    </svg>
+                    @if (!empty($logo))
+                        {{-- Logo --}}
+                        <img src="{{ $logo }}" ...>
+                    @else
+                        {{-- Nom de la structure --}}
+                        <div style="font-size: 10pt; font-weight: bold; color: #0066cc;">
+                            {{ strtoupper($nomStructure ?? 'HÔPITAL') }}
+                        </div>
+                    @endif
                 </div>
                 <div class="title">
                     <h1>Fiche de Contrôle des Engagements des Crédits</h1>
@@ -415,6 +418,21 @@
             <div class="resume-box dotation">
                 <div class="label">Dotation Initiale</div>
                 <div class="montant">{{ number_format($dotation_initiale ?? 0, 0, ',', ' ') }}</div>
+            </div>
+            <div class="resume-box" style="border-color: #00aa00;">
+                <div class="label">Vir. Entrants (+)</div>
+                <div class="montant" style="color: #00aa00;">{{ number_format($virements_entrants ?? 0, 0, ',', ' ') }}
+                </div>
+            </div>
+            <div class="resume-box" style="border-color: #cc0000;">
+                <div class="label">Vir. Sortants (-)</div>
+                <div class="montant" style="color: #cc0000;">{{ number_format($virements_sortants ?? 0, 0, ',', ' ') }}
+                </div>
+            </div>
+            <div class="resume-box" style="border-color: #0066cc;">
+                <div class="label">Budget Rectifié</div>
+                <div class="montant" style="color: #0066cc;">{{ number_format($budget_rectifie ?? 0, 0, ',', ' ') }}
+                </div>
             </div>
             <div class="resume-box engage">
                 <div class="label">Total Engagé</div>

@@ -81,19 +81,22 @@ class FicheControleEngagementsController extends Controller
 
     /**
      * Préparer les données
-     * ✅ CORRIGÉ : Récupère la hiérarchie via Tache + Colonnes OP/OPT
+     * Récupère la hiérarchie via Tache + Colonnes OP/OPT
      */
     protected function preparerDonnees(\App\Models\LigneBudgetaire $ligneBudgetaire, $engagements): array
     {
         // Calculer les totaux
-        $dotationInitiale = $ligneBudgetaire->dotation_initiale ?? $ligneBudgetaire->budget_initial ?? 0;
+        $dotationInitiale = $ligneBudgetaire->budget_initial ?? 0;
+        $virementsEntrants = $ligneBudgetaire->virements_entrants ?? 0;
+        $virementsSortants = $ligneBudgetaire->virements_sortants ?? 0;
+        $budgetRectifie = $ligneBudgetaire->budget_rectifie ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
         $totalEngage = $engagements->sum('montant_engage');
-        $disponible = $ligneBudgetaire->disponible_engagement ?? ($dotationInitiale - $totalEngage);
-        $tauxConsommation = $dotationInitiale > 0 ? ($totalEngage / $dotationInitiale) * 100 : 0;
+        $disponible = $ligneBudgetaire->disponible_engagement ?? ($budgetRectifie - $totalEngage);
+        $tauxConsommation = $budgetRectifie > 0 ? ($totalEngage / $budgetRectifie) * 100 : 0;
 
         // Préparer les lignes d'engagements
         $lignesEngagements = [];
-        $disponibleProgressif = $dotationInitiale;
+        $disponibleProgressif = $budgetRectifie;
         $totalOp = 0;
         $totalOpt = 0;
 
@@ -137,6 +140,9 @@ class FicheControleEngagementsController extends Controller
             'hierarchie' => $hierarchie,
             'engagements' => $lignesEngagements,
             'dotation_initiale' => $dotationInitiale,
+            'virements_entrants' => $virementsEntrants,
+            'virements_sortants' => $virementsSortants,
+            'budget_rectifie' => $budgetRectifie,
             'total_engage' => $totalEngage,
             'disponible' => $disponible,
             'taux_consommation' => $tauxConsommation,
@@ -145,6 +151,8 @@ class FicheControleEngagementsController extends Controller
             'date_generation' => now()->format('d/m/Y à H:i'),
             'generePar' => auth()->user()?->name ?? 'Système',
             'gestionnaireCredits' => $this->getGestionnaireCredits(),
+            'logo' => $this->getLogo(),
+            'nomStructure' => $this->getNomStructure(),
         ];
     }
 
@@ -159,6 +167,30 @@ class FicheControleEngagementsController extends Controller
         } catch (\Exception $e) {
             \Log::warning('Erreur récupération gestionnaire crédits: ' . $e->getMessage());
             return 'Non défini';
+        }
+    }
+
+    /**
+     * ✅ Récupérer le logo
+     */
+    protected function getLogo(): ?string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->logo ?? null;
+        } catch (\Exception $e) {
+            \Log::warning('Erreur récupération logo: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    protected function getNomStructure(): string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->nom_structure ?? 'HÔPITAL';
+        } catch (\Exception $e) {
+            return 'HÔPITAL';
         }
     }
 
@@ -229,7 +261,7 @@ class FicheControleEngagementsController extends Controller
                 }
 
                 if ($beneficiaire instanceof \App\Models\Personnel) {
-                    return $beneficiaire->nom_complet ?? $beneficiaire->name ?? '-';
+                    return $beneficiaire->nom_complet ?? $beneficiaire->nom ?? '-';
                 }
             } catch (\Exception $e) {
                 \Log::warning('Erreur chargement beneficiaire polymorphique: ' . $e->getMessage());
@@ -243,7 +275,7 @@ class FicheControleEngagementsController extends Controller
             }
 
             if ($engagement->beneficiaire_personnel_id && $engagement->beneficiairePersonnel) {
-                return $engagement->beneficiairePersonnel->nom_complet ?? $engagement->beneficiairePersonnel->name ?? '-';
+                return $engagement->beneficiairePersonnel->nom_complet ?? $engagement->beneficiairePersonnel->nom ?? '-';
             }
         } catch (\Exception $e) {
             \Log::warning('Erreur chargement beneficiaire colonnes: ' . $e->getMessage());
@@ -269,7 +301,7 @@ class FicheControleEngagementsController extends Controller
             if ($engageable instanceof \App\Models\DecisionAdministrative) {
                 // D'abord essayer personnel
                 if (isset($engageable->personnel) && $engageable->personnel) {
-                    return $engageable->personnel->nom_complet ?? $engageable->personnel->name ?? '-';
+                    return $engageable->personnel->nom_complet ?? $engageable->personnel->nom ?? '-';
                 }
 
                 // Ensuite essayer fournisseur

@@ -89,7 +89,7 @@ class FicheControleEngagementsResource extends Resource
                     ->label('Libellé')
                     ->searchable()
                     ->limit(40),
-                Tables\Columns\TextColumn::make('dotation_initiale')
+                Tables\Columns\TextColumn::make('budget_initial')
                     ->label('Dotation Initiale')
                     ->money('XAF')
                     ->sortable()
@@ -114,9 +114,9 @@ class FicheControleEngagementsResource extends Resource
                 Tables\Columns\TextColumn::make('taux_consommation')
                     ->label('Taux Conso.')
                     ->getStateUsing(function ($record) {
-                        if ($record->dotation_initiale == 0) return 0;
+                        if ($record->budget_initial == 0) return 0;
                         $totalEngage = $record->engagements()->get()->sum('montant_engage');
-                        return ($totalEngage / $record->dotation_initiale) * 100;
+                        return ($totalEngage / $record->budget_initial) * 100;
                     })
                     ->formatStateUsing(fn($state) => number_format($state, 1) . '%')
                     ->badge()
@@ -156,7 +156,7 @@ class FicheControleEngagementsResource extends Resource
 
                 Tables\Filters\Filter::make('dotation_positive')
                     ->label('Avec dotation > 0')
-                    ->query(fn($query) => $query->where('dotation_initiale', '>', 0))
+                    ->query(fn($query) => $query->where('budget_initial', '>', 0))
                     ->toggle(),
             ])
             ->actions([
@@ -186,14 +186,10 @@ class FicheControleEngagementsResource extends Resource
                     ->visible(fn($record) => static::canView($record))
                     ->modalHeading('Détails de la Ligne Budgétaire')
                     ->modalContent(function ($record) {
-                        $engagements = $record->engagements()
-                            ->with('engageable')
-                            ->orderBy('date_engagement')
-                            ->get();
-
+                        $engagements = $record->engagements()->get();
                         $totalEngage = $engagements->sum('montant_engage');
-                        $tauxConso = $record->dotation_initiale > 0
-                            ? ($totalEngage / $record->dotation_initiale) * 100
+                        $tauxConso = $record->budget_initial > 0
+                            ? ($totalEngage / $record->budget_initial) * 100
                             : 0;
 
                         return view('filament.pages.fiche-controle-details', [

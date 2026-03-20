@@ -812,7 +812,17 @@ class BonCommande extends Model
     protected function genererNumeroEngagement(): string
     {
         if (!$this->numero) {
-            throw new \Exception('Le bon de commande n\'a pas de numéro');
+            $this->numero = $this->genererNumero();
+            $this->saveQuietly();
+        }
+
+        // Détecter le format
+        if (preg_match('/^BC-\d{4}-/', $this->numero)) {
+            // Format 1 : BC-2026-00001 → BE-2026-00001
+            return str_replace('BC-', 'BE-', $this->numero);
+        } elseif (preg_match('/^BC\d{2}-/', $this->numero)) {
+            // Format 2 : BC26-00001 → BE-BC26-00001
+            return 'BE-' . $this->numero;
         }
 
         return 'BE-' . $this->numero;
@@ -985,9 +995,22 @@ class BonCommande extends Model
                     $ligneBudgetaire->engage += $verification['montant_a_engager'];
                     $ligneBudgetaire->save();
 
-                    \Log::info("Crédit engagé sur {$verification['nomenclature']->code}", [
+                    $ligneEngagement = \App\Models\LigneEngagement::create([
+                        'engagement_id' => $engagement->id,
+                        'nomenclature_id' => $verification['nomenclature']->id,
+                        'numero_ligne' => 1,
+                        'libelle' => $this->objet,
+                        'montant' => $verification['montant_a_engager'],
+                    ]);
+
+                    if (!$ligneEngagement || !$ligneEngagement->id) {
+                        throw new \Exception("Erreur création ligne d'engagement");
+                    }
+
+                    \Log::info("Crédit engagé + ligne créée sur {$verification['nomenclature']->code}", [
                         'montant' => $verification['montant_a_engager'],
                         'nouveau_engage' => $ligneBudgetaire->engage,
+                        'ligne_engagement_id' => $ligneEngagement->id,
                     ]);
                 }
             }

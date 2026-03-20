@@ -19,8 +19,17 @@ class FicheControleEngagementsPdfService
             'nomenclature',
         ])->findOrFail($ligneBudgetaireId);
 
-        // ✅ Charger les engagements séparément
-        $engagements = $ligneBudgetaire->engagements()->with('engageable')->get();
+        // ✅ Charger les engagements avec leurs OP et bénéficiaires
+        // On charge juste l'engageable, les sous-relations seront chargées à la demande
+        $engagements = $ligneBudgetaire->engagements()
+            ->with([
+                'engageable',
+                'ordonnancesPaiement',
+                'beneficiaire',
+                'beneficiaireFournisseur',
+                'beneficiairePersonnel'
+            ])
+            ->get();
 
         // Préparer les données
         $data = $this->preparerDonnees($ligneBudgetaire, $engagements);
@@ -42,28 +51,41 @@ class FicheControleEngagementsPdfService
     protected function preparerDonnees(LigneBudgetaire $ligneBudgetaire, $engagements): array
     {
         // Calculer les totaux
-        $dotationInitiale = $ligneBudgetaire->dotation_initiale
-            ?? $ligneBudgetaire->budget_initial
-            ?? 0;
+        $dotationInitiale = $ligneBudgetaire->budget_initial ?? 0;
+        $virementsEntrants = $ligneBudgetaire->virements_entrants ?? 0;
+        $virementsSortants = $ligneBudgetaire->virements_sortants ?? 0;
+        $budgetRectifie = $ligneBudgetaire->budget_rectifie ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
         $totalEngage = $engagements->sum('montant_engage');
-        $disponible = $ligneBudgetaire->disponible_engagement ?? ($dotationInitiale - $totalEngage);
-        $tauxConsommation = $dotationInitiale > 0 ? ($totalEngage / $dotationInitiale) * 100 : 0;
-
+        $disponible = $ligneBudgetaire->disponible_engagement ?? ($budgetRectifie - $totalEngage);
+        $tauxConsommation = $budgetRectifie > 0 ? ($totalEngage / $budgetRectifie) * 100 : 0;
         // Préparer les lignes d'engagements
         $lignesEngagements = [];
         $disponibleProgressif = $dotationInitiale;
+        $totalOp = 0;
+        $totalOpt = 0;
 
         foreach ($engagements as $engagement) {
             $engageable = $engagement->engageable;
             $disponibleProgressif -= $engagement->montant_engage;
 
+            // Récupérer les montants OP et OPT
+            $montantOp = $this->getMontantOp($engagement);
+            $montantOpt = $this->getMontantOpt($engagement);
+
+            $totalOp += $montantOp;
+            $totalOpt += $montantOpt;
+
             $lignesEngagements[] = [
-                'beneficiaire' => $this->getBeneficiaire($engageable),
+                'numero_engagement' => $engagement->numero_engagement ?? $engagement->id ?? '-',
+                'beneficiaire' => $this->getBeneficiaire($engagement),
                 'objet' => $this->getObjet($engageable),
                 'reference' => $this->getReference($engageable),
                 'date_engagement' => $engagement->date_engagement ? $engagement->date_engagement->format('d/m/Y') : '-',
                 'montant_engage' => $engagement->montant_engage,
                 'disponible_apres' => $disponibleProgressif,
+                'numero_op' => $this->getNumeroOp($engagement),
+                'montant_op' => $montantOp,
+                'montant_opt' => $montantOpt,
                 'statut' => $engagement->statut ?? 'valide',
                 'observations' => $this->getObservations($engageable),
             ];
@@ -81,12 +103,62 @@ class FicheControleEngagementsPdfService
             'hierarchie' => $hierarchie,
             'engagements' => $lignesEngagements,
             'dotation_initiale' => $dotationInitiale,
+            'virements_entrants' => $virementsEntrants,
+            'virements_sortants' => $virementsSortants,
+            'budget_rectifie' => $budgetRectifie,
             'total_engage' => $totalEngage,
             'disponible' => $disponible,
             'taux_consommation' => $tauxConsommation,
+            'total_op' => $totalOp,
+            'total_opt' => $totalOpt,
             'date_generation' => now()->format('d/m/Y à H:i'),
             'generePar' => auth()->user()?->name ?? 'Système',
+            'gestionnaireCredits' => $this->getGestionnaireCredits(),
+            'logo' => $this->getLogo(),
+            'nomStructure' => $this->getNomStructure(),
         ];
+    }
+
+    /**
+     * ✅ Récupérer le nom du gestionnaire de crédits
+     */
+    protected function getGestionnaireCredits(): string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->nom_ordonnateur ?? 'Non défini';
+        } catch (\Exception $e) {
+            \Log::warning('Erreur récupération gestionnaire crédits: ' . $e->getMessage());
+            return 'Non défini';
+        }
+    }
+
+    /**
+     * ✅ Récupérer le nom de la structure
+     */
+    protected function getNomStructure(): string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->nom_structure ?? 'STRUCTURE';
+        } catch (\Exception $e) {
+            \Log::warning('Erreur récupération nom structure: ' . $e->getMessage());
+            return 'STRUCTURE';
+        }
+    }
+
+    /**
+     * ✅ Récupérer le logo
+     */
+    protected function getLogo(): ?string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->logo ?? null;
+        } catch (\Exception $e) {
+            \Log::warning('Erreur récupération logo: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**
@@ -128,15 +200,72 @@ class FicheControleEngagementsPdfService
         return $hierarchie;
     }
 
-    protected function getBeneficiaire($engageable): string
+    protected function getBeneficiaire($engagement): string
     {
-        if (!$engageable) return '-';
-        if (method_exists($engageable, 'fournisseur') && $engageable->fournisseur) {
-            return $engageable->fournisseur->raison_sociale;
+        if (!$engagement) return '-';
+
+        // ✅ MÉTHODE 1 : Via la relation polymorphique beneficiaire de l'engagement
+        if ($engagement->beneficiaire_id && $engagement->beneficiaire_type) {
+            try {
+                $beneficiaire = $engagement->beneficiaire;
+
+                if ($beneficiaire instanceof \App\Models\Fournisseur) {
+                    return $beneficiaire->raison_sociale ?? '-';
+                }
+
+                if ($beneficiaire instanceof \App\Models\Personnel) {
+                    return $beneficiaire->nom_complet ?? $beneficiaire->nom ?? '-';
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur chargement beneficiaire polymorphique: ' . $e->getMessage());
+            }
         }
-        if (method_exists($engageable, 'beneficiaire') && $engageable->beneficiaire) {
-            return $engageable->beneficiaire->nom_complet ?? $engageable->beneficiaire->name;
+
+        // ✅ MÉTHODE 2 : Via beneficiaireFournisseur ou beneficiairePersonnel
+        try {
+            if ($engagement->beneficiaire_fournisseur_id && $engagement->beneficiaireFournisseur) {
+                return $engagement->beneficiaireFournisseur->raison_sociale ?? '-';
+            }
+
+            if ($engagement->beneficiaire_personnel_id && $engagement->beneficiairePersonnel) {
+                return $engagement->beneficiairePersonnel->nom_complet ?? $engagement->beneficiairePersonnel->nom ?? '-';
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Erreur chargement beneficiaire colonnes: ' . $e->getMessage());
         }
+
+        // ✅ MÉTHODE 3 : Via l'engageable
+        try {
+            $engageable = $engagement->engageable;
+
+            if (!$engageable) {
+                return '-';
+            }
+
+            // Pour BC : via fournisseur
+            if ($engageable instanceof \App\Models\BonCommande) {
+                $fournisseur = $engageable->fournisseur;
+                if ($fournisseur) {
+                    return $fournisseur->raison_sociale ?? '-';
+                }
+            }
+
+            // Pour DA : via personnel ou fournisseur
+            if ($engageable instanceof \App\Models\DecisionAdministrative) {
+                // D'abord essayer personnel
+                if (isset($engageable->personnel) && $engageable->personnel) {
+                    return $engageable->personnel->nom_complet ?? $engageable->personnel->nom ?? '-';
+                }
+
+                // Ensuite essayer fournisseur
+                if (isset($engageable->fournisseur) && $engageable->fournisseur) {
+                    return $engageable->fournisseur->raison_sociale ?? '-';
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Erreur chargement via engageable: ' . $e->getMessage());
+        }
+
         return '-';
     }
 
@@ -163,5 +292,64 @@ class FicheControleEngagementsPdfService
             $observations[] = substr($engageable->observations, 0, 50);
         }
         return implode(' | ', $observations);
+    }
+
+    /**
+     * Récupérer le numéro d'OP lié à l'engagement
+     */
+    protected function getNumeroOp($engagement): string
+    {
+        if (!$engagement) return '-';
+
+        // ✅ Récupérer l'OP de type 'standard' (bénéficiaire principal)
+        $opStandard = $engagement->ordonnancesPaiement()
+            ->where('type_ordonnance', 'standard')
+            ->first();
+
+        if ($opStandard) {
+            return $opStandard->numero ?? '-';
+        }
+
+        // ✅ Si pas d'OP standard, prendre la première OP
+        $premiereOp = $engagement->ordonnancesPaiement()->first();
+
+        return $premiereOp?->numero ?? '-';
+    }
+
+    /**
+     * Récupérer le montant d'OP lié à l'engagement
+     */
+    protected function getMontantOp($engagement): float
+    {
+        if (!$engagement) return 0;
+
+        // ✅ Récupérer l'OP de type 'standard'
+        $opStandard = $engagement->ordonnancesPaiement()
+            ->where('type_ordonnance', 'standard')
+            ->first();
+
+        if ($opStandard) {
+            return $opStandard->montant_net ?? 0;
+        }
+
+        // ✅ Si pas d'OP standard, prendre la première OP
+        $premiereOp = $engagement->ordonnancesPaiement()->first();
+
+        return $premiereOp?->montant_net ?? 0;
+    }
+
+    /**
+     * Récupérer le montant d'OPT (Impôt) lié à l'engagement
+     */
+    protected function getMontantOpt($engagement): float
+    {
+        if (!$engagement) return 0;
+
+        // ✅ Récupérer l'OP de type 'impot'
+        $opImpot = $engagement->ordonnancesPaiement()
+            ->where('type_ordonnance', 'impot')
+            ->first();
+
+        return $opImpot?->montant_net ?? 0;
     }
 }
