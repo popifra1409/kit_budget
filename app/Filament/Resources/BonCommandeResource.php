@@ -22,10 +22,15 @@ use App\Models\Exercice;
 use App\Models\User;
 use App\Filament\Actions\WorkflowActions;
 use App\Services\BonCommandePdfService;
+use App\Filament\Clusters\GestionBudgetaire;
 
 class BonCommandeResource extends Resource
 {
     protected static ?string $model = BonCommande::class;
+
+    // protected static ?string $cluster = GestionBudgetaire::class;
+
+    protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
 
@@ -34,8 +39,6 @@ class BonCommandeResource extends Resource
     protected static ?string $modelLabel = 'Bon de Commande';
 
     protected static ?string $pluralModelLabel = 'Bons de Commande';
-
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?int $navigationSort = 1;
 

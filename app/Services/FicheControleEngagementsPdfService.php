@@ -193,6 +193,42 @@ class FicheControleEngagementsPdfService
                     $hierarchie['tache'] = $tache->code . ' - ' . $tache->libelle;
                 }
             }
+
+            // ✅ RÉCUPÉRER ARTICLE ET PARAGRAPHE via les méthodes du modèle
+            if (method_exists($nomenclature, 'getArticle')) {
+                $article = $nomenclature->getArticle();
+                if ($article) {
+                    $hierarchie['article'] = $article->code . ' - ' . $article->libelle;
+                }
+            } else {
+                // Fallback : utiliser getCodeArticle()
+                if (method_exists($nomenclature, 'getCodeArticle')) {
+                    $codeArticle = $nomenclature->getCodeArticle();
+                    if ($codeArticle) {
+                        $article = \App\Models\NomenclatureBudgetaire::where('code', $codeArticle)
+                            ->where(function ($q) {
+                                $q->where('niveau_hierarchique', 'article')
+                                    ->orWhere('niveau', 'article');
+                            })
+                            ->first();
+
+                        if ($article) {
+                            $hierarchie['article'] = $article->code . ' - ' . $article->libelle;
+                        }
+                    }
+                }
+            }
+
+            // Paragraphe
+            if (method_exists($nomenclature, 'getParagraphe')) {
+                $paragraphe = $nomenclature->getParagraphe();
+                if ($paragraphe) {
+                    $hierarchie['paragraphe'] = $paragraphe->code . ' - ' . $paragraphe->libelle;
+                }
+            } elseif ($nomenclature->parent && in_array($nomenclature->parent->niveau ?? $nomenclature->parent->niveau_hierarchique ?? '', ['paragraphe'])) {
+                $paragraphe = $nomenclature->parent;
+                $hierarchie['paragraphe'] = $paragraphe->code . ' - ' . $paragraphe->libelle;
+            }
         } catch (\Exception $e) {
             \Log::warning('Erreur récupération hiérarchie PDF: ' . $e->getMessage());
         }
