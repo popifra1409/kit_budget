@@ -110,25 +110,6 @@ class DecisionAdministrative extends Model
         'engagee' => 'boolean',
     ];
 
-    // ========================================
-    // BOOT ET ÉVÉNEMENTS
-    // ========================================
-
-    // protected static function boot()
-    // {
-    //     parent::boot();
-
-    //     static::creating(function ($decision) {
-    //         if (empty($decision->numero)) {
-    //             $decision->numero = $decision->genererNumero();
-    //         }
-    //     });
-
-    //     static::saving(function ($decision) {
-    //         $decision->calculerMontants();
-    //     });
-    // }
-
     protected static function booted(): void
     {
         static::creating(function ($decision) {
@@ -215,6 +196,19 @@ class DecisionAdministrative extends Model
     public function typeDecision()
     {
         return $this->belongsTo(TypeDecision::class, 'type_decision_id');
+    }
+
+    /**
+     * Relation polymorphique : Les engagements
+     */
+    public function engagements()
+    {
+        return $this->morphMany(\App\Models\Engagement::class, 'engageable');
+    }
+
+    public function ligneBudgetaire()
+    {
+        return $this->belongsTo(LigneBudgetaire::class, 'budgetaire_ligne_id'); 
     }
 
     /**

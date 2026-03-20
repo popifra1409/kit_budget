@@ -4,13 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\FicheControleEngagementsResource\Pages;
 use App\Models\LigneBudgetaire;
-use App\Models\Exercice;
-use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Notifications\Notification;
 
 class FicheControleEngagementsResource extends Resource
 {
@@ -22,7 +18,7 @@ class FicheControleEngagementsResource extends Resource
 
     protected static ?string $modelLabel = 'Fiche de Contrôle';
 
-    protected static ?string $pluralModelLabel = 'Fiches de Contrôle des Engagements';
+    protected static ?string $pluralModelLabel = 'Fiches de Contrôle';
 
     protected static ?string $navigationGroup = 'Contrôle & Suivi';
 
@@ -30,24 +26,54 @@ class FicheControleEngagementsResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('view_fiche_controle_engagements') ?? false;
+        return auth()->check()
+            && auth()->user()->can('view_any_fiche_controle_engagements');
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_fiche_controle_engagements');
     }
 
     public static function canCreate(): bool
     {
-        return false; // Pas de création, c'est généré automatiquement
+        return false; // Pas de création manuelle - généré automatiquement
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false; // Pas d'édition - les fiches sont en lecture seule
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false; // Pas de suppression
+    }
+
+    /**
+     * Permission pour générer le PDF
+     */
+    public static function canGenererPdf($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('generer_pdf_fiche_controle_engagements');
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            ->defaultSort('created_at', 'desc')
+            ->defaultSort('id', 'desc')
             ->columns([
-                Tables\Columns\TextColumn::make('exercice.annee')
+                Tables\Columns\TextColumn::make('id')
+                    ->label('ID')
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('budget.exercice.annee')
                     ->label('Exercice')
-                    ->sortable()
                     ->badge()
-                    ->color('success'),
+                    ->color('success')
+                    ->default('-'),
 
                 Tables\Columns\TextColumn::make('budget.libelle')
                     ->label('Budget')
@@ -55,11 +81,14 @@ class FicheControleEngagementsResource extends Resource
                     ->limit(30),
 
                 Tables\Columns\TextColumn::make('nomenclature.code')
-                    ->label('Nomenclature')
+                    ->label('Code')
                     ->searchable()
-                    ->description(fn($record) => $record->nomenclature?->libelle)
                     ->weight('bold'),
 
+                Tables\Columns\TextColumn::make('nomenclature.libelle')
+                    ->label('Libellé')
+                    ->searchable()
+                    ->limit(40),
                 Tables\Columns\TextColumn::make('dotation_initiale')
                     ->label('Dotation Initiale')
                     ->money('XAF')
@@ -69,7 +98,7 @@ class FicheControleEngagementsResource extends Resource
                 Tables\Columns\TextColumn::make('total_engage')
                     ->label('Total Engagé')
                     ->getStateUsing(function ($record) {
-                        return $record->engagements()->sum('montant_engage');
+                        return $record->engagements()->get()->sum('montant_engage');
                     })
                     ->money('XAF')
                     ->color('warning')
@@ -86,7 +115,7 @@ class FicheControleEngagementsResource extends Resource
                     ->label('Taux Conso.')
                     ->getStateUsing(function ($record) {
                         if ($record->dotation_initiale == 0) return 0;
-                        $totalEngage = $record->engagements()->sum('montant_engage');
+                        $totalEngage = $record->engagements()->get()->sum('montant_engage');
                         return ($totalEngage / $record->dotation_initiale) * 100;
                     })
                     ->formatStateUsing(fn($state) => number_format($state, 1) . '%')
@@ -100,33 +129,34 @@ class FicheControleEngagementsResource extends Resource
 
                 Tables\Columns\TextColumn::make('nb_engagements')
                     ->label('Nb Engagements')
-                    ->getStateUsing(fn($record) => $record->engagements()->count())
+                    ->getStateUsing(fn($record) => $record->engagements()->get()->count())
                     ->badge()
                     ->color('gray'),
+
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Créé le')
+                    ->date('d/m/Y')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('exercice_id')
-                    ->label('Exercice')
-                    ->relationship('exercice', 'annee')
-                    ->default(fn() => Exercice::getActif()?->id)
-                    ->searchable()
-                    ->preload(),
-
                 Tables\Filters\SelectFilter::make('budget_id')
                     ->label('Budget')
-                    ->relationship('budget', 'libelle')
+                    ->options(function () {
+                        return \App\Models\Budget::orderBy('libelle')
+                            ->pluck('libelle', 'id');
+                    })
                     ->searchable()
                     ->preload(),
-
-                Tables\Filters\Filter::make('avec_engagements')
-                    ->label('Avec engagements uniquement')
-                    ->query(fn($query) => $query->has('engagements'))
-                    ->toggle()
-                    ->default(true),
 
                 Tables\Filters\Filter::make('depassement')
                     ->label('Dépassements de crédits')
                     ->query(fn($query) => $query->where('disponible_engagement', '<', 0))
+                    ->toggle(),
+
+                Tables\Filters\Filter::make('dotation_positive')
+                    ->label('Avec dotation > 0')
+                    ->query(fn($query) => $query->where('dotation_initiale', '>', 0))
                     ->toggle(),
             ])
             ->actions([
@@ -135,6 +165,7 @@ class FicheControleEngagementsResource extends Resource
                     ->label('PDF')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('danger')
+                    ->visible(fn($record) => static::canGenererPdf($record))
                     ->url(fn($record) => route('fiche-controle-engagements.pdf', $record->id))
                     ->openUrlInNewTab(),
 
@@ -143,6 +174,7 @@ class FicheControleEngagementsResource extends Resource
                     ->label('Aperçu')
                     ->icon('heroicon-o-eye')
                     ->color('info')
+                    ->visible(fn($record) => static::canView($record))
                     ->url(fn($record) => route('fiche-controle-engagements.preview', $record->id))
                     ->openUrlInNewTab(),
 
@@ -151,6 +183,7 @@ class FicheControleEngagementsResource extends Resource
                     ->label('Détails')
                     ->icon('heroicon-o-information-circle')
                     ->color('gray')
+                    ->visible(fn($record) => static::canView($record))
                     ->modalHeading('Détails de la Ligne Budgétaire')
                     ->modalContent(function ($record) {
                         $engagements = $record->engagements()
@@ -174,37 +207,7 @@ class FicheControleEngagementsResource extends Resource
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Fermer'),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkAction::make('generer_fiches_pdf')
-                    ->label('Générer les Fiches PDF')
-                    ->icon('heroicon-o-document-duplicate')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->action(function ($records) {
-                        // Générer un ZIP avec toutes les fiches
-                        $zip = new \ZipArchive();
-                        $zipFilename = storage_path('app/temp/fiches_controle_' . time() . '.zip');
-
-                        if ($zip->open($zipFilename, \ZipArchive::CREATE) === TRUE) {
-                            foreach ($records as $record) {
-                                $pdfService = new \App\Services\FicheControleEngagementsPdfService();
-                                $pdf = $pdfService->genererPdf($record->id);
-
-                                $filename = "fiche_controle_{$record->nomenclature->code}.pdf";
-                                $zip->addFromString($filename, $pdf->output());
-                            }
-                            $zip->close();
-
-                            Notification::make()
-                                ->title('Fiches générées')
-                                ->success()
-                                ->body(count($records) . ' fiche(s) générée(s) avec succès.')
-                                ->send();
-
-                            return response()->download($zipFilename)->deleteFileAfterSend();
-                        }
-                    }),
-            ]);
+            ->bulkActions([]);
     }
 
     public static function getPages(): array
@@ -217,6 +220,6 @@ class FicheControleEngagementsResource extends Resource
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
         return parent::getEloquentQuery()
-            ->with(['exercice', 'budget', 'nomenclature', 'engagements']);
+            ->with(['budget.exercice', 'nomenclature']);
     }
 }

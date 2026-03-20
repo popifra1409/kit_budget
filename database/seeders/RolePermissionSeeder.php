@@ -52,6 +52,7 @@ class RolePermissionSeeder extends Seeder
             'type_engagement',
             'user',
             'virement_budgetaire',
+            'fiche_controle_engagements',
         ];
 
         /*
@@ -159,6 +160,9 @@ class RolePermissionSeeder extends Seeder
 
             // Références mercuriales
             'activer_reference_mercuriale',
+
+            //controle et suivi des engagements
+            'generer_pdf_fiche_controle_engagements',
         ];
 
         $this->command->info('📝 Création des permissions spéciales...');

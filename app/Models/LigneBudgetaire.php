@@ -43,6 +43,12 @@ class LigneBudgetaire extends Model
         'disponible_ordonnancement' => 'decimal:2',
     ];
 
+    protected $appends = [
+        'total_engage',
+        'nombre_engagements',
+        'taux_consommation',
+    ];
+
     /**
      * Boot - Calculer automatiquement les montants
      */
@@ -53,6 +59,131 @@ class LigneBudgetaire extends Model
         static::saving(function ($ligne) {
             $ligne->calculerMontants();
         });
+    }
+
+    /**
+     * Relation : Les engagements de cette ligne budgétaire
+     */
+
+    public function engagements()
+    {
+        $engagementIds = \DB::table('lignes_engagement')
+            ->where('nomenclature_id', $this->nomenclature_id)
+            ->pluck('engagement_id')
+            ->unique();
+
+        return \App\Models\Engagement::query()
+            ->whereIn('id', $engagementIds);
+    }
+
+    public function lignesEngagement()
+    {
+        return $this->hasMany(\App\Models\LigneEngagement::class, 'nomenclature_id', 'nomenclature_id');
+    }
+
+    /**
+     * Montant total engagé via lignes_engagement
+     */
+    public function getTotalEngageViaLignesAttribute(): float
+    {
+        return (float) \DB::table('lignes_engagement')
+            ->where('nomenclature_id', $this->nomenclature_id)
+            ->sum('montant');
+    }
+    // public function engagements()
+    // {
+    //     // Trouver le nom de la colonne pour BonCommande
+    //     $bcColumn = null;
+    //     $possibleColumns = [
+    //         'ligne_budgetaire_id',
+    //         'lignebudgetaire_id',
+    //         'ligne_budget_id',
+    //         'budget_ligne_id',
+    //         'budgetaire_ligne_id',
+    //     ];
+
+    //     $bcTableColumns = \Schema::getColumnListing('bon_commandes');
+    //     foreach ($possibleColumns as $col) {
+    //         if (in_array($col, $bcTableColumns)) {
+    //             $bcColumn = $col;
+    //             break;
+    //         }
+    //     }
+
+    //     // Trouver le nom de la colonne pour DecisionAdministrative
+    //     $daColumn = null;
+    //     $daTableColumns = \Schema::getColumnListing('decisions_administratives');
+    //     foreach ($possibleColumns as $col) {
+    //         if (in_array($col, $daTableColumns)) {
+    //             $daColumn = $col;
+    //             break;
+    //         }
+    //     }
+
+    //     $id = $this->id;
+
+    //     return \App\Models\Engagement::query()
+    //         ->where(function ($q) use ($id, $bcColumn, $daColumn) {
+    //             // Via BonCommande si la colonne existe
+    //             if ($bcColumn) {
+    //                 $q->whereHasMorph('engageable', [\App\Models\BonCommande::class], function ($q2) use ($id, $bcColumn) {
+    //                     $q2->where($bcColumn, $id);
+    //                 });
+    //             }
+
+    //             // Via DecisionAdministrative si la colonne existe
+    //             if ($daColumn) {
+    //                 $q->orWhereHasMorph('engageable', [\App\Models\DecisionAdministrative::class], function ($q2) use ($id, $daColumn) {
+    //                     $q2->where($daColumn, $id);
+    //                 });
+    //             }
+    //         });
+    // }
+
+    public function bonCommandes()
+    {
+        // Liste des noms de colonnes possibles
+        $possibleColumns = [
+            'ligne_budgetaire_id',
+            'lignebudgetaire_id',
+            'ligne_budget_id',
+            'budget_ligne_id',
+            'budgetaire_ligne_id',
+        ];
+
+        // Chercher quelle colonne existe
+        $tableColumns = \Schema::getColumnListing('bon_commandes');
+        foreach ($possibleColumns as $col) {
+            if (in_array($col, $tableColumns)) {
+                return $this->hasMany(\App\Models\BonCommande::class, $col);
+            }
+        }
+
+        // Si aucune trouvée, retourner une relation vide
+        return $this->hasMany(\App\Models\BonCommande::class, 'ligne_budgetaire_id');
+    }
+
+    public function decisionsAdministratives()
+    {
+        // Liste des noms de colonnes possibles
+        $possibleColumns = [
+            'ligne_budgetaire_id',
+            'lignebudgetaire_id',
+            'ligne_budget_id',
+            'budget_ligne_id',
+            'budgetaire_ligne_id',
+        ];
+
+        // Chercher quelle colonne existe
+        $tableColumns = \Schema::getColumnListing('bon_commandes');
+        foreach ($possibleColumns as $col) {
+            if (in_array($col, $tableColumns)) {
+                return $this->hasMany(\App\Models\BonCommande::class, $col);
+            }
+        }
+
+        // Si aucune trouvée, retourner une relation vide
+        return $this->hasMany(\App\Models\BonCommande::class, 'ligne_budgetaire_id');
     }
 
     /**
@@ -191,5 +322,51 @@ class LigneBudgetaire extends Model
             return 0;
         }
         return ($this->liquide / $this->budget_rectifie) * 100;
+    }
+
+    // ============================================
+// ACCESSEURS À AJOUTER AU MODÈLE LigneBudgetaire
+// Pour optimiser les calculs d'engagements
+// ============================================
+
+    /**
+     * Attribut calculé : Total des montants engagés
+     * 
+     * @return float
+     */
+    public function getTotalEngageAttribute(): float
+    {
+        return 0;
+    }
+
+    /**
+     * Attribut calculé : Nombre total d'engagements
+     * 
+     * @return int
+     */
+    public function getNombreEngagementsAttribute(): int
+    {
+        return 0;
+    }
+
+    /**
+     * Attribut calculé : Taux de consommation en pourcentage
+     * 
+     * @return float
+     */
+    public function getTauxConsommationAttribute(): float
+    {
+        return 0;
+    }
+
+    /**
+     * Attribut calculé : Collection des engagements
+     * (pour utilisation dans les vues)
+     * 
+     * @return \Illuminate\Support\Collection
+     */
+    public function getEngagementsCollectionAttribute()
+    {
+        return $this->engagements()->get();
     }
 }

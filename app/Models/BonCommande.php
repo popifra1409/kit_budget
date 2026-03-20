@@ -96,6 +96,19 @@ class BonCommande extends Model
     }
 
     /**
+     * Relation polymorphique : Les engagements
+     */
+    public function engagements()
+    {
+        return $this->morphMany(\App\Models\Engagement::class, 'engageable');
+    }
+
+    public function ligneBudgetaire()
+    {
+        return $this->belongsTo(LigneBudgetaire::class, 'budgetaire_ligne_id'); // Vrai nom
+    }
+
+    /**
      * Vérifier la disponibilité budgétaire avant engagement
      */
     public function verifierDisponibiliteBudgetaire(): array

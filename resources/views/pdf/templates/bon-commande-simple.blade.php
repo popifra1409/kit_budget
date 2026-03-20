@@ -169,11 +169,11 @@
         <table>
             <thead>
                 <tr>
-                    <th>REFERENCE</th>
-                    <th>DESIGNATION</th>
-                    <th>QTES</th>
-                    <th>P.U</th>
-                    <th>Total</th>
+                    <th style="width: 16%;">REFERENCE</th>
+                    <th style="width: 46%;">DESIGNATION</th>
+                    <th style="width: 10%;">QTES</th>
+                    <th style="width: 14%;">P.U</th>
+                    <th style="width: 14%;">Total</th>
                 </tr>
             </thead>
             <tbody>

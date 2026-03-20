@@ -13,6 +13,7 @@ use App\Services\DecisionAdministrativePdfService;
 use App\Models\BonCommande;
 use App\Models\DecisionAdministrative;
 use App\Models\ParametresStructure;
+use App\Http\Controllers\FicheControleEngagementsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -91,8 +92,8 @@ Route::middleware(['web', 'auth'])->group(function () {
         return BonCommandePdfService::apercu($bonCommande, 'simple_preimprime');
     })->name('bons-commande.pdf.preview.simple-preimprime');
 
-    Route::get('/bons-commande/{bonCommande}/pdf/download/simple-preimprime', function (BonCommande $bonCommande){
-         return BonCommandePdfService::telecharger($bonCommande, 'simple_preimprime');
+    Route::get('/bons-commande/{bonCommande}/pdf/download/simple-preimprime', function (BonCommande $bonCommande) {
+        return BonCommandePdfService::telecharger($bonCommande, 'simple_preimprime');
     })->name('bons-commande.pdf.download.simple-preimprime');
 
     // Décisions administratives
@@ -103,6 +104,9 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/decisions-administratives/{decision}/pdf/download', function (DecisionAdministrative $decision) {
         return DecisionAdministrativePdfService::telecharger($decision);
     })->name('decisions-administratives.pdf.download');
+
+    Route::get('/fiche-controle-engagements/{id}/preview', [FicheControleEngagementsController::class, 'preview'])->name('fiche-controle-engagements.preview');
+    Route::get('/fiche-controle-engagements/{id}/pdf', [FicheControleEngagementsController::class, 'telechargerPdf'])->name('fiche-controle-engagements.pdf');
 });
 
 /*

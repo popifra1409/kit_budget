@@ -393,7 +393,7 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                         <div>
                             • <span class="font-bold" style="font-size: 8pt;">
                                 @if ($codeSousProgramme)
-                                    PROGRAMME / SOUS-PROGRAMME :
+                                    SOUS-PROGRAMME :
                                 @else
                                     PROGRAMME :
                                 @endif
@@ -401,8 +401,8 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
                             @if ($codeSousProgramme)
                                 {{-- Afficher Programme > Sous-Programme --}}
-                                <span style="color: #666;">{{ $codeProgramme }} ({{ $programme->libelle ?? '' }})</span>
-                                <span style="font-weight: bold;"> → </span>
+                                {{-- <span style="color: #666;">{{ $codeProgramme }} ({{ $programme->libelle ?? '' }})</span>
+                                <span style="font-weight: bold;"> → </span> --}}
                                 <span style="font-weight: bold;">{{ $codeSousProgramme }} -
                                     {{ $sousProgramme->libelle ?? '' }}</span>
                             @else

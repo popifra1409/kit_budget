@@ -133,7 +133,7 @@ if (!$reverseur && $ordonnance->beneficiaire) {
 }
 
 $nomReverseur = $reverseur->raison_sociale ?? ($reverseur->nom_complet ?? ($reverseur->name ?? 'N/A'));
-$nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
+$nomBeneficiaire = 'LE RECEVEUR';
 
 // Montants
 $detailImpots = $ordonnance->getDetailImpots();

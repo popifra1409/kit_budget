@@ -125,7 +125,7 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
         .info-line {
             margin: 6px 0;
             font-size: 10pt;
-            line-height: 1.15;
+            line-height: 1.05;
         }
 
         .info-line strong {
@@ -134,7 +134,7 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 
         .hierarchie-table {
             width: 100%;
-            margin: 10px 0;
+            margin: 9px 0;
             border-collapse: collapse;
             font-size: 9.0pt;
         }

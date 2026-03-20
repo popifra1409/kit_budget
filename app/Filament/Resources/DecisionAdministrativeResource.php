@@ -619,11 +619,11 @@ class DecisionAdministrativeResource extends Resource
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\TextInput::make('taux_irnc')
-                                    ->label('IRNC (%)')
+                                    ->label('IR(NC) (%)')
                                     ->numeric()
                                     ->placeholder(11)
                                     // ->default(11)
-                                    ->helperText('IR Non Commercial')
+                                    ->helperText('IR (Non Commercial)')
                                     ->step(0.01)
                                     ->suffix('%')
                                     ->live(onBlur: true),
