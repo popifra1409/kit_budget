@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -203,6 +204,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- En-tête -->
     <div class="header">
@@ -224,11 +226,24 @@
                 <td>Statut :</td>
                 <td>
                     @switch($budget->statut)
-                        @case('elaboration') En élaboration @break
-                        @case('adopte') Adopté @break
-                        @case('execution') En exécution @break
-                        @case('cloture') Clôturé @break
-                        @default {{ $budget->statut }}
+                        @case('elaboration')
+                            En élaboration
+                        @break
+
+                        @case('adopte')
+                            Adopté
+                        @break
+
+                        @case('execution')
+                            En exécution
+                        @break
+
+                        @case('cloture')
+                            Clôturé
+                        @break
+
+                        @default
+                            {{ $budget->statut }}
                     @endswitch
                 </td>
                 <td>Date adoption :</td>
@@ -244,7 +259,7 @@
     </div>
 
     <!-- Tableau des disponibilités -->
-    @if($lignes->count() > 0)
+    @if ($lignes->count() > 0)
         <table class="data-table">
             <thead>
                 <tr>
@@ -279,20 +294,41 @@
                     $totalDisponibleOrd = 0;
                 @endphp
 
-                @foreach($lignes->sortBy(fn($l) => $l->nomenclature?->code ?? 'ZZZ') as $ligne)
+                @foreach ($lignes->sortBy(fn($l) => $l->nomenclature?->code ?? 'ZZZ') as $ligne)
                     @php
                         $budgetInitial = $ligne->budget_initial ?? 0;
                         $virementsEntrants = $ligne->virements_entrants ?? 0;
                         $virementsSortants = $ligne->virements_sortants ?? 0;
-                        $budgetRectifie = $ligne->budget_rectifie ?? ($budgetInitial + $virementsEntrants - $virementsSortants);
-                        
-                        $engage = $ligne->engage ?? 0;
-                        $ordonne = $ligne->ordonne ?? 0;
-                        $paye = $ligne->paye ?? 0;
-                        
-                        $disponibleEng = $ligne->disponible_engagement ?? ($budgetRectifie - $engage);
-                        $disponibleOrd = $ligne->disponible_ordonnancement ?? ($budgetRectifie - $ordonne);
-                        
+                        $budgetRectifie =
+                            $ligne->budget_rectifie ?? $budgetInitial + $virementsEntrants - $virementsSortants;
+
+                        // ✅ RECALCULER les totaux directement depuis la base
+                        $engage =
+                            \App\Models\Engagement::where('budget_id', $ligne->budget_id)
+                                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
+                                ->sum('montant_engage') ?? 0;
+
+                        // Ordonnancé = engagements qui ont au moins une ordonnance
+                        $ordonne =
+                            \App\Models\Engagement::where('budget_id', $ligne->budget_id)
+                                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
+                                ->whereHas('ordonnancesPaiement')
+                                ->sum('montant_engage') ?? 0;
+
+                        // Payé = somme des ordonnances payées
+                        $paye =
+                            \App\Models\OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
+                                $q->where('budget_id', $ligne->budget_id)->where(
+                                    'nomenclature_principale_id',
+                                    $ligne->nomenclature_id,
+                                );
+                            })
+                                ->where('statut', 'paye')
+                                ->sum('montant_brut') ?? 0;
+
+                        $disponibleEng = $budgetRectifie - $engage;
+                        $disponibleOrd = $budgetRectifie - $ordonne;
+
                         $tauxEngagement = $budgetRectifie > 0 ? ($engage / $budgetRectifie) * 100 : 0;
                         $tauxExecution = $budgetRectifie > 0 ? ($paye / $budgetRectifie) * 100 : 0;
 
@@ -326,10 +362,12 @@
                         <td class="col-montant {{ $disponibleOrd < 0 ? 'montant-negatif' : 'montant-positif' }}">
                             {{ number_format($disponibleOrd, 0, ',', ' ') }}
                         </td>
-                        <td class="col-taux {{ $tauxEngagement >= 90 ? 'taux-mauvais' : ($tauxEngagement >= 70 ? 'taux-moyen' : 'taux-bon') }}">
+                        <td
+                            class="col-taux {{ $tauxEngagement >= 90 ? 'taux-mauvais' : ($tauxEngagement >= 70 ? 'taux-moyen' : 'taux-bon') }}">
                             {{ number_format($tauxEngagement, 1) }}%
                         </td>
-                        <td class="col-taux {{ $tauxExecution >= 90 ? 'taux-mauvais' : ($tauxExecution >= 70 ? 'taux-moyen' : 'taux-bon') }}">
+                        <td
+                            class="col-taux {{ $tauxExecution >= 90 ? 'taux-mauvais' : ($tauxExecution >= 70 ? 'taux-moyen' : 'taux-bon') }}">
                             {{ number_format($tauxExecution, 1) }}%
                         </td>
                     </tr>
@@ -363,7 +401,7 @@
 
         <!-- Légende -->
         <div class="legend">
-            <strong>Légende :</strong> 
+            <strong>Légende :</strong>
             <span style="color: #28A745;">■</span> Disponible positif &nbsp;&nbsp;
             <span style="color: #DC3545;">■</span> Disponible négatif (dépassement) &nbsp;&nbsp;
             Dispo. Eng. = Disponible à l'engagement &nbsp;&nbsp;
@@ -377,8 +415,9 @@
 
     <!-- Pied de page -->
     <div class="footer">
-        Document généré automatiquement - 
+        Document généré automatiquement -
         {{ config('app.name') }} - {{ now()->format('d/m/Y à H:i') }}
     </div>
 </body>
+
 </html>
