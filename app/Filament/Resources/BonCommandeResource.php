@@ -588,7 +588,7 @@ class BonCommandeResource extends Resource
                                     ->minValue(0)
                                     ->maxValue(100)
                                     ->placeholder('Ex: 19.25')
-                                    ->live(debounce: 1000)
+                                    ->live(debounce: 500)
                                     ->dehydrated(false)
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                         $taux = (float) ($state ?? 0);
@@ -622,8 +622,8 @@ class BonCommandeResource extends Resource
                                     ->step(0.01)
                                     ->minValue(0)
                                     ->maxValue(100)
-                                    ->placeholder('Ex: 5.5')
-                                    ->live(debounce: 1000)
+                                    ->placeholder('Ex: 5,5')
+                                    ->live(debounce: 500)
                                     ->dehydrated(false)
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                         // Vérifier d'abord si l'exonération IR est active
@@ -657,7 +657,7 @@ class BonCommandeResource extends Resource
                                         // Recalculer les totaux
                                         static::recalculerTotaux($lignes, $set);
                                     })
-                                    ->helperText('0 = Aucun IR | 5.5 = Standard')
+                                    ->helperText('0 = Aucun IR | 5,5 = Standard')
                                     ->disabled(fn(callable $get) => $get('exonere_ir'))
                                     ->dehydrated(true),
 
@@ -665,7 +665,7 @@ class BonCommandeResource extends Resource
                                 Forms\Components\Toggle::make('exonere_ir')
                                     ->label('Exonération d\'IR')
                                     ->helperText('Forcer l\'IR à 0% (prioritaire sur IR Commun)')
-                                    ->live(debounce: 1000)
+                                    ->live(debounce: 500)
                                     ->reactive()
                                     ->afterStateHydrated(function ($state, callable $set, callable $get) {
                                         // Forcer l'état booléen

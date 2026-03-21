@@ -1,0 +1,19 @@
+/* Réduire la largeur de la sidebar */
+.fi-sidebar {
+    width: 16rem !important;
+    /* Au lieu de 18rem par défaut */
+}
+
+/* Ou autoriser la sidebar à être plus étroite quand repliée */
+.fi-sidebar-collapsed {
+    width: 4rem !important;
+}
+
+/* Maximiser l'espace du contenu principal */
+.fi-main {
+    margin-left: 16rem !important;
+}
+
+.fi-sidebar-collapsed~.fi-main {
+    margin-left: 4rem !important;
+}

@@ -11,10 +11,14 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Services\ReconductionExerciceService;
+use App\Filament\Clusters\GestionBudgetaire;
+
 
 class ExerciceResource extends Resource
 {
     protected static ?string $model = Exercice::class;
+
+    // protected static ?string $cluster = GestionBudgetaire::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-calendar';
 
@@ -222,7 +226,7 @@ class ExerciceResource extends Resource
                     ])
                     ->collapsible()
                     ->collapsed(),
-            ]);
+            ])->columns(1);
     }
 
     public static function table(Table $table): Table
@@ -656,7 +660,10 @@ class ExerciceResource extends Resource
                         ->visible(fn() => auth()->user()->hasRole('super_admin')),
                 ]),
             ])
-            ->defaultSort('annee', 'desc');
+            ->defaultSort('annee', 'desc')
+            ->contentGrid(null) // Désactive la grille, pleine largeur
+            ->striped()
+            ->paginated([10, 25, 50, 100]);
     }
 
     public static function getPages(): array

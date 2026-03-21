@@ -27,8 +27,8 @@ use App\Filament\Pages\Auth\Login;
 use Filament\Navigation\MenuItem;
 
 /**
- * AdminPanelProvider final avec données du fournisseur depuis la base de données
- * VERSION CORRIGÉE - Sans erreur formatTelephoneHref()
+ * AdminPanelProvider avec URLs dynamiques compatibles Clusters
+ * VERSION CORRIGÉE - URLs fonctionnent avec ou sans clusters
  */
 class AdminPanelProvider extends PanelProvider
 {
@@ -44,9 +44,9 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            // ->login()
             ->login(Login::class)
             ->profile()
+            // ->viteTheme('resources/css/filament/admin/theme.css')
 
             // 🎨 PALETTE DE COULEURS PERSONNALISÉE
             ->colors([
@@ -69,7 +69,147 @@ class AdminPanelProvider extends PanelProvider
             // SIDEBAR CONFIGURATION
             // ===================================
             ->sidebarCollapsibleOnDesktop()
-
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn() => new HtmlString('
+        <style>
+            /* ========================================= */
+            /* MASQUER LA SIDEBAR DU CLUSTER - FORCÉ */
+            /* ========================================= */
+            
+            /* Masquer tous les types de sidebar de cluster */
+            .fi-cluster-sidebar,
+            [class*="cluster-sidebar"],
+            [class*="fi-sidebar-nav-clusters"],
+            nav[aria-label*="cluster"],
+            aside[class*="cluster"] {
+                display: none !important;
+                width: 0 !important;
+                visibility: hidden !important;
+            }
+            
+            /* Ajuster le contenu pour prendre tout l\'espace */
+            .fi-cluster-content,
+            [class*="cluster-content"] {
+                margin-left: 0 !important;
+                padding-left: 0 !important;
+            }
+            
+            /* ========================================= */
+            /* SIDEBAR PRINCIPALE COMPACTE */
+            /* ========================================= */
+            .fi-sidebar {
+                width: 16rem !important;
+            }
+            
+            .fi-main {
+                margin-left: 16rem !important;
+            }
+            
+            .fi-sidebar-collapsed ~ .fi-main {
+                margin-left: 4rem !important;
+            }
+            
+            .fi-sidebar-nav-item {
+                padding: 0.5rem 1rem !important;
+                font-size: 0.875rem !important;
+            }
+            
+            .fi-sidebar-nav-group {
+                margin-bottom: 0.5rem !important;
+            }
+            
+            .fi-sidebar-nav-group-label {
+                font-size: 0.75rem !important;
+                padding: 0.25rem 1rem !important;
+            }
+            
+            /* ========================================= */
+            /* TABLEAUX ET FORMULAIRES EN PLEINE LARGEUR */
+            /* ========================================= */
+            
+            .fi-page {
+                max-width: 100% !important;
+            }
+            
+            .fi-page-content {
+                padding-left: 1.5rem !important;
+                padding-right: 1.5rem !important;
+                max-width: 100% !important;
+            }
+            
+            .fi-page-header {
+                max-width: 100% !important;
+                padding-left: 1.5rem !important;
+                padding-right: 1.5rem !important;
+            }
+            
+            .fi-ta-table-wrapper {
+                max-width: 100% !important;
+            }
+            
+            .fi-ta-table {
+                width: 100% !important;
+            }
+            
+            .fi-section,
+            .fi-section-content,
+            .fi-section-content-ctn {
+                max-width: 100% !important;
+            }
+            
+            .fi-form {
+                max-width: 100% !important;
+            }
+        </style>
+        
+        <script>
+            // JavaScript pour masquer la sidebar du cluster au chargement
+            document.addEventListener("DOMContentLoaded", function() {
+                // Masquer toutes les sidebars de cluster
+                const clusterSidebars = document.querySelectorAll(
+                    ".fi-cluster-sidebar, [class*=\'cluster-sidebar\'], aside[class*=\'cluster\']"
+                );
+                
+                clusterSidebars.forEach(sidebar => {
+                    sidebar.style.display = "none";
+                    sidebar.style.width = "0";
+                    sidebar.style.visibility = "hidden";
+                });
+                
+                // Ajuster le contenu
+                const clusterContent = document.querySelectorAll(
+                    ".fi-cluster-content, [class*=\'cluster-content\']"
+                );
+                
+                clusterContent.forEach(content => {
+                    content.style.marginLeft = "0";
+                    content.style.paddingLeft = "0";
+                });
+            });
+            
+            // Observer les changements DOM (navigation Livewire)
+            const observer = new MutationObserver(function(mutations) {
+                const clusterSidebars = document.querySelectorAll(
+                    ".fi-cluster-sidebar, [class*=\'cluster-sidebar\'], aside[class*=\'cluster\']"
+                );
+                
+                clusterSidebars.forEach(sidebar => {
+                    if (sidebar.style.display !== "none") {
+                        sidebar.style.display = "none";
+                        sidebar.style.width = "0";
+                        sidebar.style.visibility = "hidden";
+                    }
+                });
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        </script>
+    ')
+            )
             // 📂 ORDRE DES GROUPES DE NAVIGATION
             ->navigationGroups([
                 'Commandes & Engagement',
@@ -83,6 +223,9 @@ class AdminPanelProvider extends PanelProvider
                 'Administration',
             ])
 
+            // ✅ DÉCOUVRIR LES CLUSTERS (à activer quand prêt)
+            // ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\\Filament\\Clusters')
+
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
@@ -91,7 +234,6 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->widgets([
                 Widgets\AccountWidget::class,
-                // \App\Filament\Widgets\CacheManagementWidget::class,
                 \App\Filament\Widgets\WelcomeWidget::class,
             ])
             ->middleware([
@@ -118,56 +260,11 @@ class AdminPanelProvider extends PanelProvider
             )
 
             // ===================================
-            // 🚀 ACTIONS RAPIDES (Header)
+            // 🚀 ACTIONS RAPIDES (Header) - URLs DYNAMIQUES
             // ===================================
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => new HtmlString('
-                <div class="flex items-center gap-2 me-4">
-                    
-                    <!-- Action: Nouveau Bon de Commande -->
-                    <a href="' . route('filament.admin.resources.bon-commandes.create') . '" 
-                       class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg transition shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
-                       title="Nouveau Bon de Commande">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span class="hidden lg:inline font-medium">Nouveau BC</span>
-                    </a>
-                    
-                    <!-- Action: Nouvel Engagement -->
-                    <a href="' . route('filament.admin.resources.engagements.create') . '" 
-                       class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition border border-green-200 dark:border-green-800"
-                       title="Nouvel Engagement">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span class="hidden lg:inline font-medium">Engagement</span>
-                    </a>
-                    
-                    <!-- Action: Nouveau Mémoire de Dépense -->
-                    <a href="' . route('filament.admin.resources.memoire-depenses.create') . '" 
-                       class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition border border-orange-200 dark:border-orange-800"
-                       title="Nouveau Mémoire de Dépense">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span class="hidden lg:inline font-medium">Mémoire</span>
-                    </a>
-                    
-                    <!-- Divider -->
-                    <div class="border-l border-blue-300 dark:border-blue-600 h-8 mx-1"></div>
-                    
-                    <!-- Badge: Exercice en cours -->
-                    <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                        <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <span class="text-sm font-semibold text-blue-700 dark:text-blue-300">' . now()->year . '</span>
-                    </div>
-                    
-                </div>
-                ')
+                fn(): HtmlString => $this->renderActionsRapides()
             )
 
             // ===================================
@@ -177,6 +274,91 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::FOOTER,
                 fn(): HtmlString => $this->renderFooter($structure, $fournisseur)
             );
+    }
+
+    /**
+     * ✅ NOUVELLE MÉTHODE - Render actions rapides avec URLs dynamiques
+     * Compatible avec ou sans clusters
+     */
+    private function renderActionsRapides(): HtmlString
+    {
+        // Récupérer les URLs dynamiques
+        $urlBC = $this->getResourceUrl('App\Filament\Resources\BonCommandeResource', 'create');
+        $urlEngagement = $this->getResourceUrl('App\Filament\Resources\EngagementResource', 'create');
+        $urlMemoire = $this->getResourceUrl('App\Filament\Resources\MemoireDepenseResource', 'create');
+
+        return new HtmlString('
+        <div class="flex items-center gap-2 me-4">
+            
+            <!-- Action: Nouveau Bon de Commande -->
+            ' . ($urlBC ? '
+            <a href="' . e($urlBC) . '" 
+               class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg transition shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
+               title="Nouveau Bon de Commande">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span class="hidden lg:inline font-medium">Nouveau BC</span>
+            </a>
+            ' : '') . '
+            
+            <!-- Action: Nouvel Engagement -->
+            ' . ($urlEngagement ? '
+            <a href="' . e($urlEngagement) . '" 
+               class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition border border-green-200 dark:border-green-800"
+               title="Nouvel Engagement">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="hidden lg:inline font-medium">Engagement</span>
+            </a>
+            ' : '') . '
+            
+            <!-- Action: Nouveau Mémoire de Dépense -->
+            ' . ($urlMemoire ? '
+            <a href="' . e($urlMemoire) . '" 
+               class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition border border-orange-200 dark:border-orange-800"
+               title="Nouveau Mémoire de Dépense">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span class="hidden lg:inline font-medium">Mémoire</span>
+            </a>
+            ' : '') . '
+            
+            <!-- Divider -->
+            <div class="border-l border-blue-300 dark:border-blue-600 h-8 mx-1"></div>
+            
+            <!-- Badge: Exercice en cours -->
+            <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span class="text-sm font-semibold text-blue-700 dark:text-blue-300">' . now()->year . '</span>
+            </div>
+            
+        </div>
+        ');
+    }
+
+    /**
+     * ✅ NOUVELLE MÉTHODE - Obtenir l'URL d'une ressource de manière dynamique
+     * Fonctionne avec ou sans clusters
+     */
+    private function getResourceUrl(string $resourceClass, string $page = 'index'): ?string
+    {
+        try {
+            // Vérifier que la classe existe
+            if (!class_exists($resourceClass)) {
+                return null;
+            }
+
+            // Utiliser la méthode getUrl() de Filament (compatible clusters)
+            return $resourceClass::getUrl($page);
+        } catch (\Exception $e) {
+            // Erreur silencieuse, retourner null
+            return null;
+        }
     }
 
     /**
@@ -315,15 +497,12 @@ class AdminPanelProvider extends PanelProvider
 
     /**
      * Formater un numéro de téléphone pour un lien tel:
-     * Supprime les espaces, parenthèses, tirets, etc.
      */
     private function formatTelephone(?string $telephone): string
     {
         if (!$telephone) {
             return '';
         }
-
-        // Supprimer tout sauf les chiffres et le +
         return preg_replace('/[^0-9+]/', '', $telephone);
     }
 
