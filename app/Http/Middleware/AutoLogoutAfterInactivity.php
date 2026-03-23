@@ -42,7 +42,7 @@ class AutoLogoutAfterInactivity
                     Session::flush();
                     Session::regenerate();
 
-                    return redirect()->route('filament.admin.auth.login')
+                    return redirect()->route('filament.budget.auth.login')
                         ->with('status', 'Vous avez été déconnecté pour inactivité.');
                 }
             }

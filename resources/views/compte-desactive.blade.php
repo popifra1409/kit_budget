@@ -225,7 +225,7 @@
             </div>
 
             <div class="actions">
-                <a href="{{ route('filament.admin.auth.login') }}" class="btn btn-primary">
+                <a href="{{ route('filament.budget.auth.login') }}" class="btn btn-primary">
                     Retour à la connexion
                 </a>
                 <a href="mailto:admin@exemple.com?subject=Réactivation de compte&body=Bonjour,%0D%0A%0D%0AJe souhaiterais réactiver mon compte.%0D%0A%0D%0AEmail : {{ auth()->user()->email ?? '' }}%0D%0A%0D%0AMerci."

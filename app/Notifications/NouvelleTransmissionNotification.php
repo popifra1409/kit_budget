@@ -107,9 +107,9 @@ class NouvelleTransmissionNotification extends Notification implements ShouldQue
         $document = $this->transmission->document;
 
         return match ($this->transmission->document_type) {
-            'App\Models\BonCommande' => route('filament.admin.resources.bon-commandes.view', $document),
-            'App\Models\Engagement' => route('filament.admin.resources.engagements.view', $document),
-            default => route('filament.admin.pages.dashboard'),
+            'App\Models\BonCommande' => route('filament.budget.resources.bon-commandes.view', $document),
+            'App\Models\Engagement' => route('filament.budget.resources.engagements.view', $document),
+            default => route('filament.budget.pages.dashboard'),
         };
     }
 }

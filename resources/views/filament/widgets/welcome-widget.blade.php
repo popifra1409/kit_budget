@@ -145,7 +145,7 @@
                     @endif
 
                     @if (auth()->user()->can('view_any_engagement'))
-                        <a href="{{ route('filament.admin.resources.engagements.index') }}"
+                        <a href="{{ route('filament.budget.resources.engagements.index') }}"
                             class="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition">
                             <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -156,7 +156,7 @@
                         </a>
                     @endif
 
-                    <a href="{{ route('filament.admin.auth.profile') }}"
+                    <a href="{{ route('filament.budget.auth.profile') }}"
                         class="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition">
                         <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

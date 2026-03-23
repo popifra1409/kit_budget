@@ -49,15 +49,15 @@ class Dashboard extends BaseDashboard
 
         // Widgets de workflow (prioritaires)
         $workflowWidgets = [
-            \App\Filament\Widgets\StatistiquesTransmissionsWidget::class,
-            \App\Filament\Widgets\MesTachesEnAttenteWidget::class,
+            \App\Filament\Budget\Widgets\StatistiquesTransmissionsWidget::class,
+            \App\Filament\Budget\Widgets\MesTachesEnAttenteWidget::class,
         ];
 
         // Widgets de workflow admin
         $workflowAdminWidgets = [
-            \App\Filament\Widgets\StatistiquesTransmissionsWidget::class,
-            \App\Filament\Widgets\MesTachesEnAttenteWidget::class,
-            \App\Filament\Widgets\ToutesLesTransmissionsWidget::class,
+            \App\Filament\Budget\Widgets\StatistiquesTransmissionsWidget::class,
+            \App\Filament\Budget\Widgets\MesTachesEnAttenteWidget::class,
+            \App\Filament\Budget\Widgets\ToutesLesTransmissionsWidget::class,
         ];
 
         $profilWidgets = [
@@ -66,28 +66,28 @@ class Dashboard extends BaseDashboard
 
         // Widgets budgétaires
         $budgetWidgets = [
-            \App\Filament\Widgets\ExerciceActifWidget::class,
-            \App\Filament\Widgets\BudgetOverviewWidget::class,
-            \App\Filament\Widgets\AlertesWidget::class,
-            \App\Filament\Widgets\TauxRealisationWidget::class,
+            \App\Filament\Budget\Widgets\ExerciceActifWidget::class,
+            \App\Filament\Budget\Widgets\BudgetOverviewWidget::class,
+            \App\Filament\Budget\Widgets\AlertesWidget::class,
+            \App\Filament\Budget\Widgets\TauxRealisationWidget::class,
         ];
 
         $advancedBudgetWidgets = [
-            \App\Filament\Widgets\GraphiqueEvolution::class,
-            \App\Filament\Widgets\EvolutionMensuelleWidget::class,
-            \App\Filament\Widgets\EngagementsParTypeWidget::class,
+            \App\Filament\Budget\Widgets\GraphiqueEvolution::class,
+            \App\Filament\Budget\Widgets\EvolutionMensuelleWidget::class,
+            \App\Filament\Budget\Widgets\EngagementsParTypeWidget::class,
         ];
 
         $recettesWidgets = [
-            \App\Filament\Widgets\StatsRecettesOverview::class,
-            \App\Filament\Widgets\TableRecettesMensuelles::class,
-            \App\Filament\Widgets\RecettesStats::class,
-            \App\Filament\Widgets\ChartRecettesMensuelles::class,
+            \App\Filament\Budget\Widgets\StatsRecettesOverview::class,
+            \App\Filament\Budget\Widgets\TableRecettesMensuelles::class,
+            \App\Filament\Budget\Widgets\RecettesStats::class,
+            \App\Filament\Budget\Widgets\ChartRecettesMensuelles::class,
         ];
 
         $adminWidgets = [
-            \App\Filament\Widgets\CacheManagementWidget::class,
-            \App\Filament\Widgets\ActivitesRecentesWidget::class,
+            \App\Filament\Budget\Widgets\CacheManagementWidget::class,
+            \App\Filament\Budget\Widgets\ActivitesRecentesWidget::class,
         ];
 
         // Super Admin
@@ -179,8 +179,8 @@ class Dashboard extends BaseDashboard
 
         // Widgets par défaut (pour tous les autres rôles)
         return [
-            \App\Filament\Widgets\StatistiquesTransmissionsWidget::class,
-            \App\Filament\Widgets\MesTachesEnAttenteWidget::class,
+            \App\Filament\Budget\Widgets\StatistiquesTransmissionsWidget::class,
+            \App\Filament\Budget\Widgets\MesTachesEnAttenteWidget::class,
             \App\Filament\Widgets\WelcomeWidget::class,
         ];
     }

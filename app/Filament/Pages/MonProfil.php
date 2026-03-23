@@ -86,6 +86,6 @@ class MonProfil extends Page implements HasForms
         request()->session()->regenerateToken();
 
         // Rediriger vers la page de login
-        return redirect()->route('filament.admin.auth.login');
+        return redirect()->route('filament.budget.auth.login');
     }
 }
