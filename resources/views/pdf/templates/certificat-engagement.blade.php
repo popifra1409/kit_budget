@@ -64,37 +64,37 @@
             if ($programme) {
                 if ($programme->estSousProgramme()) {
                     // C'est un sous-programme
-                $sousProgramme = $programme;
-                $programme = $programme->parent;
-            } else {
-                // C'est un programme principal
+                    $sousProgramme = $programme;
+                    $programme = $programme->parent;
+                } else {
+                    // C'est un programme principal
                     $sousProgramme = null;
                 }
 
                 // Récupérer l'objectif
-            try {
-                if (method_exists($programme, 'objectifPrincipal')) {
-                    $objectif = $programme->objectifPrincipal;
-                } elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                    $objectifs = $programme->objectifsPrincipaux;
-                    if ($objectifs instanceof \Illuminate\Support\Collection) {
-                        $objectif = $objectifs->first();
-                    } else {
-                        $objectif = $objectifs;
+                try {
+                    if (method_exists($programme, 'objectifPrincipal')) {
+                        $objectif = $programme->objectifPrincipal;
+                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                        $objectifs = $programme->objectifsPrincipaux;
+                        if ($objectifs instanceof \Illuminate\Support\Collection) {
+                            $objectif = $objectifs->first();
+                        } else {
+                            $objectif = $objectifs;
+                        }
                     }
+                } catch (\Exception $e) {
+                    \Log::warning('Erreur récupération objectif', [
+                        'programme_id' => $programme->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $objectif = null;
                 }
-            } catch (\Exception $e) {
-                \Log::warning('Erreur récupération objectif', [
-                    'programme_id' => $programme->id,
-                    'error' => $e->getMessage(),
-                ]);
-                $objectif = null;
             }
         }
     }
-}
 
-$nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
+    $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 @endphp
 
 @section('title', 'Certificat d\'Engagement')
@@ -105,53 +105,64 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 
 @section('additional_styles')
     <style>
-        .doc-title {
-            text-align: center;
-            font-size: 10pt;
-            font-weight: bold;
-            margin: 10px auto 20px auto;
-            padding: 6px 12px;
-            border: 1px solid #000;
-            display: inline-block;
-            text-decoration: none;
-        }
+        @section('additional_styles')
+                <style>
+                /* ── Écrasement des marges master pour ce document ──  */
 
-        .section-title {
-            font-weight: bold;
-            font-size: 9pt;
-            margin: 10px 0 6px 0;
-        }
+                .doc-title-wrapper {
+                    margin: 6px 0 8px 0 !important;
+                }
 
-        .info-line {
-            margin: 6px 0;
-            font-size: 10pt;
-            line-height: 1.05;
-        }
+                .doc-title {
+                    margin: 4px 0 8px 0 !important;
+                    padding: 4px 0 !important;
+                    font-size: 10pt !important;
+                }
 
-        .info-line strong {
-            font-weight: bold;
-        }
+                .bas-page {
+                    margin-top: 20px !important;
+                }
 
-        .hierarchie-table {
-            width: 100%;
-            margin: 9px 0;
-            border-collapse: collapse;
-            font-size: 9.0pt;
-        }
+                /* ── Styles spécifiques certificat ────────────────── */
+                .section-title {
+                    font-weight: bold;
+                    font-size: 8.5pt;
+                    margin: 6px 0 4px 0;
+                }
 
-        .hierarchie-table th,
-        .hierarchie-table td {
-            border: 1px solid #000;
-            padding: 6px;
-            text-align: left;
-            vertical-align: top;
-        }
+                .info-line {
+                    margin: 3px 0;
+                    font-size: 9pt;
+                    line-height: 1.3;
+                }
 
-        .hierarchie-table th {
-            background-color: #f0f0f0;
-            font-weight: bold;
-            width: 20%;
-        }
+                .info-line strong {
+                    font-weight: bold;
+                }
+
+                .hierarchie-table {
+                    width: 100%;
+                    margin: 5px 0;
+                    border-collapse: collapse;
+                    font-size: 8.5pt;
+                }
+
+                .hierarchie-table th,
+                .hierarchie-table td {
+                    border: 1px solid #000;
+                    padding: 3px 5px;
+                    text-align: left;
+                    vertical-align: top;
+                    line-height: 1.3;
+                }
+
+                .hierarchie-table th {
+                    background-color: #f0f0f0;
+                    font-weight: bold;
+                    width: 22%;
+                }
+            </style>
+        @endsection
     </style>
 @endsection
 

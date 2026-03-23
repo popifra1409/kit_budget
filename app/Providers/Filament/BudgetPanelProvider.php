@@ -60,12 +60,17 @@ class BudgetPanelProvider extends PanelProvider
                 'Configuration Budget',
                 'Paramétrage',
                 'Audit',
+                'Administration',
             ])
 
             // ── Découverte dans les sous-dossiers Budget/ ────────────────
             ->discoverResources(
                 in: app_path('Filament/Budget/Resources'),
                 for: 'App\\Filament\\Budget\\Resources'
+            )
+            ->discoverResources(
+                in: app_path('Filament/Resources'),
+                for: 'App\\Filament\\Resources'
             )
             ->discoverPages(
                 in: app_path('Filament/Budget/Pages'),
@@ -80,6 +85,10 @@ class BudgetPanelProvider extends PanelProvider
             ->widgets([
                 Widgets\AccountWidget::class,
                 \App\Filament\Widgets\WelcomeWidget::class,
+            ])
+
+            ->pages([
+                \App\Filament\Pages\Dashboard::class,
             ])
 
             // ── Render hooks ─────────────────────────────────────────────
@@ -157,6 +166,25 @@ class BudgetPanelProvider extends PanelProvider
         $urlMemoire    = $this->getResourceUrl('App\Filament\Budget\Resources\MemoireDepenseResource', 'create');
 
         return new HtmlString('
+        <div class="flex items-center gap-2 me-4">
+        <a href="/portal"
+           class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium
+                  text-gray-500 dark:text-gray-400
+                  hover:text-gray-700 dark:hover:text-gray-200
+                  bg-gray-100 dark:bg-gray-800
+                  hover:bg-gray-200 dark:hover:bg-gray-700
+                  rounded-lg transition border border-gray-200 dark:border-gray-700
+                  group"
+           title="Retour au portail">
+            <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            <span class="hidden lg:inline">Portail</span>
+        </a>
+
+        <div class="border-l border-gray-300 dark:border-gray-600 h-8 mx-1"></div>
         <div class="flex items-center gap-2 me-4">
 
             ' . ($urlBC ? '

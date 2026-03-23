@@ -121,3 +121,4 @@ if (config('app.env') !== 'production') {
         Route::get('/bon-commande', [PdfTestController::class, 'bonCommande']);
     });
 }
+Route::redirect('/', '/portal');

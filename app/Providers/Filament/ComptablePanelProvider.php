@@ -1,0 +1,151 @@
+<?php
+
+namespace App\Providers\Filament;
+
+use Filament\Http\Middleware\Authenticate;
+use Filament\Http\Middleware\DisableBladeIconComponents;
+use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Panel;
+use Filament\PanelProvider;
+use Filament\Support\Colors\Color;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Session\Middleware\AuthenticateSession;
+use Illuminate\Session\Middleware\StartSession;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Filament\Widgets;
+use Filament\View\PanelsRenderHook;
+use Illuminate\Support\HtmlString;
+use App\Filament\Pages\Auth\Login;
+
+/**
+ * ComptablePanelProvider — Module Comptabilité Matières
+ * URL : /comptable
+ * Cycle complet : Acquisition → Affectation → Suivi → Entretien → Aliénation
+ */
+class ComptablePanelProvider extends PanelProvider
+{
+    public function panel(Panel $panel): Panel
+    {
+        return $panel
+            ->id('comptable')
+            ->path('comptable')
+            ->login(Login::class)
+            ->profile()
+            ->colors([
+                'primary' => Color::hex('#059669'),  // Vert matières
+                'success' => Color::hex('#16a34a'),
+                'danger'  => Color::hex('#dc2626'),
+                'warning' => Color::hex('#f59e0b'),
+                'info'    => Color::hex('#64748b'),
+            ])
+            ->brandName('Budget Suite — Comptabilité Matières')
+            ->favicon(asset('images/favicon.png'))
+            ->sidebarCollapsibleOnDesktop()
+
+            // ── Cycle de vie complet des biens ───────────────────────────
+            ->navigationGroups([
+                'Référentiels',           // Catégories, fournisseurs, localisations
+                'Acquisition',            // Bons de commande, réception, PV
+                'Affectation & Mise en service', // Attribution aux services/agents
+                'Suivi & Inventaire',     // Mouvements, mutations, états
+                'Entretien & Réparation', // Bons de travaux, maintenances
+                'Amortissement',          // Tableaux, dotations annuelles
+                'Aliénation',             // Cession, mise au rebut, perte, don
+                'Rapports & États',       // États de parc, fiches d'inventaire
+                'Paramétrage',            // Configuration du module
+            ])
+
+            ->discoverResources(
+                in: app_path('Filament/Comptable/Resources'),
+                for: 'App\\Filament\\Comptable\\Resources'
+            )
+            ->discoverPages(
+                in: app_path('Filament/Comptable/Pages'),
+                for: 'App\\Filament\\Comptable\\Pages'
+            )
+            ->discoverWidgets(
+                in: app_path('Filament/Comptable/Widgets'),
+                for: 'App\\Filament\\Comptable\\Widgets'
+            )
+            ->widgets([Widgets\AccountWidget::class])
+
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
+                fn(): HtmlString => $this->renderSwitcher('comptable')
+            )
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                fn(): HtmlString => new HtmlString('
+                    <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 me-3 rounded-lg border"
+                         style="background:#05966915;border-color:#05966940;">
+                        <span class="text-xs font-semibold" style="color:#059669;">
+                            📦 Comptabilité Matières
+                        </span>
+                    </div>
+                ')
+            )
+
+            ->middleware([
+                EncryptCookies::class,
+                AddQueuedCookiesToResponse::class,
+                StartSession::class,
+                AuthenticateSession::class,
+                ShareErrorsFromSession::class,
+                VerifyCsrfToken::class,
+                SubstituteBindings::class,
+                DisableBladeIconComponents::class,
+                DispatchServingFilamentEvent::class,
+            ])
+            ->authMiddleware([Authenticate::class]);
+    }
+
+    // ── Switcher de module (header) ───────────────────────────────
+    private function renderSwitcher(string $active): HtmlString
+    {
+        $modules = [
+            'budget'    => ['💰', 'Budget',    '/budget'],
+            'comptable' => ['📦', 'Matières',  '/comptable'],
+            'marches'   => ['📋', 'Marchés',   '/marches'],
+        ];
+
+        $html  = '<div class="flex items-center gap-2 me-2">';
+        $html .= '<a href="/portal"
+                 class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium
+                        text-gray-500 dark:text-gray-400
+                        hover:text-gray-700 dark:hover:text-gray-200
+                        bg-gray-100 dark:bg-gray-800
+                        hover:bg-gray-200 dark:hover:bg-gray-700
+                        rounded-lg transition border border-gray-200 dark:border-gray-700 group"
+                 title="Retour au portail">
+                  <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5"
+                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                  </svg>
+                  <span class="hidden lg:inline">Portail</span>
+              </a>';
+        $html .= '<div class="border-l border-gray-300 dark:border-gray-600 h-8 mx-1"></div>';
+
+        $html = '<div class="flex items-center gap-1 me-3 p-1 rounded-xl
+                             bg-gray-100 dark:bg-gray-800
+                             border border-gray-200 dark:border-gray-700">';
+
+        foreach ($modules as $key => [$icon, $label, $url]) {
+            $isActive = $key === $active;
+            $class    = $isActive
+                ? 'bg-white dark:bg-gray-700 shadow-sm font-semibold text-gray-900 dark:text-white'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-white/60 dark:hover:bg-gray-700/60';
+
+            $html .= '<a href="' . ($isActive ? '#' : $url) . '"
+                         class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all ' . $class . '">
+                          <span>' . $icon . '</span>
+                          <span class="hidden md:inline">' . $label . '</span>
+                      </a>';
+        }
+
+        return new HtmlString($html . '</div>');
+    }
+}

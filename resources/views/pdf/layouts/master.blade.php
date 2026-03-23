@@ -11,8 +11,7 @@
             @if (isset($orientation) && $orientation === 'landscape')
                 size: A4 landscape;
                 margin: 10mm 8mm;
-            @else
-                size: A4 portrait;
+            @else size: A4 portrait;
                 margin: 2cm 1.5cm;
             @endif
         }
@@ -85,18 +84,22 @@
         /* ================= INFOS ================= */
         .doc-title-wrapper {
             text-align: center;
-            margin: 50px 0 20px 0;
+            margin: 6px 0 8px 0;
+            /* ↓ 70px → 14px : gain 56px */
         }
 
         .doc-title {
             display: block;
             width: 100%;
             text-align: center;
-            font-size: 11pt;
+            font-size: 10pt;
+            /* ↓ légèrement */
             font-weight: bold;
-            margin: 10px 0 20px 0;
+            margin: 4px 0 8px 0;
+            /* ↓ 30px → 12px : gain 18px */
             border: 1px solid #000;
-            padding: 6px 0;
+            padding: 4px 0;
+            /* ↓ 6px → 4px */
         }
 
         .info-line {
@@ -202,7 +205,8 @@
 
         .bas-page {
             width: 100%;
-            margin-top: 70px;
+            margin-top: 20px;
+            /* ↓ 70px → 20px : gain 50px */
         }
 
         .bas-page::after {
