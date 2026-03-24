@@ -9,9 +9,6 @@ use Illuminate\Contracts\Support\Htmlable;
 
 class Login extends BaseLogin
 {
-    /**
-     * Personnaliser le formulaire de connexion
-     */
     protected function getForms(): array
     {
         return [
@@ -21,15 +18,15 @@ class Login extends BaseLogin
                         $this->getEmailFormComponent()
                             ->autocomplete('off')
                             ->extraAttributes([
-                                'autocomplete' => 'off',
-                                'autocorrect' => 'off',
+                                'autocomplete'   => 'off',
+                                'autocorrect'    => 'off',
                                 'autocapitalize' => 'off',
-                                'spellcheck' => 'false',
+                                'spellcheck'     => 'false',
                             ]),
                         $this->getPasswordFormComponent()
                             ->autocomplete('off')
                             ->extraAttributes([
-                                'autocomplete' => 'new-password',
+                                'autocomplete'   => 'new-password',
                                 'data-form-type' => 'other',
                             ]),
                         $this->getRememberFormComponent(),
@@ -39,9 +36,6 @@ class Login extends BaseLogin
         ];
     }
 
-    /**
-     * Champ Email sécurisé
-     */
     protected function getEmailFormComponent(): Component
     {
         return TextInput::make('email')
@@ -51,19 +45,14 @@ class Login extends BaseLogin
             ->autocomplete('off')
             ->autofocus()
             ->extraAttributes([
-                'autocomplete' => 'off',
-                'autocorrect' => 'off',
+                'autocomplete'   => 'off',
+                'autocorrect'    => 'off',
                 'autocapitalize' => 'off',
-                'spellcheck' => 'false',
+                'spellcheck'     => 'false',
             ])
-            ->extraInputAttributes([
-                'autocomplete' => 'off',
-            ]);
+            ->extraInputAttributes(['autocomplete' => 'off']);
     }
 
-    /**
-     * Champ Mot de passe sécurisé
-     */
     protected function getPasswordFormComponent(): Component
     {
         return TextInput::make('password')
@@ -72,34 +61,22 @@ class Login extends BaseLogin
             ->required()
             ->autocomplete('off')
             ->extraAttributes([
-                'autocomplete' => 'new-password',
+                'autocomplete'   => 'new-password',
                 'data-form-type' => 'other',
             ])
-            ->extraInputAttributes([
-                'autocomplete' => 'new-password',
-            ]);
+            ->extraInputAttributes(['autocomplete' => 'new-password']);
     }
 
-    /**
-     * Désactiver "Se souvenir de moi" par défaut
-     */
     protected function getRememberFormComponent(): Component
     {
-        return parent::getRememberFormComponent()
-            ->default(false);
+        return parent::getRememberFormComponent()->default(false);
     }
 
-    /**
-     * Titre de la page
-     */
     public function getHeading(): string|Htmlable
     {
         return 'Connexion Sécurisée';
     }
 
-    /**
-     * Sous-titre avec avertissement de sécurité
-     */
     public function getSubHeading(): string|Htmlable|null
     {
         return 'Pour votre sécurité, ne cochez pas "Se souvenir de moi" sur un ordinateur partagé.';

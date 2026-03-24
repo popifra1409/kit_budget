@@ -27,6 +27,23 @@ use App\Filament\Pages\Auth\Login;
  */
 class ComptablePanelProvider extends PanelProvider
 {
+    public function register(): void
+    {
+        parent::register();
+
+        $this->app->bind(
+            \Filament\Http\Responses\Auth\Contracts\LoginResponse::class,
+            fn() => new class implements \Filament\Http\Responses\Auth\Contracts\LoginResponse {
+                public function toResponse($request): \Symfony\Component\HttpFoundation\Response
+                {
+                    return \Illuminate\Support\Facades\Response::make('', 302, [
+                        'Location' => '/portal',
+                    ]);
+                }
+            }
+        );
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel

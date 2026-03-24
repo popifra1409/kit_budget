@@ -16,9 +16,29 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\ModulePortal;
+use Filament\Http\Responses\Auth\Contracts\LoginResponse as LoginResponseContract;
 
 class PortalPanelProvider extends PanelProvider
 {
+    /**
+     * Surcharge la LoginResponse pour rediriger vers le portail
+     * au lieu de chercher filament.admin.pages.dashboard
+     */
+    public function register(): void
+    {
+        parent::register();
+
+        $this->app->bind(
+            LoginResponseContract::class,
+            fn() => new class implements LoginResponseContract {
+                public function toResponse($request): \Symfony\Component\HttpFoundation\Response
+                {
+                    return redirect()->to('/portal');
+                }
+            }
+        );
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -29,8 +49,14 @@ class PortalPanelProvider extends PanelProvider
             ->brandName('Budget Suite')
             ->favicon(asset('images/favicon.png'))
             ->colors(['primary' => \Filament\Support\Colors\Color::hex('#0ea5e9')])
+
+            // Page unique — le portail de sélection des modules
             ->pages([ModulePortal::class])
             ->widgets([])
+
+            // Pas de sidebar ni de topbar Filament sur le portail
+            ->sidebarCollapsibleOnDesktop(false)
+
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
