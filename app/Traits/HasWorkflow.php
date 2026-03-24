@@ -8,18 +8,12 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 trait HasWorkflow
 {
-    /**
-     * Relation polymorphique : Transmissions
-     */
     public function transmissions(): MorphMany
     {
         return $this->morphMany(Transmission::class, 'document');
     }
 
-    /**
-     * Obtenir la transmission en cours (en attente)
-     */
-    public function transmissionEnCours()
+    public function transmissionEnCours(): ?Transmission
     {
         return $this->transmissions()
             ->where('statut', 'en_attente')
@@ -27,9 +21,6 @@ trait HasWorkflow
             ->first();
     }
 
-    /**
-     * Obtenir toutes les transmissions en attente
-     */
     public function transmissionsEnAttente()
     {
         return $this->transmissions()
@@ -38,9 +29,6 @@ trait HasWorkflow
             ->get();
     }
 
-    /**
-     * Obtenir l'historique complet des transmissions
-     */
     public function historiqueTransmissions()
     {
         return $this->transmissions()
@@ -49,9 +37,6 @@ trait HasWorkflow
             ->get();
     }
 
-    /**
-     * Transmettre le document à un utilisateur
-     */
     public function transmettreA(
         User $destinataire,
         string $actionAtttendue,
@@ -59,120 +44,143 @@ trait HasWorkflow
         array $options = []
     ): Transmission {
         $transmission = $this->transmissions()->create([
-            'expediteur_id' => auth()->id(),
-            'destinataire_id' => $destinataire->id,
-            'action_attendue' => $actionAtttendue,
-            'statut' => 'en_attente',
-            'commentaire' => $commentaire,
-            'priorite' => $options['priorite'] ?? 'normale',
-            'date_limite' => $options['date_limite'] ?? null,
+            'expediteur_id'    => auth()->id(),
+            'destinataire_id'  => $destinataire->id,
+            'action_attendue'  => $actionAtttendue,
+            'statut'           => 'en_attente',
+            'commentaire'      => $commentaire,
+            'priorite'         => $options['priorite'] ?? 'normale',
+            'date_limite'      => $options['date_limite'] ?? null,
             'date_transmission' => now(),
             'documents_joints' => $options['documents_joints'] ?? null,
-            'metadata' => $options['metadata'] ?? null,
+            'metadata'         => $options['metadata'] ?? null,
         ]);
 
-        // Envoyer notification
-        $destinataire->notify(new \App\Notifications\NouvelleTransmissionNotification($transmission));
+        $destinataire->notify(
+            new \App\Notifications\NouvelleTransmissionNotification($transmission)
+        );
 
         return $transmission;
     }
 
-    /**
-     * Vérifier si le document peut être transmis
-     */
     public function peutEtreTransmis(): bool
     {
-        // Pas de transmission en cours
-        $transmissionEnCours = $this->transmissionEnCours();
-
-        return $transmissionEnCours === null;
+        return $this->transmissionEnCours() === null;
     }
 
-    /**
-     * Vérifier si l'utilisateur est le destinataire actuel
-     */
     public function estDestinataireActuel(User $user = null): bool
     {
         $user = $user ?? auth()->user();
+        $transmission = $this->transmissionEnCours();
+        return $transmission?->destinataire_id === $user->id;
+    }
 
-        $transmissionEnCours = $this->transmissionEnCours();
+    public function getDestinataireActuel(): ?User
+    {
+        return $this->transmissionEnCours()?->destinataire;
+    }
 
-        if (!$transmissionEnCours) {
+    public function getStatutWorkflow(): string
+    {
+        $transmission = $this->transmissionEnCours();
+        if (!$transmission) return 'Aucune transmission en cours';
+        return "Chez {$transmission->destinataire->name} — {$transmission->getActionLabel()}";
+    }
+
+    // ── NOUVELLES / MODIFIÉES ────────────────────────────────────
+
+    public function estEnCoursDeTransmission(): bool
+    {
+        return $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->exists();
+    }
+
+    public function estEnCoursDeTransmissionPourAutrui(): bool
+    {
+        return $this->transmissions()
+            ->where('statut', 'en_attente')
+            ->where('destinataire_id', '!=', auth()->id())
+            ->exists();
+    }
+
+    public function estModifiable(): bool
+    {
+        return !$this->estEnCoursDeTransmission();
+    }
+
+    public function peutEtreModifiePar(?User $user = null): bool
+    {
+        $user = $user ?? auth()->user();
+
+        if ($this->estEnCoursDeTransmissionPourAutrui()) {
             return false;
         }
 
-        return $transmissionEnCours->destinataire_id === $user->id;
-    }
-
-    /**
-     * Obtenir le destinataire actuel
-     */
-    public function getDestinataireActuel(): ?User
-    {
-        $transmissionEnCours = $this->transmissionEnCours();
-
-        return $transmissionEnCours?->destinataire;
-    }
-
-    /**
-     * Obtenir le statut du workflow
-     */
-    public function getStatutWorkflow(): string
-    {
-        $transmissionEnCours = $this->transmissionEnCours();
-
-        if (!$transmissionEnCours) {
-            return 'Aucune transmission en cours';
+        if ($this->estDestinataireActuel($user)) {
+            $transmission = $this->transmissionEnCours();
+            return $transmission?->action_attendue === 'correction';
         }
 
-        return "Chez {$transmissionEnCours->destinataire->name} - {$transmissionEnCours->getActionLabel()}";
+        return ($this->created_by ?? null) === $user->id
+            && !$this->estEnCoursDeTransmission();
     }
 
-    /**
-     * Retourner le document à l'expéditeur pour correction
-     */
     public function retournerPourCorrection(string $motif): Transmission
     {
-        $transmissionEnCours = $this->transmissionEnCours();
+        $transmission = $this->transmissionEnCours();
 
-        if (!$transmissionEnCours) {
+        if (!$transmission) {
             throw new \Exception("Aucune transmission en cours");
         }
 
-        // Marquer la transmission actuelle comme rejetée
-        $transmissionEnCours->rejeter($motif);
+        if ($transmission->destinataire_id !== auth()->id()) {
+            throw new \Exception("Vous n'êtes pas le destinataire de cette transmission.");
+        }
 
-        // Créer une nouvelle transmission vers l'expéditeur original
+        // 1. Rejeter la transmission
+        $transmission->rejeter($motif);
+
+        // 2. Remettre en brouillon
+        $this->update(['statut' => 'brouillon']);
+
+        // 3. Notifier l'expéditeur
+        if ($transmission->expediteur) {
+            \Filament\Notifications\Notification::make()
+                ->title('Document retourné pour correction')
+                ->warning()
+                ->body(
+                    'Votre document ' . ($this->numero ?? $this->reference_document ?? '') .
+                        ' a été retourné. Motif : ' . $motif
+                )
+                ->sendToDatabase($transmission->expediteur);
+        }
+
+        // 4. Journal
+        activity()
+            ->performedOn($this)
+            ->causedBy(auth()->user())
+            ->withProperties(['motif' => $motif])
+            ->log(class_basename($this) . ' retourné pour correction');
+
+        // 5. Transmission retour vers expéditeur
         return $this->transmettreA(
-            $transmissionEnCours->expediteur,
+            $transmission->expediteur,
             'correction',
-            "Retour pour correction: " . $motif
+            'Retour pour correction : ' . $motif
         );
     }
 
-    /**
-     * Clore la transmission actuelle
-     */
     public function cloturerTransmission(string $reponse = null): void
     {
-        $transmissionEnCours = $this->transmissionEnCours();
-
-        if ($transmissionEnCours) {
-            $transmissionEnCours->traiter($reponse);
-        }
+        $this->transmissionEnCours()?->traiter($reponse);
     }
 
-    /**
-     * Obtenir le nombre de transmissions
-     */
     public function getNombreTransmissions(): int
     {
         return $this->transmissions()->count();
     }
 
-    /**
-     * Vérifier si le document a été transmis
-     */
     public function aEteTransmis(): bool
     {
         return $this->transmissions()->exists();

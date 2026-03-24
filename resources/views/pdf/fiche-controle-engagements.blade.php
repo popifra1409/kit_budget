@@ -518,11 +518,11 @@
                 <div class="nom">Nom et Signature</div>
             </div>
             <div class="signature-box">
-                <div class="titre">LE CHEF DE SERVICE</div>
+                <div class="titre"> {{ strtoupper($sousDirection ?? 'DAAF') }}</div>
                 <div class="nom">Nom et Signature</div>
             </div>
             <div class="signature-box">
-                <div class="titre">LE DIRECTEUR GENERAL</div>
+                <div class="titre"> {{ strtoupper($fonctionOrdonnateur ?? 'DIRECTEUR') }}</div>
                 <div class="nom">Nom et Signature</div>
             </div>
         </div>

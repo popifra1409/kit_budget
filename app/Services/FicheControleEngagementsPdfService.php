@@ -116,6 +116,7 @@ class FicheControleEngagementsPdfService
             'gestionnaireCredits' => $this->getGestionnaireCredits(),
             'logo' => $this->getLogo(),
             'nomStructure' => $this->getNomStructure(),
+            'sousDirection' => $this->getSousDirection(),
         ];
     }
 
@@ -144,6 +145,15 @@ class FicheControleEngagementsPdfService
         } catch (\Exception $e) {
             \Log::warning('Erreur récupération nom structure: ' . $e->getMessage());
             return 'STRUCTURE';
+        }
+    }
+    protected function getSousDirection(): string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->sous_direction ?? 'DAAF';
+        } catch (\Exception $e) {
+            return 'DAAF';
         }
     }
 
@@ -204,18 +214,17 @@ class FicheControleEngagementsPdfService
                 // Fallback : utiliser getCodeArticle()
                 if (method_exists($nomenclature, 'getCodeArticle')) {
                     $codeArticle = $nomenclature->getCodeArticle();
-                    if ($codeArticle) {
-                        $article = \App\Models\NomenclatureBudgetaire::where('code', $codeArticle)
-                            ->where(function ($q) {
-                                $q->where('niveau_hierarchique', 'article')
-                                    ->orWhere('niveau', 'article');
-                            })
-                            ->first();
+                    $hierarchie['article'] = $codeArticle;
+                    // if ($codeArticle) {
+                    //     $article = \App\Models\NomenclatureBudgetaire::where('code', $codeArticle)
+                    //         ->where('niveau_hierarchique', 'article')
+                    //         ->orWhere('niveau', 'article')
+                    //         ->first();
 
-                        if ($article) {
-                            $hierarchie['article'] = $article->code . ' - ' . $article->libelle;
-                        }
-                    }
+                    //     if ($article) {
+                    //         $hierarchie['article'] = $article->code . ' - ' . $article->libelle;
+                    //     }
+                    // }
                 }
             }
 

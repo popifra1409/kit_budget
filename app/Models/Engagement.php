@@ -15,9 +15,18 @@ use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Traits\HasWorkflow;
 
+
 class Engagement extends Model
 {
     use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity;
+
+    use HasWorkflow, HasExercice {
+        // HasWorkflow::estModifiable prend la priorité
+        HasWorkflow::estModifiable insteadof HasExercice;
+
+        // Garder l'ancienne accessible sous un alias si besoin
+        HasExercice::estModifiable as estModifiableParExercice;
+    }
 
     protected $fillable = [
         'exercice_id',

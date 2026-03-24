@@ -37,13 +37,34 @@ class WorkflowActions
         $actions = [
             Tables\Actions\EditAction::make()
                 ->visible(function ($record) {
-                    // Vérifier si le document peut être modifié par l'utilisateur connecté
+                    // Règle 1 : transmission en cours non clôturée → non modifiable
+                    // (peu importe qui est l'émetteur ou le destinataire)
+                    $transmissionActive = Transmission::where('document_type', get_class($record))
+                        ->where('document_id', $record->id)
+                        ->where('statut', 'en_attente')
+                        ->exists();
+
+                    if ($transmissionActive) {
+                        return false;
+                    }
+
+                    // Règle 2 : méthode dédiée sur le model si elle existe
                     if (method_exists($record, 'peutEtreModifiePar')) {
                         return $record->peutEtreModifiePar();
                     }
 
-                    // Fallback sur l'ancienne logique si la méthode n'existe pas encore
-                    return $record->estModifiable() && !$record->estEnCoursDeTransmission();
+                    // Règle 3 : fallback — modifiable seulement si brouillon
+                    return $record->estModifiable();
+                })
+                ->tooltip(function ($record) {
+                    $transmissionActive = Transmission::where('document_type', get_class($record))
+                        ->where('document_id', $record->id)
+                        ->where('statut', 'en_attente')
+                        ->exists();
+
+                    return $transmissionActive
+                        ? 'Document en cours de transmission — modification bloquée'
+                        : null;
                 }),
         ];
 
@@ -642,10 +663,7 @@ class WorkflowActions
             ->modalHeading('Retourner pour correction')
             ->modalDescription("Le document sera retourné à l'expéditeur")
             ->action(function ($record, array $data) {
-                // Retourner le document
-                $record->retournerPourCorrection($data['motif']);
-
-                // ✅ Rejeter la transmission avec le motif
+                // 1. Rejeter la transmission
                 Transmission::where('document_type', get_class($record))
                     ->where('document_id', $record->id)
                     ->where('destinataire_id', auth()->id())
@@ -653,9 +671,29 @@ class WorkflowActions
                     ->first()
                     ?->rejeter($data['motif']);
 
+                // 2. Remettre le document en brouillon pour permettre la modification
+                $record->update(['statut' => 'brouillon']);
+
+                // 3. Notifier l'émetteur original
+                $emission = Transmission::where('document_type', get_class($record))
+                    ->where('document_id', $record->id)
+                    ->whereNotNull('expediteur_id')
+                    ->latest()
+                    ->first();
+
+                if ($emission?->expediteur) {
+                    Notification::make()
+                        ->title('Document retourné pour correction')
+                        ->warning()
+                        ->body("Le document " . ($record->numero ?? '') . " vous a été retourné. Motif : {$data['motif']}")
+                        ->sendToDatabase($emission->expediteur);
+                }
+
+                // 4. Notifier l'utilisateur courant
                 Notification::make()
                     ->title('Document retourné')
                     ->warning()
+                    ->body('Le document a été remis en brouillon chez l\'émetteur.')
                     ->send();
             });
     }

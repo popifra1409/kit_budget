@@ -8,14 +8,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use App\Traits\HasExercice;
+use App\Traits\HasWorkflow;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Exceptions\CreditBudgetaireInsuffisantException;
+use App\Traits\GereTransmissions;
+use App\Traits\HasRecentValues;
 use Illuminate\Support\Facades\DB;
 
 class DecisionAdministrative extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasWorkflow, GereTransmissions, HasRecentValues;
 
     protected $table = 'decisions_administratives';
 
@@ -208,7 +211,7 @@ class DecisionAdministrative extends Model
 
     public function ligneBudgetaire()
     {
-        return $this->belongsTo(LigneBudgetaire::class, 'budgetaire_ligne_id'); 
+        return $this->belongsTo(LigneBudgetaire::class, 'budgetaire_ligne_id');
     }
 
     /**
@@ -1038,28 +1041,28 @@ class DecisionAdministrative extends Model
     /**
      * Retourner pour correction
      */
-    public function retournerPourCorrection(string $motif): void
-    {
-        $transmission = $this->transmissions()
-            ->where('statut', 'en_attente')
-            ->latest()
-            ->first();
+    // public function retournerPourCorrection(string $motif): void
+    // {
+    //     $transmission = $this->transmissions()
+    //         ->where('statut', 'en_attente')
+    //         ->latest()
+    //         ->first();
 
-        if (!$transmission || $transmission->destinataire_id !== auth()->id()) {
-            throw new \Exception('Vous n\'êtes pas le destinataire de cette transmission.');
-        }
+    //     if (!$transmission || $transmission->destinataire_id !== auth()->id()) {
+    //         throw new \Exception('Vous n\'êtes pas le destinataire de cette transmission.');
+    //     }
 
-        $transmission->statut = 'retourne';
-        $transmission->date_traitement = now();
-        $transmission->reponse = $motif;
-        $transmission->save();
+    //     $transmission->statut = 'retourne';
+    //     $transmission->date_traitement = now();
+    //     $transmission->reponse = $motif;
+    //     $transmission->save();
 
-        activity()
-            ->performedOn($this)
-            ->causedBy(auth()->user())
-            ->withProperties(['motif' => $motif])
-            ->log('Décision retournée pour correction');
-    }
+    //     activity()
+    //         ->performedOn($this)
+    //         ->causedBy(auth()->user())
+    //         ->withProperties(['motif' => $motif])
+    //         ->log('Décision retournée pour correction');
+    // }
 
     /**
      * Clôturer la transmission

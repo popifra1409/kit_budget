@@ -153,6 +153,8 @@ class FicheControleEngagementsController extends Controller
             'gestionnaireCredits' => $this->getGestionnaireCredits(),
             'logo' => $this->getLogo(),
             'nomStructure' => $this->getNomStructure(),
+            'sousDirection' => $this->getSousDirection(),
+            'fonctionOrdonnateur' => $this->getFonctionOrdonnateur(),
         ];
     }
 
@@ -170,6 +172,18 @@ class FicheControleEngagementsController extends Controller
         }
     }
 
+    protected function getFonctionOrdonnateur(): string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->fonction_ordonnateur ?? 'Non défini';
+        } catch (\Exception $e) {
+            \Log::warning('Erreur récupération gfonction ordonnateur: ' . $e->getMessage());
+            return 'Non défini';
+        }
+    }
+
+
     /**
      * ✅ Récupérer le logo
      */
@@ -177,7 +191,7 @@ class FicheControleEngagementsController extends Controller
     {
         try {
             $parametre = \App\Models\ParametresStructure::first();
-            return $parametre?->logo ?? null;
+            return $parametre?->logo ?? 'null';
         } catch (\Exception $e) {
             \Log::warning('Erreur récupération logo: ' . $e->getMessage());
             return null;
@@ -191,6 +205,16 @@ class FicheControleEngagementsController extends Controller
             return $parametre?->nom_structure ?? 'HÔPITAL';
         } catch (\Exception $e) {
             return 'HÔPITAL';
+        }
+    }
+
+    protected function getSousDirection(): string
+    {
+        try {
+            $parametre = \App\Models\ParametresStructure::first();
+            return $parametre?->sous_direction ?? 'DAAF';
+        } catch (\Exception $e) {
+            return 'DAAF';
         }
     }
 
@@ -240,16 +264,17 @@ class FicheControleEngagementsController extends Controller
                 // Fallback : utiliser getCodeArticle() + recherche
                 if (method_exists($nomenclature, 'getCodeArticle')) {
                     $codeArticle = $nomenclature->getCodeArticle();
-                    if ($codeArticle) {
-                        $article = \App\Models\NomenclatureBudgetaire::where('code', $codeArticle)
-                            ->where('niveau_hierarchique', 'article')
-                            ->orWhere('niveau', 'article')
-                            ->first();
+                    $hierarchie['article'] = $codeArticle;
+                    // if ($codeArticle) {
+                    //     $article = \App\Models\NomenclatureBudgetaire::where('code', $codeArticle)
+                    //         ->where('niveau_hierarchique', 'article')
+                    //         ->orWhere('niveau', 'article')
+                    //         ->first();
 
-                        if ($article) {
-                            $hierarchie['article'] = $article->code . ' - ' . $article->libelle;
-                        }
-                    }
+                    //     if ($article) {
+                    //         $hierarchie['article'] = $article->code . ' - ' . $article->libelle;
+                    //     }
+                    // }
                 }
             }
 
