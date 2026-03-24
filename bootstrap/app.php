@@ -11,6 +11,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+
+        // ── Exclusions CSRF ──────────────────────────────────────
+        $middleware->validateCsrfTokens(except: [
+            'livewire/update',
+            'livewire/upload-file',
+            'livewire/preview-file/*',
+            'portal/login',
+            'budget/login',
+            'comptable/login',
+            'marches/login',
+        ]);
+
+        // ── Middlewares web existants ────────────────────────────
         $middleware->web(append: [
             \App\Http\Middleware\CheckUserActive::class,
             \App\Http\Middleware\SessionSecurityMiddleware::class,

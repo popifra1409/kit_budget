@@ -61,9 +61,16 @@ class BudgetPanelProvider extends PanelProvider
                 'info'    => Color::hex('#64748b'),
             ])
             ->brandName(($fournisseur->nom_logiciel ?? 'Budget Manager') . ' — Budget')
-            ->brandLogo(fn() => $fournisseur->logo_url ?? asset('images/logo-editeur.png'))
+            ->brandLogo(function () use ($fournisseur) {
+                $logo = $fournisseur->logo_url;
+                if (!$logo) return asset('images/logo.png');
+                // Si déjà une URL complète → retourner tel quel
+                if (str_starts_with($logo, 'http')) return $logo;
+                // Sinon forcer l'URL absolue depuis la racine
+                return asset($logo);
+            })
             ->brandLogoHeight('2.5rem')
-            ->favicon(fn() => $fournisseur->logo_url ?? asset('images/favicon.png'))
+            ->favicon(fn() => $fournisseur->logo ?? asset('images/favicon.png'))
 
             ->sidebarCollapsibleOnDesktop()
 
@@ -375,7 +382,7 @@ class BudgetPanelProvider extends PanelProvider
         return (object) [
             'nom_structure' => 'Gestion Budget',
             'sigle'         => 'GB',
-            'logo_url'      => null,
+            'logo'      => null,
             'nom_complet'   => 'Gestion Budget',
             'ville'         => null,
             'pays'          => null,
@@ -389,7 +396,7 @@ class BudgetPanelProvider extends PanelProvider
             'nom_societe'          => 'Votre Société',
             'nom_logiciel'         => 'Budget Manager',
             'version_complete'     => 'v1.0.0',
-            'logo_url'             => null,
+            'logo'             => null,
             'couleur_principale'   => '#0ea5e9',
             'afficher_footer'      => true,
             'afficher_badge_licence' => true,

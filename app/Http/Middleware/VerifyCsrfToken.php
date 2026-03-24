@@ -11,5 +11,8 @@ class VerifyCsrfToken extends Middleware
         'budget/login',
         'comptable/login',
         'marches/login',
+        'livewire/update',
+        'livewire/upload-file',
+        'livewire/preview-file/*',
     ];
 }

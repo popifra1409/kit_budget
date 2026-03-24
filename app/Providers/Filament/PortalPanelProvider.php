@@ -29,11 +29,16 @@ class PortalPanelProvider extends PanelProvider
         parent::register();
 
         $this->app->bind(
-            LoginResponseContract::class,
-            fn() => new class implements LoginResponseContract {
+            \Filament\Http\Responses\Auth\Contracts\LoginResponse::class,
+            fn() => new class implements \Filament\Http\Responses\Auth\Contracts\LoginResponse {
                 public function toResponse($request): \Symfony\Component\HttpFoundation\Response
                 {
-                    return redirect()->to('/portal');
+                    // Fallback si JS ne fonctionne pas
+                    return \Illuminate\Support\Facades\Response::make(
+                        '<script>window.location.replace("/portal");</script>',
+                        200,
+                        ['Content-Type' => 'text/html']
+                    );
                 }
             }
         );

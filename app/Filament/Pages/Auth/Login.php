@@ -4,11 +4,41 @@ namespace App\Filament\Pages\Auth;
 
 use Filament\Forms\Components\Component;
 use Filament\Forms\Components\TextInput;
+use Filament\Http\Responses\Auth\Contracts\LoginResponse;
 use Filament\Pages\Auth\Login as BaseLogin;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Validation\ValidationException;
 
 class Login extends BaseLogin
 {
+    /**
+     * Surcharge avec la signature correcte de Filament v3.3.47
+     * Force session()->regenerate() AVANT le redirect
+     * pour éviter le 419 causé par le token CSRF périmé
+     */
+    public function authenticate(): ?LoginResponse
+    {
+        $this->rateLimit(5);
+
+        $data = $this->form->getState();
+
+        if (! \Illuminate\Support\Facades\Auth::attempt(
+            $this->getCredentialsFromFormData($data),
+            $data['remember'] ?? false,
+        )) {
+            throw ValidationException::withMessages([
+                'data.email' => __('filament-panels::pages/auth/login.messages.failed'),
+            ]);
+        }
+
+        session()->regenerate();
+
+        // Force navigation complète — pas de swap Livewire
+        $this->js("window.location.href = '/portal'");
+
+        return null;
+    }
+    
     protected function getForms(): array
     {
         return [
