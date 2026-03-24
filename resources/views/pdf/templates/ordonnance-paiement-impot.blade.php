@@ -250,7 +250,7 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                 </div>
 
                 <div style="text-align:center; font-weight:bold;">
-                    {{ $nomReverseur }}
+                    {{-- {{ $nomReverseur }} --}}
                 </div>
                 {{-- DETAIL IMPOTS --}}
                 <div style="margin-top:8px;">

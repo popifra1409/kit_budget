@@ -403,7 +403,7 @@ class DecisionAdministrativeResource extends Resource
                                             ->label('Code Fournisseur')
                                             ->default(fn() => \App\Models\Fournisseur::genererCode())
                                             ->disabled()
-                                            ->dehydrated(false) 
+                                            ->dehydrated(false)
                                             ->helperText('Généré automatiquement')
                                             ->columnSpanFull(),
 
@@ -961,7 +961,17 @@ class DecisionAdministrativeResource extends Resource
                         'fournisseur' => $record->fournisseur?->numero_contribuable ?? '',
                         default => '',
                     })
-                    ->searchable(['personnel.nom', 'personnel.prenom', 'fournisseur.raison_sociale'])
+                    ->searchable(query: function ($query, string $search) {
+                        $query->where(function ($q) use ($search) {
+                            $q->whereHas('personnel', function ($q) use ($search) {
+                                $q->where('nom', 'ilike', "%{$search}%")
+                                    ->orWhere('prenoms', 'ilike', "%{$search}%");
+                            })
+                                ->orWhereHas('fournisseur', function ($q) use ($search) {
+                                    $q->where('raison_sociale', 'ilike', "%{$search}%");
+                                });
+                        });
+                    })
                     ->sortable()
                     ->limit(30),
 
