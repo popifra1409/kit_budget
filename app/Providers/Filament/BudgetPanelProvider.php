@@ -146,6 +146,7 @@ class BudgetPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                'module.access:budget',
             ]);
     }
 

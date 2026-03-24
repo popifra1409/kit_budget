@@ -23,6 +23,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'marches/login',
         ]);
 
+        // ── Alias middleware modules ─────────────────────────────
+        $middleware->alias([
+            'module.access' => \App\Http\Middleware\EnsureModuleAccess::class,
+        ]);
+
         // ── Middlewares web existants ────────────────────────────
         $middleware->web(append: [
             \App\Http\Middleware\CheckUserActive::class,

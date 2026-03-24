@@ -93,7 +93,10 @@ class MarchesPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
             ])
-            ->authMiddleware([Authenticate::class]);
+            ->authMiddleware([
+                Authenticate::class,
+                'module.access:marches',
+            ]);
     }
 
     private function renderSwitcher(string $active): HtmlString

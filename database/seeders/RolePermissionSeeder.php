@@ -176,6 +176,27 @@ class RolePermissionSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
+        | 3b. PERMISSIONS D'ACCÈS AUX MODULES
+        |--------------------------------------------------------------------------
+        */
+        $this->command->info('📝 Création des permissions modules...');
+
+        $modulePermissions = [
+            'access_module_budget',
+            'access_module_comptable',
+            'access_module_marches',
+            'access_module_portal',  // accès au portail (tous)
+        ];
+
+        foreach ($modulePermissions as $perm) {
+            Permission::firstOrCreate([
+                'name'       => $perm,
+                'guard_name' => 'web',
+            ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
         | 4. ATTRIBUTION DES PERMISSIONS AUX RÔLES
         |--------------------------------------------------------------------------
         */
@@ -198,6 +219,63 @@ class RolePermissionSeeder extends Seeder
         $this->command->info('  → Admin');
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions(Permission::all());
+
+        /*
+        |--------------------------------------------------------------------------
+        | ACCÈS MODULES PAR RÔLE
+        |--------------------------------------------------------------------------
+        */
+        $this->command->info('  → Attribution accès modules aux rôles');
+
+        // Tous les rôles → accès portail
+        $rolesPortail = [
+            'super_admin',
+            'admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'daaf',
+            'controleur_financier',
+            'directeur_general',
+            'agence_comptable'
+        ];
+
+        foreach ($rolesPortail as $roleName) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $role->givePermissionTo('access_module_portal');
+        }
+
+        // Module Budget → tous les rôles métier
+        $rolesBudget = [
+            'super_admin',
+            'admin',
+            'operateur_budget',
+            'chef_service_budget',
+            'daaf',
+            'controleur_financier',
+            'directeur_general',
+            'agence_comptable'
+        ];
+
+        foreach ($rolesBudget as $roleName) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $role->givePermissionTo('access_module_budget');
+        }
+
+        // Module Comptable → admin + daaf + agence_comptable
+        $rolesComptable = ['super_admin', 'admin', 'daaf', 'agence_comptable'];
+
+        foreach ($rolesComptable as $roleName) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $role->givePermissionTo('access_module_comptable');
+        }
+
+        // Module Marchés → admin + daaf + controleur_financier
+        $rolesMarches = ['super_admin', 'admin', 'daaf', 'controleur_financier'];
+
+        foreach ($rolesMarches as $roleName) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $role->givePermissionTo('access_module_marches');
+        }
 
         /*
         |--------------------------------------------------------------------------

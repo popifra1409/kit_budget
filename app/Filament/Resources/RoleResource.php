@@ -311,6 +311,30 @@ class RoleResource extends Resource
                                             ->bulkToggleable(),
                                     ]),
 
+                                Forms\Components\Tabs\Tab::make('Accès Modules')
+                                    ->icon('heroicon-o-squares-2x2')
+                                    ->badge(fn() => Permission::where('name', 'like', 'access_module_%')->count())
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('permissions')
+                                            ->label('Modules autorisés pour ce rôle')
+                                            ->relationship('permissions', 'name')
+                                            ->options(
+                                                Permission::where('name', 'like', 'access_module_%')
+                                                    ->get()
+                                                    ->pluck('name', 'id')
+                                            )
+                                            ->descriptions(function () {
+                                                return Permission::where('name', 'like', 'access_module_%')
+                                                    ->get()
+                                                    ->mapWithKeys(fn($perm) => [
+                                                        $perm->id => self::getPermissionDescription($perm->name)
+                                                    ]);
+                                            })
+                                            ->columns(1)
+                                            ->bulkToggleable()
+                                            ->helperText('Cochez les modules accessibles pour ce rôle'),
+                                    ]),
+
                                 // Onglet Autres permissions
                                 Forms\Components\Tabs\Tab::make('Autres')
                                     ->icon('heroicon-o-ellipsis-horizontal-circle')
@@ -325,7 +349,8 @@ class RoleResource extends Resource
                                                         ->orWhere('name', 'like', '%ordonnance_paiement%')
                                                         ->orWhere('name', 'like', '%fournisseur%')
                                                         ->orWhere('name', 'like', '%user%')
-                                                        ->orWhere('name', 'like', '%role%');
+                                                        ->orWhere('name', 'like', '%role%')
+                                                        ->orWhere('name', 'like', 'access_module_%');
                                                 });
                                         })->count();
                                     })
@@ -344,7 +369,8 @@ class RoleResource extends Resource
                                                                 ->orWhere('name', 'like', '%ordonnance_paiement%')
                                                                 ->orWhere('name', 'like', '%fournisseur%')
                                                                 ->orWhere('name', 'like', '%user%')
-                                                                ->orWhere('name', 'like', '%role%');
+                                                                ->orWhere('name', 'like', '%role%')
+                                                                ->orWhere('name', 'like', 'access_module_%'); // ← ajouter
                                                         });
                                                 })->get()->pluck('name', 'id')
                                             )
@@ -359,7 +385,8 @@ class RoleResource extends Resource
                                                                 ->orWhere('name', 'like', '%ordonnance_paiement%')
                                                                 ->orWhere('name', 'like', '%fournisseur%')
                                                                 ->orWhere('name', 'like', '%user%')
-                                                                ->orWhere('name', 'like', '%role%');
+                                                                ->orWhere('name', 'like', '%role%')
+                                                                ->orWhere('name', 'like', 'access_module_%'); // ← ajouter
                                                         });
                                                 })->get()->mapWithKeys(function ($perm) {
                                                     return [$perm->id => self::getPermissionDescription($perm->name)];

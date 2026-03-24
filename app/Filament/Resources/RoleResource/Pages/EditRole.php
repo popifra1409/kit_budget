@@ -24,7 +24,7 @@ class EditRole extends EditRecord
                 ->color('info')
                 ->badge(fn() => $this->record->users()->count())
                 ->visible(fn() => $this->record->users()->count() > 0)
-                ->url(fn() => route('filament.admin.resources.users.index', [
+                ->url(fn() => route('filament.budget.resources.users.index', [
                     'tableFilters' => [
                         'role' => ['value' => $this->record->id],
                     ],
@@ -68,7 +68,7 @@ class EditRole extends EditRecord
                         ->body("Le rôle {$nouveauRole->name} a été créé avec succès")
                         ->send();
 
-                    return redirect()->route('filament.admin.resources.roles.edit', $nouveauRole);
+                    return redirect()->route('filament.budget.resources.roles.edit', $nouveauRole);
                 }),
 
             // Supprimer
@@ -130,6 +130,8 @@ class EditRole extends EditRecord
     protected function afterSave(): void
     {
         $role = $this->record;
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
         // Notification
         Notification::make()

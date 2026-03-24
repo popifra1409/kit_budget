@@ -116,7 +116,10 @@ class ComptablePanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
             ])
-            ->authMiddleware([Authenticate::class]);
+            ->authMiddleware([
+                Authenticate::class,
+                'module.access:comptable',
+            ]);
     }
 
     // ── Switcher de module (header) ───────────────────────────────
