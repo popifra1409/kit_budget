@@ -745,19 +745,34 @@ class Engagement extends Model
                 $da->load('personnel');
             }
 
-            if ($da->personnel_id && $da->personnel) {
-                $beneficiaire = $da->personnel;
+            if ($da->type_beneficiaire === 'fournisseur' && $da->fournisseur_id) {
+                if (!$da->relationLoaded('fournisseur')) {
+                    $da->load('fournisseur');
+                }
+                $beneficiaire     = $da->fournisseur;
+                $beneficiaireType = 'App\Models\Fournisseur';
+
+                \Log::info("DA - Bénéficiaire Fournisseur trouvé", [
+                    'fournisseur_id'     => $beneficiaire?->id,
+                    'raison_sociale'     => $beneficiaire?->raison_sociale ?? 'NULL',
+                ]);
+            } elseif ($da->personnel_id) {
+                if (!$da->relationLoaded('personnel')) {
+                    $da->load('personnel');
+                }
+                $beneficiaire     = $da->personnel;
                 $beneficiaireType = 'App\Models\Personnel';
 
-                \Log::info("DA - Bénéficiaire trouvé", [
-                    'personnel_id' => $beneficiaire->id,
-                    'nom' => $beneficiaire->nom_complet,
+                \Log::info("DA - Bénéficiaire Personnel trouvé", [
+                    'personnel_id' => $beneficiaire?->id,
+                    'nom'          => $beneficiaire?->nom_complet ?? 'NULL',
                 ]);
             } else {
-                \Log::error("DA - Bénéficiaire non trouvé", [
-                    'da_id' => $da->id,
-                    'personnel_id' => $da->personnel_id,
-                    'personnel_exists' => $da->personnel !== null,
+                \Log::error("DA - Aucun bénéficiaire trouvé", [
+                    'da_id'             => $da->id,
+                    'type_beneficiaire' => $da->type_beneficiaire,
+                    'personnel_id'      => $da->personnel_id,
+                    'fournisseur_id'    => $da->fournisseur_id,
                 ]);
             }
 
