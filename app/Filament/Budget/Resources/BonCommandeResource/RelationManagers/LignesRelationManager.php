@@ -284,7 +284,14 @@ class LignesRelationManager extends RelationManager
     {
         return $table
             // ✅ Charger la relation referenceMercuriale
-            ->modifyQueryUsing(fn($query) => $query->with(['nomenclature', 'referenceMercuriale']))
+            // ->modifyQueryUsing(fn($query) => $query->with(['nomenclature', 'referenceMercuriale']))
+
+            ->modifyQueryUsing(
+                fn($query) => $query
+                    ->with(['nomenclature', 'referenceMercuriale'])
+                    ->orderBy('numero_ligne', 'asc')
+                    ->orderBy('created_at', 'asc')
+            )
 
             ->columns([
                 // ✅ NUMÉRO DE LIGNE
@@ -504,8 +511,10 @@ class LignesRelationManager extends RelationManager
                         }
 
                         // Numéro de ligne automatique
-                        $dernierNumero = $bc->lignes()->max('numero_ligne') ?? 0;
-                        $data['numero_ligne'] = $dernierNumero + 1;
+                        // $dernierNumero = $bc->lignes()->max('numero_ligne') ?? 0;
+                        // $data['numero_ligne'] = $dernierNumero + 1;
+
+                        $data['numero_ligne'] = $bc->lignes()->count() + 1;
 
                         return $data;
                     })
@@ -538,6 +547,7 @@ class LignesRelationManager extends RelationManager
                     })
                     ->after(function () {
                         $this->recalculerTotauxBC();
+                        $this->renumereroterLignes();
 
                         \Filament\Notifications\Notification::make()
                             ->title('Ligne supprimée')
@@ -555,6 +565,7 @@ class LignesRelationManager extends RelationManager
                         })
                         ->after(function () {
                             $this->recalculerTotauxBC();
+                            $this->renumereroterLignes();
                         }),
                 ]),
             ])
@@ -625,5 +636,24 @@ class LignesRelationManager extends RelationManager
             'bc' => $bc->numero,
             'montant_ttc' => $totaux['montant_ttc'],
         ]);
+    }
+
+    protected function renumereroterLignes(): void
+    {
+        $bc = $this->getOwnerRecord();
+        $bc->refresh();
+
+        $lignes = $bc->lignes()
+            ->orderBy('numero_ligne', 'asc')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $numero = 1;
+        foreach ($lignes as $ligne) {
+            if ($ligne->numero_ligne !== $numero) {
+                $ligne->updateQuietly(['numero_ligne' => $numero]);
+            }
+            $numero++;
+        }
     }
 }

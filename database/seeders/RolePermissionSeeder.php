@@ -185,7 +185,7 @@ class RolePermissionSeeder extends Seeder
             'access_module_budget',
             'access_module_comptable',
             'access_module_marches',
-            'access_module_portal',  // accès au portail (tous)
+            'access_module_portal', 
         ];
 
         foreach ($modulePermissions as $perm) {

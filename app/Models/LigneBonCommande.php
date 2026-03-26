@@ -44,7 +44,7 @@ class LigneBonCommande extends Model
         'montant_ir' => 'decimal:2',
         'taux_ir' => 'decimal:2',
         'montant_ttc' => 'decimal:2',
-        'net_a_payer' => 'decimal:2', 
+        'net_a_payer' => 'decimal:2',
         'quantite_livree' => 'decimal:3',
         'quantite_restante' => 'decimal:3',
         'numero_ligne' => 'integer',
@@ -59,6 +59,12 @@ class LigneBonCommande extends Model
 
         // Calculer lors de la création
         static::creating(function ($ligne) {
+            // Si numero_ligne pas défini, calculer automatiquement
+            if (empty($ligne->numero_ligne)) {
+                $max = static::where('bon_commande_id', $ligne->bon_commande_id)
+                    ->max('numero_ligne') ?? 0;
+                $ligne->numero_ligne = $max + 1;
+            }
             $ligne->calculerMontants();
         });
 

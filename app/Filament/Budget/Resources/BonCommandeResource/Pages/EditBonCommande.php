@@ -14,7 +14,33 @@ class EditBonCommande extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            // ── Aperçu BC en cours ──────────────────────────────
+            Actions\Action::make('apercu_bc')
+                ->label('Aperçu BC')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->outlined()
+                ->modalHeading(fn() => 'Aperçu — ' . $this->record->numero)
+                ->modalWidth('7xl')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Fermer')
+                ->modalContent(function () {
+                    $this->record->load([
+                        'lignes.nomenclature',
+                        'lignes.referenceMercuriale',
+                        'fournisseur',
+                        'exercice',
+                        'budget',
+                        'typeEngagement',
+                    ]);
+
+                    return view('filament.modals.apercu-bon-commande', [
+                        'bc' => $this->record,
+                    ]);
+                }),
+
             Actions\ViewAction::make(),
+
             Actions\DeleteAction::make()
                 ->visible(fn($record) => $record->statut === 'brouillon'),
         ];
