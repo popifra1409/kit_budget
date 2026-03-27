@@ -36,42 +36,29 @@ class CreateDecisionAdministrative extends CreateRecord
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // 1️⃣ Calculer les montants (HT, taxes, retenues, net)
+        // ── Mode forfait : ne rien recalculer ─────────────────────
+        if (($data['mode_saisie'] ?? 'calcule') === 'forfait') {
+            $data['taux_tva']                    = 0;
+            $data['taux_cnps']                   = 0;
+            $data['taux_irnc']                   = 0;
+            $data['taux_redevance_audiovisuelle'] = 0;
+            $data['taux_feicom']                 = 0;
+            $data['type_tva']                    = 'forfait';
+
+            // Définir le bénéficiaire uniquement
+            $data = self::definirBeneficiaire($data);
+            $data = self::garantirValeursParDefaut($data);
+
+            return $data;
+        }
+
+        // ── Mode calculé : recalcul normal ────────────────────────
         $data = self::calculerMontants($data);
-
-        // 2️⃣ Définir beneficiaire_type et beneficiaire_id selon le choix
         $data = self::definirBeneficiaire($data);
-
-        // 3️⃣ Garantir les valeurs par défaut pour éviter les erreurs NULL
         $data = self::garantirValeursParDefaut($data);
 
         return $data;
     }
-
-
-
-    /**
-     * Calcul CNPS / IRNC / Taxes / Net
-     */
-    // protected static function calculerMontants(array $data): array
-    // {
-    //     $brut = (float) ($data['montant_brut'] ?? 0);
-    //     $tauxCnps = (float) ($data['taux_cnps'] ?? 4.2);
-    //     $tauxIrnc = (float) ($data['taux_irnc'] ?? 11);
-    //     $autresRetenues = (float) ($data['autres_retenues'] ?? 0);
-
-    //     $data['montant_cnps'] = $brut * ($tauxCnps / 100);
-    //     $data['montant_irnc'] = $brut * ($tauxIrnc / 100);
-
-    //     $data['total_taxes'] =
-    //         $data['montant_cnps'] +
-    //         $data['montant_irnc'] +
-    //         $autresRetenues;
-
-    //     $data['montant_net'] = $brut - $data['total_taxes'];
-
-    //     return $data;
-    // }
 
     /**
      * ✅ MÉTHODE 1 : Calculer les montants
@@ -80,18 +67,6 @@ class CreateDecisionAdministrative extends CreateRecord
      */
     protected static function calculerMontants(array $data): array
     {
-        // ✅ VOTRE CODE EXISTANT ICI
-        // Cette méthode doit calculer :
-        // - montant_ht (à partir de montant_brut et taux_tva)
-        // - montant_tva
-        // - montant_cnps
-        // - montant_irnc
-        // - montant_redevance_audiovisuelle_calcule
-        // - montant_feicom_calcule
-        // - total_taxes
-        // - montant_net
-
-        // Exemple de base (adaptez selon votre logique) :
         $brut = (float) ($data['montant_brut'] ?? 0);
         $tauxTva = (float) ($data['taux_tva'] ?? 19.25);
 

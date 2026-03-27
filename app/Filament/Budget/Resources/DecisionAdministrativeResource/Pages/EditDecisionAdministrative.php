@@ -152,6 +152,18 @@ class EditDecisionAdministrative extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        // ── Mode forfait : ne rien recalculer ─────────────────────
+        if (($data['mode_saisie'] ?? 'calcule') === 'forfait') {
+            $data['taux_tva']                    = 0;
+            $data['taux_cnps']                   = 0;
+            $data['taux_irnc']                   = 0;
+            $data['taux_redevance_audiovisuelle'] = 0;
+            $data['taux_feicom']                 = 0;
+            $data['type_tva']                    = 'forfait';
+            return $data; // ← sortir immédiatement
+        }
+
+        // ── Mode calculé : recalcul normal ────────────────────────
         return self::calculerMontants($data);
     }
 
@@ -159,23 +171,23 @@ class EditDecisionAdministrative extends EditRecord
      * ✅ VOTRE MÉTHODE EXISTANTE - Gardée telle quelle
      * Calcul CNPS / IRNC / Taxes / Net
      */
-    protected static function calculerMontants(array $data): array
-    {
-        $brut = (float) ($data['montant_brut'] ?? 0);
-        $tauxCnps = (float) ($data['taux_cnps'] ?? 4.2);
-        $tauxIrnc = (float) ($data['taux_irnc'] ?? 11);
-        $autresRetenues = (float) ($data['autres_retenues'] ?? 0);
+    // protected static function calculerMontants(array $data): array
+    // {
+    //     $brut = (float) ($data['montant_brut'] ?? 0);
+    //     $tauxCnps = (float) ($data['taux_cnps'] ?? 4.2);
+    //     $tauxIrnc = (float) ($data['taux_irnc'] ?? 11);
+    //     $autresRetenues = (float) ($data['autres_retenues'] ?? 0);
 
-        $data['montant_cnps'] = $brut * ($tauxCnps / 100);
-        $data['montant_irnc'] = $brut * ($tauxIrnc / 100);
+    //     $data['montant_cnps'] = $brut * ($tauxCnps / 100);
+    //     $data['montant_irnc'] = $brut * ($tauxIrnc / 100);
 
-        $data['total_taxes'] =
-            $data['montant_cnps'] +
-            $data['montant_irnc'] +
-            $autresRetenues;
+    //     $data['total_taxes'] =
+    //         $data['montant_cnps'] +
+    //         $data['montant_irnc'] +
+    //         $autresRetenues;
 
-        $data['montant_net'] = $brut - $data['total_taxes'];
+    //     $data['montant_net'] = $brut - $data['total_taxes'];
 
-        return $data;
-    }
+    //     return $data;
+    // }
 }

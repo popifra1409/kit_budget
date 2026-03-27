@@ -40,7 +40,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // ✅ Mapper les types courts vers les classes complètes
         Relation::enforceMorphMap([
             //configurations
             'programme' => \App\Models\Programme::class,
@@ -65,6 +64,7 @@ class AppServiceProvider extends ServiceProvider
             'ordonnance_paiement'     => \App\Models\OrdonnancePaiement::class,
             'ordonnance_paiement_impot' => \App\Models\OrdonnancePaiement::class,
             'decision_administrative' => \App\Models\DecisionAdministrative::class,
+            'App\Models\DecisionAdministrative' => \App\Models\DecisionAdministrative::class,
             'dossier_fournisseur' => \App\Models\DossierFournisseur::class,
             'bordereau_engagement' => \App\Models\BordereauEngagement::class,
             //Acteurs

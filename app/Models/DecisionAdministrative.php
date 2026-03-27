@@ -18,7 +18,9 @@ use Illuminate\Support\Facades\DB;
 
 class DecisionAdministrative extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasWorkflow, GereTransmissions, HasRecentValues;
+    // DecisionAdministrative.php
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions;
+    // HasWorkflow ET HasRecentValues retirés
 
     protected $table = 'decisions_administratives';
 
@@ -72,6 +74,8 @@ class DecisionAdministrative extends Model
         'created_by',
         'updated_by',
         'service_emetteur_id',
+        //selection de mode de saise
+        'mode_saisie',
     ];
 
     protected $casts = [
@@ -113,6 +117,7 @@ class DecisionAdministrative extends Model
         'engagee' => 'boolean',
     ];
 
+
     protected static function booted(): void
     {
         static::creating(function ($decision) {
@@ -124,16 +129,25 @@ class DecisionAdministrative extends Model
             }
         });
 
+        // ✅ MODIFICATION — respecter le mode_saisie forfait
         static::saving(function ($decision) {
+            \Log::info('SAVING DA', [
+                'mode_saisie_attributes' => $decision->attributes['mode_saisie'] ?? 'NON DÉFINI',
+                'mode_saisie_property'   => $decision->mode_saisie ?? 'NON DÉFINI',
+                'dirty'                  => $decision->getDirty(),
+            ]);
+
+            if (($decision->attributes['mode_saisie'] ?? 'calcule') === 'forfait') {
+                \Log::info('FORFAIT — calculerMontants() ignoré');
+                return;
+            }
+
             $decision->calculerMontants();
         });
 
         static::updating(function ($decision) {
-            // Assigner automatiquement le modificateur
             $decision->updated_by = auth()->id();
 
-            // ✅ CORRECTION: Champs autorisés même si la décision n'est pas en brouillon
-            // ATTENTION: Le champ s'appelle "engagee" (avec "e") dans DecisionAdministrative
             $champsAutorisesSansRestriction = [
                 'engagement_id',
                 'engagee',
@@ -145,17 +159,14 @@ class DecisionAdministrative extends Model
                 'observations',
                 'updated_by',
                 'updated_at',
+                'mode_saisie', // ← ajouter au cas où
             ];
-            // Vérifier si SEULEMENT des champs autorisés ont été modifiés
+
             $champsDirty = array_keys($decision->getDirty());
             $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
 
-            // ✅ Si seuls les champs autorisés sont modifiés, autoriser la mise à jour
-            if ($modificationAutorisee) {
-                return; // Sortir de l'observer sans lever d'exception
-            }
+            if ($modificationAutorisee) return;
 
-            // Vérifier les permissions pour les autres modifications
             if (
                 $decision->isDirty() &&
                 $decision->getOriginal('statut') !== 'brouillon' &&
@@ -164,8 +175,10 @@ class DecisionAdministrative extends Model
                 throw new \Exception('Modification interdite : décision non brouillon.');
             }
 
-            // Bloquer si en cours de transmission
-            if ($decision->estEnCoursDeTransmission() && !auth()->user()?->can('force_update_decision_administrative')) {
+            if (
+                $decision->estEnCoursDeTransmission() &&
+                !auth()->user()?->can('force_update_decision_administrative')
+            ) {
                 throw new \Exception('Modification interdite : décision en cours de transmission.');
             }
         });
@@ -174,13 +187,12 @@ class DecisionAdministrative extends Model
             if (!auth()->user()?->hasRole('super_admin')) {
                 throw new \Exception('Suppression interdite : réservé au super administrateur.');
             }
-
             if ($decision->engage) {
                 throw new \Exception('Suppression interdite : décision déjà engagée. Annulez-la d\'abord.');
             }
         });
     }
-
+    
     // ========================================
     // RELATIONS
     // ========================================
@@ -431,6 +443,12 @@ class DecisionAdministrative extends Model
      */
     public function calculerMontants(): void
     {
+        $mode = $this->attributes['mode_saisie'] ?? $this->getOriginal('mode_saisie') ?? 'calcule';
+
+        if ($mode === 'forfait') {
+            return; // Aucun recalcul en mode forfait
+        }
+
         $brut = (float) ($this->montant_brut ?? 0);
 
         if ($brut <= 0) {

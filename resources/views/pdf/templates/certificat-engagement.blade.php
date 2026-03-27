@@ -32,14 +32,32 @@
             ->first();
 
         if ($ligneBudgetaire) {
-            // Dotation initiale
-            $dotationInitiale = $ligneBudgetaire->budget_initial ?? ($ligneBudgetaire->montant_initial ?? 0);
+            $dotationInitiale = $ligneBudgetaire->budget_initial
+                ?? $ligneBudgetaire->montant_initial
+                ?? 0;
 
-            // Disponible AVANT engagement
-            $disponibleAvant = $ligneBudgetaire->disponible_engagement ?? 0;
+            // Virements budgétaires
+            $virementsEntrants = $ligneBudgetaire->virements_entrants ?? 0;
+            $virementsSortants = $ligneBudgetaire->virements_sortants ?? 0;
 
-            // Disponible APRÈS engagement (disponible - montant engagé)
-            $montantEngage = $engagement->montant_engage ?? 0;
+            // Budget rectifié
+            $budgetRectifie = $ligneBudgetaire->budget_rectifie
+                ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
+
+            // Total engagé AVANT cet engagement (exclure l'engagement actuel)
+            $totalEngageAvant = \App\Models\Engagement::where('budget_id', $ligneBudgetaire->budget_id)
+                ->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
+                ->where('id', '!=', $engagement->id)
+                ->whereIn('statut', ['provisoire', 'definitif']) // ← exclure les annulés
+                ->sum('montant_engage');
+
+            // Disponible AVANT cet engagement
+            $disponibleAvant = $budgetRectifie - $totalEngageAvant;
+
+            // Montant de cet engagement
+            $montantEngage = (float) ($engagement->montant_engage ?? 0);
+
+            // Disponible APRÈS cet engagement
             $disponibleApres = $disponibleAvant - $montantEngage;
         }
     }

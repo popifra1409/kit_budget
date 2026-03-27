@@ -376,142 +376,209 @@ class ViewDecisionAdministrative extends ViewRecord
 
                 Infolists\Components\Section::make('Montants et retenues')
                     ->schema([
-                        Infolists\Components\TextEntry::make('montant_brut')
-                            ->label('💰 Montant brut (TTC)')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('info')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold'),
 
-                        Infolists\Components\TextEntry::make('montant_ht')
-                            ->label('📐 Montant HT')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('primary')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold')
-                            ->helperText('Base de calcul des retenues'),
-
-                        Infolists\Components\TextEntry::make('montant_tva_calcule')
-                            ->label(
-                                function ($record) {
-                                    $tauxTva = $record->taux_tva ?? 0;
-                                    return "TVA ({$tauxTva}%)";
-                                }
-                            )
-                            ->formatStateUsing(function ($record) {
-                                $brut = (float) ($record->montant_brut ?? 0);
-                                $ht = (float) ($record->montant_ht ?? 0);
-                                $montantTva = $brut - $ht;
-
-                                return number_format($montantTva, 0, ',', ' ') . ' FCFA';
+                        // ── Badge mode de saisie ────────────────────────────
+                        Infolists\Components\TextEntry::make('mode_saisie')
+                            ->label('Mode de saisie')
+                            ->badge()
+                            ->formatStateUsing(fn($state) => match ($state) {
+                                'forfait'  => '✍️ Forfaitaire (saisie libre)',
+                                default    => '🔢 Calculé (formules)',
                             })
-                            ->color('gray')
-                            ->helperText('Montant de la TVA incluse dans le brut')
-                            ->visible(fn($record) => ($record->taux_tva ?? 0) > 0),
+                            ->color(fn($state) => $state === 'forfait' ? 'warning' : 'info')
+                            ->columnSpanFull(),
 
-                        Infolists\Components\TextEntry::make('separator_retenues')
-                            ->label('💸 Retenues (calculées sur HT)')
-                            ->default('')
-                            ->columnSpanFull()
-                            ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
+                        // ==========================================================
+                        // MODE CALCULÉ
+                        // ==========================================================
+                        Infolists\Components\Group::make([
 
-                        Infolists\Components\TextEntry::make('montant_cnps')
-                            ->label(
-                                fn($record) =>
-                                'CNPS (' . number_format($record->taux_cnps ?? 0, 2) . '%)'
-                            )
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('warning')
-                            ->visible(fn($record) => ($record->montant_cnps ?? 0) > 0),
+                            Infolists\Components\TextEntry::make('montant_brut')
+                                ->label('💰 Montant brut (TTC)')
+                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->color('info')
+                                ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                                ->weight('bold'),
 
-                        Infolists\Components\TextEntry::make('montant_irnc')
-                            ->label(
-                                fn($record) =>
-                                'IRNC (' . number_format($record->taux_irnc ?? 0, 2) . '%)'
-                            )
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('warning')
-                            ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
+                            Infolists\Components\TextEntry::make('montant_ht')
+                                ->label('📐 Montant HT')
+                                ->formatStateUsing(fn($state) => number_format((float)($state ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('primary')
+                                ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                                ->weight('bold')
+                                ->helperText('Base de calcul des retenues'),
 
-                        Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle_calcule')
-                            ->label(
-                                function ($record) {
-                                    if ($record->type_redevance_audiovisuelle === 'taux') {
-                                        return 'Redevance audiovisuelle (' . number_format($record->taux_redevance_audiovisuelle ?? 0, 2) . '%)';
-                                    } else {
-                                        return 'Redevance audiovisuelle (forfait)';
-                                    }
-                                }
-                            )
-                            ->formatStateUsing(
-                                fn($state, $record) =>
-                                number_format((float) $record->montant_redevance_audiovisuelle_calcule, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('warning')
-                            ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
+                            Infolists\Components\TextEntry::make('montant_tva_calcule')
+                                ->label(fn($record) => "TVA ({$record->taux_tva}%)")
+                                ->formatStateUsing(function ($record) {
+                                    $montantTva = (float)($record->montant_brut ?? 0) - (float)($record->montant_ht ?? 0);
+                                    return number_format($montantTva, 0, ',', ' ') . ' FCFA';
+                                })
+                                ->color('gray')
+                                ->helperText('TVA incluse dans le brut')
+                                ->visible(fn($record) => ($record->taux_tva ?? 0) > 0),
 
-                        Infolists\Components\TextEntry::make('montant_feicom_calcule')
-                            ->label(
-                                function ($record) {
-                                    if ($record->type_feicom === 'taux') {
-                                        return 'FEICOM (' . number_format($record->taux_feicom ?? 0, 2) . '%)';
-                                    } else {
-                                        return 'FEICOM (forfait)';
-                                    }
-                                }
-                            )
-                            ->formatStateUsing(
-                                fn($state, $record) =>
-                                number_format((float) $record->montant_feicom_calcule, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('warning')
-                            ->visible(fn($record) => ($record->montant_feicom_calcule ?? 0) > 0),
+                            Infolists\Components\TextEntry::make('separator_retenues')
+                                ->label('💸 Retenues (calculées sur HT)')
+                                ->default('')
+                                ->columnSpanFull()
+                                ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
 
-                        Infolists\Components\TextEntry::make('autres_retenues')
-                            ->label('Autres retenues')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('warning')
-                            ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
+                            Infolists\Components\TextEntry::make('montant_cnps')
+                                ->label(fn($record) => 'CNPS (' . number_format($record->taux_cnps ?? 0, 2) . '%)')
+                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ($record->montant_cnps ?? 0) > 0),
 
-                        Infolists\Components\TextEntry::make('total_taxes')
-                            ->label('📊 Total retenues')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('danger')
-                            ->weight('bold')
-                            ->columnSpanFull()
-                            ->extraAttributes(['class' => 'border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
+                            Infolists\Components\TextEntry::make('montant_irnc')
+                                ->label(fn($record) => 'IRNC (' . number_format($record->taux_irnc ?? 0, 2) . '%)')
+                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
-                        Infolists\Components\TextEntry::make('montant_net')
-                            ->label('✅ Montant net à payer')
-                            ->formatStateUsing(
-                                fn($state) =>
-                                number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                            )
-                            ->color('success')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                            ->weight('bold')
-                            ->columnSpanFull()
-                            ->extraAttributes(['class' => 'border-t-2 border-green-500 dark:border-green-600 pt-3 mt-2']),
+                            Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle_calcule')
+                                ->label(function ($record) {
+                                    return $record->type_redevance_audiovisuelle === 'taux'
+                                        ? 'Redevance audiovisuelle (' . number_format($record->taux_redevance_audiovisuelle ?? 0, 2) . '%)'
+                                        : 'Redevance audiovisuelle (forfait)';
+                                })
+                                ->formatStateUsing(
+                                    fn($state, $record) =>
+                                    number_format((float)$record->montant_redevance_audiovisuelle_calcule, 0, ',', ' ') . ' FCFA'
+                                )
+                                ->color('warning')
+                                ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
+
+                            Infolists\Components\TextEntry::make('montant_feicom_calcule')
+                                ->label(function ($record) {
+                                    return $record->type_feicom === 'taux'
+                                        ? 'FEICOM (' . number_format($record->taux_feicom ?? 0, 2) . '%)'
+                                        : 'FEICOM (forfait)';
+                                })
+                                ->formatStateUsing(
+                                    fn($state, $record) =>
+                                    number_format((float)$record->montant_feicom_calcule, 0, ',', ' ') . ' FCFA'
+                                )
+                                ->color('warning')
+                                ->visible(fn($record) => ($record->montant_feicom_calcule ?? 0) > 0),
+
+                            Infolists\Components\TextEntry::make('autres_retenues')
+                                ->label('Autres retenues')
+                                ->formatStateUsing(fn($state) => number_format((float)($state ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
+
+                            Infolists\Components\TextEntry::make('total_taxes')
+                                ->label('📊 Total retenues')
+                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->color('danger')
+                                ->weight('bold')
+                                ->columnSpanFull()
+                                ->extraAttributes(['class' => 'border-t border-gray-200 dark:border-gray-700 pt-3 mt-2']),
+
+                            Infolists\Components\TextEntry::make('montant_net')
+                                ->label('✅ Montant net à payer')
+                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->color('success')
+                                ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                                ->weight('bold')
+                                ->columnSpanFull()
+                                ->extraAttributes(['class' => 'border-t-2 border-green-500 dark:border-green-600 pt-3 mt-2']),
+
+                        ])
+                            ->columns(3)
+                            ->visible(fn($record) => ($record->mode_saisie ?? 'calcule') === 'calcule'),
+
+                        // ==========================================================
+                        // MODE FORFAITAIRE — lire les valeurs brutes stockées
+                        // ==========================================================
+                        Infolists\Components\Group::make([
+
+                            Infolists\Components\TextEntry::make('montant_brut')
+                                ->label('💰 Montant Brut (TTC)')
+                                ->getStateUsing(fn($record) => number_format((float)$record->getRawOriginal('montant_brut') ?? $record->montant_brut, 0, ',', ' ') . ' FCFA')
+                                ->color('info')
+                                ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                                ->weight('bold'),
+
+                            Infolists\Components\TextEntry::make('montant_ht_forfait')
+                                ->label('📐 Montant HT (saisi)')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_ht'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('primary')
+                                ->weight('bold'),
+
+                            Infolists\Components\TextEntry::make('montant_tva_forfait')
+                                ->label('TVA (saisie)')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_tva'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('gray')
+                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_tva'] ?? 0)) > 0),
+
+                            Infolists\Components\TextEntry::make('separator_forfait')
+                                ->label('💸 Retenues (saisies librement)')
+                                ->default('')
+                                ->columnSpanFull()
+                                ->extraAttributes(['class' => 'text-sm font-semibold text-gray-700 border-t pt-3 mt-2']),
+
+                            Infolists\Components\TextEntry::make('montant_cnps_forfait')
+                                ->label('CNPS')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_cnps'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_cnps'] ?? 0)) > 0),
+
+                            Infolists\Components\TextEntry::make('montant_irnc_forfait')
+                                ->label('IR(NC)')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_irnc'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_irnc'] ?? 0)) > 0),
+
+                            Infolists\Components\TextEntry::make('montant_redevance_forfait')
+                                ->label('Redevance audiovisuelle')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0)) > 0),
+
+                            Infolists\Components\TextEntry::make('montant_feicom_forfait')
+                                ->label('FEICOM')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_feicom'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_feicom'] ?? 0)) > 0),
+
+                            Infolists\Components\TextEntry::make('autres_retenues_forfait')
+                                ->label('Autres retenues')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['autres_retenues'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('warning')
+                                ->visible(fn($record) => ((float)($record->getAttributes()['autres_retenues'] ?? 0)) > 0),
+
+                            Infolists\Components\TextEntry::make('total_retenues_forfait')
+                                ->label('📊 Total retenues')
+                                ->getStateUsing(function ($record) {
+                                    $attrs = $record->getAttributes();
+                                    $total = (float)($attrs['montant_cnps'] ?? 0)
+                                        + (float)($attrs['montant_irnc'] ?? 0)
+                                        + (float)($attrs['montant_redevance_audiovisuelle'] ?? 0)
+                                        + (float)($attrs['montant_feicom'] ?? 0)
+                                        + (float)($attrs['autres_retenues'] ?? 0);
+                                    return number_format($total, 0, ',', ' ') . ' FCFA';
+                                })
+                                ->color('danger')
+                                ->weight('bold')
+                                ->columnSpanFull()
+                                ->extraAttributes(['class' => 'border-t border-gray-200 pt-3 mt-2']),
+
+                            Infolists\Components\TextEntry::make('montant_net_forfait')
+                                ->label('✅ Montant net à payer (saisi)')
+                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_net'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->color('success')
+                                ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                                ->weight('bold')
+                                ->columnSpanFull()
+                                ->extraAttributes(['class' => 'border-t-2 border-green-500 pt-3 mt-2']),
+
+                        ])
+                            ->columns(3)
+                            ->visible(fn($record) => ($record->mode_saisie ?? 'calcule') === 'forfait'),
                     ])
-                    ->columns(3),
+                    ->columns(1),
 
                 Infolists\Components\Section::make('Engagement Budgétaire')
                     ->schema([
