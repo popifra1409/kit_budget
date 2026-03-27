@@ -28,8 +28,6 @@ class BonCommandeResource extends Resource
 {
     protected static ?string $model = BonCommande::class;
 
-    // protected static ?string $cluster = GestionBudgetaire::class;
-
     protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';

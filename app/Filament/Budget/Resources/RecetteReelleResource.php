@@ -4,195 +4,402 @@ namespace App\Filament\Budget\Resources;
 
 use App\Filament\Budget\Resources\RecetteReelleResource\Pages;
 use App\Models\RecetteReelle;
+use App\Models\PrevisionRecette;
 use App\Models\PrevisionRecetteMensuelle;
 use App\Models\Exercice;
 use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class RecetteReelleResource extends Resource
 {
     protected static ?string $model = RecetteReelle::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationLabel = 'Recettes Réelles';
+    protected static ?string $modelLabel      = 'Recette Réelle';
+    protected static ?string $pluralModelLabel = 'Recettes Réelles';
+    protected static ?string $navigationGroup = 'Contrôle & Suivi';
+    protected static ?int    $navigationSort  = 10;
 
-    /**
-     * Permissions - Recettes réelles
-     */
+    private static array $moisLabels = [
+        1 => 'Jan',
+        2 => 'Fév',
+        3 => 'Mar',
+        4 => 'Avr',
+        5 => 'Mai',
+        6 => 'Jun',
+        7 => 'Jul',
+        8 => 'Aoû',
+        9 => 'Sep',
+        10 => 'Oct',
+        11 => 'Nov',
+        12 => 'Déc',
+    ];
+
+    private static array $moisOptions = [
+        1 => 'Janvier',
+        2 => 'Février',
+        3 => 'Mars',
+        4 => 'Avril',
+        5 => 'Mai',
+        6 => 'Juin',
+        7 => 'Juillet',
+        8 => 'Août',
+        9 => 'Septembre',
+        10 => 'Octobre',
+        11 => 'Novembre',
+        12 => 'Décembre',
+    ];
+
+    public static function getNavigationBadge(): ?string
+    {
+        try {
+            $exercice = Exercice::getActif();
+            if (!$exercice) return null;
+            $count = RecetteReelle::where('exercice_id', $exercice->id)
+                ->where('statut', 'comptabilisee')
+                ->count();
+            return $count > 0 ? (string) $count : null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    public static function getNavigationBadgeColor(): string
+    {
+        return 'warning';
+    }
+
+    // =========================================================================
+    // PERMISSIONS
+    // =========================================================================
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('view_any_recette_reelle') ?? false;
+        return auth()->check()
+            && auth()->user()->can('view_any_recette_reelle');
     }
 
     public static function canView($record): bool
     {
-        return auth()->user()?->can('view_recette_reelle') ?? false;
+        return auth()->check()
+            && auth()->user()->can('view_recette_reelle');
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->can('create_recette_reelle') ?? false;
+        return auth()->check()
+            && auth()->user()->can('create_recette_reelle');
     }
 
     public static function canEdit($record): bool
     {
-        $user = auth()->user();
-        if (!$user) {
-            return false;
-        }
-
-        if ($user->can('update_recette_reelle')) {
-            // Ici tu peux ajouter une logique métier si nécessaire
-            return true;
-        }
-
-        return false;
+        if (!auth()->check()) return false;
+        return auth()->user()->can('update_recette_reelle');
     }
 
     public static function canDelete($record): bool
     {
-        $user = auth()->user();
-        if (!$user) {
-            return false;
+        if (!auth()->check()) return false;
+        if (!auth()->user()->can('delete_recette_reelle')) return false;
+        return $record->statut !== 'validee';
+    }
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = parent::getEloquentQuery()
+            ->with(['previsionRecetteMensuelle.lignePrevisionRecette'])
+            ->orderByDesc('date_recette');
+
+        $exerciceActif = Exercice::getActif();
+        if ($exerciceActif) {
+            $query->where('exercice_id', $exerciceActif->id);
         }
 
-        return $user->can('delete_recette_reelle');
+        return $query;
     }
 
-
-    // ====================================
+    // =========================================================================
     // FORMULAIRE
-    // ====================================
-    public static function form(Forms\Form $form): Forms\Form
+    // =========================================================================
+    public static function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Select::make('prevision_recette_mensuelle_id')
-                    ->label('Prévision Mensuelle')
-                    ->options(function () {
-                        $exerciceActif = Exercice::getActif();
-                        if (!$exerciceActif) return [];
-                        return PrevisionRecetteMensuelle::query()
-                            ->where('actif', true)
-                            ->where('annee', $exerciceActif->annee)
-                            ->with('lignePrevisionRecette')
-                            ->get()
-                            ->mapWithKeys(function ($prevision) {
-                                $ligne = $prevision->lignePrevisionRecette;
-                                $label = $prevision->periode
-                                    . ' - '
-                                    . ($ligne?->code_nomenclature ?? '')
-                                    . ' '
-                                    . ($ligne?->libelle_nomenclature ?? '');
-                                return [$prevision->id => $label];
-                            })
-                            ->toArray();
-                    })
-                    ->searchable()
-                    ->required(),
+        return $form->schema([
 
-                Forms\Components\TextInput::make('libelle')
-                    ->label('Libellé')
-                    ->required(),
+            Forms\Components\Section::make('Identification')
+                ->schema([
+                    Forms\Components\Select::make('exercice_id')
+                        ->label('Exercice')
+                        ->options(fn() => Exercice::orderByDesc('annee')->pluck('annee', 'id'))
+                        ->default(fn() => Exercice::getActif()?->id)
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(fn($set) => $set('prevision_recette_mensuelle_id', null)),
 
-                Forms\Components\TextInput::make('montant')
-                    ->label('Montant')
-                    ->numeric()
-                    ->required()
-                    ->suffix('FCFA'),
+                    Forms\Components\Select::make('mois')
+                        ->label('Mois')
+                        ->options(self::$moisOptions)
+                        ->default(now()->month)
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(fn($set) => $set('prevision_recette_mensuelle_id', null)),
 
-                Forms\Components\DatePicker::make('date_recette')
-                    ->label('Date Encaissement')
-                    ->required()
-                    ->default(now()),
+                    Forms\Components\DatePicker::make('date_recette')
+                        ->label("Date d'encaissement")
+                        ->default(now())
+                        ->required(),
+                ])
+                ->columns(3),
 
-                Forms\Components\TextInput::make('payeur')
-                    ->label('Nom du Payeur')
-                    ->required(),
+            Forms\Components\Section::make('Ligne de nomenclature')
+                ->schema([
+                    Forms\Components\Select::make('prevision_recette_mensuelle_id')
+                        ->label('Ligne de prévision (nomenclature + mois)')
+                        ->options(function (Get $get) {
+                            $exerciceId = $get('exercice_id');
+                            $mois       = $get('mois');
+                            if (!$exerciceId || !$mois) return [];
 
-                Forms\Components\Select::make('mode_paiement')
-                    ->label('Mode de Paiement')
-                    ->options([
-                        'Espèces' => 'Espèces',
-                        'Chèque' => 'Chèque',
-                        'Virement' => 'Virement Bancaire',
-                        'Carte' => 'Carte Bancaire',
-                        'Mobile Money' => 'Mobile Money',
-                    ])
-                    ->required(),
-            ]);
+                            return PrevisionRecetteMensuelle::with('lignePrevisionRecette')
+                                ->where('exercice_id', $exerciceId)
+                                ->where('mois', $mois)
+                                ->get()
+                                ->mapWithKeys(function ($pm) {
+                                    $ligne   = $pm->lignePrevisionRecette;
+                                    $prevu   = number_format((float) $pm->montant_prevu, 0, ',', ' ');
+                                    $recouvr = number_format((float) $pm->montant_recouvre, 0, ',', ' ');
+                                    $code    = $ligne?->code_nomenclature ?? '?';
+                                    $lib     = $ligne?->libelle_nomenclature ?? 'N/A';
+                                    return [
+                                        $pm->id => "[{$code}] {$lib} — Prévu: {$prevu} | Recouvré: {$recouvr} FCFA",
+                                    ];
+                                });
+                        })
+                        ->searchable()
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(function ($state, $set) {
+                            if (!$state) return;
+                            $pm = PrevisionRecetteMensuelle::with('lignePrevisionRecette')->find($state);
+                            if ($pm) {
+                                $set('code_nomenclature', $pm->lignePrevisionRecette?->code_nomenclature);
+                                $set('libelle', $pm->lignePrevisionRecette?->libelle_nomenclature);
+                                $set('_montant_restant', max(0, (float)$pm->montant_prevu - (float)$pm->montant_recouvre));
+                                $set('_montant_prevu', (float) $pm->montant_prevu);
+                            }
+                        })
+                        ->helperText("Sélectionnez l'exercice et le mois d'abord"),
+
+                    Forms\Components\Grid::make(3)->schema([
+                        Forms\Components\Placeholder::make('_montant_prevu')
+                            ->label('Montant prévu du mois')
+                            ->content(fn($get) => $get('_montant_prevu')
+                                ? number_format((float) $get('_montant_prevu'), 0, ',', ' ') . ' FCFA'
+                                : '—'),
+
+                        Forms\Components\Placeholder::make('_montant_restant')
+                            ->label('Restant à recouvrer')
+                            ->content(fn($get) => $get('_montant_restant') !== null
+                                ? number_format((float) $get('_montant_restant'), 0, ',', ' ') . ' FCFA'
+                                : '—'),
+
+                        Forms\Components\Hidden::make('code_nomenclature'),
+                    ]),
+                ]),
+
+            Forms\Components\Section::make('Montant et paiement')
+                ->schema([
+                    Forms\Components\TextInput::make('montant')
+                        ->label('Montant encaissé (FCFA)')
+                        ->numeric()
+                        ->required()
+                        ->minValue(1)
+                        ->prefix('FCFA'),
+
+                    Forms\Components\TextInput::make('payeur')
+                        ->label('Payeur / Source')
+                        ->maxLength(255),
+
+                    Forms\Components\Select::make('mode_paiement')
+                        ->label('Mode de paiement')
+                        ->options([
+                            'virement' => 'Virement bancaire',
+                            'cheque'   => 'Chèque',
+                            'especes'  => 'Espèces',
+                            'mobile'   => 'Mobile Money',
+                            'autre'    => 'Autre',
+                        ])
+                        ->default('virement'),
+
+                    Forms\Components\TextInput::make('reference_paiement')
+                        ->label('Référence paiement')
+                        ->maxLength(100),
+
+                    Forms\Components\Select::make('statut')
+                        ->label('Statut')
+                        ->options([
+                            'encaissee'     => 'Encaissée',
+                            'comptabilisee' => 'Comptabilisée',
+                            'validee'       => 'Validée',
+                        ])
+                        ->default('encaissee')
+                        ->required(),
+
+                    Forms\Components\Textarea::make('libelle')
+                        ->label('Libellé / Objet')
+                        ->rows(2),
+
+                    Forms\Components\Textarea::make('observations')
+                        ->label('Observations')
+                        ->rows(2),
+                ])
+                ->columns(2),
+        ]);
     }
 
-    // ====================================
-    // TABLEAU
-    // ====================================
-    public static function table(Tables\Table $table): Tables\Table
+    // =========================================================================
+    // TABLE
+    // =========================================================================
+    public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('numero')->label('N°')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('previsionRecetteMensuelle.periode')->label('Période')->sortable(),
-                Tables\Columns\TextColumn::make('previsionRecetteMensuelle.lignePrevisionRecette.code_nomenclature')
-                    ->label('Code Nomenclature')
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('previsionRecetteMensuelle.lignePrevisionRecette.libelle_nomenclature')
-                    ->label('Nomenclature')
+                Tables\Columns\TextColumn::make('numero')
+                    ->label('N°')
+                    ->searchable()
                     ->sortable()
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('libelle')->label('Libellé')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('montant')->money('XAF', locale: 'fr')->label('Montant')->sortable(),
-                Tables\Columns\TextColumn::make('payeur')->label('Payeur')->sortable()->searchable(),
+                    ->badge()
+                    ->color('gray'),
+
+                Tables\Columns\TextColumn::make('date_recette')
+                    ->label('Date')
+                    ->date('d/m/Y')
+                    ->sortable(),
+
+                // ✅ Fix : utiliser ->state() au lieu de ->getStateUsing()
+                // et protéger contre null
+                Tables\Columns\TextColumn::make('mois')
+                    ->label('Mois')
+                    ->formatStateUsing(fn($state) => self::$moisLabels[(int) $state] ?? '—')
+                    ->badge()
+                    ->color('info'),
+
+                Tables\Columns\TextColumn::make('code_nomenclature')
+                    ->label('Code')
+                    ->searchable()
+                    ->badge()
+                    ->color('warning'),
+
+                // ✅ Fix : relation imbriquée — utiliser une closure sécurisée
+                Tables\Columns\TextColumn::make('libelle_nomenclature')
+                    ->label('Nomenclature')
+                    ->getStateUsing(
+                        fn($record) =>
+                        $record->previsionRecetteMensuelle
+                            ?->lignePrevisionRecette
+                            ?->libelle_nomenclature ?? '—'
+                    )
+                    ->limit(35)
+                    ->tooltip(
+                        fn($record) =>
+                        $record->previsionRecetteMensuelle
+                            ?->lignePrevisionRecette
+                            ?->libelle_nomenclature
+                    ),
+
+                Tables\Columns\TextColumn::make('montant')
+                    ->label('Montant')
+                    ->money('XAF')
+                    ->sortable()
+                    ->weight('bold')
+                    ->color('success')
+                    ->summarize([
+                        Tables\Columns\Summarizers\Sum::make()->money('XAF')->label('Total'),
+                    ]),
+
+                Tables\Columns\TextColumn::make('payeur')
+                    ->label('Payeur')
+                    ->searchable()
+                    ->limit(25)
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('mode_paiement')
+                    ->label('Mode')
+                    ->badge()
+                    ->color('gray')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('statut')
+                    ->label('Statut')
+                    ->badge()
+                    ->color(fn(string $state) => match ($state) {
+                        'encaissee'     => 'warning',
+                        'comptabilisee' => 'info',
+                        'validee'       => 'success',
+                        default         => 'gray',
+                    })
+                    ->formatStateUsing(fn(string $state) => match ($state) {
+                        'encaissee'     => 'Encaissée',
+                        'comptabilisee' => 'Comptabilisée',
+                        'validee'       => 'Validée',
+                        default         => $state,
+                    }),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('annee')
-                    ->label('Année')
-                    ->options(fn() => PrevisionRecetteMensuelle::query()
-                        ->distinct('annee')
-                        ->pluck('annee', 'annee')
-                        ->toArray()),
                 Tables\Filters\SelectFilter::make('mois')
                     ->label('Mois')
+                    ->options(self::$moisOptions),
+
+                Tables\Filters\SelectFilter::make('statut')
+                    ->label('Statut')
                     ->options([
-                        1 => 'Janvier',
-                        2 => 'Février',
-                        3 => 'Mars',
-                        4 => 'Avril',
-                        5 => 'Mai',
-                        6 => 'Juin',
-                        7 => 'Juillet',
-                        8 => 'Août',
-                        9 => 'Septembre',
-                        10 => 'Octobre',
-                        11 => 'Novembre',
-                        12 => 'Décembre',
+                        'encaissee'     => 'Encaissée',
+                        'comptabilisee' => 'Comptabilisée',
+                        'validee'       => 'Validée',
                     ]),
-                Tables\Filters\SelectFilter::make('code_nomenclature')
-                    ->label('Nomenclature')
-                    ->options(fn() => \App\Models\LignePrevisionRecette::pluck('libelle_nomenclature', 'code_nomenclature')->toArray()),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-                Tables\Actions\ViewAction::make()->label('Voir'),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn($record) => $record->statut !== 'validee'),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+
+                    // ✅ Fix BulkAction : ne pas appeler ->where() sur la collection Filament
+                    Tables\Actions\BulkAction::make('comptabiliser')
+                        ->label('Comptabiliser la sélection')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('info')
+                        ->requiresConfirmation()
+                        ->action(function ($records) {
+                            foreach ($records as $record) {
+                                if ($record->statut === 'encaissee') {
+                                    $record->update(['statut' => 'comptabilisee']);
+                                }
+                            }
+                        }),
+                ]),
             ])
             ->defaultSort('date_recette', 'desc');
     }
 
-    // ====================================
-    // PAGES
-    // ====================================
     public static function getPages(): array
     {
-        return [
-            'index' => Pages\ListRecetteReelles::route('/'),
+        $pages = [
+            'index'  => Pages\ListRecetteReelles::route('/'),
             'create' => Pages\CreateRecetteReelle::route('/create'),
-            'edit' => Pages\EditRecetteReelle::route('/{record}/edit'),
+            'edit'   => Pages\EditRecetteReelle::route('/{record}/edit'),
         ];
+
+        if (class_exists(Pages\SuiviRecettes::class)) {
+            $pages['suivi'] = Pages\SuiviRecettes::route('/suivi');
+        }
+
+        return $pages;
     }
 }

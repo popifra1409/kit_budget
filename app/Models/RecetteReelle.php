@@ -136,51 +136,94 @@ class RecetteReelle extends Model
 
         static::creating(function ($recette) {
 
-            $mensuelle = $recette->previsionRecetteMensuelle;
+            // ── Charger la mensuelle via ID, pas via relation ──────
+            $mensuelle = \App\Models\PrevisionRecetteMensuelle::find(
+                $recette->prevision_recette_mensuelle_id
+            );
+
             if (!$mensuelle) {
                 throw new \RuntimeException('Prévision mensuelle manquante');
             }
 
-            $ligne = $mensuelle->lignePrevisionRecette;
+            $ligne = \App\Models\LignePrevisionRecette::find(
+                $mensuelle->ligne_prevision_recette_id
+            );
+
             if (!$ligne) {
                 throw new \RuntimeException('Ligne de prévision introuvable');
             }
 
-            $recette->exercice_id = $mensuelle->exercice_id;
-            $recette->mois = $mensuelle->mois;
-            $recette->annee = $mensuelle->annee;
+            $recette->exercice_id       = $mensuelle->exercice_id;
+            $recette->mois              = $mensuelle->mois;
+            $recette->annee             = $mensuelle->annee;
             $recette->code_nomenclature = $ligne->code_nomenclature;
 
             if (empty($recette->numero)) {
-                $recette->numero = self::genererNumero($recette->exercice_id);
+                // ✅ Passer l'ANNÉE, pas l'exercice_id
+                $recette->numero = self::genererNumero($mensuelle->annee);
             }
         });
 
         static::created(function ($recette) {
-            // ⚠️ Éviter la récursion
             if (self::$processing) return;
-
             self::$processing = true;
 
-            $prevision = $recette->previsionRecetteMensuelle;
+            // ── Recharger proprement via ID ────────────────────────
+            $prevision = \App\Models\PrevisionRecetteMensuelle::find(
+                $recette->prevision_recette_mensuelle_id
+            );
+
             if ($prevision) {
-                // ⚠️ Mettre à jour uniquement les champs cumulés sans déclencher d'observer
                 $montantRecouvre = $prevision->recettesReelles()
                     ->whereIn('statut', ['encaissee', 'comptabilisee', 'validee'])
                     ->sum('montant');
 
                 $prevision->updateQuietly([
-                    'montant_recouvre' => $montantRecouvre,
-                    'ecart' => $montantRecouvre - $prevision->montant_prevu,
-                    'taux_realisation' => $prevision->montant_prevu == 0 ? 0 : ($montantRecouvre / $prevision->montant_prevu) * 100,
+                    'montant_recouvre'  => $montantRecouvre,
+                    'ecart'             => $montantRecouvre - $prevision->montant_prevu,
+                    'taux_realisation'  => $prevision->montant_prevu == 0
+                        ? 0
+                        : ($montantRecouvre / $prevision->montant_prevu) * 100,
                 ]);
 
-                // Calculer cumulés sans déclencher d'observer
-                foreach ($prevision->lignePrevisionRecette->previsionsMensuelles as $m) {
-                    $m->updateQuietly([
-                        'montant_cumule_prevu' => $m->lignePrevisionRecette->previsionsMensuelles()->where('mois', '<=', $m->mois)->sum('montant_prevu'),
-                        'montant_cumule_recouvre' => $m->lignePrevisionRecette->previsionsMensuelles()->where('mois', '<=', $m->mois)->sum('montant_recouvre'),
-                        'taux_realisation_cumule' => $m->montant_cumule_prevu == 0 ? 0 : ($m->montant_cumule_recouvre / $m->montant_cumule_prevu) * 100,
+                $ligne = \App\Models\LignePrevisionRecette::find(
+                    $prevision->ligne_prevision_recette_id
+                );
+
+                if ($ligne) {
+                    $mensuelles = \App\Models\PrevisionRecetteMensuelle::where(
+                        'ligne_prevision_recette_id',
+                        $ligne->id
+                    )->get();
+
+                    foreach ($mensuelles as $m) {
+                        $cumulePrevu     = \App\Models\PrevisionRecetteMensuelle::where(
+                            'ligne_prevision_recette_id',
+                            $ligne->id
+                        )->where('mois', '<=', $m->mois)->sum('montant_prevu');
+
+                        $cumuleRecouvre  = \App\Models\PrevisionRecetteMensuelle::where(
+                            'ligne_prevision_recette_id',
+                            $ligne->id
+                        )->where('mois', '<=', $m->mois)->sum('montant_recouvre');
+
+                        $m->updateQuietly([
+                            'montant_cumule_prevu'    => $cumulePrevu,
+                            'montant_cumule_recouvre' => $cumuleRecouvre,
+                            'taux_realisation_cumule' => $cumulePrevu == 0
+                                ? 0
+                                : ($cumuleRecouvre / $cumulePrevu) * 100,
+                        ]);
+                    }
+
+                    // Mettre à jour la ligne annuelle
+                    $totalRecouvre = $mensuelles->sum('montant_recouvre');
+                    $ligne->updateQuietly([
+                        'montant_recouvre'  => $totalRecouvre,
+                        'ecart'             => $totalRecouvre - $ligne->montant_rectifie,
+                        'taux_recouvrement' => $ligne->montant_rectifie == 0
+                            ? 0
+                            : ($totalRecouvre / $ligne->montant_rectifie) * 100,
                     ]);
                 }
             }
