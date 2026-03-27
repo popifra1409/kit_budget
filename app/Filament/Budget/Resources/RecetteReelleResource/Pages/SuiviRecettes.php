@@ -10,10 +10,12 @@ use App\Models\PrevisionRecette;
 use App\Models\LignePrevisionRecette;
 use App\Models\PrevisionRecetteMensuelle;
 
-class SuiviRecettes extends Page  // ← Changer ici
+class SuiviRecettes extends Page
 {
     protected static string $resource = RecetteReelleResource::class;
     protected static string $view     = 'filament.pages.suivi-recettes';
+
+    public string $search = '';
 
     public function getTitle(): string
     {
@@ -43,6 +45,12 @@ class SuiviRecettes extends Page  // ← Changer ici
         $lignes = LignePrevisionRecette::with(['previsionsMensuelles.recettesReelles'])
             ->where('prevision_recette_id', $this->previsionId)
             ->where('actif', true)
+            ->when($this->search, function ($q) {
+                $q->where(function ($q) {
+                    $q->where('code_nomenclature', 'ilike', "%{$this->search}%")
+                        ->orWhere('libelle_nomenclature', 'ilike', "%{$this->search}%");
+                });
+            })
             ->orderBy('ordre')
             ->get();
 

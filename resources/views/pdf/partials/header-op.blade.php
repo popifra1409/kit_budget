@@ -86,19 +86,22 @@
         <td>
             <div style="font-size: 8.5pt; line-height: 1.1; text-align:center; border-bottom:0px;">
                 <div style="font-weight: bold; margin-bottom: 10px">
-                    NUMERO ET DATE DU MARCHE - <span style="font-style: italic; font-weight:300;">CONTRACT NUMBER</span>
+                    @if ($engagement->estBonCommande())
+                        {{ strtoupper($engagement->engageable?->typeEngagement?->libelle ?? $engagement->type_engagement ?? 'BON DE COMMANDE') }}
+                    @elseif ($engagement->estDecision())
+                        {{ strtoupper($engagement->engageable?->typeDecision?->libelle ?? $engagement->type_engagement ?? 'DÉCISION ADMINISTRATIVE') }}
+                    @else
+                        {{ strtoupper($engagement->type_engagement ?? 'ENGAGEMENT') }}
+                    @endif
+                    - <span style="font-style: italic; font-weight:300;">Du</span>
                     __ __ __ __ __ __ __ __
                 </div>
                 <div style="font-weight: bold;">
-                    NUMERO BCA / NUMERO DECISION /OM
+                    NUMERO - <span style="font-style: italic; font-weight:300;">NUMBER</span>
                 </div>
                 <div style="margin-top: 3px; font-size:9pt; line-height: 1.1;">
                     @if ($engagement && $documentSource)
-                        @if ($engagement->estBonCommande())
-                            {{ $documentSource->numero }}<br>
-                        @else
-                            {{ $documentSource->numero }}<br>
-                        @endif
+                        {{ $documentSource->numero }}<br>
                     @endif
                 </div>
             </div>
@@ -113,12 +116,10 @@
                 </div>
             </div>
         </td>
-        <td style="width: 30%; padding: 5px; vertical-align: middle ; text-align: left;">
-            {{-- Désignation du créancier --}}
+        <td style="width: 30%; padding: 5px; vertical-align: middle; text-align: left;">
             <div style="margin-bottom: 5px;">
                 <div class="font-bold" style="font-size: 8pt;">L'AGENT COMPTABLE</div>
                 <div class="font-tiny" style="font-style: italic;">THE ACCOUNTING OFFICER</div>
-                {{-- <div style="min-height: 40px;"></div> --}}
             </div>
         </td>
     </tr>

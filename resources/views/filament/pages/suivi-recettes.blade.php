@@ -284,6 +284,37 @@
                     @endforeach
                 </select>
             @endif
+            <div style="position:relative; flex:1; max-width:320px;">
+                <input
+                    type="text"
+                    wire:model.live.debounce.300ms="search"
+                    placeholder="🔍 Rechercher une nomenclature..."
+                    style="width:100%; background:var(--color-background-secondary);
+                        border:1px solid var(--color-border-tertiary);
+                        border-radius:var(--border-radius-md);
+                        padding:.35rem .75rem .35rem 2rem;
+                        font-size:.82rem; color:var(--color-text-primary);">
+                <svg style="position:absolute; left:.6rem; top:50%; transform:translateY(-50%);
+                            width:14px; height:14px; color:var(--color-text-tertiary);"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                @if($search)
+                <button wire:click="$set('search', '')"
+                        style="position:absolute; right:.6rem; top:50%; transform:translateY(-50%);
+                            background:none; border:none; cursor:pointer;
+                            color:var(--color-text-tertiary); font-size:.9rem;">✕</button>
+                @endif
+            </div>
+
+            {{-- Compteur de résultats --}}
+            @if($search)
+            <span style="font-size:.72rem; color:var(--color-text-secondary);">
+                {{ count($data) }} résultat{{ count($data) > 1 ? 's' : '' }}
+                pour « {{ $search }} »
+            </span>
+            @endif
 
             <div class="legend">
                 <span><span class="leg-dot" style="background:#1e40af;"></span>Prévu</span>

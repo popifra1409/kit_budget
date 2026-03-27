@@ -618,7 +618,7 @@ if ($engagement && $engagement->engageable) {
                 white-space:nowrap;
                 pointer-events:none;
             ">
-                                Visa engagement
+                                Visa engagement <br>comptable
                             </div>
                         </td>
 
@@ -634,7 +634,7 @@ if ($engagement && $engagement->engageable) {
                 white-space:nowrap;
                 pointer-events:none;
             ">
-                                Visa budgétaire
+                                Validation de la <br>dépense
                             </div>
                         </td>
                     </tr>
@@ -690,7 +690,7 @@ if ($engagement && $engagement->engageable) {
                 </table>
                 <div style="margin-top: 8px; margin-bottom: 8px;">
                     <div class="font-bold" style="font-size: 8pt; text-align: left;">Arrêté par nous le présent ordre de
-                        paiement à la somme (en toutes lettres) de:
+                        paiement au montant (en toutes lettres) net à percevoir de:
                     </div>
                     <div class="font-tiny" style="font-style: italic; text-align: left;">We hereby make up this order at
                         the amount (in

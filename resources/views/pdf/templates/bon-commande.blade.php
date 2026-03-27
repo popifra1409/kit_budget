@@ -306,11 +306,11 @@
                         <td class="money">{{ number_format($bonCommande->montant_ht, 0, ',', ' ') }}</td>
                     </tr>
                     <tr>
-                        <td>MONTANT TVA</td>
+                        <td>MONTANT TVA(19,25%)</td>
                         <td class="money">{{ number_format($bonCommande->montant_tva, 0, ',', ' ') }}</td>
                     </tr>
                     <tr>
-                        <td>MONTANT IR</td>
+                        <td>MONTANT IR(5,5%)</td>
                         <td class="money">{{ number_format($bonCommande->montant_ir, 0, ',', ' ') }}</td>
                     </tr>
                     <tr>

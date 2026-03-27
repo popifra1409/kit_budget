@@ -294,10 +294,10 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                 <table>
                     <tr>
                         <td style="height:190px; width:40%; position:relative;">
-                            <div class="watermark">Visa engagement</div>
+                            <div class="watermark">Visa engagement <br>comptable</div>
                         </td>
                         <td style="height:190px; width:60%; position:relative;">
-                            <div class="watermark">Visa budgétaire</div>
+                            <div class="watermark">Validation de la<br>dépense</div>
                         </td>
                     </tr>
                 </table>
