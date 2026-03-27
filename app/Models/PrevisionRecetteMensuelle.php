@@ -183,21 +183,27 @@ class PrevisionRecetteMensuelle extends Model
      */
     public static function creerPrevisionsAnnuelles(LignePrevisionRecette $ligne): void
     {
-        $exercice = $ligne->previsionRecette->exercice;
+        // Charger explicitement via la relation BelongsTo
+        $prevision = $ligne->previsionRecette()->with('exerciceBudgetaire')->first();
+        $exercice  = $prevision->exerciceBudgetaire;
 
-        $montantMensuel = $ligne->montant_rectifie / 12;
+        if (!$exercice) {
+            throw new \RuntimeException("Exercice introuvable pour la prévision {$prevision->id}");
+        }
+
+        $montantMensuel = (float) $ligne->montant_rectifie / 12;
 
         for ($mois = 1; $mois <= 12; $mois++) {
             static::updateOrCreate(
                 [
                     'ligne_prevision_recette_id' => $ligne->id,
-                    'mois' => $mois,
-                    'annee' => $exercice->annee,
+                    'mois'                       => $mois,
+                    'annee'                      => $exercice->annee,
                 ],
                 [
-                    'exercice_id' => $exercice->id,
+                    'exercice_id'   => $exercice->id,
                     'montant_prevu' => $montantMensuel,
-                    'actif' => true,
+                    'actif'         => true,
                 ]
             );
         }

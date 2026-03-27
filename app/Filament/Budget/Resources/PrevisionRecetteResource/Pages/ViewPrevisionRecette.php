@@ -9,6 +9,7 @@ use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Support\Enums\FontWeight;
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\PrevisionRecetteMensuelle;
 
 class ViewPrevisionRecette extends ViewRecord
 {
@@ -40,6 +41,32 @@ class ViewPrevisionRecette extends ViewRecord
                 ->action(fn($record) => $record->mettreEnExecution())
                 ->visible(fn($record) => $record->estAdopte() && auth()->user()->hasRole('super_admin'))
                 ->successNotificationTitle('Prévision en exécution'),
+
+            Actions\Action::make('generer_mensuelles')
+                ->label('Générer prévisions mensuelles')
+                ->icon('heroicon-o-calendar-days')
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Générer les prévisions mensuelles')
+                ->modalDescription('Crée ou remet à jour les 12 prévisions mensuelles pour chaque ligne (montant annuel ÷ 12).')
+                ->visible(
+                    fn($record) => $record->lignesPrevisions()
+                        ->whereDoesntHave('previsionsMensuelles')
+                        ->exists()
+                )
+                ->action(function ($record) {
+                    $count = 0;
+                    foreach ($record->lignesPrevisions as $ligne) {
+                        PrevisionRecetteMensuelle::creerPrevisionsAnnuelles($ligne);
+                        $count++;
+                    }
+
+                    \Filament\Notifications\Notification::make()
+                        ->title('✅ Prévisions mensuelles générées')
+                        ->success()
+                        ->body("{$count} lignes × 12 mois = " . ($count * 12) . " prévisions créées.")
+                        ->send();
+                }),
 
             Actions\Action::make('cloturer')
                 ->label('Clôturer')

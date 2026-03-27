@@ -167,16 +167,28 @@ class RecetteReelleResource extends Resource
                                 ->where('exercice_id', $exerciceId)
                                 ->where('mois', $mois)
                                 ->get()
-                                ->mapWithKeys(function ($pm) {
-                                    $ligne   = $pm->lignePrevisionRecette;
-                                    $prevu   = number_format((float) $pm->montant_prevu, 0, ',', ' ');
-                                    $recouvr = number_format((float) $pm->montant_recouvre, 0, ',', ' ');
-                                    $code    = $ligne?->code_nomenclature ?? '?';
-                                    $lib     = $ligne?->libelle_nomenclature ?? 'N/A';
-                                    return [
-                                        $pm->id => "[{$code}] {$lib} — Prévu: {$prevu} | Recouvré: {$recouvr} FCFA",
-                                    ];
-                                });
+                                ->mapWithKeys(fn($pm) => [
+                                    $pm->id => "[{$pm->lignePrevisionRecette?->code_nomenclature}] {$pm->lignePrevisionRecette?->libelle_nomenclature}",
+                                ]);
+                        })
+                        ->getSearchResultsUsing(function (string $search, Get $get) {
+                            $exerciceId = $get('exercice_id');
+                            $mois       = $get('mois');
+                            if (!$exerciceId || !$mois) return [];
+
+                            return PrevisionRecetteMensuelle::with('lignePrevisionRecette')
+                                ->where('exercice_id', $exerciceId)
+                                ->where('mois', $mois)
+                                ->whereHas(
+                                    'lignePrevisionRecette',
+                                    fn($q) =>
+                                    $q->where('libelle_nomenclature', 'ilike', "%{$search}%")
+                                        ->orWhere('code_nomenclature', 'ilike', "%{$search}%")
+                                )
+                                ->get()
+                                ->mapWithKeys(fn($pm) => [
+                                    $pm->id => "[{$pm->lignePrevisionRecette?->code_nomenclature}] {$pm->lignePrevisionRecette?->libelle_nomenclature}",
+                                ]);
                         })
                         ->searchable()
                         ->required()
