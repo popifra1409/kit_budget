@@ -64,37 +64,37 @@
             if ($programme) {
                 if ($programme->estSousProgramme()) {
                     // C'est un sous-programme
-                $sousProgramme = $programme;
-                $programme = $programme->parent;
-            } else {
-                // C'est un programme principal
+                    $sousProgramme = $programme;
+                    $programme = $programme->parent;
+                } else {
+                    // C'est un programme principal
                     $sousProgramme = null;
                 }
 
                 // Récupérer l'objectif
-            try {
-                if (method_exists($programme, 'objectifPrincipal')) {
-                    $objectif = $programme->objectifPrincipal;
-                } elseif (method_exists($programme, 'objectifsPrincipaux')) {
-                    $objectifs = $programme->objectifsPrincipaux;
-                    if ($objectifs instanceof \Illuminate\Support\Collection) {
-                        $objectif = $objectifs->first();
-                    } else {
-                        $objectif = $objectifs;
+                try {
+                    if (method_exists($programme, 'objectifPrincipal')) {
+                        $objectif = $programme->objectifPrincipal;
+                    } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                        $objectifs = $programme->objectifsPrincipaux;
+                        if ($objectifs instanceof \Illuminate\Support\Collection) {
+                            $objectif = $objectifs->first();
+                        } else {
+                            $objectif = $objectifs;
+                        }
                     }
+                } catch (\Exception $e) {
+                    \Log::warning('Erreur récupération objectif', [
+                        'programme_id' => $programme->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $objectif = null;
                 }
-            } catch (\Exception $e) {
-                \Log::warning('Erreur récupération objectif', [
-                    'programme_id' => $programme->id,
-                    'error' => $e->getMessage(),
-                ]);
-                $objectif = null;
             }
         }
     }
-}
 
-$nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
+    $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 @endphp
 
 @section('title', 'Autorisation d\'Engagement')
@@ -165,7 +165,14 @@ $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
     <table style="width: 100%; margin: 10px 0; border-collapse: collapse;">
         <tr>
             <td style="width: 60%; border: none; padding: 0; font-size: 9pt;">
-                <strong>Type Autorisation Engagement:</strong> {{ strtoupper($engagement->type_engagement ?? 'Standard') }}
+                <strong>Type Autorisation Engagement:</strong>
+                @if ($engagement->estBonCommande())
+                    {{ strtoupper($engagement->engageable?->typeEngagement?->libelle ?? $engagement->type_engagement ?? 'Standard') }}
+                @elseif ($engagement->estDecision())
+                    {{ strtoupper($engagement->engageable?->typeDecision?->libelle ?? $engagement->type_engagement ?? 'Standard') }}
+                @else
+                    {{ strtoupper($engagement->type_engagement ?? 'Standard') }}
+                @endif
             </td>
             <td style="width: 40%; border: none; padding: 0; text-align: right; font-size: 9pt;">
                 <strong>État: Annuel</strong>

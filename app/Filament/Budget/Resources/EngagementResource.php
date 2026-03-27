@@ -163,22 +163,49 @@ class EngagementResource extends Resource
 
                         Forms\Components\Select::make('type_engagement')
                             ->label('Type d\'engagement')
-                            ->options([
-                                'BC' => 'Bon de Commande',
-                                'DA' => 'Décision Administrative',
-                                'Mission' => 'Ordre de mission',
-                                'Avance' => 'Avance sur solde',
-                                'Formation' => 'Formation',
-                                'Lettre-commande' => 'Lettre-commande',
-                                'Marché' => 'Marché',
-                                'Subvention' => 'Subvention',
-                                'Prime' => 'Prime exceptionnelle',
-                                'Autre' => 'Autre',
-                            ])
+                            ->options(function (Get $get, $record) {
+
+                                // ── Engagement lié à un BC ───────────────────────────
+                                if (
+                                    $record?->estBonCommande() ||
+                                    str_contains($get('engageable_type') ?? '', 'BonCommande')
+                                ) {
+                                    return \App\Models\TypeEngagement::actifs()
+                                        ->pluck('libelle', 'libelle');
+                                }
+
+                                // ── Engagement lié à une DA ──────────────────────────
+                                if (
+                                    $record?->estDecision() ||
+                                    str_contains($get('engageable_type') ?? '', 'Decision')
+                                ) {
+                                    return \App\Models\TypeDecision::actif()
+                                        ->ordonne()
+                                        ->pluck('libelle', 'libelle');
+                                }
+
+                                // ── Fallback : liste combinée avec séparateurs ────────
+                                return collect()
+                                    ->merge(
+                                        \App\Models\TypeEngagement::actifs()
+                                            ->pluck('libelle', 'libelle')
+                                            ->mapWithKeys(fn($v, $k) => ["BC:{$k}" => "BC — {$v}"])
+                                    )
+                                    ->merge(
+                                        \App\Models\TypeDecision::actif()->ordonne()
+                                            ->pluck('libelle', 'libelle')
+                                            ->mapWithKeys(fn($v, $k) => ["DA:{$k}" => "DA — {$v}"])
+                                    )
+                                    ->toArray();
+                            })
                             ->required()
                             ->searchable()
                             ->live()
-                            ->helperText('Type d\'engagement (extensible à tout type)'),
+                            ->helperText(function ($record) {
+                                if ($record?->estBonCommande()) return '📦 Types issus du référentiel Bons de Commande';
+                                if ($record?->estDecision())    return '📋 Types issus du référentiel Décisions Administratives';
+                                return 'Type d\'engagement';
+                            }),
 
                         Forms\Components\DatePicker::make('date_engagement')
                             ->label('Date d\'engagement')

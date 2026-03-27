@@ -173,14 +173,21 @@
     </div>
 
     <div class="info-line">
-        <strong>Type d'engagement:</strong> {{ $engagement->type_engagement }} -
-        N°
-        @if ($engagement->type_engagement === 'BC')
-            {{ $bonCommande->reference_document ?? 'N/A' }}
-        @elseif($engagement->type_engagement === 'DA')
-            {{ $decisionAdministrative->numero ?? 'N/A' }}
+        <strong>Type d'engagement:</strong>
+        @if ($engagement->estBonCommande())
+            {{ $engagement->engageable?->typeEngagement?->libelle ?? $engagement->type_engagement }}
+        @elseif ($engagement->estDecision())
+            {{ $engagement->engageable?->typeDecision?->libelle ?? $engagement->type_engagement }}
         @else
-            {{ $engagement->engageable->numero ?? 'N/A' }}
+            {{ $engagement->type_engagement }}
+        @endif
+        - N°
+        @if ($engagement->estBonCommande())
+            {{ $engagement->engageable?->reference_document ?? $engagement->engageable?->numero ?? 'N/A' }}
+        @elseif ($engagement->estDecision())
+            {{ $engagement->engageable?->numero ?? 'N/A' }}
+        @else
+            {{ $engagement->engageable?->numero ?? 'N/A' }}
         @endif
     </div>
 
