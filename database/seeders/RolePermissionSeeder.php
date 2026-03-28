@@ -137,7 +137,7 @@ class RolePermissionSeeder extends Seeder
 
             // Mémoire de dépense
             'valider_memoire_depense',
-            'publier_memoire_depense',
+            'transformer_memoire_depense_en_da',
 
             // Workflow / Transmissions
             'transmettre_document',
@@ -185,7 +185,7 @@ class RolePermissionSeeder extends Seeder
             'access_module_budget',
             'access_module_comptable',
             'access_module_marches',
-            'access_module_portal', 
+            'access_module_portal',
         ];
 
         foreach ($modulePermissions as $perm) {

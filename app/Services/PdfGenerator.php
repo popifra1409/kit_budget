@@ -14,87 +14,72 @@ class PdfGenerator
      */
     public static function genererMemoireDepense(MemoireDepense $memoire): string
     {
-        // Récupérer les paramètres de structure
-        $structure = ParametresStructure::getParametres();
-
-        if (!$structure) {
-            throw new \Exception('Paramètres de structure non configurés');
-        }
-
-        // Charger les lignes
         $memoire->load('lignes');
-
-        // Recalculer les totaux
         $memoire->calculerTotaux();
 
-        // Générer le PDF
-        $pdf = Pdf::loadView('pdf.memoire-depense', [
-            'memoire' => $memoire,
-            'structure' => $structure,
-        ]);
+        $donnees = self::preparerDonneesMemoireDepense($memoire);
 
-        // Configuration du PDF
-        $pdf->setPaper('A4', 'portrait');
+        $pdf = Pdf::loadView('pdf.memoire-depense', compact('donnees'))
+            ->setPaper('a4', 'landscape')
+            ->setOptions([
+                'defaultFont'          => 'DejaVu Sans',
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled'      => true,
+            ]);
 
-        // Nom du fichier
-        $nomFichier = 'memoire-depense-' . $memoire->numero . '.pdf';
+        $nomFichier   = 'memoire-depense-' . $memoire->numero . '.pdf';
         $cheminFichier = 'memoires-depense/' . $nomFichier;
+        \Storage::put($cheminFichier, $pdf->output());
 
-        // Sauvegarder le PDF
-        Storage::disk('public')->put($cheminFichier, $pdf->output());
-
-        // Mettre à jour le mémoire avec le chemin du PDF
         $memoire->fichier_pdf = $cheminFichier;
         $memoire->saveQuietly();
 
         return $cheminFichier;
     }
 
-    /**
-     * Télécharger le PDF du mémoire
-     */
     public static function telechargerMemoireDepense(MemoireDepense $memoire)
     {
-        $structure = ParametresStructure::getParametres();
-
-        if (!$structure) {
-            throw new \Exception('Paramètres de structure non configurés');
-        }
-
         $memoire->load('lignes');
         $memoire->calculerTotaux();
 
-        $pdf = Pdf::loadView('pdf.memoire-depense', [
-            'memoire' => $memoire,
-            'structure' => $structure,
-        ]);
+        $donnees = self::preparerDonneesMemoireDepense($memoire);
 
-        $pdf->setPaper('A4', 'portrait');
+        $pdf = Pdf::loadView('pdf.memoire-depense', compact('donnees'))
+            ->setPaper('a4', 'landscape')
+            ->setOptions([
+                'defaultFont'          => 'DejaVu Sans',
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled'      => true,
+            ]);
 
         return $pdf->download('memoire-depense-' . $memoire->numero . '.pdf');
     }
 
-    /**
-     * Afficher le PDF en ligne
-     */
     public static function afficherMemoireDepense(MemoireDepense $memoire)
     {
-        $structure = ParametresStructure::getParametres();
-
-        if (!$structure) {
-            throw new \Exception('Paramètres de structure non configurés');
-        }
-
         $memoire->load('lignes');
         $memoire->calculerTotaux();
 
-        $pdf = Pdf::loadView('pdf.memoire-depense', [
-            'memoire' => $memoire,
-            'structure' => $structure,
-        ]);
+        $donnees = self::preparerDonneesMemoireDepense($memoire);
 
-        $pdf->setPaper('A4', 'portrait');
+        $pdf = Pdf::loadView('pdf.memoire-depense', compact('donnees'))
+            ->setPaper('a4', 'landscape')
+            ->setOptions([
+                'defaultFont'          => 'DejaVu Sans',
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled'      => true,
+            ]);
 
         return $pdf->stream('memoire-depense-' . $memoire->numero . '.pdf');
+    }
+
+    // ✅ Méthode helper — prépare $donnees au format attendu par le template
+    private static function preparerDonneesMemoireDepense(MemoireDepense $memoire): array
+    {
+        return [
+            '_raw'            => $memoire,
+            'montant_lettres' => $memoire->montant_lettres
+                ?? \App\Services\NombreEnLettres::convertir($memoire->montant_ttc ?? 0),
+        ];
     }
 }

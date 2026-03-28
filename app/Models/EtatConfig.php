@@ -106,7 +106,7 @@ class EtatConfig extends Model
     public function estSupprimable(): bool
     {
         // Ne pas supprimer les états système
-        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement', 'bon_commande', 'bon_commande_simple', 'bordereau_engagement'];
+        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement', 'bon_commande', 'bon_commande_simple', 'bordereau_engagement', 'memoire_depense'];
         return !in_array($this->code, $etatsSysteme);
     }
 }

@@ -51,14 +51,16 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/cadre-logique/telecharger', [CadreLogiqueController::class, 'telecharger'])
         ->name('cadre-logique.telecharger');
 
-    // Mémoires de Dépenses - PDF
-    Route::prefix('memoire-depense')->group(function () {
-        Route::get('/{memoire}/pdf', [MemoireDepenseController::class, 'genererPdf'])
-            ->name('memoire-depense.pdf');
+    // ── Mémoires de Dépenses - PDF ──────────────────────────
+    Route::prefix('memoire-depense')
+        ->middleware(['module.access:budget'])  // ← ajouter
+        ->group(function () {
+            Route::get('/{memoire}/pdf', [MemoireDepenseController::class, 'genererPdf'])
+                ->name('memoire-depense.pdf');
 
-        Route::get('/{memoire}/preview', [MemoireDepenseController::class, 'afficherPdf'])
-            ->name('memoire-depense.preview');
-    });
+            Route::get('/{memoire}/preview', [MemoireDepenseController::class, 'afficherPdf'])
+                ->name('memoire-depense.preview');
+        });
 
     // PDF - Téléchargement et Affichage
     Route::prefix('pdf')->group(function () {

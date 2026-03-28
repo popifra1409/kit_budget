@@ -122,7 +122,7 @@ class DecisionAdministrative extends Model
     {
         static::creating(function ($decision) {
             if (!$decision->numero) {
-                $decision->numero = $decision->genererNumero();
+                $decision->numero = static::genererNumero();
             }
             if (!$decision->created_by) {
                 $decision->created_by = auth()->id();
@@ -408,9 +408,10 @@ class DecisionAdministrative extends Model
      * Générer le numéro de décision
      * Format: DA-YYYY-XXXXX
      */
-    public function genererNumero(): string
+    public static function genererNumero(): string
     {
-        $exercice = $this->exercice ?? \App\Models\Exercice::getActif();
+        // ✅ static — pas de $this
+        $exercice = \App\Models\Exercice::getActif();
 
         if (!$exercice) {
             throw new \Exception("Aucun exercice disponible pour générer le numéro");
@@ -419,19 +420,19 @@ class DecisionAdministrative extends Model
         $annee = substr($exercice->annee, -2);
 
         return \DB::transaction(function () use ($annee, $exercice) {
-            // ✅ withTrashed() — inclure les soft-deleted
             $dernier = self::withTrashed()
                 ->where('exercice_id', $exercice->id)
-                ->where('numero', 'like', "BC{$annee}-%")
+                ->where('numero', 'like', "DA{$annee}-%")  // ← DA pas BC
                 ->lockForUpdate()
                 ->orderBy('numero', 'desc')
                 ->first();
 
-            $nouveauNumero = $dernier
-                ? intval(substr($dernier->numero, -5)) + 1
-                : 1;
+            $sequence = 1;
+            if ($dernier && preg_match('/DA\d{2}-(\d+)/', $dernier->numero, $matches)) {
+                $sequence = intval($matches[1]) + 1;
+            }
 
-            return sprintf('BC%s-%05d', $annee, $nouveauNumero);
+            return sprintf('DA%s-%05d', $annee, $sequence);
         });
     }
 

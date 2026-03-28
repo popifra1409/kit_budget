@@ -23,6 +23,51 @@ class MemoireDepenseResource extends Resource
     protected static ?string $navigationGroup = 'Commandes & Engagement';
     protected static ?int    $navigationSort  = 30;
 
+    public static function canViewAny(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_any_memoire_depense');
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('view_memoire_depense');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('create_memoire_depense');
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->check()) return false;
+        if (!auth()->user()->can('update_memoire_depense')) return false;
+        return $record->statut === 'brouillon';
+    }
+
+    public static function canDelete($record): bool
+    {
+        if (!auth()->check()) return false;
+        if (!auth()->user()->can('delete_memoire_depense')) return false;
+        return $record->statut === 'brouillon';
+    }
+
+    public static function canValider($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('valider_memoire_depense');
+    }
+
+    public static function canTransformerEnDa($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('transformer_memoire_depense_en_da');
+    }
+
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -372,17 +417,65 @@ class MemoireDepenseResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+                // ── Aperçu modal ─────────────────────────────────────
+                Tables\Actions\Action::make('apercu')
+                    ->label('Aperçu')
+                    ->icon('heroicon-o-eye')
+                    ->color('info')
+                    ->modalHeading(fn($record) => 'Aperçu — ' . $record->numero)
+                    ->modalWidth('7xl')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Fermer')
+                    ->modalContent(function ($record) {
+                        $record->load('lignes');
+                        return view('filament.modals.apercu-memoire-depense', [
+                            'memoire' => $record,
+                        ]);
+                    }),
+
+                // ── PDF — après validation uniquement ────────────────
+                Tables\Actions\Action::make('pdf')
+                    ->label('PDF')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('success')
+                    ->visible(fn($record) => $record->statut !== 'brouillon')
+                    ->url(fn($record) => route('memoire-depense.pdf', $record))
+                    ->openUrlInNewTab(),
+
                 Tables\Actions\Action::make('valider')
-                    ->label('Valider')->icon('heroicon-o-check-circle')->color('success')
+                    ->label('Valider')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('warning')
                     ->requiresConfirmation()
-                    ->visible(fn($record) => $record->statut === 'brouillon')
+                    ->visible(
+                        fn($record) => $record->statut === 'brouillon'
+                            && static::canValider($record)
+                    )
                     ->action(function ($record) {
                         $record->update(['statut' => 'valide']);
-                        Notification::make()->success()
+                        \Filament\Notifications\Notification::make()
+                            ->success()
                             ->title('Mémoire validé')
                             ->body("Le mémoire {$record->numero} a été validé.")
                             ->send();
                     }),
+
+                // ── Transformer en DA ─────────────────────────────────
+                Tables\Actions\Action::make('transformer_en_da')
+                    ->label('→ DA')
+                    ->icon('heroicon-o-arrow-right-circle')
+                    ->color('primary')
+                    ->visible(
+                        fn($record) =>
+                        in_array($record->statut, ['valide', 'approuve'])
+                            && !$record->decision_administrative_id
+                            && static::canTransformerEnDa($record)
+                    )
+                    ->url(
+                        fn($record) =>
+                        // Ouvre la page View où se trouve le modal complet
+                        static::getUrl('view', ['record' => $record])
+                    ),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
