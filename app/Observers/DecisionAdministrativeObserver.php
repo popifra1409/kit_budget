@@ -30,6 +30,33 @@ class DecisionAdministrativeObserver
         $this->calculerMontants($da);
     }
 
+    public function updated(DecisionAdministrative $da): void
+    {
+        if ($da->isDirty('engagee') && $da->engagee) {
+            $memoire = \App\Models\MemoireDepense::where(
+                'decision_administrative_id',
+                $da->id
+            )->first();
+
+            if ($memoire) {
+                // ✅ Requête directe — évite le problème de relation non chargée
+                $numeroEngagement = \App\Models\Engagement::where('engageable_type', get_class($da))
+                    ->where('engageable_id', $da->id)
+                    ->value('numero');
+
+                $memoire->updateQuietly([
+                    'numero_ce' => $numeroEngagement,
+                    'date_ce'   => $da->date_engagement,
+                ]);
+
+                \Log::info('Mémoire mis à jour depuis observer DA', [
+                    'memoire'    => $memoire->numero,
+                    'numero_ce'  => $numeroEngagement,
+                    'date_ce'    => $da->date_engagement,
+                ]);
+            }
+        }
+    }
     /**
      * Calculer les montants selon le mode
      */

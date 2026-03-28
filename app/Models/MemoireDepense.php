@@ -143,7 +143,7 @@ class MemoireDepense extends Model
      */
     public function peutEtreTransformeEnDA(): bool
     {
-        return in_array($this->statut, ['valide', 'approuve'])
+        return $this->statut === 'valide'
             && !$this->decision_administrative_id;
     }
 

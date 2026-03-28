@@ -1,5 +1,4 @@
 @php
-    // ✅ DÉSACTIVER LE FOOTER AUTOMATIQUE DU MASTER
     $disableFooter = true;
 
     $memoire = $donnees['_raw'] ?? $memoire ?? null;
@@ -8,12 +7,22 @@
 
     $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
-    $memoire->load('lignes');
+    // ✅ Charger les relations DA et engagement
+    $memoire->load([
+        'lignes',
+        'decisionAdministrative.typeDecision',
+        'decisionAdministrative.engagement',
+    ]);
+
     $lignes = $memoire->lignes->sortBy('numero_ligne');
 
+    // ── DA et engagement liés ─────────────────────────────────
+    $da = $memoire->decisionAdministrative;
+    $engagement = $da?->engagement;
+
     // ── Pagination ────────────────────────────────────────────
-    $lignesPage1 = 12; // lignes page 1 (en-tête complet prend de la place)
-    $lignesPagesSuivantes = 20; // lignes pages suivantes
+    $lignesPage1 = 12;
+    $lignesPagesSuivantes = 20;
 
     $totalLignes = $lignes->count();
     $lignesChunked = collect();
@@ -22,7 +31,6 @@
     if ($totalLignes > 0) {
         $lignesChunked->push($lignesRest->take($lignesPage1));
         $lignesRest = $lignesRest->skip($lignesPage1);
-
         while ($lignesRest->count() > 0) {
             $lignesChunked->push($lignesRest->take($lignesPagesSuivantes));
             $lignesRest = $lignesRest->skip($lignesPagesSuivantes);
@@ -33,7 +41,6 @@
 
     $nombrePages = $lignesChunked->count();
 
-    // ── Montant en lettres ────────────────────────────────────
     $montantLettres = $donnees['montant_lettres']
         ?? $memoire->montant_lettres
         ?? \App\Services\NombreEnLettres::convertir($memoire->montant_ttc ?? 0);
@@ -61,7 +68,6 @@
             padding-top: 1cm;
         }
 
-        /* ── En-tête document ─────────────────────────────────── */
         .md-header-row {
             display: table;
             width: 100%;
@@ -105,18 +111,41 @@
             text-align: center;
             font-size: 9pt;
             font-style: italic;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
+        /* ── Références ─────────────────────────────────────── */
         .md-refs {
             display: table;
             width: 100%;
             font-size: 8.5pt;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
         .md-refs td {
             padding: 2px 4px;
+        }
+
+        /* ── Bandeau DA / Engagement ─────────────────────────── */
+        .md-da-band {
+            display: table;
+            width: 100%;
+            background: #f0f4ff;
+            border: 1px solid #b0c0e8;
+            border-radius: 3px;
+            padding: 4px 8px;
+            font-size: 8pt;
+            margin-bottom: 5px;
+        }
+
+        .md-da-band td {
+            border: none;
+            padding: 2px 6px;
+        }
+
+        .md-da-label {
+            font-weight: bold;
+            color: #1e3a8a;
         }
 
         /* ── Tableau lignes ───────────────────────────────────── */
@@ -161,7 +190,6 @@
             border-top: 2px solid #000;
         }
 
-        /* ── Montant en lettres ───────────────────────────────── */
         .md-lettres {
             border: 1px solid #000;
             padding: 5px 10px;
@@ -171,7 +199,6 @@
             page-break-inside: avoid;
         }
 
-        /* ── Signature ────────────────────────────────────────── */
         .md-signature {
             margin-top: 20px;
             page-break-inside: avoid;
@@ -184,7 +211,6 @@
             font-size: 8.5pt;
         }
 
-        /* ── Pagination ───────────────────────────────────────── */
         .page-break {
             page-break-after: always;
             break-after: page;
@@ -210,46 +236,41 @@
 
     @foreach($lignesChunked as $pageIndex => $lignesPage)
 
-        {{-- ── En-tête page 1 ──────────────────────────────────── --}}
         @if($pageIndex === 0)
 
+            {{-- ── Numéro + Exercice ────────────────────────────── --}}
             <div class="md-header-row">
-                <div class="md-header-cell left">
-                    <strong>SERVICE :</strong>
-                    {{ strtoupper($parametres?->direction ?? 'DIRECTION GÉNÉRALE') }}
+                <div class="md-header-cell left" style="font-size:8pt;">
+                    Exercice : <strong>{{ $memoire->exercice }}</strong>
                 </div>
                 <div class="md-header-cell right">
                     <div class="md-numero-box">N° {{ $memoire->numero }}</div>
                 </div>
             </div>
 
-            <div class="md-header-row" style="margin-bottom:3px;">
-                <div class="md-header-cell left" style="font-size:8pt;">
-                    Exercice : <strong>{{ $memoire->exercice }}</strong>
-                </div>
-                <div class="md-header-cell right" style="font-size:8pt;">
-                    Imprimé le {{ now()->format('d/m/Y à H:i') }}
-                </div>
+            <div style="text-align:right; font-size:7.5pt; color:#666; margin-bottom:4px;">
+                Imprimé le {{ now()->format('d/m/Y à H:i') }}
             </div>
 
             <div class="md-titre">MÉMOIRE DE DÉPENSE</div>
             <div class="md-objet">{{ strtoupper($memoire->objet ?? '') }}</div>
 
+            {{-- ── Références ──────────────────────────────────── --}}
             <table class="md-refs">
                 <tr>
-                    @if($memoire->numero_ce)
-                        <td>
-                            <strong>CE N° :</strong> {{ $memoire->numero_ce }}
-                            @if($memoire->date_ce)
-                                du {{ $memoire->date_ce->format('d/m/Y') }}
-                            @endif
-                        </td>
-                    @endif
                     @if($memoire->numero_decision)
                         <td>
                             <strong>Décision N° :</strong> {{ $memoire->numero_decision }}
                             @if($memoire->date_decision)
                                 du {{ $memoire->date_decision->format('d/m/Y') }}
+                            @endif
+                        </td>
+                    @endif
+                    @if($memoire->numero_ce)
+                        <td>
+                            <strong>CE N° :</strong> {{ $memoire->numero_ce }}
+                            @if($memoire->date_ce)
+                                du {{ $memoire->date_ce->format('d/m/Y') }}
                             @endif
                         </td>
                     @endif
@@ -259,6 +280,38 @@
                     </td>
                 </tr>
             </table>
+
+            {{-- ✅ NOUVEAU — Bandeau DA + Engagement (si transformé) ──── --}}
+            {{-- @if($da || $engagement)
+            <table class="md-da-band">
+                <tr>
+                    @if($da)
+                    <td>
+                        <span class="md-da-label">N° Décision :</span>
+                        {{ $da->numero }}
+                        @if($da->typeDecision)
+                        <span style="color:#475569;">({{ $da->typeDecision->libelle }})</span>
+                        @endif
+                        @if($da->date_decision)
+                        — du {{ \Carbon\Carbon::parse($da->date_decision)->format('d/m/Y') }}
+                        @endif
+                    </td>
+                    @endif
+                    @if($engagement)
+                    <td>
+                        <span class="md-da-label">N° Engagement :</span>
+                        {{ $engagement->numero }}
+                        @if($engagement->date_engagement)
+                        — du {{ \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') }}
+                        @endif
+                        <span style="color:#166534;">
+                            ({{ number_format((float) $engagement->montant_engage, 0, ',', ' ') }} FCFA)
+                        </span>
+                    </td>
+                    @endif
+                </tr>
+            </table>
+            @endif --}}
 
         @else
             {{-- ── En-tête pages suivantes ─────────────────────── --}}
@@ -306,22 +359,20 @@
                     </tr>
                 @endforelse
 
-                {{-- Lignes vides pour combler la dernière page --}}
-                @if($loop->last)
-                    @php $nbVides = max(0, 5 - $lignesPage->count()); @endphp
-                    @for($v = 0; $v < $nbVides; $v++)
-                        <tr style="height:7mm;">
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                        </tr>
+                {{-- @if($loop->last)
+                @php $nbVides = max(0, 5 - $lignesPage->count()); @endphp
+                @for($v = 0; $v < $nbVides; $v++) <tr style="height:7mm;">
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    </tr>
                     @endfor
-                @endif
+                    @endif --}}
             </tbody>
 
             @if($loop->last)
@@ -339,7 +390,6 @@
             @endif
         </table>
 
-        {{-- ── Bloc final : lettres + signature ─────────────────── --}}
         @if($loop->last)
 
             <div class="md-lettres" style="page-break-inside:avoid;">
@@ -350,10 +400,7 @@
             <div class="md-signature clearfix" style="page-break-inside:avoid;">
                 <div class="md-signature-right">
                     <div style="margin-bottom:4px; font-size:8pt;">
-                        {{ $memoire->lieu_signature ?? 'Yaoundé' }}, le
-                        {{ $memoire->date_signature?->format('d/m/Y')
-                        ?? $memoire->date_memoire?->format('d/m/Y')
-                        ?? now()->format('d/m/Y') }}
+                        {{ $memoire->lieu_signature ?? 'Yaoundé' }}, le ________________________________
                     </div>
                     <div style="font-weight:bold; font-size:9pt; text-transform:uppercase;">
                         {{ $memoire->signataire_fonction
@@ -373,10 +420,7 @@
 
         @endif
 
-        {{-- Numéro de page --}}
-        <div class="page-number">
-            Page {{ $pageIndex + 1 }} / {{ $nombrePages }}
-        </div>
+        <div class="page-number">Page {{ $pageIndex + 1 }} / {{ $nombrePages }}</div>
 
         @if(!$loop->last)
             <div class="page-break"></div>

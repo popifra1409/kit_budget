@@ -56,7 +56,10 @@ class ViewMemoireDepense extends ViewRecord
                 ->label('Valider')
                 ->icon('heroicon-o-check-circle')
                 ->color('warning')
-                ->visible(fn() => $this->record->statut === 'brouillon')
+                ->visible(
+                    fn() => $this->record->statut === 'brouillon'
+                        && static::getResource()::canValider($this->record)
+                )
                 ->requiresConfirmation()
                 ->modalHeading('Valider le mémoire')
                 ->modalDescription(fn() => "Valider le mémoire {$this->record->numero} ?")
@@ -200,8 +203,10 @@ class ViewMemoireDepense extends ViewRecord
                 ->icon('heroicon-o-arrow-right-circle')
                 ->color('primary')
                 ->visible(
-                    fn() => in_array($this->record->statut, ['valide', 'approuve'])
-                        && !$this->record->da_id  // pas déjà transformé
+                    fn() =>
+                    $this->record->statut === 'valide'
+                        && !$this->record->decision_administrative_id
+                        && static::getResource()::canTransformerEnDa($this->record)
                 )
                 ->modalHeading('Transformer en Décision Administrative')
                 ->modalDescription('Le mémoire sera converti en DA. Complétez les informations manquantes.')
@@ -323,6 +328,12 @@ class ViewMemoireDepense extends ViewRecord
                             'statut'            => 'brouillon',
                             'observations'      => $data['observations'] ?? null,
                             'created_by'        => auth()->id(),
+                        ]);
+                        $this->record->update([
+                            'decision_administrative_id' => $da->id,
+                            'numero_decision'             => $da->numero,
+                            'date_decision'               => $da->date_decision,
+                            'statut'                      => 'transforme',
                         ]);
 
                         // ── Marquer le mémoire comme transformé ───

@@ -19,7 +19,7 @@ class PdfGenerator
 
         $donnees = self::preparerDonneesMemoireDepense($memoire);
 
-        $pdf = Pdf::loadView('pdf.memoire-depense', compact('donnees'))
+        $pdf = Pdf::loadView('pdf.templates.memoire-depense', compact('donnees'))
             ->setPaper('a4', 'landscape')
             ->setOptions([
                 'defaultFont'          => 'DejaVu Sans',
@@ -44,7 +44,7 @@ class PdfGenerator
 
         $donnees = self::preparerDonneesMemoireDepense($memoire);
 
-        $pdf = Pdf::loadView('pdf.memoire-depense', compact('donnees'))
+        $pdf = Pdf::loadView('pdf.templates.memoire-depense', compact('donnees'))
             ->setPaper('a4', 'landscape')
             ->setOptions([
                 'defaultFont'          => 'DejaVu Sans',
@@ -62,7 +62,7 @@ class PdfGenerator
 
         $donnees = self::preparerDonneesMemoireDepense($memoire);
 
-        $pdf = Pdf::loadView('pdf.memoire-depense', compact('donnees'))
+        $pdf = Pdf::loadView('pdf.templates.memoire-depense', compact('donnees'))
             ->setPaper('a4', 'landscape')
             ->setOptions([
                 'defaultFont'          => 'DejaVu Sans',

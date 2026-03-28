@@ -395,7 +395,7 @@ class MemoireDepenseResource extends Resource
                         'secondary' => 'brouillon',
                         'success'   => 'valide',
                         'info'      => 'transmis',
-                        'primary'   => 'approuve',
+                        'warning'   => 'transforme',
                         'danger'    => 'annule',
                     ]),
 
@@ -407,11 +407,11 @@ class MemoireDepenseResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('statut')
                     ->options([
-                        'brouillon' => 'Brouillon',
-                        'valide'    => 'Validé',
-                        'transmis'  => 'Transmis',
-                        'approuve'  => 'Approuvé',
-                        'annule'    => 'Annulé',
+                        'brouillon'  => 'Brouillon',
+                        'valide'     => 'Validé',
+                        'transmis'   => 'Transmis',
+                        'transforme' => 'Transformé en DA',
+                        'annule'     => 'Annulé',
                     ]),
             ])
             ->actions([
@@ -467,15 +467,11 @@ class MemoireDepenseResource extends Resource
                     ->color('primary')
                     ->visible(
                         fn($record) =>
-                        in_array($record->statut, ['valide', 'approuve'])
+                        $record->statut === 'valide'
                             && !$record->decision_administrative_id
                             && static::canTransformerEnDa($record)
                     )
-                    ->url(
-                        fn($record) =>
-                        // Ouvre la page View où se trouve le modal complet
-                        static::getUrl('view', ['record' => $record])
-                    ),
+                    ->url(fn($record) => static::getUrl('view', ['record' => $record])),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

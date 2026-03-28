@@ -11,9 +11,11 @@ use Filament\Support\Facades\FilamentView;
 use Illuminate\Support\Facades\Blade;
 use App\Models\LignePrevisionRecette;
 use App\Observers\LignePrevisionRecetteObserver;
+use App\Observers\DecisionAdministrativeObserver;
 use App\Http\Responses\CustomLogoutResponse;
 use Filament\Http\Responses\Auth\Contracts\LogoutResponse;
 use App\Models\BonCommande;
+use App\Models\DecisionAdministrative;
 use App\Observers\BonCommandeObserver;
 use App\Models\PieceDossier;
 use App\Observers\PieceDossierObserver;
@@ -79,6 +81,7 @@ class AppServiceProvider extends ServiceProvider
 
         ]);
 
+        DecisionAdministrative::observe(DecisionAdministrativeObserver::class);
         LignePrevisionRecette::observe(LignePrevisionRecetteObserver::class);
         // Enregistrer l'observer BonCommande
         BonCommande::observe(BonCommandeObserver::class);
