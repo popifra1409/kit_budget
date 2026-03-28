@@ -31,12 +31,14 @@ class RecetteReelle extends Model
     ];
 
     protected $casts = [
-        'montant' => 'decimal:2',
-        'date_recette' => 'date',
+        'montant'               => 'decimal:2',
+        'date_recette'          => 'date',
         'date_comptabilisation' => 'date',
-        'mois' => 'integer',
-        'annee' => 'integer',
+        'mois'                  => 'integer',
+        'annee'                 => 'integer',
     ];
+
+    protected static bool $processing = false;
 
     // ====================================
     // RELATIONS
@@ -60,17 +62,14 @@ class RecetteReelle extends Model
     {
         return $this->statut === 'prevue';
     }
-
     public function estEncaissee(): bool
     {
         return $this->statut === 'encaissee';
     }
-
     public function estComptabilisee(): bool
     {
         return $this->statut === 'comptabilisee';
     }
-
     public function estValidee(): bool
     {
         return $this->statut === 'validee';
@@ -82,76 +81,63 @@ class RecetteReelle extends Model
 
     public function comptabiliser(): bool
     {
-        if (!$this->estEncaissee()) {
-            return false;
-        }
+        if (!$this->estEncaissee()) return false;
         $this->update(['statut' => 'comptabilisee']);
         return true;
     }
 
     public function valider(int $userId): bool
     {
-        if (!$this->estComptabilisee()) {
-            return false;
-        }
+        if (!$this->estComptabilisee()) return false;
         $this->update([
-            'statut' => 'validee',
+            'statut'        => 'validee',
             'validateur_id' => $userId,
-            'validee_le' => now(),
+            'validee_le'    => now(),
         ]);
         return true;
     }
 
     // ====================================
-    // BOOT
+    // GÉNÉRATION NUMÉRO
     // ====================================
-    /**
-     * Générer un numéro unique de recette réelle
-     * Format : REC-2026-000001
-     */
+
     public static function genererNumero(int $annee): string
     {
-        $dernier = static::where('annee', $annee)
-            ->orderByDesc('id')
-            ->first();
+        return \DB::transaction(function () use ($annee) {
+            $dernier = static::withTrashed()
+                ->where('annee', $annee)
+                ->lockForUpdate()
+                ->orderByDesc('id')
+                ->first();
 
-        $numero = 1;
+            $numero = 1;
+            if ($dernier && preg_match('/REC-\d{4}-(\d+)/', $dernier->numero, $matches)) {
+                $numero = intval($matches[1]) + 1;
+            }
 
-        if ($dernier && preg_match('/REC-\d{4}-(\d+)/', $dernier->numero, $matches)) {
-            $numero = intval($matches[1]) + 1;
-        }
-
-        return sprintf(
-            'REC-%d-%06d',
-            $annee,
-            $numero
-        );
+            return sprintf('REC-%d-%06d', $annee, $numero);
+        });
     }
 
-    protected static $processing = false;
+    // ====================================
+    // BOOT
+    // ====================================
 
     protected static function boot()
     {
         parent::boot();
 
+        // ── Création ────────────────────────────────────────────
         static::creating(function ($recette) {
-
-            // ── Charger la mensuelle via ID, pas via relation ──────
             $mensuelle = \App\Models\PrevisionRecetteMensuelle::find(
                 $recette->prevision_recette_mensuelle_id
             );
-
-            if (!$mensuelle) {
-                throw new \RuntimeException('Prévision mensuelle manquante');
-            }
+            if (!$mensuelle) throw new \RuntimeException('Prévision mensuelle manquante');
 
             $ligne = \App\Models\LignePrevisionRecette::find(
                 $mensuelle->ligne_prevision_recette_id
             );
-
-            if (!$ligne) {
-                throw new \RuntimeException('Ligne de prévision introuvable');
-            }
+            if (!$ligne) throw new \RuntimeException('Ligne de prévision introuvable');
 
             $recette->exercice_id       = $mensuelle->exercice_id;
             $recette->mois              = $mensuelle->mois;
@@ -159,99 +145,122 @@ class RecetteReelle extends Model
             $recette->code_nomenclature = $ligne->code_nomenclature;
 
             if (empty($recette->numero)) {
-                // ✅ Passer l'ANNÉE, pas l'exercice_id
                 $recette->numero = self::genererNumero($mensuelle->annee);
             }
         });
 
+        // ── Après création ───────────────────────────────────────
         static::created(function ($recette) {
-            if (self::$processing) return;
-            self::$processing = true;
+            self::recalculerDepuisId($recette->prevision_recette_mensuelle_id);
+        });
 
-            // ── Recharger proprement via ID ────────────────────────
-            $prevision = \App\Models\PrevisionRecetteMensuelle::find(
-                $recette->prevision_recette_mensuelle_id
-            );
+        // ✅ NOUVEAU — Après modification
+        static::updated(function ($recette) {
+            // Recalculer la mensuelle courante
+            self::recalculerDepuisId($recette->prevision_recette_mensuelle_id);
 
-            if ($prevision) {
-                $montantRecouvre = $prevision->recettesReelles()
-                    ->whereIn('statut', ['encaissee', 'comptabilisee', 'validee'])
-                    ->sum('montant');
-
-                $prevision->updateQuietly([
-                    'montant_recouvre'  => $montantRecouvre,
-                    'ecart'             => $montantRecouvre - $prevision->montant_prevu,
-                    'taux_realisation'  => $prevision->montant_prevu == 0
-                        ? 0
-                        : ($montantRecouvre / $prevision->montant_prevu) * 100,
-                ]);
-
-                $ligne = \App\Models\LignePrevisionRecette::find(
-                    $prevision->ligne_prevision_recette_id
-                );
-
-                if ($ligne) {
-                    $mensuelles = \App\Models\PrevisionRecetteMensuelle::where(
-                        'ligne_prevision_recette_id',
-                        $ligne->id
-                    )->get();
-
-                    foreach ($mensuelles as $m) {
-                        $cumulePrevu     = \App\Models\PrevisionRecetteMensuelle::where(
-                            'ligne_prevision_recette_id',
-                            $ligne->id
-                        )->where('mois', '<=', $m->mois)->sum('montant_prevu');
-
-                        $cumuleRecouvre  = \App\Models\PrevisionRecetteMensuelle::where(
-                            'ligne_prevision_recette_id',
-                            $ligne->id
-                        )->where('mois', '<=', $m->mois)->sum('montant_recouvre');
-
-                        $m->updateQuietly([
-                            'montant_cumule_prevu'    => $cumulePrevu,
-                            'montant_cumule_recouvre' => $cumuleRecouvre,
-                            'taux_realisation_cumule' => $cumulePrevu == 0
-                                ? 0
-                                : ($cumuleRecouvre / $cumulePrevu) * 100,
-                        ]);
-                    }
-
-                    // Mettre à jour la ligne annuelle
-                    $totalRecouvre = $mensuelles->sum('montant_recouvre');
-                    $ligne->updateQuietly([
-                        'montant_recouvre'  => $totalRecouvre,
-                        'ecart'             => $totalRecouvre - $ligne->montant_rectifie,
-                        'taux_recouvrement' => $ligne->montant_rectifie == 0
-                            ? 0
-                            : ($totalRecouvre / $ligne->montant_rectifie) * 100,
-                    ]);
+            // Si la mensuelle liée a changé → recalculer aussi l'ancienne
+            if ($recette->wasChanged('prevision_recette_mensuelle_id')) {
+                $ancienId = $recette->getOriginal('prevision_recette_mensuelle_id');
+                if ($ancienId && $ancienId !== $recette->prevision_recette_mensuelle_id) {
+                    self::recalculerDepuisId($ancienId);
                 }
             }
+        });
 
-            self::$processing = false;
+        // ✅ NOUVEAU — Après suppression (soft delete)
+        static::deleted(function ($recette) {
+            self::recalculerDepuisId($recette->prevision_recette_mensuelle_id);
         });
     }
 
+    // ====================================
+    // RECALCUL CENTRALISÉ
+    // ====================================
+
     /**
-     * Mettre à jour la prévision mensuelle et la ligne annuelle
+     * Recalcule la prévision mensuelle, ses cumulés et la ligne annuelle
+     * depuis l'ID de la prévision mensuelle — sans passer par les accessors decimal
      */
+    protected static function recalculerDepuisId(?int $mensuelleId): void
+    {
+        if (!$mensuelleId || self::$processing) return;
+
+        self::$processing = true;
+
+        try {
+            $prevision = \App\Models\PrevisionRecetteMensuelle::find($mensuelleId);
+            if (!$prevision) return;
+
+            // ── 1. Recalculer le montant recouvré du mois ────────
+            $montantRecouvre = \DB::table('recettes_reelles')
+                ->where('prevision_recette_mensuelle_id', $mensuelleId)
+                ->whereIn('statut', ['encaissee', 'comptabilisee', 'validee'])
+                ->whereNull('deleted_at')
+                ->sum(\DB::raw('CAST(montant AS FLOAT)'));
+
+            $montantRecouvre = (float) $montantRecouvre;
+            $montantPrevu    = (float) $prevision->montant_prevu;
+
+            $prevision->updateQuietly([
+                'montant_recouvre'  => $montantRecouvre,
+                'ecart'             => $montantRecouvre - $montantPrevu,
+                'taux_realisation'  => $montantPrevu > 0
+                    ? round($montantRecouvre / $montantPrevu * 100, 2)
+                    : 0,
+            ]);
+
+            // ── 2. Recalculer les cumulés de toute la ligne ───────
+            $ligneId    = $prevision->ligne_prevision_recette_id;
+            $mensuelles = \App\Models\PrevisionRecetteMensuelle::where(
+                'ligne_prevision_recette_id',
+                $ligneId
+            )->orderBy('mois')->get();
+
+            $cumulPrevu    = 0;
+            $cumulRecouvre = 0;
+
+            foreach ($mensuelles as $m) {
+                $cumulPrevu    += (float) $m->montant_prevu;
+                $cumulRecouvre += (float) $m->montant_recouvre;
+
+                $m->updateQuietly([
+                    'montant_cumule_prevu'    => $cumulPrevu,
+                    'montant_cumule_recouvre' => $cumulRecouvre,
+                    'taux_realisation_cumule' => $cumulPrevu > 0
+                        ? round($cumulRecouvre / $cumulPrevu * 100, 2)
+                        : 0,
+                ]);
+            }
+
+            // ── 3. Mettre à jour la ligne annuelle ────────────────
+            $totalRecouvre = $mensuelles->sum(fn($m) => (float)$m->montant_recouvre);
+            $ligne = \App\Models\LignePrevisionRecette::find($ligneId);
+
+            if ($ligne) {
+                $montantRectifie = (float) \DB::table('lignes_previsions_recettes')
+                    ->where('id', $ligneId)
+                    ->value(\DB::raw('CAST(montant_rectifie AS FLOAT)'));
+
+                $ligne->updateQuietly([
+                    'montant_recouvre'  => $totalRecouvre,
+                    'ecart'             => $totalRecouvre - $montantRectifie,
+                    'taux_recouvrement' => $montantRectifie > 0
+                        ? round($totalRecouvre / $montantRectifie * 100, 2)
+                        : 0,
+                ]);
+            }
+        } finally {
+            self::$processing = false;
+        }
+    }
+
+    // ====================================
+    // RECALCUL PUBLIC (appelable manuellement)
+    // ====================================
+
     public function recalculerPrevisions(): void
     {
-        $mensuelle = $this->previsionRecetteMensuelle;
-        if ($mensuelle) {
-            // Montant recouvré du mois
-            $mensuelle->calculerMontantRecouvre();
-            $mensuelle->calculerEcart();
-            $mensuelle->calculerTauxRealisation();
-            $mensuelle->calculerCumules();
-
-            // Montant recouvré de la ligne annuelle
-            $ligne = $mensuelle->lignePrevisionRecette;
-            if ($ligne) {
-                $ligne->calculerMontantRecouvre();
-                $ligne->calculerEcart();
-                $ligne->calculerTauxRecouvrement();
-            }
-        }
+        self::recalculerDepuisId($this->prevision_recette_mensuelle_id);
     }
 }

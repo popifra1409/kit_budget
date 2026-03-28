@@ -272,10 +272,8 @@ class OrdonnancePaiement extends Model
     */
     public static function genererNumero($engagement, string $type = 'standard'): string
     {
-        // Préfixe selon le type
         $prefixe = $type === 'impot' ? 'OPT-' : 'OP-';
 
-        // Si ID, charger l'engagement
         if (is_numeric($engagement)) {
             $engagement = \App\Models\Engagement::with('engageable')->find($engagement);
         }
@@ -284,46 +282,56 @@ class OrdonnancePaiement extends Model
             throw new \Exception("L'engagement est requis.");
         }
 
-        // Charger engageable si nécessaire
         if (!$engagement->relationLoaded('engageable')) {
             $engagement->load('engageable');
         }
 
-        // Obtenir le numéro du document source
         $numeroDocumentSource = $engagement->engageable?->numero
             ?? $engagement->reference_document;
 
-        // Si pas de numéro source, générer format par défaut
+        // ── Fallback séquentiel avec withTrashed ────────────────
         if (!$numeroDocumentSource) {
-            $annee = now()->format('y');
-            $sequence = static::where('type', $type)
-                ->whereYear('created_at', now()->year)
-                ->count() + 1;
+            return \DB::transaction(function () use ($prefixe, $type) {
+                $annee    = now()->format('y');
+                $prefixeA = $prefixe . $annee . '-';
 
-            return $prefixe . $annee . '-' . sprintf('%05d', $sequence);
+                // ✅ withTrashed() — inclure les soft-deleted
+                $dernier = static::withTrashed()
+                    ->where('numero', 'like', "{$prefixeA}%")
+                    ->lockForUpdate()
+                    ->orderBy('numero', 'desc')
+                    ->first();
+
+                $sequence = 1;
+                if ($dernier && preg_match('/(\d+)$/', $dernier->numero, $matches)) {
+                    $sequence = intval($matches[1]) + 1;
+                }
+
+                return $prefixeA . sprintf('%05d', $sequence);
+            });
         }
 
-        // Format final : OP-BC26-00001
-        return $prefixe . $numeroDocumentSource;
+        // ── Format basé sur le document source ──────────────────
+        // Ex: OP-BC26-00001 — pas de séquence, numéro unique par document
+        $base = $prefixe . $numeroDocumentSource;
+
+        // ✅ Vérifier si ce numéro existe déjà (soft-deleted inclus)
+        $existe = static::withTrashed()->where('numero', $base)->exists();
+
+        if ($existe) {
+            // Ajouter un suffixe séquentiel si collision
+            return \DB::transaction(function () use ($base) {
+                $count = static::withTrashed()
+                    ->where('numero', 'like', "{$base}%")
+                    ->lockForUpdate()
+                    ->count();
+
+                return $base . '-' . ($count + 1);
+            });
+        }
+
+        return $base;
     }
-
-    // public static function genererNumero(string $type = 'standard'): string
-    // {
-    //     $annee = Carbon::now()->format('y'); // 26
-    //     $prefix = $type === 'impot' ? 'OPT' : 'OP';
-
-    //     $pattern = "{$prefix}{$annee}-%";
-
-    //     $dernier = static::where('numero', 'like', $pattern)
-    //         ->orderBy('numero', 'desc')
-    //         ->value('numero');
-
-    //     $sequence = $dernier
-    //         ? ((int) substr($dernier, -5)) + 1
-    //         : 1;
-
-    //     return sprintf('%s%s-%05d', $prefix, $annee, $sequence);
-    // }
 
     public static function genererNumeroEmission(): string
     {

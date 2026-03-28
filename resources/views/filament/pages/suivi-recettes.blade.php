@@ -2,19 +2,19 @@
 <x-filament-panels::page>
 
     @php
-        $data = $this->getData();
-        $totaux = $this->getTotauxParMois();
-        $exercices = $this->getExercices();
-        $previsions = $this->getPrevisions();
-        $exercice = $this->exerciceId ? \App\Models\Exercice::find($this->exerciceId) : null;
-        $moisLabels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-        $moisActuel = now()->month;
-        $anneeActuelle = now()->year;
+        // $data = $this->getData();
+        // $totaux = $this->getTotauxParMois();
+        // $exercices = $this->getExercices();
+        // $previsions = $this->getPrevisions();
+        // $exercice = $this->exerciceId ? \App\Models\Exercice::find($this->exerciceId) : null;
+        // $moisLabels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+        // $moisActuel = now()->month;
+        // $anneeActuelle = now()->year;
 
-        $totalPrevu = collect($data)->sum('cumul_prevu');
-        $totalRecouvre = collect($data)->sum('cumul_recouvre');
-        $totalEcart = $totalRecouvre - $totalPrevu;
-        $tauxGlobal = $totalPrevu > 0 ? round(($totalRecouvre / $totalPrevu) * 100, 1) : 0;
+        // $totalPrevu = collect($data)->sum('cumul_prevu');
+        // $totalRecouvre = collect($data)->sum('cumul_recouvre');
+        // $totalEcart = $totalRecouvre - $totalPrevu;
+        // $tauxGlobal = $totalPrevu > 0 ? round(($totalRecouvre / $totalPrevu) * 100, 1) : 0;
     @endphp
 
     <style>
@@ -263,7 +263,7 @@
         }
     </style>
 
-    <div class="sr-wrap">
+    <div class="sr-wrap" wire:poll.10000ms>
 
         {{-- ── Filtres ────────────────────────────────────────── --}}
         <div class="filter-bar">
@@ -284,6 +284,26 @@
                     @endforeach
                 </select>
             @endif
+            {{-- Dans .filter-bar, après les selects --}}
+<button wire:click="actualiser"
+    style="background:var(--color-background-secondary);
+           border:1px solid var(--color-border-tertiary);
+           border-radius:var(--border-radius-md);
+           padding:.35rem .75rem; font-size:.82rem;
+           color:var(--color-text-secondary); cursor:pointer;
+           display:flex; align-items:center; gap:.35rem;">
+    <svg wire:loading.remove wire:target="actualiser"
+         width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+    </svg>
+    <svg wire:loading wire:target="actualiser"
+         class="animate-spin" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+    </svg>
+    Actualiser
+</button>
             <div style="position:relative; flex:1; max-width:320px;">
                 <input
                     type="text"
@@ -422,74 +442,56 @@
                             </thead>
 
                             <tbody>
-                                @foreach($data as $row)
-                                    <tr>
-                                        {{-- Code --}}
-                                        <td class="td-code">{{ $row['code'] }}</td>
+    @foreach($data as $row)
+    {{-- ✅ wire:key — force Livewire à recalculer chaque ligne --}}
+    <tr wire:key="row-{{ $row['id'] }}-{{ $lastRefresh }}">
+        <td class="td-code">{{ $row['code'] }}</td>
+        <td class="td-libelle" style="font-size:.76rem;">
+            <div style="font-weight:500;">{{ $row['libelle'] }}</div>
+        </td>
+        <td class="td-num td-prevu" style="font-weight:600;">
+            {{ number_format($row['prevu_annuel'], 0, ',', ' ') }}
+        </td>
 
-                                        {{-- Libellé --}}
-                                        <td class="td-libelle" style="font-size:.76rem;">
-                                            <div style="font-weight:500;">{{ $row['libelle'] }}</div>
-                                        </td>
+        @foreach(range(1, 12) as $m)
+        @php
+            $cell      = $row['mois'][$m];
+            $futur     = $cell['est_futur'] ?? false;
+            $taux      = $cell['taux'];
+            $tauxClass = $taux === null ? 'taux-na'
+                : ($taux >= 90 ? 'taux-ok' : ($taux >= 70 ? 'taux-warn' : 'taux-bad'));
+            $isActuel  = $m === $moisActuel && ($exercice?->annee ?? 0) === $anneeActuelle;
+        @endphp
+        <td class="td-num {{ $futur ? 'td-futur' : 'td-prevu' }} {{ $isActuel ? 'col-actuel' : '' }}">
+            {{ $cell['prevu'] > 0 ? number_format($cell['prevu'], 0, ',', ' ') : '—' }}
+        </td>
+        {{-- ✅ Colonne RÉEL — wire:key pour forcer le re-render --}}
+        <td class="td-num {{ $futur ? 'td-futur' : 'td-reel' }} {{ $isActuel ? 'col-actuel' : '' }}"
+            wire:key="reel-{{ $row['id'] }}-{{ $m }}-{{ $lastRefresh }}">
+            {{ $cell['recouvre'] > 0 ? number_format($cell['recouvre'], 0, ',', ' ') : '—' }}
+        </td>
+        <td class="td-num {{ $isActuel ? 'col-actuel' : '' }}">
+            @if($taux !== null && $cell['prevu'] > 0)
+                <span class="taux-badge {{ $tauxClass }}">{{ $taux }}%</span>
+            @else
+                <span class="taux-badge taux-na">—</span>
+            @endif
+        </td>
+        @endforeach
 
-                                        {{-- Prévu annuel --}}
-                                        <td class="td-num td-prevu" style="font-weight:600;">
-                                            {{ number_format($row['prevu_annuel'], 0, ',', ' ') }}
-                                        </td>
-
-                                        {{-- 12 mois --}}
-                                        @foreach(range(1, 12) as $m)
-                                            @php
-                                                $cell = $row['mois'][$m];
-                                                $futur = $cell['est_futur'] ?? false;
-                                                $taux = $cell['taux'];
-                                                $tauxClass = $taux === null ? 'taux-na'
-                                                    : ($taux >= 90 ? 'taux-ok' : ($taux >= 70 ? 'taux-warn' : 'taux-bad'));
-                                            @endphp
-                                            <td
-                                                class="td-num {{ $futur ? 'td-futur' : 'td-prevu' }} {{ $m === $moisActuel && $exercice?->annee === $anneeActuelle ? 'col-actuel' : '' }}">
-                                                @if($cell['prevu'] > 0)
-                                                    {{ number_format($cell['prevu'], 0, ',', ' ') }}
-                                                @else
-                                                    <span style="color:var(--color-text-tertiary);">—</span>
-                                                @endif
-                                            </td>
-                                            <td
-                                                class="td-num {{ $futur ? 'td-futur' : 'td-reel' }} {{ $m === $moisActuel && $exercice?->annee === $anneeActuelle ? 'col-actuel' : '' }}">
-                                                @if($cell['recouvre'] > 0)
-                                                    {{ number_format($cell['recouvre'], 0, ',', ' ') }}
-                                                @else
-                                                    <span style="color:var(--color-text-tertiary);">—</span>
-                                                @endif
-                                            </td>
-                                            <td
-                                                class="td-num {{ $m === $moisActuel && $exercice?->annee === $anneeActuelle ? 'col-actuel' : '' }}">
-                                                @if($taux !== null && $cell['prevu'] > 0)
-                                                    <span class="taux-badge {{ $tauxClass }}">{{ $taux }}%</span>
-                                                @else
-                                                    <span class="taux-badge taux-na">—</span>
-                                                @endif
-                                            </td>
-                                        @endforeach
-
-                                        {{-- Cumul Prévu --}}
-                                        <td class="td-num td-prevu" style="font-weight:600;">
-                                            {{ number_format($row['cumul_prevu'], 0, ',', ' ') }}
-                                        </td>
-
-                                        {{-- Cumul Réel --}}
-                                        <td class="td-num td-reel" style="font-weight:700;">
-                                            {{ number_format($row['cumul_recouvre'], 0, ',', ' ') }}
-                                        </td>
-
-                                        {{-- Écart --}}
-                                        <td class="td-num"
-                                            style="font-weight:600; color:{{ $row['ecart'] >= 0 ? '#166534' : '#991b1b' }};">
-                                            {{ $row['ecart'] >= 0 ? '+' : '' }}{{ number_format($row['ecart'], 0, ',', ' ') }}
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
+        <td class="td-num td-prevu" style="font-weight:600;">
+            {{ number_format($row['cumul_prevu'], 0, ',', ' ') }}
+        </td>
+        <td class="td-num td-reel" style="font-weight:700;"
+            wire:key="cumul-{{ $row['id'] }}-{{ $lastRefresh }}">
+            {{ number_format($row['cumul_recouvre'], 0, ',', ' ') }}
+        </td>
+        <td class="td-num" style="font-weight:600; color:{{ $row['ecart'] >= 0 ? '#166534' : '#991b1b' }};">
+            {{ $row['ecart'] >= 0 ? '+' : '' }}{{ number_format($row['ecart'], 0, ',', ' ') }}
+        </td>
+    </tr>
+    @endforeach
+</tbody>
 
                             {{-- LIGNE TOTAUX --}}
                             <tfoot>

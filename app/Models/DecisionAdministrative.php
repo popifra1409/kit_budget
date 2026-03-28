@@ -408,25 +408,31 @@ class DecisionAdministrative extends Model
      * Générer le numéro de décision
      * Format: DA-YYYY-XXXXX
      */
-    public static function genererNumero(): string
+    public function genererNumero(): string
     {
-        $annee = now()->year;
-        $anneeCourte = substr($annee, -2);
+        $exercice = $this->exercice ?? \App\Models\Exercice::getActif();
 
-        $prefixe = "DA{$anneeCourte}-";
-
-        // Trouver le dernier numéro de l'année
-        $dernier = static::where('numero', 'like', "{$prefixe}%")
-            ->orderBy('numero', 'desc')
-            ->first();
-
-        if ($dernier && preg_match('/DA\d{2}-(\d+)/', $dernier->numero, $matches)) {
-            $sequence = intval($matches[1]) + 1;
-        } else {
-            $sequence = 1;
+        if (!$exercice) {
+            throw new \Exception("Aucun exercice disponible pour générer le numéro");
         }
 
-        return sprintf('DA%s-%05d', $anneeCourte, $sequence);
+        $annee = substr($exercice->annee, -2);
+
+        return \DB::transaction(function () use ($annee, $exercice) {
+            // ✅ withTrashed() — inclure les soft-deleted
+            $dernier = self::withTrashed()
+                ->where('exercice_id', $exercice->id)
+                ->where('numero', 'like', "BC{$annee}-%")
+                ->lockForUpdate()
+                ->orderBy('numero', 'desc')
+                ->first();
+
+            $nouveauNumero = $dernier
+                ? intval(substr($dernier->numero, -5)) + 1
+                : 1;
+
+            return sprintf('BC%s-%05d', $annee, $nouveauNumero);
+        });
     }
 
     protected function genererNumeroEngagement(): string

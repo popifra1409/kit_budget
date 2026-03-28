@@ -270,23 +270,25 @@ class Engagement extends Model
      */
     public static function genererNumero(): string
     {
-        $annee = now()->year;
-        $anneeCourtе = substr($annee, -2);
+        $annee       = now()->year;
+        $anneeCourte = substr($annee, -2);
+        $prefixe     = "BE{$anneeCourte}-";
 
-        $prefixe = "BE{$anneeCourtе}-";
+        return \DB::transaction(function () use ($anneeCourte, $prefixe) {
+            // ✅ withTrashed() — inclure les soft-deleted
+            $dernier = static::withTrashed()
+                ->where('numero', 'like', "{$prefixe}%")
+                ->lockForUpdate()
+                ->orderBy('numero', 'desc')
+                ->first();
 
-        // Trouver le dernier numéro de l'année
-        $dernier = static::where('numero', 'like', "{$prefixe}%")
-            ->orderBy('numero', 'desc')
-            ->first();
-
-        if ($dernier && preg_match('/BE\d{2}-(\d+)/', $dernier->numero, $matches)) {
-            $sequence = intval($matches[1]) + 1;
-        } else {
             $sequence = 1;
-        }
+            if ($dernier && preg_match('/BE\d{2}-(\d+)/', $dernier->numero, $matches)) {
+                $sequence = intval($matches[1]) + 1;
+            }
 
-        return sprintf('BE%s-%05d', $anneeCourtе, $sequence);
+            return sprintf('BE%s-%05d', $anneeCourte, $sequence);
+        });
     }
 
     /**

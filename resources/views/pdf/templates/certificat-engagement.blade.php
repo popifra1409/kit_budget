@@ -48,7 +48,7 @@
             $totalEngageAvant = \App\Models\Engagement::where('budget_id', $ligneBudgetaire->budget_id)
                 ->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
                 ->where('id', '!=', $engagement->id)
-                ->whereIn('statut', ['provisoire', 'definitif']) // ← exclure les annulés
+                ->whereIn('statut', ['provisoire', 'definitif'])
                 ->sum('montant_engage');
 
             // Disponible AVANT cet engagement

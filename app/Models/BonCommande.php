@@ -777,32 +777,29 @@ class BonCommande extends Model
      */
     public function genererNumero(): string
     {
-        // ✅ Utiliser l'exercice du BC, ou l'exercice actif
         $exercice = $this->exercice ?? \App\Models\Exercice::getActif();
 
         if (!$exercice) {
             throw new \Exception("Aucun exercice disponible pour générer le numéro");
         }
 
-        // ✅ Prendre les 2 derniers chiffres de l'année
-        $annee = substr($exercice->annee, -2); // 2026 → 26
+        $annee = substr($exercice->annee, -2);
 
-        // Chercher le dernier BC de cet exercice
-        $dernier = self::where('exercice_id', $exercice->id)
-            ->where('numero', 'like', "BC{$annee}-%")
-            ->orderBy('numero', 'desc')
-            ->first();
+        return \DB::transaction(function () use ($annee, $exercice) {
+            // ✅ withTrashed() — inclure les soft-deleted
+            $dernier = self::withTrashed()
+                ->where('exercice_id', $exercice->id)
+                ->where('numero', 'like', "BC{$annee}-%")
+                ->lockForUpdate()
+                ->orderBy('numero', 'desc')
+                ->first();
 
-        if ($dernier) {
-            // Extraire le numéro séquentiel (les 5 derniers chiffres)
-            $dernierNumero = intval(substr($dernier->numero, -5));
-            $nouveauNumero = $dernierNumero + 1;
-        } else {
-            $nouveauNumero = 1;
-        }
+            $nouveauNumero = $dernier
+                ? intval(substr($dernier->numero, -5)) + 1
+                : 1;
 
-        // ✅ Format : BC26-00001
-        return sprintf('BC%s-%05d', $annee, $nouveauNumero);
+            return sprintf('BC%s-%05d', $annee, $nouveauNumero);
+        });
     }
 
     /**

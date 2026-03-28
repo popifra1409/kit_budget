@@ -58,15 +58,23 @@ class MemoireDepense extends Model
     /**
      * Générer le numéro automatique
      */
+    // MemoireDepense::genererNumero()
     public static function genererNumero(int $exercice): string
     {
-        $dernier = static::where('exercice', $exercice)
-            ->orderBy('id', 'desc')
-            ->first();
+        return \DB::transaction(function () use ($exercice) {
+            // ✅ withTrashed() — inclure les supprimés pour éviter les doublons
+            $dernier = static::withTrashed()
+                ->where('exercice', $exercice)
+                ->lockForUpdate()
+                ->orderBy('id', 'desc')
+                ->first();
 
-        $numero = $dernier ? intval(substr($dernier->numero, -4)) + 1 : 1;
+            $numero = $dernier
+                ? intval(substr($dernier->numero, -4)) + 1
+                : 1;
 
-        return 'MD-' . $exercice . '-' . str_pad($numero, 4, '0', STR_PAD_LEFT);
+            return 'MD-' . $exercice . '-' . str_pad($numero, 4, '0', STR_PAD_LEFT);
+        });
     }
 
     /**

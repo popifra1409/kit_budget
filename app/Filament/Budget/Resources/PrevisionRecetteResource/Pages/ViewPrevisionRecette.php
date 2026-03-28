@@ -48,18 +48,33 @@ class ViewPrevisionRecette extends ViewRecord
                 ->color('warning')
                 ->requiresConfirmation()
                 ->modalHeading('Générer les prévisions mensuelles')
-                ->modalDescription('Crée ou remet à jour les 12 prévisions mensuelles pour chaque ligne (montant annuel ÷ 12).')
-                ->visible(
-                    fn($record) => $record->lignesPrevisions()
-                        ->whereDoesntHave('previsionsMensuelles')
-                        ->exists()
-                )
+                ->modalDescription('Crée les 12 prévisions mensuelles pour chaque ligne (montant annuel ÷ 12).')
                 ->action(function ($record) {
                     $count = 0;
-                    foreach ($record->lignesPrevisions as $ligne) {
-                        PrevisionRecetteMensuelle::creerPrevisionsAnnuelles($ligne);
-                        $count++;
-                    }
+
+                    // ✅ Traiter par chunks — évite l'épuisement mémoire
+                    $record->lignesPrevisions()
+                        ->select('id', 'montant_rectifie', 'prevision_recette_id')
+                        ->chunk(10, function ($lignes) use (&$count) {
+                            foreach ($lignes as $ligne) {
+                                // Recharger avec la relation nécessaire uniquement
+                                $ligneComplete = \App\Models\LignePrevisionRecette::with([
+                                    'previsionRecette:id,exercice_id',
+                                    'previsionRecette.exerciceBudgetaire:id,annee',
+                                ])->find($ligne->id);
+
+                                if ($ligneComplete) {
+                                    \App\Models\PrevisionRecetteMensuelle::creerPrevisionsAnnuelles($ligneComplete);
+                                    $count++;
+                                }
+
+                                // ✅ Libérer la mémoire après chaque ligne
+                                unset($ligneComplete);
+                            }
+
+                            // ✅ Forcer le GC après chaque chunk
+                            gc_collect_cycles();
+                        });
 
                     \Filament\Notifications\Notification::make()
                         ->title('✅ Prévisions mensuelles générées')

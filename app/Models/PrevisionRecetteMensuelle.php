@@ -183,30 +183,66 @@ class PrevisionRecetteMensuelle extends Model
      */
     public static function creerPrevisionsAnnuelles(LignePrevisionRecette $ligne): void
     {
-        // Charger explicitement via la relation BelongsTo
-        $prevision = $ligne->previsionRecette()->with('exerciceBudgetaire')->first();
-        $exercice  = $prevision->exerciceBudgetaire;
+        // ✅ SQL brut — évite brick/math sur decimal:2
+        $ligneData = \DB::table('lignes_previsions_recettes')
+            ->where('id', $ligne->id)
+            ->selectRaw('id, prevision_recette_id, CAST(montant_rectifie AS FLOAT) as montant')
+            ->first();
+
+        if (!$ligneData) return;
+
+        $prevision = \DB::table('previsions_recettes')
+            ->where('id', $ligneData->prevision_recette_id)
+            ->select('exercice_id')
+            ->first();
+
+        if (!$prevision) {
+            throw new \RuntimeException("Prévision introuvable pour la ligne {$ligne->id}");
+        }
+
+        $exercice = \DB::table('exercices')
+            ->where('id', $prevision->exercice_id)
+            ->select('id', 'annee')
+            ->first();
 
         if (!$exercice) {
-            throw new \RuntimeException("Exercice introuvable pour la prévision {$prevision->id}");
+            throw new \RuntimeException("Exercice introuvable pour la prévision {$prevision->exercice_id}");
         }
 
-        $montantMensuel = (float) $ligne->montant_rectifie / 12;
+        // ✅ float natif — pas de BigDecimal
+        $montantMensuel = round((float)$ligneData->montant / 12, 2);
+        $now            = now()->toDateTimeString();
+
+        $values   = [];
+        $bindings = [];
 
         for ($mois = 1; $mois <= 12; $mois++) {
-            static::updateOrCreate(
-                [
-                    'ligne_prevision_recette_id' => $ligne->id,
-                    'mois'                       => $mois,
-                    'annee'                      => $exercice->annee,
-                ],
-                [
-                    'exercice_id'   => $exercice->id,
-                    'montant_prevu' => $montantMensuel,
-                    'actif'         => true,
-                ]
-            );
+            $values[]   = '(?,?,?,?,?,0,?,0,0,0,0,true,?,?)';
+            $bindings[] = $ligne->id;
+            $bindings[] = $exercice->id;
+            $bindings[] = $mois;
+            $bindings[] = $exercice->annee;
+            $bindings[] = $montantMensuel;
+            $bindings[] = -$montantMensuel;
+            $bindings[] = $now;
+            $bindings[] = $now;
         }
+
+        // ✅ 1 requête au lieu de 12
+        \DB::statement("
+        INSERT INTO previsions_recettes_mensuelles
+            (ligne_prevision_recette_id, exercice_id, mois, annee,
+             montant_prevu, montant_recouvre, ecart,
+             taux_realisation, montant_cumule_prevu,
+             montant_cumule_recouvre, taux_realisation_cumule,
+             actif, created_at, updated_at)
+        VALUES " . implode(',', $values) . "
+        ON CONFLICT ON CONSTRAINT unique_ligne_mois
+        DO UPDATE SET
+            montant_prevu = EXCLUDED.montant_prevu,
+            exercice_id   = EXCLUDED.exercice_id,
+            updated_at    = EXCLUDED.updated_at
+    ", $bindings);
     }
 
     public static function redistribuerMontant(LignePrevisionRecette $ligne, float $montantAnnuel): void
