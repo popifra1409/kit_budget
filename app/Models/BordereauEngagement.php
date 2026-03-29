@@ -312,10 +312,11 @@ class BordereauEngagement extends Model
         ]);
 
         $this->mouvements()->create([
-            'action'        => 'transmission',
-            'effectue_par'  => $user->id,
+            'action'          => 'transmission',
+            'effectue_par'    => $user->id,
             'destinataire_id' => $destinataire->id,
-            'commentaire'   => $observations,
+            'commentaire'     => $observations,
+            'date_action'     => now(),
         ]);
     }
 
