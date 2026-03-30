@@ -15,6 +15,7 @@ use App\Exceptions\CreditBudgetaireInsuffisantException;
 use App\Traits\GereTransmissions;
 use App\Traits\HasRecentValues;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DecisionAdministrative extends Model
 {
@@ -76,6 +77,9 @@ class DecisionAdministrative extends Model
         'service_emetteur_id',
         //selection de mode de saise
         'mode_saisie',
+        //simulation de decision
+        'est_previsionnel',
+        'da_reelle_id',
     ];
 
     protected $casts = [
@@ -115,6 +119,8 @@ class DecisionAdministrative extends Model
         'montant_feicom' => 'decimal:2',
 
         'engagee' => 'boolean',
+
+        'est_previsionnel' => 'boolean',
     ];
 
 
@@ -133,8 +139,8 @@ class DecisionAdministrative extends Model
         static::saving(function ($decision) {
             \Log::info('SAVING DA', [
                 'mode_saisie_attributes' => $decision->attributes['mode_saisie'] ?? 'NON DÉFINI',
-                'mode_saisie_property'   => $decision->mode_saisie ?? 'NON DÉFINI',
-                'dirty'                  => $decision->getDirty(),
+                'mode_saisie_property' => $decision->mode_saisie ?? 'NON DÉFINI',
+                'dirty' => $decision->getDirty(),
             ]);
 
             if (($decision->attributes['mode_saisie'] ?? 'calcule') === 'forfait') {
@@ -165,7 +171,8 @@ class DecisionAdministrative extends Model
             $champsDirty = array_keys($decision->getDirty());
             $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
 
-            if ($modificationAutorisee) return;
+            if ($modificationAutorisee)
+                return;
 
             if (
                 $decision->isDirty() &&
@@ -192,7 +199,7 @@ class DecisionAdministrative extends Model
             }
         });
     }
-    
+
     // ========================================
     // RELATIONS
     // ========================================
@@ -269,6 +276,16 @@ class DecisionAdministrative extends Model
     public function transmissions()
     {
         return $this->morphMany(Transmission::class, 'document');
+    }
+
+    public function daReelle(): BelongsTo
+    {
+        return $this->belongsTo(DecisionAdministrative::class, 'da_reelle_id');
+    }
+
+    public function decisionsPrevisionnelles(): HasMany
+    {
+        return $this->hasMany(DecisionAdministrative::class, 'da_reelle_id');
     }
 
     // ========================================
@@ -398,6 +415,18 @@ class DecisionAdministrative extends Model
         $brut = (float) ($this->montant_brut ?? 0);
 
         return $brut - $this->total_retenues_calcule;
+    }
+
+
+    // ──Autres Accesseurs ────────────────────────────────────────────────
+    public function getEstPrevisionnelAttribute(): bool
+    {
+        return (bool) $this->attributes['est_previsionnel'];
+    }
+
+    public function getEstConvertiAttribute(): bool
+    {
+        return $this->est_previsionnel && !is_null($this->da_reelle_id);
     }
 
     // ========================================
@@ -579,62 +608,57 @@ class DecisionAdministrative extends Model
         return true;
     }
 
-    /**
-     * Engager le budget
-     */
-    public function engagerBudget(int $nomenclatureId): void
+    public function engagerBudget(int $nomenclatureId): Engagement
     {
         if (!auth()->check() || !auth()->user()->can('engager_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission d'engager cette décision.");
         }
 
         if ($this->statut !== 'validee') {
-            throw new \Exception("La décision doit être validée avant d'engager le budget");
+            throw new \Exception("La décision doit être validée avant d'engager le budget.");
         }
 
         if ($this->engagee) {
-            throw new \Exception("Le budget est déjà engagé pour cette décision");
+            throw new \Exception("Le budget est déjà engagé pour cette décision.");
         }
 
         \DB::beginTransaction();
         try {
-            // Vérifier le crédit disponible
             $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
                 ->where('nomenclature_id', $nomenclatureId)
                 ->firstOrFail();
 
-            if (!$ligneBudgetaire->peutEngager($this->montant_brut)) {
-                $nomenclature = $ligneBudgetaire->nomenclature;
-                $manque = $this->montant_brut - $ligneBudgetaire->disponible_engagement;
+            // ✅ Vérification crédit — BYPASÉE pour les décisions prévisionnelles
+            if (!$this->est_previsionnel) {
+                if (!$ligneBudgetaire->peutEngager($this->montant_brut)) {
+                    $nomenclature = $ligneBudgetaire->nomenclature;
+                    $manque = $this->montant_brut - $ligneBudgetaire->disponible_engagement;
 
-                throw new CreditBudgetaireInsuffisantException(
-                    "❌ CRÉDIT INSUFFISANT\n\n" .
+                    throw new \App\Exceptions\CreditBudgetaireInsuffisantException(
+                        "❌ CRÉDIT INSUFFISANT\n\n" .
                         "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
                         "📊 DÉTAILS:\n" .
                         "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
                         "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
                         "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
                         "💰 ENGAGEMENT DEMANDÉ:\n" .
-                        "• Type: Décision Administrative\n" .
                         "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
-                        "• Montant net à engager: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
                         "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
                         "✅ SOLUTIONS:\n" .
                         "1. Réduire le montant de la décision\n" .
                         "2. Demander un virement budgétaire vers cette ligne\n" .
                         "3. Utiliser une autre nomenclature budgétaire"
-                );
+                    );
+                }
             }
-
-            // ✅ Générer le numéro d'abord
-            //$numeroEngagement = Engagement::genererNumero();
 
             $numeroEngagement = $this->genererNumeroEngagement();
 
-            \Log::info("Création engagement", [
+            \Log::info("Création engagement " . ($this->est_previsionnel ? '[PRÉVISIONNEL]' : ''), [
                 'da_numero' => $this->numero,
                 'numero_engagement' => $numeroEngagement,
                 'montant' => $this->montant_brut,
+                'est_previsionnel' => $this->est_previsionnel,
             ]);
 
             // Créer l'engagement
@@ -647,36 +671,27 @@ class DecisionAdministrative extends Model
                 'reference_document' => $this->numero,
                 'engageable_type' => get_class($this),
                 'engageable_id' => $this->id,
-                // 'beneficiaire_type' => 'App\Models\Personnel',
                 'beneficiaire_type' => $this->type_beneficiaire === 'fournisseur'
                     ? 'App\Models\Fournisseur'
                     : 'App\Models\Personnel',
                 'beneficiaire_id' => $this->type_beneficiaire === 'fournisseur'
                     ? $this->fournisseur_id
                     : $this->personnel_id,
-                // 'beneficiaire_id' => $this->personnel_id,
                 'date_engagement' => now(),
                 'exercice' => $this->exercice?->annee ?? now()->year,
                 'objet' => $this->objet,
-                // 'montant_engage' => $this->montant_net,
                 'montant_engage' => $this->montant_brut,
                 'statut' => 'provisoire',
+                // ✅ Type spécial pour prévisionnel — pas de déduction budget
+                'type' => $this->est_previsionnel ? 'previsionnel' : 'standard',
                 'created_by' => auth()->id(),
             ]);
 
-            // ✅ Vérifier que l'engagement a bien été créé
             if (!$engagement || !$engagement->id) {
-                throw new \Exception("Erreur lors de la création de l'engagement");
+                throw new \Exception("Erreur lors de la création de l'engagement.");
             }
 
-            // ✅ Rafraîchir pour avoir toutes les données
             $engagement->refresh();
-
-            \Log::info("Engagement créé avec succès", [
-                'id' => $engagement->id,
-                'numero' => $engagement->numero,
-                'montant' => $engagement->montant_brut,
-            ]);
 
             // Créer la ligne d'engagement
             $ligneEngagement = LigneEngagement::create([
@@ -688,11 +703,18 @@ class DecisionAdministrative extends Model
             ]);
 
             if (!$ligneEngagement || !$ligneEngagement->id) {
-                throw new \Exception("Erreur lors de la création de la ligne d'engagement");
+                throw new \Exception("Erreur lors de la création de la ligne d'engagement.");
             }
 
-            // Engager la ligne budgétaire
-            $ligneBudgetaire->enregistrerEngagement($this->montant_brut);
+            // ✅ Engager la ligne budgétaire — SKIP pour prévisionnel
+            if (!$this->est_previsionnel) {
+                $ligneBudgetaire->enregistrerEngagement($this->montant_brut);
+            } else {
+                \Log::info("Prévisionnel — ligne budgétaire NON impactée", [
+                    'nomenclature_id' => $nomenclatureId,
+                    'montant' => $this->montant_brut,
+                ]);
+            }
 
             // Marquer la décision comme engagée
             $this->engagee = true;
@@ -703,19 +725,23 @@ class DecisionAdministrative extends Model
 
             \DB::commit();
 
-            \Log::info("Engagement créé depuis DA", [
+            \Log::info("Engagement créé depuis DA" . ($this->est_previsionnel ? ' [PRÉVISIONNEL]' : ''), [
                 'da_numero' => $this->numero,
                 'engagement_numero' => $engagement->numero,
                 'montant' => $this->montant_brut,
+                'budget_impacte' => !$this->est_previsionnel,
             ]);
+
+            return $engagement;
+
         } catch (\Exception $e) {
             \DB::rollBack();
 
-            \Log::error("Erreur lors de l'engagement", [
+            \Log::error("Erreur lors de l'engagement DA", [
                 'da_id' => $this->id,
                 'da_numero' => $this->numero,
+                'est_previsionnel' => $this->est_previsionnel,
                 'erreur' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
 
             throw $e;
@@ -915,34 +941,6 @@ class DecisionAdministrative extends Model
         }
     }
 
-    // protected function libererCreditsEngagement(): void
-    // {
-    //     if (!$this->engagement) {
-    //         return;
-    //     }
-
-    //     $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-    //         ->where('nomenclature_id', $this->engagement->nomenclature_principale_id)
-    //         ->first();
-
-    //     if ($ligneBudgetaire && $this->montant_net > 0) {
-    //         $ligneBudgetaire->engage -= $this->montant_net;
-
-    //         if ($ligneBudgetaire->engage < 0) {
-    //             $ligneBudgetaire->engage = 0;
-    //         }
-
-    //         $ligneBudgetaire->save();
-
-    //         \Log::info("Crédit libéré lors du désengagement", [
-    //             'da' => $this->numero,
-    //             'nomenclature' => $ligneBudgetaire->nomenclature->code,
-    //             'montant_libere' => $this->montant_net,
-    //             'nouveau_engage' => $ligneBudgetaire->engage,
-    //         ]);
-    //     }
-    // }
-
     /**
      * Vérifier si la décision est modifiable
      */
@@ -975,6 +973,59 @@ class DecisionAdministrative extends Model
         }
 
         return '';
+    }
+
+    // ── Méthode : Convertir en DA réelle ─────────────────────────
+    public function convertirEnDAReelle(): DecisionAdministrative
+    {
+        if (!$this->est_previsionnel) {
+            throw new \Exception('Cette décision n\'est pas prévisionnelle.');
+        }
+
+        if ($this->est_converti) {
+            throw new \Exception('Cette décision prévisionnelle a déjà été convertie.');
+        }
+
+        return \DB::transaction(function () {
+            // Créer une DA réelle avec les mêmes données
+            $daReelle = static::create([
+                'exercice_id' => $this->exercice_id,
+                'budget_id' => $this->budget_id,
+                'type_decision_id' => $this->type_decision_id,
+                'type_beneficiaire' => $this->type_beneficiaire,
+                'personnel_id' => $this->personnel_id,
+                'fournisseur_id' => $this->fournisseur_id,
+                'date_decision' => now()->toDateString(),
+                'date_effet' => $this->date_effet,
+                'date_fin' => $this->date_fin,
+                'objet' => $this->objet,
+                'mode_saisie' => $this->mode_saisie,
+                'est_previsionnel' => false, // ← DA réelle
+                'montant_brut' => $this->montant_brut,
+                'montant_ht' => $this->montant_ht,
+                'montant_tva' => $this->montant_tva,
+                'montant_cnps' => $this->montant_cnps,
+                'montant_irnc' => $this->montant_irnc,
+                'total_taxes' => $this->total_taxes,
+                'montant_net' => $this->montant_net,
+                'taux_tva' => $this->taux_tva,
+                'taux_cnps' => $this->taux_cnps,
+                'taux_irnc' => $this->taux_irnc,
+                'type_tva' => $this->type_tva,
+                'autres_retenues' => $this->autres_retenues,
+                'signataire' => $this->signataire,
+                'observations' => "Convertie depuis DA Prévisionnelle N° {$this->numero}",
+                'statut' => 'brouillon',
+                'created_by' => auth()->id(),
+            ]);
+
+            // Lier la prévisionnelle à la réelle
+            $this->updateQuietly([
+                'da_reelle_id' => $daReelle->id,
+            ]);
+
+            return $daReelle;
+        });
     }
 
     // ========================================
@@ -1063,31 +1114,6 @@ class DecisionAdministrative extends Model
         return $transmission;
     }
 
-    /**
-     * Retourner pour correction
-     */
-    // public function retournerPourCorrection(string $motif): void
-    // {
-    //     $transmission = $this->transmissions()
-    //         ->where('statut', 'en_attente')
-    //         ->latest()
-    //         ->first();
-
-    //     if (!$transmission || $transmission->destinataire_id !== auth()->id()) {
-    //         throw new \Exception('Vous n\'êtes pas le destinataire de cette transmission.');
-    //     }
-
-    //     $transmission->statut = 'retourne';
-    //     $transmission->date_traitement = now();
-    //     $transmission->reponse = $motif;
-    //     $transmission->save();
-
-    //     activity()
-    //         ->performedOn($this)
-    //         ->causedBy(auth()->user())
-    //         ->withProperties(['motif' => $motif])
-    //         ->log('Décision retournée pour correction');
-    // }
 
     /**
      * Clôturer la transmission
