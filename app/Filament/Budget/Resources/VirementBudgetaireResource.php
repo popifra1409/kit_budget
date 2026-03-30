@@ -56,7 +56,7 @@ class VirementBudgetaireResource extends Resource
             return true;
         }
 
-        if (! $user->can('chef_service_budget_virement_budgetaire')) {
+        if (!$user->can('chef_service_budget_virement_budgetaire')) {
             return false;
         }
 
@@ -71,7 +71,7 @@ class VirementBudgetaireResource extends Resource
 
         $user = auth()->user();
 
-        if (! $user->can('super_admin_virement_budgetaire')) {
+        if (!$user->can('super_admin_virement_budgetaire')) {
             return false;
         }
 
@@ -150,6 +150,7 @@ class VirementBudgetaireResource extends Resource
                                 return LigneBudgetaire::where('budget_id', $budgetId)
                                     ->with('nomenclature')
                                     ->get()
+                                    ->filter(fn($ligne) => $ligne->nomenclature !== null)
                                     ->mapWithKeys(fn($ligne) => [
                                         $ligne->id => $ligne->nomenclature->code . ' - ' . $ligne->nomenclature->libelle .
                                             ' (Disponible: ' . number_format($ligne->disponible_engagement, 0, ',', ' ') . ' FCFA)'
@@ -168,21 +169,34 @@ class VirementBudgetaireResource extends Resource
                             ->label('Ligne destination (qui reçoit du budget)')
                             ->required()
                             ->searchable()
+                            ->reactive()
                             ->options(function (callable $get) {
                                 $budgetId = $get('budget_id');
                                 $ligneSourceId = $get('ligne_source_id');
-                                if (!$budgetId) {
+                                if (!$budgetId)
                                     return [];
-                                }
+
                                 return LigneBudgetaire::where('budget_id', $budgetId)
                                     ->where('id', '!=', $ligneSourceId)
                                     ->with('nomenclature')
                                     ->get()
+                                    ->filter(fn($ligne) => $ligne->nomenclature !== null)
                                     ->mapWithKeys(fn($ligne) => [
-                                        $ligne->id => $ligne->nomenclature->code . ' - ' . $ligne->nomenclature->libelle
+                                        $ligne->id => $ligne->nomenclature->code . ' - ' .
+                                            $ligne->nomenclature->libelle .
+                                            // ✅ Ajouter le disponible comme pour la source
+                                            ' (Disponible: ' . number_format($ligne->disponible_engagement, 0, ',', ' ') . ' FCFA)'
                                     ]);
                             })
-                            ->helperText('Ligne qui va recevoir du budget'),
+                            ->helperText(function (callable $get) {
+                                $ligneId = $get('ligne_destination_id');
+                                if (!$ligneId)
+                                    return 'Ligne qui va recevoir du budget';
+
+                                $ligne = LigneBudgetaire::find($ligneId);
+                                return 'Disponible actuel : ' .
+                                    number_format($ligne?->disponible_engagement ?? 0, 0, ',', ' ') . ' FCFA';
+                            }),
                     ])
                     ->columns(1),
 
@@ -246,19 +260,19 @@ class VirementBudgetaireResource extends Resource
                     ->sortable()
                     ->colors([
                         'success' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
+                            $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
                         'warning' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
+                            $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
                         'danger' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
+                            $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
                         'gray' => fn($record) =>
-                        $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                            $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
                     ])
                     ->tooltip(
                         fn($record) =>
                         $record->exercice instanceof \App\Models\Exercice
-                            ? $record->exercice->libelle
-                            : null
+                        ? $record->exercice->libelle
+                        : null
                     )
                     ->toggleable(),
 
@@ -281,8 +295,8 @@ class VirementBudgetaireResource extends Resource
                     ->searchable()
                     ->formatStateUsing(
                         fn($record) =>
-                        $record->ligneSource->nomenclature->code . ' - ' .
-                            \Str::limit($record->ligneSource->nomenclature->libelle, 25)
+                        ($record->ligneSource?->nomenclature?->code ?? 'N/A') . ' - ' .
+                        \Str::limit($record->ligneSource?->nomenclature?->libelle ?? '', 25)
                     )
                     ->wrap(),
 
@@ -297,8 +311,8 @@ class VirementBudgetaireResource extends Resource
                     ->searchable()
                     ->formatStateUsing(
                         fn($record) =>
-                        $record->ligneDestination->nomenclature->code . ' - ' .
-                            \Str::limit($record->ligneDestination->nomenclature->libelle, 25)
+                        ($record->ligneDestination?->nomenclature?->code ?? 'N/A') . ' - ' .
+                        \Str::limit($record->ligneDestination?->nomenclature?->libelle ?? '', 25)
                     )
                     ->wrap(),
 
