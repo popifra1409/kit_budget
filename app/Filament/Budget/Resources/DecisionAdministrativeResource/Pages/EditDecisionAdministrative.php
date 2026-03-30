@@ -33,7 +33,7 @@ class EditDecisionAdministrative extends EditRecord
                 ->modalDescription(
                     fn() =>
                     "Valider la décision pour {$this->record->getNomCompletPersonnel()} d'un montant net de " .
-                        number_format($this->record->montant_net, 0, ',', ' ') . " FCFA ?"
+                    number_format($this->record->montant_net, 0, ',', ' ') . " FCFA ?"
                 )
                 ->action(function () {
                     $this->record->valider(auth()->user());
@@ -58,7 +58,7 @@ class EditDecisionAdministrative extends EditRecord
                 ->modalDescription(
                     fn() =>
                     "Engager le budget pour un montant de " .
-                        number_format($this->record->montant_brut, 0, ',', ' ') . " FCFA ?"
+                    number_format($this->record->montant_brut, 0, ',', ' ') . " FCFA ?"
                 )
                 ->form([
                     Forms\Components\Select::make('nomenclature_id')
@@ -152,41 +152,46 @@ class EditDecisionAdministrative extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // ── Mode forfait : ne rien recalculer ─────────────────────
+        // Mode forfait — neutraliser les taux
         if (($data['mode_saisie'] ?? 'calcule') === 'forfait') {
-            $data['taux_tva']                    = 0;
-            $data['taux_cnps']                   = 0;
-            $data['taux_irnc']                   = 0;
+            $data['taux_tva'] = 0;
+            $data['taux_cnps'] = 0;
+            $data['taux_irnc'] = 0;
             $data['taux_redevance_audiovisuelle'] = 0;
-            $data['taux_feicom']                 = 0;
-            $data['type_tva']                    = 'forfait';
-            return $data; // ← sortir immédiatement
+            $data['taux_feicom'] = 0;
+            $data['type_tva'] = 'forfait';
+            return $data;
         }
 
-        // ── Mode calculé : recalcul normal ────────────────────────
-        return self::calculerMontants($data);
+        // Mode calculé — l'observer s'en charge
+        return $data;
     }
 
-    /**
-     * ✅ VOTRE MÉTHODE EXISTANTE - Gardée telle quelle
-     * Calcul CNPS / IRNC / Taxes / Net
-     */
     // protected static function calculerMontants(array $data): array
     // {
     //     $brut = (float) ($data['montant_brut'] ?? 0);
-    //     $tauxCnps = (float) ($data['taux_cnps'] ?? 4.2);
-    //     $tauxIrnc = (float) ($data['taux_irnc'] ?? 11);
+    //     $tauxCnps = (float) ($data['taux_cnps'] ?? 0);
+    //     $tauxIrnc = (float) ($data['taux_irnc'] ?? 0);
     //     $autresRetenues = (float) ($data['autres_retenues'] ?? 0);
 
-    //     $data['montant_cnps'] = $brut * ($tauxCnps / 100);
-    //     $data['montant_irnc'] = $brut * ($tauxIrnc / 100);
+    //     $tauxTva = (float) ($data['taux_tva'] ?? 0);
+    //     $montantTva = $data['type_tva'] === 'taux'
+    //         ? round($brut / (1 + $tauxTva / 100) * ($tauxTva / 100), 2)
+    //         : (float) ($data['montant_tva'] ?? 0);
 
-    //     $data['total_taxes'] =
-    //         $data['montant_cnps'] +
-    //         $data['montant_irnc'] +
-    //         $autresRetenues;
+    //     $montantHt = $data['type_tva'] === 'taux'
+    //         ? round($brut / (1 + $tauxTva / 100), 2)
+    //         : $brut - $montantTva;
 
-    //     $data['montant_net'] = $brut - $data['total_taxes'];
+    //     $montantCnps = round($montantHt * ($tauxCnps / 100), 2);
+    //     $montantIrnc = round($montantHt * ($tauxIrnc / 100), 2);
+
+    //     $data['montant_ht'] = $montantHt;
+    //     $data['montant_tva'] = $montantTva;
+    //     $data['montant_cnps'] = $montantCnps;
+    //     $data['montant_irnc'] = $montantIrnc;
+    //     $data['total_taxes'] = $montantCnps + $montantIrnc + $autresRetenues;
+    //     $data['montant_net'] = $montantHt - $data['total_taxes'];
 
     //     return $data;
     // }
