@@ -50,37 +50,49 @@ class FicheControleEngagementsPdfService
      */
     protected function preparerDonnees(LigneBudgetaire $ligneBudgetaire, $engagements): array
     {
-        // Calculer les totaux
         $dotationInitiale = $ligneBudgetaire->budget_initial ?? 0;
         $virementsEntrants = $ligneBudgetaire->virements_entrants ?? 0;
         $virementsSortants = $ligneBudgetaire->virements_sortants ?? 0;
-        $budgetRectifie = $ligneBudgetaire->budget_rectifie ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
+        $budgetRectifie = $ligneBudgetaire->budget_rectifie
+            ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
+
+        // ✅ Filtrer les DA prévisionnelles AVANT tous les calculs
+        $engagements = $engagements->filter(function ($engagement) {
+            $engageable = $engagement->engageable;
+            return !($engageable instanceof \App\Models\DecisionAdministrative
+                && $engageable->est_previsionnel);
+        });
+
+        // ✅ Calculs sur la collection filtrée uniquement
         $totalEngage = $engagements->sum('montant_engage');
-        $disponible = $ligneBudgetaire->disponible_engagement ?? ($budgetRectifie - $totalEngage);
-        $tauxConsommation = $budgetRectifie > 0 ? ($totalEngage / $budgetRectifie) * 100 : 0;
-        // Préparer les lignes d'engagements
+        $disponible = $ligneBudgetaire->disponible_engagement
+            ?? ($budgetRectifie - $totalEngage);
+        $tauxConsommation = $budgetRectifie > 0
+            ? ($totalEngage / $budgetRectifie) * 100 : 0;
+
+        // Préparer les lignes
         $lignesEngagements = [];
-        $disponibleProgressif = $dotationInitiale;
+        $disponibleProgressif = $budgetRectifie;
         $totalOp = 0;
         $totalOpt = 0;
 
         foreach ($engagements as $engagement) {
             $engageable = $engagement->engageable;
+
             $disponibleProgressif -= $engagement->montant_engage;
 
-            // Récupérer les montants OP et OPT
             $montantOp = $this->getMontantOp($engagement);
             $montantOpt = $this->getMontantOpt($engagement);
-
             $totalOp += $montantOp;
             $totalOpt += $montantOpt;
 
             $lignesEngagements[] = [
-                'numero_engagement' => $engagement->numero_engagement ?? $engagement->id ?? '-',
+                'numero_engagement' => $engagement->numero ?? $engagement->id ?? '-',
                 'beneficiaire' => $this->getBeneficiaire($engagement),
                 'objet' => $this->getObjet($engageable),
                 'reference' => $this->getReference($engageable),
-                'date_engagement' => $engagement->date_engagement ? $engagement->date_engagement->format('d/m/Y') : '-',
+                'date_engagement' => $engagement->date_engagement
+                    ? $engagement->date_engagement->format('d/m/Y') : '-',
                 'montant_engage' => $engagement->montant_engage,
                 'disponible_apres' => $disponibleProgressif,
                 'numero_op' => $this->getNumeroOp($engagement),
@@ -247,7 +259,8 @@ class FicheControleEngagementsPdfService
 
     protected function getBeneficiaire($engagement): string
     {
-        if (!$engagement) return '-';
+        if (!$engagement)
+            return '-';
 
         // ✅ MÉTHODE 1 : Via la relation polymorphique beneficiaire de l'engagement
         if ($engagement->beneficiaire_id && $engagement->beneficiaire_type) {
@@ -316,19 +329,22 @@ class FicheControleEngagementsPdfService
 
     protected function getObjet($engageable): string
     {
-        if (!$engageable) return '-';
+        if (!$engageable)
+            return '-';
         return $engageable->objet ?? '-';
     }
 
     protected function getReference($engageable): string
     {
-        if (!$engageable) return '-';
+        if (!$engageable)
+            return '-';
         return $engageable->numero ?? '-';
     }
 
     protected function getObservations($engageable): string
     {
-        if (!$engageable) return '';
+        if (!$engageable)
+            return '';
         $observations = [];
         if (isset($engageable->statut) && in_array($engageable->statut, ['annule', 'rejete'])) {
             $observations[] = strtoupper($engageable->statut);
@@ -344,7 +360,8 @@ class FicheControleEngagementsPdfService
      */
     protected function getNumeroOp($engagement): string
     {
-        if (!$engagement) return '-';
+        if (!$engagement)
+            return '-';
 
         // ✅ Récupérer l'OP de type 'standard' (bénéficiaire principal)
         $opStandard = $engagement->ordonnancesPaiement()
@@ -366,7 +383,8 @@ class FicheControleEngagementsPdfService
      */
     protected function getMontantOp($engagement): float
     {
-        if (!$engagement) return 0;
+        if (!$engagement)
+            return 0;
 
         // ✅ Récupérer l'OP de type 'standard'
         $opStandard = $engagement->ordonnancesPaiement()
@@ -388,7 +406,8 @@ class FicheControleEngagementsPdfService
      */
     protected function getMontantOpt($engagement): float
     {
-        if (!$engagement) return 0;
+        if (!$engagement)
+            return 0;
 
         // ✅ Récupérer l'OP de type 'impot'
         $opImpot = $engagement->ordonnancesPaiement()

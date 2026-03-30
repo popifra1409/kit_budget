@@ -85,16 +85,27 @@ class FicheControleEngagementsController extends Controller
      */
     protected function preparerDonnees(\App\Models\LigneBudgetaire $ligneBudgetaire, $engagements): array
     {
-        // Calculer les totaux
         $dotationInitiale = $ligneBudgetaire->budget_initial ?? 0;
         $virementsEntrants = $ligneBudgetaire->virements_entrants ?? 0;
         $virementsSortants = $ligneBudgetaire->virements_sortants ?? 0;
-        $budgetRectifie = $ligneBudgetaire->budget_rectifie ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
-        $totalEngage = $engagements->sum('montant_engage');
-        $disponible = $ligneBudgetaire->disponible_engagement ?? ($budgetRectifie - $totalEngage);
-        $tauxConsommation = $budgetRectifie > 0 ? ($totalEngage / $budgetRectifie) * 100 : 0;
+        $budgetRectifie = $ligneBudgetaire->budget_rectifie
+            ?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
 
-        // Préparer les lignes d'engagements
+        // ✅ Filtrer les DA prévisionnelles AVANT tous les calculs
+        $engagements = $engagements->filter(function ($engagement) {
+            $engageable = $engagement->engageable;
+            return !($engageable instanceof \App\Models\DecisionAdministrative
+                && $engageable->est_previsionnel);
+        });
+
+        // ✅ Calculs sur la collection filtrée uniquement
+        $totalEngage = $engagements->sum('montant_engage');
+        $disponible = $ligneBudgetaire->disponible_engagement
+            ?? ($budgetRectifie - $totalEngage);
+        $tauxConsommation = $budgetRectifie > 0
+            ? ($totalEngage / $budgetRectifie) * 100 : 0;
+
+        // Préparer les lignes
         $lignesEngagements = [];
         $disponibleProgressif = $budgetRectifie;
         $totalOp = 0;
@@ -105,10 +116,8 @@ class FicheControleEngagementsController extends Controller
 
             $disponibleProgressif -= $engagement->montant_engage;
 
-            // Récupérer les montants OP et OPT
             $montantOp = $this->getMontantOp($engagement);
             $montantOpt = $this->getMontantOpt($engagement);
-
             $totalOp += $montantOp;
             $totalOpt += $montantOpt;
 
@@ -117,7 +126,8 @@ class FicheControleEngagementsController extends Controller
                 'beneficiaire' => $this->getBeneficiaire($engagement),
                 'objet' => $this->getObjet($engageable),
                 'reference' => $this->getReference($engageable),
-                'date_engagement' => $engagement->date_engagement ? $engagement->date_engagement->format('d/m/Y') : '-',
+                'date_engagement' => $engagement->date_engagement
+                    ? $engagement->date_engagement->format('d/m/Y') : '-',
                 'montant_engage' => $engagement->montant_engage,
                 'disponible_apres' => $disponibleProgressif,
                 'numero_op' => $this->getNumeroOp($engagement),
@@ -299,7 +309,8 @@ class FicheControleEngagementsController extends Controller
 
     protected function getBeneficiaire($engagement): string
     {
-        if (!$engagement) return '-';
+        if (!$engagement)
+            return '-';
 
         // ✅ MÉTHODE 1 : Via la relation polymorphique beneficiaire de l'engagement
         if ($engagement->beneficiaire_id && $engagement->beneficiaire_type) {
@@ -368,19 +379,22 @@ class FicheControleEngagementsController extends Controller
 
     protected function getObjet($engageable): string
     {
-        if (!$engageable) return '-';
+        if (!$engageable)
+            return '-';
         return $engageable->objet ?? '-';
     }
 
     protected function getReference($engageable): string
     {
-        if (!$engageable) return '-';
+        if (!$engageable)
+            return '-';
         return $engageable->numero ?? '-';
     }
 
     protected function getObservations($engageable): string
     {
-        if (!$engageable) return '';
+        if (!$engageable)
+            return '';
         $observations = [];
         if (isset($engageable->statut) && in_array($engageable->statut, ['annule', 'rejete'])) {
             $observations[] = strtoupper($engageable->statut);
@@ -396,7 +410,8 @@ class FicheControleEngagementsController extends Controller
      */
     protected function getNumeroOp($engagement): string
     {
-        if (!$engagement) return '-';
+        if (!$engagement)
+            return '-';
 
         // ✅ Récupérer l'OP de type 'standard' (bénéficiaire principal)
         $opStandard = $engagement->ordonnancesPaiement()
@@ -418,7 +433,8 @@ class FicheControleEngagementsController extends Controller
      */
     protected function getMontantOp($engagement): float
     {
-        if (!$engagement) return 0;
+        if (!$engagement)
+            return 0;
 
         // ✅ Récupérer l'OP de type 'standard'
         $opStandard = $engagement->ordonnancesPaiement()
@@ -440,7 +456,8 @@ class FicheControleEngagementsController extends Controller
      */
     protected function getMontantOpt($engagement): float
     {
-        if (!$engagement) return 0;
+        if (!$engagement)
+            return 0;
 
         // ✅ Récupérer l'OP de type 'impot'
         $opImpot = $engagement->ordonnancesPaiement()
