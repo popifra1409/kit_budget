@@ -17,6 +17,7 @@ use App\Filament\Forms\Components\ExerciceSelect;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Models\EtatConfig;
 
 class OrdonnancePaiementResource extends Resource
 {
@@ -137,9 +138,9 @@ class OrdonnancePaiementResource extends Resource
                             ->label('')
                             ->content(
                                 "**Ce qui sera créé automatiquement :**\n\n" .
-                                    "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
-                                    "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
-                                    "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
+                                "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
+                                "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
+                                "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
                             )
                             ->columnSpanFull(),
                     ])
@@ -153,11 +154,13 @@ class OrdonnancePaiementResource extends Resource
      */
     protected static function getApercu(?int $engagementId): string
     {
-        if (!$engagementId) return '';
+        if (!$engagementId)
+            return '';
 
         try {
             $engagement = Engagement::with('engageable', 'beneficiaire')->find($engagementId);
-            if (!$engagement) return '';
+            if (!$engagement)
+                return '';
 
             $donnees = $engagement->extraireDonneesDocument();
 
@@ -427,47 +430,85 @@ class OrdonnancePaiementResource extends Resource
                     }),
 
                 Tables\Actions\ActionGroup::make([
+
+                    // ── OP Standard ──────────────────────────────────────
                     Tables\Actions\Action::make('telecharger_op')
                         ->label('Télécharger OP')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('success')
                         ->visible(fn($record) => $record->type_ordonnance === 'standard')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'ordonnance_paiement',
-                            'id' => $record->id,
-                        ])),
+                        ->form([
+                            Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement'))
+                                ->default('ordonnance_paiement')
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function ($record, array $data, $livewire) {
+                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
                     Tables\Actions\Action::make('afficher_op')
                         ->label('Aperçu OP')
                         ->icon('heroicon-o-eye')
                         ->color('info')
                         ->visible(fn($record) => $record->type_ordonnance === 'standard')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'ordonnance_paiement',
-                            'id' => $record->id,
-                        ]))
-                        ->openUrlInNewTab(),
+                        ->form([
+                            Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement'))
+                                ->default('ordonnance_paiement')
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function ($record, array $data, $livewire) {
+                            $url = route('pdf.afficher', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id, // ← correct
+                            ]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
+                    // ── OPT Impôt ────────────────────────────────────────
                     Tables\Actions\Action::make('telecharger_op_impot')
                         ->label('Télécharger OP Impôt')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('warning')
                         ->visible(fn($record) => $record->type_ordonnance === 'impot')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'ordonnance_paiement_impot',
-                            'id' => $record->id,
-                        ])),
+                        ->form([
+                            Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement_impot'))
+                                ->default('ordonnance_paiement_impot')
+                                ->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            return redirect()->away(route('pdf.telecharger', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id,
+                            ]));
+                        }),
 
                     Tables\Actions\Action::make('afficher_op_impot')
                         ->label('Aperçu OP Impôt')
                         ->icon('heroicon-o-eye')
                         ->color('gray')
                         ->visible(fn($record) => $record->type_ordonnance === 'impot')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'ordonnance_paiement_impot',
-                            'id' => $record->id,
-                        ]))
-                        ->openUrlInNewTab(),
+                        ->form([
+                            Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement_impot'))
+                                ->default('ordonnance_paiement_impot')
+                                ->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            return redirect()->away(route('pdf.afficher', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id,
+                            ]));
+                        }),
                 ])
                     ->label('Télécharger / Aperçu')
                     ->icon('heroicon-m-document-arrow-down')

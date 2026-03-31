@@ -10,14 +10,75 @@ use Illuminate\Support\Facades\Storage;
 
 class PdfGenerator
 {
+    // =========================================================
+    // RÉSOLUTION DE LA CONFIG
+    // =========================================================
+
     /**
-     * Générer un PDF depuis une configuration
+     * Résoudre la config depuis un code ou un type_document.
+     *
+     * - Si $codeOuType correspond à un `code` exact → utiliser cette variante
+     * - Sinon chercher dans `type_document` → utiliser la variante par défaut
+     *
+     * @param string      $codeOuType  Code exact OU type_document
+     * @param string|null $codeVariante  Code spécifique d'une variante (optionnel)
      */
-    public function generer(string $codeEtat, $donnees, array $options = [])
+    protected function resoudreConfig(string $codeOuType, ?string $codeVariante = null): EtatConfig
     {
-        $config = EtatConfig::where('code', $codeEtat)
+        // ✅ 1. Variante explicitement demandée
+        if ($codeVariante) {
+            return EtatConfig::where('code', $codeVariante)
+                ->where('actif', true)
+                ->firstOrFail();
+        }
+
+        // ✅ 2. Code exact existant
+        $parCode = EtatConfig::where('code', $codeOuType)->where('actif', true)->first();
+        if ($parCode) {
+            return $parCode;
+        }
+
+        // ✅ 3. type_document → variante par défaut
+        $parType = EtatConfig::where('type_document', $codeOuType)
             ->where('actif', true)
-            ->firstOrFail();
+            ->where('est_defaut', true)
+            ->first();
+
+        if ($parType) {
+            return $parType;
+        }
+
+        // ✅ 4. type_document → première variante disponible
+        $premiere = EtatConfig::where('type_document', $codeOuType)
+            ->where('actif', true)
+            ->orderBy('ordre')
+            ->first();
+
+        if ($premiere) {
+            return $premiere;
+        }
+
+        abort(404, "Aucun état trouvé pour : {$codeOuType}");
+    }
+
+    // =========================================================
+    // GÉNÉRATION
+    // =========================================================
+
+    /**
+     * Générer un PDF depuis un code ou type_document.
+     *
+     * @param string      $codeOuType   Code exact OU type_document
+     * @param mixed       $donnees      Données source
+     * @param array       $options      Options PDF + variante
+     *                                  ['variante' => 'op_detaillee', 'pdf_options' => [...]]
+     */
+    public function generer(string $codeOuType, $donnees, array $options = [])
+    {
+        $config = $this->resoudreConfig(
+            $codeOuType,
+            $options['variante'] ?? null
+        );
 
         $donneesPrepares = $this->preparerDonnees($donnees, $config);
 
@@ -29,28 +90,42 @@ class PdfGenerator
 
         $html = View::make($config->template, $donneesVue)->render();
 
-        // Créer le PDF avec DomPDF
         $pdf = Pdf::loadHTML($html);
 
-        // Orientation
-        $orientation = $options['pdf_options']['orientation'] ??
-            $config->options_pdf['orientation'] ?? 'portrait';
+        $orientation = $options['pdf_options']['orientation']
+            ?? $config->options_pdf['orientation']
+            ?? 'portrait';
+
         $pdf->setPaper('a4', strtolower($orientation));
 
         return $pdf;
     }
 
     /**
-     * Préparer les données selon la configuration
+     * Retourner toutes les variantes disponibles pour un type_document.
+     * Utile pour peupler un Select Filament.
      */
+    public function variantesPour(string $typeDocument): array
+    {
+        return EtatConfig::where('type_document', $typeDocument)
+            ->where('actif', true)
+            ->orderBy('est_defaut', 'desc')
+            ->orderBy('ordre')
+            ->get()
+            ->mapWithKeys(fn($e) => [
+                $e->code => $e->nom . ($e->est_defaut ? ' ⭐' : '')
+            ])
+            ->toArray();
+    }
+
+    // =========================================================
+    // PRÉPARATION DES DONNÉES (inchangée)
+    // =========================================================
+
     protected function preparerDonnees($donnees, EtatConfig $config): array
     {
         $donneesPrepares = [];
-
-        // Garder l'objet original
         $donneesOriginales = $donnees;
-
-        // Convertir en tableau UNIQUEMENT pour data_get
         $donneesArray = is_object($donnees) && method_exists($donnees, 'toArray')
             ? $donnees->toArray()
             : $donnees;
@@ -58,7 +133,6 @@ class PdfGenerator
         foreach ($config->champs_variables ?? [] as $nom => $configChamp) {
             $source = $configChamp['source'] ?? $nom;
             $valeur = data_get($donneesArray, $source);
-
             $donneesPrepares[$nom] = $this->formaterValeur(
                 $valeur,
                 $configChamp['type'] ?? 'text',
@@ -74,15 +148,15 @@ class PdfGenerator
             );
         }
 
-        // Stocker l'objet original, pas le tableau
         $donneesPrepares['_raw'] = $donneesOriginales;
 
         return $donneesPrepares;
     }
 
-    /**
-     * Formater une valeur selon son type
-     */
+    // =========================================================
+    // FORMATAGE (inchangé)
+    // =========================================================
+
     protected function formaterValeur($valeur, string $type, array $config = [])
     {
         if ($valeur === null) {
@@ -103,8 +177,7 @@ class PdfGenerator
                     return $valeur->format($config['format'] ?? 'd/m/Y');
                 }
                 try {
-                    $date = \Carbon\Carbon::parse($valeur);
-                    return $date->format($config['format'] ?? 'd/m/Y');
+                    return \Carbon\Carbon::parse($valeur)->format($config['format'] ?? 'd/m/Y');
                 } catch (\Exception $e) {
                     return $valeur;
                 }
@@ -114,8 +187,7 @@ class PdfGenerator
                     return $valeur->format($config['format'] ?? 'd/m/Y H:i');
                 }
                 try {
-                    $date = \Carbon\Carbon::parse($valeur);
-                    return $date->format($config['format'] ?? 'd/m/Y H:i');
+                    return \Carbon\Carbon::parse($valeur)->format($config['format'] ?? 'd/m/Y H:i');
                 } catch (\Exception $e) {
                     return $valeur;
                 }
@@ -130,38 +202,31 @@ class PdfGenerator
 
             case 'uppercase':
                 return mb_strtoupper($valeur);
-
             case 'lowercase':
                 return mb_strtolower($valeur);
-
             case 'capitalize':
                 return mb_convert_case($valeur, MB_CASE_TITLE);
-
             case 'boolean':
                 return $valeur ? ($config['true_text'] ?? 'Oui') : ($config['false_text'] ?? 'Non');
-
-            case 'text':
             default:
                 return $valeur;
         }
     }
 
-    /**
-     * Exécuter un calcul
-     */
+    // =========================================================
+    // CALCULS (inchangés)
+    // =========================================================
+
     protected function executerCalcul(array $configCalcul, array $donneesPrepares, array $donneesRaw)
     {
         $fonction = $configCalcul['fonction'] ?? null;
-
-        if (!$fonction) {
+        if (!$fonction)
             return null;
-        }
 
         $params = [];
         foreach ($configCalcul['params'] ?? [] as $param) {
             if (str_starts_with($param, '_raw.')) {
-                $key = substr($param, 5);
-                $params[] = data_get($donneesRaw, $key);
+                $params[] = data_get($donneesRaw, substr($param, 5));
             } else {
                 $params[] = $donneesPrepares[$param] ?? null;
             }
@@ -171,154 +236,94 @@ class PdfGenerator
         if (method_exists($this, $methodName)) {
             return $this->$methodName(...$params);
         }
-
         return null;
     }
 
-    /**
-     * Calcul : Convertir un nombre en lettres
-     */
     protected function calcul_nombre_en_lettres($montant): string
     {
         return NombreEnLettres::montantCFA($montant);
     }
-
-    /**
-     * Calcul : Somme de plusieurs valeurs
-     */
     protected function calcul_somme(...$valeurs): float
     {
         return array_sum(array_filter($valeurs, 'is_numeric'));
     }
-
-    /**
-     * Calcul : Différence entre deux valeurs
-     */
     protected function calcul_difference($a, $b): float
     {
         return floatval($a) - floatval($b);
     }
-
-    /**
-     * Calcul : Produit de plusieurs valeurs
-     */
     protected function calcul_produit(...$valeurs): float
     {
-        $result = 1;
-        foreach (array_filter($valeurs, 'is_numeric') as $valeur) {
-            $result *= floatval($valeur);
+        $r = 1;
+        foreach (array_filter($valeurs, 'is_numeric') as $v) {
+            $r *= floatval($v);
         }
-        return $result;
+        return $r;
     }
-
-    /**
-     * Calcul : Pourcentage
-     */
     protected function calcul_pourcentage($valeur, $total): float
     {
-        if ($total == 0) {
-            return 0;
-        }
-        return ($valeur / $total) * 100;
+        return $total == 0 ? 0 : ($valeur / $total) * 100;
+    }
+    protected function calcul_tva($ht, $taux = 19.25): float
+    {
+        return $ht * ($taux / 100);
+    }
+    protected function calcul_ttc($ht, $taux = 19.25): float
+    {
+        return $ht + $this->calcul_tva($ht, $taux);
     }
 
-    /**
-     * Calcul : TVA
-     */
-    protected function calcul_tva($montantHT, $tauxTVA = 19.25): float
-    {
-        return $montantHT * ($tauxTVA / 100);
-    }
+    // =========================================================
+    // ACTIONS (télécharger / afficher / sauvegarder)
+    // =========================================================
 
-    /**
-     * Calcul : Montant TTC
-     */
-    protected function calcul_ttc($montantHT, $tauxTVA = 19.25): float
+    public function sauvegarder(string $codeOuType, $donnees, string $nomFichier, string $disk = 'public', array $options = []): string
     {
-        return $montantHT + $this->calcul_tva($montantHT, $tauxTVA);
-    }
-
-    /**
-     * Sauvegarder le PDF dans le storage
-     */
-    public function sauvegarder(string $codeEtat, $donnees, string $nomFichier, string $disk = 'public'): string
-    {
-        $pdf = $this->generer($codeEtat, $donnees);
-        $contenu = $pdf->output();
-
         $chemin = 'pdf/' . $nomFichier;
-        Storage::disk($disk)->put($chemin, $contenu);
-
+        Storage::disk($disk)->put($chemin, $this->generer($codeOuType, $donnees, $options)->output());
         return $chemin;
     }
 
-    /**
-     * Télécharger le PDF
-     */
-    public function telecharger(string $codeEtat, $donnees, string $nomFichier = null)
+    public function telecharger(string $codeOuType, $donnees, string $nomFichier = null, array $options = [])
     {
-        $pdf = $this->generer($codeEtat, $donnees);
+        $pdf = $this->generer($codeOuType, $donnees, $options);
+        $nomFichier ??= $this->nomFichierDefaut($codeOuType, $options);
 
-        if (!$nomFichier) {
-            $config = EtatConfig::where('code', $codeEtat)->first();
-            $nomFichier = str_replace(' ', '-', strtolower($config->nom ?? $codeEtat)) . '.pdf';
-        }
-
-        // Retourner une réponse HTTP de téléchargement avec les bons headers
         return response($pdf->output(), 200)
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'attachment; filename="' . $nomFichier . '"');
     }
 
-    /**
-     * Afficher le PDF dans le navigateur (inline)
-     */
-    public function afficher(string $codeEtat, $donnees, string $nomFichier = null)
+    public function afficher(string $codeOuType, $donnees, string $nomFichier = null, array $options = [])
     {
-        $pdf = $this->generer($codeEtat, $donnees);
+        $pdf = $this->generer($codeOuType, $donnees, $options);
+        $nomFichier ??= $this->nomFichierDefaut($codeOuType, $options);
 
-        if (!$nomFichier) {
-            $config = EtatConfig::where('code', $codeEtat)->first();
-            $nomFichier = str_replace(' ', '-', strtolower($config->nom ?? $codeEtat)) . '.pdf';
-        }
-
-        // Retourner une réponse HTTP correcte avec les bons headers
         return response($pdf->output(), 200)
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'inline; filename="' . $nomFichier . '"');
     }
 
-    /**
-     * Obtenir le contenu HTML (pour debug)
-     */
-    public function obtenirHtml(string $codeEtat, $donnees): string
+    public function obtenirHtml(string $codeOuType, $donnees, array $options = []): string
     {
-        $config = EtatConfig::where('code', $codeEtat)
-            ->where('actif', true)
-            ->firstOrFail();
-
+        $config = $this->resoudreConfig($codeOuType, $options['variante'] ?? null);
         $donneesPrepares = $this->preparerDonnees($donnees, $config);
-
-        return View::make($config->template, [
-            'config' => $config,
-            'donnees' => $donneesPrepares,
-            'options' => [],
-        ])->render();
+        return View::make($config->template, ['config' => $config, 'donnees' => $donneesPrepares, 'options' => $options])->render();
     }
 
-    /**
-     * Générer plusieurs PDFs en lot
-     */
-    public function genererLot(string $codeEtat, array $listeDonnees, string $dossierDestination = 'pdf/lot'): array
+    public function genererLot(string $codeOuType, array $listeDonnees, string $dossierDestination = 'pdf/lot', array $options = []): array
     {
         $fichiers = [];
-
         foreach ($listeDonnees as $index => $donnees) {
-            $nomFichier = $dossierDestination . '/' . $codeEtat . '_' . ($index + 1) . '.pdf';
-            $chemin = $this->sauvegarder($codeEtat, $donnees, $nomFichier);
-            $fichiers[] = $chemin;
+            $nomFichier = $dossierDestination . '/' . $codeOuType . '_' . ($index + 1) . '.pdf';
+            $fichiers[] = $this->sauvegarder($codeOuType, $donnees, $nomFichier, 'public', $options);
         }
-
         return $fichiers;
+    }
+
+    private function nomFichierDefaut(string $codeOuType, array $options = []): string
+    {
+        $config = EtatConfig::where('code', $options['variante'] ?? $codeOuType)->first()
+            ?? EtatConfig::where('type_document', $codeOuType)->where('est_defaut', true)->first();
+        return str_replace(' ', '-', strtolower($config->nom ?? $codeOuType)) . '.pdf';
     }
 }

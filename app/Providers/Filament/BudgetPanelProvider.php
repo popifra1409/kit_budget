@@ -32,19 +32,19 @@ class BudgetPanelProvider extends PanelProvider
         $this->app->bind(
             \Filament\Http\Responses\Auth\Contracts\LoginResponse::class,
             fn() => new class implements \Filament\Http\Responses\Auth\Contracts\LoginResponse {
-                public function toResponse($request): \Symfony\Component\HttpFoundation\Response
+            public function toResponse($request): \Symfony\Component\HttpFoundation\Response
                 {
                     return \Illuminate\Support\Facades\Response::make('', 302, [
                         'Location' => '/portal',
                     ]);
                 }
-            }
+                }
         );
     }
 
     public function panel(Panel $panel): Panel
     {
-        $structure   = $this->getParametresSecurise();
+        $structure = $this->getParametresSecurise();
         $fournisseur = $this->getFournisseurSecurise();
 
         return $panel
@@ -56,16 +56,18 @@ class BudgetPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::hex($fournisseur->couleur_principale ?? '#0ea5e9'),
                 'success' => Color::hex('#059669'),
-                'danger'  => Color::hex('#dc2626'),
+                'danger' => Color::hex('#dc2626'),
                 'warning' => Color::hex('#f59e0b'),
-                'info'    => Color::hex('#64748b'),
+                'info' => Color::hex('#64748b'),
             ])
             ->brandName(($fournisseur->nom_logiciel ?? 'Budget Manager') . ' — Budget')
             ->brandLogo(function () use ($fournisseur) {
                 $logo = $fournisseur->logo_url;
-                if (!$logo) return asset('images/logo.png');
+                if (!$logo)
+                    return asset('images/logo.png');
                 // Si déjà une URL complète → retourner tel quel
-                if (str_starts_with($logo, 'http')) return $logo;
+                if (str_starts_with($logo, 'http'))
+                    return $logo;
                 // Sinon forcer l'URL absolue depuis la racine
                 return asset($logo);
             })
@@ -132,6 +134,16 @@ class BudgetPanelProvider extends PanelProvider
                 PanelsRenderHook::FOOTER,
                 fn(): HtmlString => $this->renderFooter($structure, $fournisseur)
             )
+            ->renderHook(
+                'panels::body.end',
+                fn() => new \Illuminate\Support\HtmlString('
+        <script>
+            window.addEventListener("open-url-new-tab", (e) => {
+                window.open(e.detail.url, "_blank");
+            });
+        </script>
+    ')
+            )
 
             ->middleware([
                 EncryptCookies::class,
@@ -156,15 +168,15 @@ class BudgetPanelProvider extends PanelProvider
     private function renderModuleSwitcher(): HtmlString
     {
         $modules = [
-            'budget'    => ['label' => 'Budget',    'icon' => '💰', 'url' => '/budget'],
+            'budget' => ['label' => 'Budget', 'icon' => '💰', 'url' => '/budget'],
             'comptable' => ['label' => 'Comptable', 'icon' => '📒', 'url' => '/comptable'],
-            'marches'   => ['label' => 'Marchés',   'icon' => '📋', 'url' => '/marches'],
+            'marches' => ['label' => 'Marchés', 'icon' => '📋', 'url' => '/marches'],
         ];
 
         $html = '<div class="flex items-center gap-1 me-3 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">';
 
         foreach ($modules as $key => $module) {
-            $isActive    = $key === 'budget';
+            $isActive = $key === 'budget';
             $activeClass = $isActive
                 ? 'bg-white dark:bg-gray-700 shadow-sm font-semibold text-gray-900 dark:text-white'
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60';
@@ -186,9 +198,9 @@ class BudgetPanelProvider extends PanelProvider
     // =========================================================================
     private function renderActionsRapides(): HtmlString
     {
-        $urlBC         = $this->getResourceUrl('App\Filament\Budget\Resources\BonCommandeResource', 'create');
+        $urlBC = $this->getResourceUrl('App\Filament\Budget\Resources\BonCommandeResource', 'create');
         $urlEngagement = $this->getResourceUrl('App\Filament\Budget\Resources\EngagementResource', 'create');
-        $urlMemoire    = $this->getResourceUrl('App\Filament\Budget\Resources\MemoireDepenseResource', 'create');
+        $urlMemoire = $this->getResourceUrl('App\Filament\Budget\Resources\MemoireDepenseResource', 'create');
 
         return new HtmlString('
         <div class="flex items-center gap-2 me-4">
@@ -277,7 +289,8 @@ class BudgetPanelProvider extends PanelProvider
     private function getResourceUrl(string $resourceClass, string $page = 'index'): ?string
     {
         try {
-            if (!class_exists($resourceClass)) return null;
+            if (!class_exists($resourceClass))
+                return null;
             return $resourceClass::getUrl($page);
         } catch (\Exception $e) {
             return null;
@@ -324,7 +337,7 @@ class BudgetPanelProvider extends PanelProvider
         }
 
         $contactFooter = $fournisseur->contact_footer ?? [];
-        $docLinks      = $fournisseur->documentation_links ?? [];
+        $docLinks = $fournisseur->documentation_links ?? [];
 
         return new HtmlString('
         <footer class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 mt-auto">
@@ -382,29 +395,29 @@ class BudgetPanelProvider extends PanelProvider
     {
         return (object) [
             'nom_structure' => 'Gestion Budget',
-            'sigle'         => 'GB',
-            'logo'      => null,
-            'nom_complet'   => 'Gestion Budget',
-            'ville'         => null,
-            'pays'          => null,
-            'email'         => null,
+            'sigle' => 'GB',
+            'logo' => null,
+            'nom_complet' => 'Gestion Budget',
+            'ville' => null,
+            'pays' => null,
+            'email' => null,
         ];
     }
 
     private function getFournisseurDefaut(): object
     {
         return (object) [
-            'nom_societe'          => 'Votre Société',
-            'nom_logiciel'         => 'Budget Manager',
-            'version_complete'     => 'v1.0.0',
-            'logo'             => null,
-            'couleur_principale'   => '#0ea5e9',
-            'afficher_footer'      => true,
+            'nom_societe' => 'Votre Société',
+            'nom_logiciel' => 'Budget Manager',
+            'version_complete' => 'v1.0.0',
+            'logo' => null,
+            'couleur_principale' => '#0ea5e9',
+            'afficher_footer' => true,
             'afficher_badge_licence' => true,
-            'copyright_complet'    => '© ' . date('Y') . ' Votre Société',
-            'contact_footer'       => ['email_support' => 'support@votresociete.com'],
-            'documentation_links'  => [],
-            'site_web'             => null,
+            'copyright_complet' => '© ' . date('Y') . ' Votre Société',
+            'contact_footer' => ['email_support' => 'support@votresociete.com'],
+            'documentation_links' => [],
+            'site_web' => null,
         ];
     }
 }

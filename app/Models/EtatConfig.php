@@ -26,6 +26,8 @@ class EtatConfig extends Model
         'actif',
         'ordre',
         'categorie',
+        'type_document',
+        'est_defaut',
     ];
 
     protected $casts = [
@@ -36,6 +38,7 @@ class EtatConfig extends Model
         'signature_config' => 'array',
         'options_pdf' => 'array',
         'actif' => 'boolean',
+        'est_defaut' => 'boolean',
     ];
 
     /**
@@ -101,12 +104,70 @@ class EtatConfig extends Model
     }
 
     /**
-     * Vérifier si l'état est supprimable
+     * Récupérer toutes les variantes d'un type de document
      */
+    public static function variantesPour(string $typeDocument): array
+    {
+        return static::where('type_document', $typeDocument)
+            ->where('actif', true)
+            ->orderBy('est_defaut', 'desc')
+            ->orderBy('ordre')
+            ->get()
+            // ✅ mapWithKeys garantit string clé => string valeur
+            ->mapWithKeys(fn($e) => [
+                (string) $e->code => (string) ($e->nom . ($e->est_defaut ? ' ⭐' : ''))
+            ])
+            ->toArray();
+    }
+
+    /**
+     * Récupérer la variante par défaut d'un type de document
+     */
+    public static function defautPour(string $typeDocument): ?self
+    {
+        return static::actif()
+            ->where('type_document', $typeDocument)
+            ->where('est_defaut', true)
+            ->first()
+            ?? static::actif()->where('type_document', $typeDocument)->first();
+    }
+
+    /**
+     * Scope variantes d'un type
+     */
+    public function scopeDeType($query, string $typeDocument)
+    {
+        return $query->where('type_document', $typeDocument);
+    }
+
+    /**
+     * Liste pour Select Filament — options d'un type
+     */
+    public static function optionsPour(string $typeDocument): array
+    {
+        return static::variantesPour($typeDocument)
+            ->mapWithKeys(fn($e) => [
+                $e->code => $e->nom . ($e->est_defaut ? ' ⭐' : '')
+            ])
+            ->toArray();
+    }
+
+    // ============================================================
+// 2. MODIFIER app/Models/EtatConfig.php
+//    Ajouter dans estSupprimable() les nouveaux codes système
+// ============================================================
     public function estSupprimable(): bool
     {
-        // Ne pas supprimer les états système
-        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement', 'bon_commande', 'bon_commande_simple', 'bordereau_engagement', 'memoire_depense'];
+        $etatsSysteme = [
+            'certificat_engagement',
+            'autorisation_engagement',
+            'bon_commande',
+            'bordereau_engagement',
+            'decision_administrative',
+            'ordonnance_paiement',
+            'ordonnance_paiement_impot',
+            'memoire_depense',
+        ];
         return !in_array($this->code, $etatsSysteme);
     }
 }

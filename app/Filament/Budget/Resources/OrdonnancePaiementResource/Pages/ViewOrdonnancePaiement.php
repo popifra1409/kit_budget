@@ -7,6 +7,8 @@ use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
+use App\Models\EtatConfig;
+use Filament\Forms;
 
 class ViewOrdonnancePaiement extends ViewRecord
 {
@@ -164,25 +166,60 @@ class ViewOrdonnancePaiement extends ViewRecord
         return [
             Actions\EditAction::make(),
 
-            // Télécharger OP
+            // ── Télécharger OP ───────────────────────────────────────
             Actions\Action::make('telecharger')
                 ->label('Télécharger PDF')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('success')
-                ->url(fn($record) => route('pdf.telecharger', [
-                    'etat' => $record->type_ordonnance === 'impot' ? 'ordonnance_paiement_impot' : 'ordonnance_paiement',
-                    'id' => $record->id
-                ])),
+                ->form([
+                    Forms\Components\Select::make('variante')
+                        ->label('Modèle d\'état')
+                        ->options(fn() => EtatConfig::variantesPour(
+                            $this->record->type_ordonnance === 'impot'
+                            ? 'ordonnance_paiement_impot'
+                            : 'ordonnance_paiement'
+                        ))
+                        ->default(
+                            $this->record->type_ordonnance === 'impot'
+                            ? 'ordonnance_paiement_impot'
+                            : 'ordonnance_paiement'
+                        )
+                        ->required()
+                        ->helperText('⭐ = modèle par défaut'),
+                ])
+                ->action(function ($record, array $data, $livewire) {
+                    $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                    $livewire->dispatch('open-url-new-tab', url: $url);
+                }),
 
-            // Aperçu OP
+            // ── Aperçu OP ────────────────────────────────────────────
             Actions\Action::make('apercu')
                 ->label('Aperçu PDF')
                 ->icon('heroicon-o-eye')
                 ->color('info')
-                ->url(fn($record) => route('pdf.afficher', [
-                    'etat' => $record->type_ordonnance === 'impot' ? 'ordonnance_paiement_impot' : 'ordonnance_paiement',
-                    'id' => $record->id
-                ]))
+                ->form([
+                    Forms\Components\Select::make('variante')
+                        ->label('Modèle d\'état')
+                        ->options(fn() => EtatConfig::variantesPour(
+                            $this->record->type_ordonnance === 'impot'
+                            ? 'ordonnance_paiement_impot'
+                            : 'ordonnance_paiement'
+                        ))
+                        ->default(
+                            $this->record->type_ordonnance === 'impot'
+                            ? 'ordonnance_paiement_impot'
+                            : 'ordonnance_paiement'
+                        )
+                        ->required()
+                        ->helperText('⭐ = modèle par défaut'),
+                ])
+                ->action(function ($record, array $data, $livewire) {
+                    $url = route('pdf.afficher', [
+                        'etat' => $data['variante'],
+                        'id' => $record->id, // ← correct
+                    ]);
+                    $livewire->dispatch('open-url-new-tab', url: $url);
+                })
                 ->openUrlInNewTab(),
 
             Actions\DeleteAction::make(),
