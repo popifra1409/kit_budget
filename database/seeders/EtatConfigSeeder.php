@@ -10,6 +10,50 @@ class EtatConfigSeeder extends Seeder
     public function run(): void
     {
         $etats = [
+            // ═══════════════════════════════════════════════════
+            // FICHE DE PERFORMANCE — 1 variante
+            // ═══════════════════════════════════════════════════
+            [
+                'code' => 'fiche_performance',
+                'type_document' => 'fiche_performance',
+                'est_defaut' => true,
+                'nom' => 'Fiche de Performance',
+                'template' => 'pdf.templates.fiche-performance',
+                'description' => 'Fiche de suivi de performance des engagements',
+                'categorie' => 'Budgétaire',
+                'ordre' => 1,
+
+                'champs_variables' => [
+                    'numero' => ['source' => 'numero', 'type' => 'text'],
+                    'exercice' => ['source' => 'exercice.annee', 'type' => 'text'],
+                    'programme' => ['source' => 'nomenclaturePrincipale.tache.activite.action.programme.libelle', 'type' => 'text'],
+                    'action' => ['source' => 'nomenclaturePrincipale.tache.activite.action.libelle', 'type' => 'text'],
+                    'activite' => ['source' => 'nomenclaturePrincipale.tache.activite.libelle', 'type' => 'text'],
+                    'tache' => ['source' => 'nomenclaturePrincipale.tache.libelle', 'type' => 'text'],
+                    'indicateur' => ['source' => 'nomenclaturePrincipale.tache.indicateur_resultat', 'type' => 'text'],
+                    'niveau_avancement' => ['source' => 'nomenclaturePrincipale.tache.niveau_avancement', 'type' => 'text'],
+                    'montant' => ['source' => 'montant_engage', 'type' => 'money'],
+                    'date_engagement' => ['source' => 'date_engagement', 'type' => 'date', 'format' => 'd/m/Y'],
+                    'objet' => ['source' => 'objet', 'type' => 'text'],
+                    'imputation' => ['source' => 'nomenclaturePrincipale.code', 'type' => 'text'],
+                ],
+
+                'calculs' => [
+                    'montant_lettres' => [
+                        'fonction' => 'nombre_en_lettres',
+                        'params' => ['_raw.montant_engage']
+                    ],
+                ],
+
+                'signature_config' => [
+                    'afficher' => false
+                ],
+
+                'options_pdf' => [
+                    'orientation' => 'portrait',
+                    'format' => 'A4'
+                ],
+            ],
 
             // ═══════════════════════════════════════════════════
             // CERTIFICAT D'ENGAGEMENT — 2 variantes

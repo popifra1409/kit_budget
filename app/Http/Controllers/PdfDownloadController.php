@@ -22,6 +22,7 @@ class PdfDownloadController extends Controller
     private const TYPE_MODEL_MAP = [
         'certificat_engagement' => Engagement::class,
         'autorisation_engagement' => Engagement::class,
+        'fiche_performance' => Engagement::class,
         'bordereau_engagement' => BordereauEngagement::class,
         'bon_commande' => BonCommande::class,
         'decision_administrative' => DecisionAdministrative::class,
