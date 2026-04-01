@@ -441,7 +441,8 @@ class OrdonnancePaiementResource extends Resource
                             Forms\Components\Select::make('variante')
                                 ->label('Modèle d\'état')
                                 ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement'))
-                                ->default('ordonnance_paiement')
+                                // ✅ Défaut dynamique depuis la base
+                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement')?->code)
                                 ->required()
                                 ->helperText('⭐ = modèle par défaut'),
                         ])
@@ -459,15 +460,12 @@ class OrdonnancePaiementResource extends Resource
                             Forms\Components\Select::make('variante')
                                 ->label('Modèle d\'état')
                                 ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement'))
-                                ->default('ordonnance_paiement')
+                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement')?->code)
                                 ->required()
                                 ->helperText('⭐ = modèle par défaut'),
                         ])
                         ->action(function ($record, array $data, $livewire) {
-                            $url = route('pdf.afficher', [
-                                'etat' => $data['variante'],
-                                'id' => $record->id, // ← correct
-                            ]);
+                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
                             $livewire->dispatch('open-url-new-tab', url: $url);
                         }),
 
@@ -481,14 +479,12 @@ class OrdonnancePaiementResource extends Resource
                             Forms\Components\Select::make('variante')
                                 ->label('Modèle d\'état')
                                 ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement_impot'))
-                                ->default('ordonnance_paiement_impot')
+                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement_impot')?->code)
                                 ->required(),
                         ])
-                        ->action(function ($record, array $data) {
-                            return redirect()->away(route('pdf.telecharger', [
-                                'etat' => $data['variante'],
-                                'id' => $record->id,
-                            ]));
+                        ->action(function ($record, array $data, $livewire) {
+                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
                         }),
 
                     Tables\Actions\Action::make('afficher_op_impot')
@@ -500,14 +496,12 @@ class OrdonnancePaiementResource extends Resource
                             Forms\Components\Select::make('variante')
                                 ->label('Modèle d\'état')
                                 ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement_impot'))
-                                ->default('ordonnance_paiement_impot')
+                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement_impot')?->code)
                                 ->required(),
                         ])
-                        ->action(function ($record, array $data) {
-                            return redirect()->away(route('pdf.afficher', [
-                                'etat' => $data['variante'],
-                                'id' => $record->id,
-                            ]));
+                        ->action(function ($record, array $data, $livewire) {
+                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
                         }),
                 ])
                     ->label('Télécharger / Aperçu')

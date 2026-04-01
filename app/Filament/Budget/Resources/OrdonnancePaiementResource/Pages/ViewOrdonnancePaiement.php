@@ -179,17 +179,21 @@ class ViewOrdonnancePaiement extends ViewRecord
                             ? 'ordonnance_paiement_impot'
                             : 'ordonnance_paiement'
                         ))
-                        ->default(
+                        // ✅ Défaut dynamique depuis la base
+                        ->default(fn() => EtatConfig::defautPour(
                             $this->record->type_ordonnance === 'impot'
                             ? 'ordonnance_paiement_impot'
                             : 'ordonnance_paiement'
-                        )
+                        )?->code)
                         ->required()
                         ->helperText('⭐ = modèle par défaut'),
                 ])
-                ->action(function ($record, array $data, $livewire) {
-                    $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                    $livewire->dispatch('open-url-new-tab', url: $url);
+                ->action(function (array $data) {
+                    $url = route('pdf.telecharger', [
+                        'etat' => $data['variante'],
+                        'id' => $this->record->id,
+                    ]);
+                    $this->dispatch('open-url-new-tab', url: $url);
                 }),
 
             // ── Aperçu OP ────────────────────────────────────────────
@@ -205,20 +209,21 @@ class ViewOrdonnancePaiement extends ViewRecord
                             ? 'ordonnance_paiement_impot'
                             : 'ordonnance_paiement'
                         ))
-                        ->default(
+                        // ✅ Défaut dynamique depuis la base
+                        ->default(fn() => EtatConfig::defautPour(
                             $this->record->type_ordonnance === 'impot'
                             ? 'ordonnance_paiement_impot'
                             : 'ordonnance_paiement'
-                        )
+                        )?->code)
                         ->required()
                         ->helperText('⭐ = modèle par défaut'),
                 ])
-                ->action(function ($record, array $data, $livewire) {
+                ->action(function (array $data) {
                     $url = route('pdf.afficher', [
                         'etat' => $data['variante'],
-                        'id' => $record->id, // ← correct
+                        'id' => $this->record->id,
                     ]);
-                    $livewire->dispatch('open-url-new-tab', url: $url);
+                    $this->dispatch('open-url-new-tab', url: $url);
                 })
                 ->openUrlInNewTab(),
 
