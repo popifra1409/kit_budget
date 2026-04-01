@@ -312,7 +312,7 @@ class ViewPersonnel extends ViewRecord
                 ->label('Créer une décision')
                 ->icon('heroicon-o-document-text')
                 ->color('success')
-                ->url(fn() => \App\Filament\Resources\DecisionAdministrativeResource::getUrl('create', [
+                ->url(fn() => \App\Filament\Budget\Resources\DecisionAdministrativeResource::getUrl('create', [
                     'personnel_id' => $this->record->id
                 ])),
 
