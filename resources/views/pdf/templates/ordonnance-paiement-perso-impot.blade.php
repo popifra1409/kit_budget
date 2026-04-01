@@ -70,7 +70,7 @@
         ?? '—';
 
     // ── Bénéficiaire OPT = LE RECEVEUR ────────────────────
-    $nomBeneficiaire = 'LE RECEVEUR';
+    $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
 
     // ── Détail impôts via getDetailImpots() ───────────────
     $detailImpots = $ordonnance->getDetailImpots();
@@ -90,7 +90,7 @@
         ?? $numEngagement;
 
     $objet = $ordonnance->objet
-        ?? 'Reversement des impôts et taxes — OP N° ' . $opPrincipaleNumero;
+        ?? 'Reversement des impôts et taxes' . $opPrincipaleNumero;
 
     $montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
 @endphp
@@ -125,7 +125,7 @@
 
         td,
         th {
-            font-size: 8.5pt;
+            font-size: 8pt;
         }
 
         .b {
@@ -229,14 +229,12 @@
                     {{ $bp }} &nbsp; Tél. {{ $tel }} &nbsp; Fax {{ $fax }}
                 </div>
                 <div class="bt bb" style="margin:1.5mm 0; padding:0.8mm 0;">
-                    <div class="op-title">ORDONNANCE DE PAIEMENT — IMPÔT</div>
-                    <div style="font-size:7.5pt;"><em>TAX PAYMENT ORDER</em></div>
+                    <div class="op-title">ORDONNANCE DE PAIEMENT</div>
+                    <div style="font-size:7.5pt;"><em>PAYMENT ORDER</em></div>
                 </div>
                 <div class="bt sm it" style="padding-top:0.8mm; line-height:1.3;">
-                    L'Agent comptable de l'{{ $sigle }} est autorisé à reverser les impôts et taxes<br>
-                    <em class="xsm">
-                        The accounting officer of the {{ $sigle }} is hereby authorized to remit taxes
-                    </em>
+                    L'Agent comptable de l'{{ $sigle }} est autorisé à payer la<br>
+                    <em class="xsm">The accounting officer of the {{ $sigle }} is hereby autorized to pay the debit</em>
                 </div>
             </td>
 
@@ -257,9 +255,10 @@
                     </tr>
                     <tr>
                         <td class="ba bg sm" style="padding:0.8mm 1.5mm;">
-                            Réf. OP principale<br><em>Main payment order ref.</em>
+                            N° de bon de caisse<br><em>N° of the cash voucher</em>
                         </td>
-                        <td class="ba tr b" style="padding:0.8mm 1.5mm;">{{ $opPrincipaleNumero }}</td>
+                        {{-- ✅ N° de bon de caisse = N° engagement --}}
+                        <td class="ba tr b" style="padding:0.8mm 1.5mm;">{{ $numEngagement }}</td>
                     </tr>
                     <tr>
                         <td class="ba bg sm" style="padding:0.8mm 1.5mm;">
@@ -269,7 +268,7 @@
                     </tr>
                     <tr>
                         <td class="ba bg sm" style="padding:0.8mm 1.5mm;">
-                            N° OPT<br><em>N° of tax order</em>
+                            N° OPT<br><em>N° of OPT</em>
                         </td>
                         <td class="ba tr b" style="padding:0.8mm 1.5mm;">{{ $numOP }}</td>
                     </tr>
@@ -300,10 +299,10 @@
             </td>
         </tr>
 
-        {{-- ── R2 : Référence OP principale ── --}}
+        {{-- ── R2 : Référence OPT principale ── --}}
         <tr>
             <td class="ba" style="padding:1mm 2mm;">
-                <span style="font-size:7.5pt;">Reversement sur OP N°</span>
+                <span style="font-size:7.5pt;">Reversement impôts et taxes du bon N°</span>
                 <strong style="margin-left:4mm;">{{ $opPrincipaleNumero }}</strong>
             </td>
             <td class="ba tr" style="padding:1mm 2mm;">{{ $imputation }}</td>
@@ -316,21 +315,14 @@
         <tr>
             <td class="ba" rowspan="3" style="vertical-align:top; padding:2mm;">
 
-                {{-- Reverseur --}}
-                <div class="b sm">REVERSEUR (Contribuable ayant subi les retenues):</div>
-                <div class="sm it">TAXPAYER HAVING INCURRED THE DEDUCTIONS:</div>
-                <div class="b" style="margin-top:1.5mm; font-size:9.5pt;">
-                    {{ strtoupper($nomReverseur) }}
-                </div>
-
-                <div style="border-bottom:1px solid #000; margin:2mm 0;"></div>
-
                 {{-- Bénéficiaire = LE RECEVEUR --}}
                 <div class="b sm">DESIGNATION DU CREANCIER(1):</div>
                 <div class="sm it">DESIGNATION OF THE CREDITOR(1):</div>
-                <div class="b" style="margin-top:1mm; font-size:10pt;">
+                <div class="b" style="margin-top:1mm; font-size:10pt; height:10mm;">
                     {{ strtoupper($nomBeneficiaire) }}
                 </div>
+
+                <div style="border-bottom:1px solid #000; margin:2mm 0;"></div>
 
                 <div style="margin-top:3mm;">
                     <div class="b xsm">PIECES JUSTIFICATIVES DE LA DEPENSE(1)</div>
@@ -533,8 +525,8 @@
         {{-- ── R9 : Compte à créditer ── --}}
         <tr>
             <td class="ba" colspan="3" style="vertical-align:top; padding:2mm;">
-                <div class="b sm">COMPTE A CREDITER (Receveur des Impôts)</div>
-                <div class="xsm it">ACCOUNT TO BE CREDITED (Tax collector)</div>
+                <div class="b sm">COMPTE A CREDITER</div>
+                <div class="xsm it">ACCOUNT TO BE CREDITED </div>
                 <div style="height:10mm;"></div>
             </td>
         </tr>
