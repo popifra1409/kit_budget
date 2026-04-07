@@ -22,6 +22,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
 use App\Filament\Pages\Auth\Login;
+use Filament\Navigation\MenuItem;
 
 class BudgetPanelProvider extends PanelProvider
 {
@@ -60,6 +61,8 @@ class BudgetPanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info' => Color::hex('#64748b'),
             ])
+
+            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->brandName(($fournisseur->nom_logiciel ?? 'Budget Manager') . ' — Budget')
             ->brandLogo(function () use ($fournisseur) {
                 $logo = $fournisseur->logo_url;
@@ -75,6 +78,13 @@ class BudgetPanelProvider extends PanelProvider
             ->favicon(fn() => $fournisseur->logo ?? asset('images/favicon.png'))
 
             ->sidebarCollapsibleOnDesktop()
+
+            ->userMenuItems([
+                MenuItem::make()
+                    ->label('Règlages')
+                    ->url('')
+                    ->icon('heroicon-o-cog-6-tooth')
+            ])
 
             // ── Navigation du module Budget ──────────────────────────────
             ->navigationGroups([

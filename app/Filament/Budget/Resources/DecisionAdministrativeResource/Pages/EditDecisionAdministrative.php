@@ -110,26 +110,20 @@ class EditDecisionAdministrative extends EditRecord
                 ->label('Annuler')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn() => !in_array($this->record->statut, ['annulee', 'payee']))
+                ->visible(fn() => $this->record->peutEtreAnnulee())
+                ->form([
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif d\'annulation')
+                        ->rows(3)->required(),
+                ])
                 ->requiresConfirmation()
-                ->modalHeading('Annuler la décision')
-                ->modalDescription('⚠️ Confirmer l\'annulation de cette décision ?')
-                ->action(function () {
+                ->action(function (array $data) {
                     try {
-                        $this->record->annuler();
-
-                        Notification::make()
-                            ->title('⚠️ Décision annulée')
-                            ->warning()
-                            ->body('La décision a été annulée avec succès.')
-                            ->send();
+                        $this->record->annuler($data['motif']);
+                        Notification::make()->title('✅ Décision annulée')->success()->send();
+                        $this->redirect($this->getResource()::getUrl('view', ['record' => $this->record]));
                     } catch (\Exception $e) {
-                        Notification::make()
-                            ->title('❌ Impossible d\'annuler')
-                            ->danger()
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                        Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->persistent()->send();
                     }
                 }),
 

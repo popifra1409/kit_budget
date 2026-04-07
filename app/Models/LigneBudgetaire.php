@@ -249,7 +249,16 @@ class LigneBudgetaire extends Model
      */
     public function annulerEngagement(float $montant): void
     {
-        $this->engage -= $montant;
+        // ✅ Protection — ne jamais aller en négatif (contrainte PostgreSQL)
+        if ($this->engage <= 0) {
+            \Log::warning("annulerEngagement — engage déjà à 0, libération ignorée", [
+                'ligne_id' => $this->id,
+                'montant' => $montant,
+            ]);
+            return; // ← sortir sans modifier
+        }
+
+        $this->engage = max(0, $this->engage - $montant);
         $this->save();
     }
 

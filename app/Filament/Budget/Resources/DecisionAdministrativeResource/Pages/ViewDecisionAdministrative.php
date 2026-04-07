@@ -30,7 +30,7 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->modalDescription(
                     fn($record) =>
                     "Valider la décision pour {$record->getNomCompletPersonnel()} d'un montant net de " .
-                        number_format($record->montant_net, 0, ',', ' ') . " FCFA ?"
+                    number_format($record->montant_net, 0, ',', ' ') . " FCFA ?"
                 )
                 ->action(function ($record) {
                     $record->valider(auth()->user());
@@ -50,7 +50,7 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->modalDescription(
                     fn($record) =>
                     "Engager le budget pour un montant de " .
-                        number_format($record->montant_brut, 0, ',', ' ') . " FCFA ?"
+                    number_format($record->montant_brut, 0, ',', ' ') . " FCFA ?"
                 )
                 ->form([
                     Forms\Components\Select::make('nomenclature_id')
@@ -154,92 +154,99 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->label('Annuler')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn($record) => !in_array($record->statut, ['annulee', 'payee']))
-                ->requiresConfirmation()
-                ->modalHeading('Annuler la décision')
-                ->modalDescription('⚠️ Confirmer l\'annulation de cette décision ? Si le budget est engagé, il sera désengagé automatiquement.') // ✅ AJOUT : Emoji
-                ->action(function ($record) {
-                    try {
-                        $record->annuler();
-                        Notification::make()
-                            ->title('⚠️ Décision annulée')
-                            ->success()
-                            ->body('La décision a été annulée avec succès.')
-                            ->send();
-                    } catch (\Exception $e) {
-                        Notification::make()
-                            ->title('❌ Impossible d\'annuler')
-                            ->danger()
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                ->visible(fn() => !in_array($this->record->statut, ['annulee']))
+                ->form([
+                    Forms\Components\Placeholder::make('warning')
+                        ->label('')
+                        ->content(
+                            fn() => $this->record->engagee
+                            ? new \Illuminate\Support\HtmlString(
+                                '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:.5rem;padding:.75rem;color:#dc2626;font-weight:600;">
+                    ❌ Cette décision est engagée (N° ' . ($this->record->engagement?->numero ?? '') . ').<br>
+                    Veuillez d\'abord annuler l\'engagement, puis revenez annuler la décision.</div>'
+                            )
+                            : new \Illuminate\Support\HtmlString(
+                                '<div style="background:#fef9c3;border:1px solid #ca8a04;border-radius:.5rem;padding:.75rem;">
+                    ⚠️ La décision sera annulée. Elle restera récupérable.</div>'
+                            )
+                        )
+                        ->columnSpanFull(),
 
-                        \Log::warning('Tentative d\'annulation échouée', [
-                            'decision_id' => $record->id,
-                            'decision_numero' => $record->numero,
-                            'user_id' => auth()->id(),
-                            'erreur' => $e->getMessage(),
-                        ]);
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif d\'annulation')
+                        ->rows(3)->required()
+                        ->hidden(fn() => $this->record->engagee),
+                ])
+                ->action(function (array $data) {
+                    try {
+                        $this->record->annuler($data['motif'] ?? null);
+                        Notification::make()->title('✅ Décision annulée')->success()->send();
+                        $this->refreshFormData(['statut']);
+                    } catch (\Exception $e) {
+                        Notification::make()->title('❌ Erreur')->danger()
+                            ->body($e->getMessage())->persistent()->send();
+                    }
+                }),
+
+            Actions\Action::make('desengager')
+                ->label('Annuler l\'engagement')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('warning')
+                ->visible(fn() => $this->record->engagee)
+                ->requiresConfirmation()
+                ->modalHeading('Annuler l\'engagement')
+                // ✅ function() au lieu de fn() — accès à $this->record dans le corps
+                ->modalDescription(function () {
+                    $numEngagement = \App\Models\Engagement::where('engageable_id', $this->record->id)
+                        ->where(function ($q) {
+                            $q->where('engageable_type', \App\Models\DecisionAdministrative::class)
+                                ->orWhere('engageable_type', 'decision_administrative');
+                        })
+                        ->value('numero') ?? '—';
+
+                    return new \Illuminate\Support\HtmlString(
+                        "<div style='color:#dc2626;font-weight:600;'>
+        L'engagement N° <strong>{$numEngagement}</strong> sera supprimé définitivement.<br>
+        Les crédits seront libérés sur la ligne budgétaire.<br><br>
+        Vous pourrez ensuite annuler ou réengager la décision.
+        </div>"
+                    );
+                })
+                ->action(function () {
+                    try {
+                        $this->record->desengagerBudget();
+                        Notification::make()
+                            ->title('✅ Engagement annulé — crédits libérés')
+                            ->success()->send();
+                        $this->refreshFormData(['statut', 'engagee']);
+                    } catch (\Exception $e) {
+                        Notification::make()->title('❌ Erreur')->danger()
+                            ->body($e->getMessage())->persistent()->send();
                     }
                 }),
 
             Actions\Action::make('recuperer')
                 ->label('Récupérer')
-                ->icon('heroicon-o-arrow-path')
+                ->icon('heroicon-o-arrow-uturn-left')
                 ->color('success')
-                ->visible(
-                    fn($record) =>
-                    $record->statut === 'annulee'
-                        && $record->peutEtreRecuperee()
-                        && static::getResource()::canRecuperer($record)
-                )
-                ->requiresConfirmation()
-                ->modalHeading('Récupérer la décision administrative')
-                ->modalDescription(function ($record) {
-                    return "⚠️ Confirmer la récupération de la DA n° {$record->numero} ?\n\n" .
-                        "Cette action va :\n" .
-                        "• Libérer les crédits budgétaires (si engagée)\n" .
-                        "• Réinitialiser la validation et l'engagement\n" .
-                        "• Remettre la DA en statut 'Brouillon'\n" .
-                        "• Permettre la modification de la DA\n\n" .
-                        "Vous pourrez ensuite :\n" .
-                        "• Modifier le bénéficiaire\n" .
-                        "• Modifier les montants\n" .
-                        "• Valider à nouveau\n" .
-                        "• Engager à nouveau";
-                })
+                ->visible(fn() => $this->record->statut === 'annulee')
                 ->form([
                     Forms\Components\Textarea::make('motif')
-                        ->label('Motif de récupération')
-                        ->required()
-                        ->rows(3)
-                        ->placeholder('Ex: Changement de bénéficiaire, correction des montants...')
-                        ->helperText('Indiquez pourquoi vous récupérez ce document'),
+                        ->label('Motif de récupération')->rows(2),
                 ])
-                ->modalSubmitActionLabel('🔄 Confirmer la récupération')
-                ->modalCancelActionLabel('Annuler')
-                ->action(function ($record, array $data) {
+                ->requiresConfirmation()
+                ->modalHeading('Récupérer la décision annulée')
+                ->modalDescription('La décision sera remise en Brouillon — modifiable et réengageable.')
+                ->action(function (array $data) {
                     try {
-                        $record->recuperer($data['motif']);
-                        $record->refresh();
-
+                        $this->record->recuperer($data['motif'] ?? null);
                         Notification::make()
-                            ->title('✅ DA récupérée avec succès')
-                            ->success()
-                            ->body("La DA {$record->numero} a été récupérée et remise en brouillon. Vous pouvez maintenant la modifier.")
-                            ->duration(5000)
-                            ->send();
-
-                        // Rediriger vers la page d'édition
-                        // return redirect()->route('filament.budget.resources.decisions-administratives.edit', ['record' => $record->id]);
-                        return redirect(static::getResource()::getUrl('edit', ['record' => $record->id]));
+                            ->title('✅ Décision récupérée — remise en Brouillon')
+                            ->success()->send();
+                        $this->refreshFormData(['statut']);
                     } catch (\Exception $e) {
-                        Notification::make()
-                            ->title('❌ Impossible de récupérer la DA')
-                            ->danger()
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                        Notification::make()->title('❌ Erreur')->danger()
+                            ->body($e->getMessage())->persistent()->send();
                     }
                 }),
 
@@ -382,8 +389,8 @@ class ViewDecisionAdministrative extends ViewRecord
                             ->label('Mode de saisie')
                             ->badge()
                             ->formatStateUsing(fn($state) => match ($state) {
-                                'forfait'  => '✍️ Forfaitaire (saisie libre)',
-                                default    => '🔢 Calculé (formules)',
+                                'forfait' => '✍️ Forfaitaire (saisie libre)',
+                                default => '🔢 Calculé (formules)',
                             })
                             ->color(fn($state) => $state === 'forfait' ? 'warning' : 'info')
                             ->columnSpanFull(),
@@ -395,14 +402,14 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_brut')
                                 ->label('💰 Montant brut (TTC)')
-                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('info')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                                 ->weight('bold'),
 
                             Infolists\Components\TextEntry::make('montant_ht')
                                 ->label('📐 Montant HT')
-                                ->formatStateUsing(fn($state) => number_format((float)($state ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('primary')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                                 ->weight('bold')
@@ -411,7 +418,7 @@ class ViewDecisionAdministrative extends ViewRecord
                             Infolists\Components\TextEntry::make('montant_tva_calcule')
                                 ->label(fn($record) => "TVA ({$record->taux_tva}%)")
                                 ->formatStateUsing(function ($record) {
-                                    $montantTva = (float)($record->montant_brut ?? 0) - (float)($record->montant_ht ?? 0);
+                                    $montantTva = (float) ($record->montant_brut ?? 0) - (float) ($record->montant_ht ?? 0);
                                     return number_format($montantTva, 0, ',', ' ') . ' FCFA';
                                 })
                                 ->color('gray')
@@ -426,13 +433,13 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_cnps')
                                 ->label(fn($record) => 'CNPS (' . number_format($record->taux_cnps ?? 0, 2) . '%)')
-                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->montant_cnps ?? 0) > 0),
 
                             Infolists\Components\TextEntry::make('montant_irnc')
                                 ->label(fn($record) => 'IRNC (' . number_format($record->taux_irnc ?? 0, 2) . '%)')
-                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
@@ -444,7 +451,7 @@ class ViewDecisionAdministrative extends ViewRecord
                                 })
                                 ->formatStateUsing(
                                     fn($state, $record) =>
-                                    number_format((float)$record->montant_redevance_audiovisuelle_calcule, 0, ',', ' ') . ' FCFA'
+                                    number_format((float) $record->montant_redevance_audiovisuelle_calcule, 0, ',', ' ') . ' FCFA'
                                 )
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
@@ -457,20 +464,20 @@ class ViewDecisionAdministrative extends ViewRecord
                                 })
                                 ->formatStateUsing(
                                     fn($state, $record) =>
-                                    number_format((float)$record->montant_feicom_calcule, 0, ',', ' ') . ' FCFA'
+                                    number_format((float) $record->montant_feicom_calcule, 0, ',', ' ') . ' FCFA'
                                 )
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->montant_feicom_calcule ?? 0) > 0),
 
                             Infolists\Components\TextEntry::make('autres_retenues')
                                 ->label('Autres retenues')
-                                ->formatStateUsing(fn($state) => number_format((float)($state ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
 
                             Infolists\Components\TextEntry::make('total_taxes')
                                 ->label('📊 Total retenues')
-                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('danger')
                                 ->weight('bold')
                                 ->columnSpanFull()
@@ -478,7 +485,7 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_net')
                                 ->label('✅ Montant net à payer')
-                                ->formatStateUsing(fn($state) => number_format((float)$state, 0, ',', ' ') . ' FCFA')
+                                ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('success')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                                 ->weight('bold')
@@ -496,22 +503,22 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_brut')
                                 ->label('💰 Montant Brut (TTC)')
-                                ->getStateUsing(fn($record) => number_format((float)$record->getRawOriginal('montant_brut') ?? $record->montant_brut, 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) $record->getRawOriginal('montant_brut') ?? $record->montant_brut, 0, ',', ' ') . ' FCFA')
                                 ->color('info')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                                 ->weight('bold'),
 
                             Infolists\Components\TextEntry::make('montant_ht_forfait')
                                 ->label('📐 Montant HT (saisi)')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_ht'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_ht'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('primary')
                                 ->weight('bold'),
 
                             Infolists\Components\TextEntry::make('montant_tva_forfait')
                                 ->label('TVA (saisie)')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_tva'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_tva'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('gray')
-                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_tva'] ?? 0)) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_tva'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('separator_forfait')
                                 ->label('💸 Retenues (saisies librement)')
@@ -521,43 +528,43 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_cnps_forfait')
                                 ->label('CNPS')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_cnps'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_cnps'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_cnps'] ?? 0)) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_cnps'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('montant_irnc_forfait')
                                 ->label('IR(NC)')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_irnc'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_irnc'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_irnc'] ?? 0)) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_irnc'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('montant_redevance_forfait')
                                 ->label('Redevance audiovisuelle')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0)) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('montant_feicom_forfait')
                                 ->label('FEICOM')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_feicom'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_feicom'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ((float)($record->getAttributes()['montant_feicom'] ?? 0)) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_feicom'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('autres_retenues_forfait')
                                 ->label('Autres retenues')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['autres_retenues'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['autres_retenues'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ((float)($record->getAttributes()['autres_retenues'] ?? 0)) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['autres_retenues'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('total_retenues_forfait')
                                 ->label('📊 Total retenues')
                                 ->getStateUsing(function ($record) {
                                     $attrs = $record->getAttributes();
-                                    $total = (float)($attrs['montant_cnps'] ?? 0)
-                                        + (float)($attrs['montant_irnc'] ?? 0)
-                                        + (float)($attrs['montant_redevance_audiovisuelle'] ?? 0)
-                                        + (float)($attrs['montant_feicom'] ?? 0)
-                                        + (float)($attrs['autres_retenues'] ?? 0);
+                                    $total = (float) ($attrs['montant_cnps'] ?? 0)
+                                        + (float) ($attrs['montant_irnc'] ?? 0)
+                                        + (float) ($attrs['montant_redevance_audiovisuelle'] ?? 0)
+                                        + (float) ($attrs['montant_feicom'] ?? 0)
+                                        + (float) ($attrs['autres_retenues'] ?? 0);
                                     return number_format($total, 0, ',', ' ') . ' FCFA';
                                 })
                                 ->color('danger')
@@ -567,7 +574,7 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_net_forfait')
                                 ->label('✅ Montant net à payer (saisi)')
-                                ->getStateUsing(fn($record) => number_format((float)($record->getAttributes()['montant_net'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_net'] ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('success')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                                 ->weight('bold')

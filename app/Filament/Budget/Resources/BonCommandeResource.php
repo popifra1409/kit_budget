@@ -23,6 +23,8 @@ use App\Models\User;
 use App\Filament\Actions\WorkflowActions;
 use App\Services\BonCommandePdfService;
 use App\Filament\Clusters\GestionBudgetaire;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 
 class BonCommandeResource extends Resource
 {
@@ -40,6 +42,10 @@ class BonCommandeResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    protected static ?string $recordTitleAttribute = 'numero';
+
+    protected static int $globalSearchResultsLimit = 20;
+
     public static function getNavigationBadge(): ?string
     {
         $count = \App\Models\Transmission::query()
@@ -54,6 +60,28 @@ class BonCommandeResource extends Resource
     public static function getNavigationBadgeColor(): ?string
     {
         return 'warning';
+    }
+
+
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet', 'statut', 'engage'];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'Objet' => $record->objet,
+            'statut' => $record->statut,
+            'Fournisseur' => $record->fournisseur->raison_sociale,
+            'Ligne imputation' => $record->getNomenclaturePrincipale()->code ?: 'NON ENGANGE'
+        ];
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with(['fournisseur']);
     }
 
     /**
@@ -178,7 +206,7 @@ class BonCommandeResource extends Resource
                                 );
 
                                 // $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($state);
-
+                    
                                 if (!$fournisseur || !$fournisseur->regimeFiscal) {
                                     return;
                                 }
@@ -598,11 +626,11 @@ class BonCommandeResource extends Resource
                                             // Recalculer la ligne
                                             static::recalculerLigne(
                                                 function ($key, $value) use ($set, $index) {
-                                                    $set("lignes.$index.$key", $value);
-                                                },
+                                                $set("lignes.$index.$key", $value);
+                                            },
                                                 function ($key) use ($get, $index) {
-                                                    return $get("lignes.$index.$key");
-                                                }
+                                                return $get("lignes.$index.$key");
+                                            }
                                             );
                                         }
 
@@ -644,11 +672,11 @@ class BonCommandeResource extends Resource
                                             // Recalculer la ligne
                                             static::recalculerLigne(
                                                 function ($key, $value) use ($set, $index) {
-                                                    $set("lignes.$index.$key", $value);
-                                                },
+                                                $set("lignes.$index.$key", $value);
+                                            },
                                                 function ($key) use ($get, $index) {
-                                                    return $get("lignes.$index.$key");
-                                                }
+                                                return $get("lignes.$index.$key");
+                                            }
                                             );
                                         }
 
@@ -682,11 +710,11 @@ class BonCommandeResource extends Resource
                                                 // Recalculer la ligne
                                                 static::recalculerLigne(
                                                     function ($key, $value) use ($set, $index) {
-                                                        $set("lignes.$index.$key", $value);
-                                                    },
+                                                    $set("lignes.$index.$key", $value);
+                                                },
                                                     function ($key) use ($get, $index) {
-                                                        return $get("lignes.$index.$key");
-                                                    }
+                                                    return $get("lignes.$index.$key");
+                                                }
                                                 );
                                             }
                                         }
@@ -703,7 +731,7 @@ class BonCommandeResource extends Resource
                                                 // ✅ Si non exonéré, vérifier dans cet ordre :
                                                 // 1. IR Commun s'il existe
                                                 // 2. Sinon calculer selon le régime fiscal
-
+                            
                                                 $irCommun = (float) ($get('ir_commun') ?? 0);
 
                                                 if ($irCommun > 0) {
@@ -729,11 +757,11 @@ class BonCommandeResource extends Resource
                                             // Recalculer immédiatement chaque ligne
                                             static::recalculerLigne(
                                                 function ($key, $value) use ($set, $index) {
-                                                    $set("lignes.$index.$key", $value);
-                                                },
+                                                $set("lignes.$index.$key", $value);
+                                            },
                                                 function ($key) use ($get, $index) {
-                                                    return $get("lignes.$index.$key");
-                                                }
+                                                return $get("lignes.$index.$key");
+                                            }
                                             );
                                         }
 
@@ -1300,8 +1328,8 @@ class BonCommandeResource extends Resource
                     ->description(
                         fn($record) =>
                         $record && $record->engagement && $record->date_engagement
-                            ? 'Engagé le ' . $record->date_engagement->format('d/m/Y')
-                            : null
+                        ? 'Engagé le ' . $record->date_engagement->format('d/m/Y')
+                        : null
                     ),
 
                 // Modifier la colonne montant_ir pour montant_total_impots
@@ -1313,10 +1341,14 @@ class BonCommandeResource extends Resource
                     ->color('warning')
                     ->description(function ($record) {
                         $details = [];
-                        if ($record->montant_tva > 0) $details[] = "TVA: " . number_format($record->montant_tva, 0, ',', ' ');
-                        if ($record->montant_ir > 0) $details[] = "IR: " . number_format($record->montant_ir, 0, ',', ' ');
-                        if ($record->montant_tsr > 0) $details[] = "TSR: " . number_format($record->montant_tsr, 0, ',', ' ');
-                        if ($record->montant_cnps > 0) $details[] = "CNPS: " . number_format($record->montant_cnps, 0, ',', ' ');
+                        if ($record->montant_tva > 0)
+                            $details[] = "TVA: " . number_format($record->montant_tva, 0, ',', ' ');
+                        if ($record->montant_ir > 0)
+                            $details[] = "IR: " . number_format($record->montant_ir, 0, ',', ' ');
+                        if ($record->montant_tsr > 0)
+                            $details[] = "TSR: " . number_format($record->montant_tsr, 0, ',', ' ');
+                        if ($record->montant_cnps > 0)
+                            $details[] = "CNPS: " . number_format($record->montant_cnps, 0, ',', ' ');
 
                         return implode(' | ', $details);
                     }),
@@ -1376,9 +1408,9 @@ class BonCommandeResource extends Resource
                     ->query(function ($query, array $data) {
                         return $query
                             ->when($data['date_emission_from'], fn($q, $date) =>
-                            $q->whereDate('date_emission', '>=', $date))
+                                $q->whereDate('date_emission', '>=', $date))
                             ->when($data['date_emission_until'], fn($q, $date) =>
-                            $q->whereDate('date_emission', '<=', $date));
+                                $q->whereDate('date_emission', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -1494,19 +1526,19 @@ class BonCommandeResource extends Resource
                                 // OU
                                 // 2. Transmis À MOI (en attente de mon action)
                                 ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
-                                })
+                                $transmission->where('destinataire_id', $userId)
+                                    ->where('statut', 'en_attente');
+                            })
                                 // OU
                                 // 3. Retournés À MOI pour correction
                                 ->orWhere(function ($subQ) use ($userId) {
-                                    $subQ->where('created_by', $userId)
-                                        ->whereHas('transmissions', function ($transmission) {
-                                            $transmission->where('statut', 'retourne')
-                                                ->latest()
-                                                ->limit(1);
-                                        });
-                                });
+                                $subQ->where('created_by', $userId)
+                                    ->whereHas('transmissions', function ($transmission) {
+                                        $transmission->where('statut', 'retourne')
+                                            ->latest()
+                                            ->limit(1);
+                                    });
+                            });
                         });
                     })
                     ->toggle()

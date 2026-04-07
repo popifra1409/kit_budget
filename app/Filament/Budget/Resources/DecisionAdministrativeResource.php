@@ -20,6 +20,7 @@ use App\Services\DecisionAdministrativePdfService;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Illuminate\Database\Eloquent\Model;
 
 class DecisionAdministrativeResource extends Resource
 {
@@ -37,6 +38,53 @@ class DecisionAdministrativeResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
+    protected static ?string $recordTitleAttribute = 'numero';
+
+    protected static int $globalSearchResultsLimit = 20;
+
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = \App\Models\Transmission::query()
+            ->where('document_type', 'App\Models\DecisionAdministrative')
+            ->pourDestinataire(auth()->id())
+            ->enAttente()
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet', 'statut', 'engagee'];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    { // 'beneficiaire_type' => $record->type_beneficiaire === 'fournisseur'
+            //     ? 'Fournisseur::class'
+            //     : 'App\Models\Personnel',
+            // 'beneficiaire_id' => $record->type_beneficiaire === 'fournisseur'
+            //     ? $record->fournisseur_id
+            //     : $record->personnel_id,
+        return [
+            'Objet' => $record->objet,
+            'statut' => $record->statut,
+            
+            // 'beneficiaire_type' => $record->type_beneficiaire === 'fournisseur'
+            //     ? 'Fournisseur::class'
+            //     : 'App\Models\Personnel',
+            // 'beneficiaire_id' => $record->type_beneficiaire === 'fournisseur'
+            //     ? $record->fournisseur_id
+            //     : $record->personnel_id,
+            'Beneficiaire' => $record->getNomCompletPersonnel() ?: $record->fournisseur->raison_sociale,
+        ];
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with(['fournisseur']);
+    }
     /**
      * Permissions – Décisions administratives
      */
@@ -530,8 +578,8 @@ class DecisionAdministrativeResource extends Resource
                         Forms\Components\ToggleButtons::make('mode_saisie')
                             ->label('Mode de saisie')
                             ->options([
-                                'calcule'  => '🔢 Calculé (formules)',
-                                'forfait'  => '✍️ Forfaitaire (libre)',
+                                'calcule' => '🔢 Calculé (formules)',
+                                'forfait' => '✍️ Forfaitaire (libre)',
                             ])
                             ->default('calcule')
                             ->inline()
@@ -540,8 +588,8 @@ class DecisionAdministrativeResource extends Resource
                             ->helperText(
                                 fn(Get $get) =>
                                 $get('mode_saisie') === 'forfait'
-                                    ? '⚠️ Mode forfaitaire : vous saisissez tous les montants manuellement, aucune formule appliquée.'
-                                    : '💡 Mode calculé : les retenues sont calculées automatiquement depuis le montant brut TTC.'
+                                ? '⚠️ Mode forfaitaire : vous saisissez tous les montants manuellement, aucune formule appliquée.'
+                                : '💡 Mode calculé : les retenues sont calculées automatiquement depuis le montant brut TTC.'
                             ),
 
                         // ==========================================================
@@ -571,9 +619,10 @@ class DecisionAdministrativeResource extends Resource
                                     Forms\Components\Placeholder::make('montant_ht_affiche')
                                         ->label('💰 Montant HT (calculé)')
                                         ->content(function (Get $get) {
-                                            $brut = (float)($get('montant_brut') ?? 0);
-                                            $taux = (float)($get('taux_tva') ?? 19.25);
-                                            if ($brut <= 0) return '0 FCFA';
+                                            $brut = (float) ($get('montant_brut') ?? 0);
+                                            $taux = (float) ($get('taux_tva') ?? 19.25);
+                                            if ($brut <= 0)
+                                                return '0 FCFA';
                                             return number_format($brut / (1 + $taux / 100), 0, ',', ' ') . ' FCFA';
                                         }),
                                 ])->columnSpanFull(),
@@ -584,10 +633,11 @@ class DecisionAdministrativeResource extends Resource
                                 Forms\Components\Placeholder::make('montant_cnps_calcule')
                                     ->label('Montant CNPS calculé')
                                     ->content(function (Get $get) {
-                                        $brut = (float)($get('montant_brut') ?? 0);
-                                        $taux = (float)($get('taux_tva') ?? 19.25);
-                                        $tauxCnps = (float)($get('taux_cnps') ?? 0);
-                                        if ($brut <= 0) return '0 FCFA';
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $taux = (float) ($get('taux_tva') ?? 19.25);
+                                        $tauxCnps = (float) ($get('taux_cnps') ?? 0);
+                                        if ($brut <= 0)
+                                            return '0 FCFA';
                                         $ht = $brut / (1 + $taux / 100);
                                         return number_format($ht * $tauxCnps / 100, 0, ',', ' ') . ' FCFA';
                                     })->columnSpan(3),
@@ -600,10 +650,11 @@ class DecisionAdministrativeResource extends Resource
                                 Forms\Components\Placeholder::make('montant_irnc_calcule')
                                     ->label('Montant IRNC calculé')
                                     ->content(function (Get $get) {
-                                        $brut = (float)($get('montant_brut') ?? 0);
-                                        $taux = (float)($get('taux_tva') ?? 19.25);
-                                        $tauxIrnc = (float)($get('taux_irnc') ?? 0);
-                                        if ($brut <= 0) return '0 FCFA';
+                                        $brut = (float) ($get('montant_brut') ?? 0);
+                                        $taux = (float) ($get('taux_tva') ?? 19.25);
+                                        $tauxIrnc = (float) ($get('taux_irnc') ?? 0);
+                                        if ($brut <= 0)
+                                            return '0 FCFA';
                                         $ht = $brut / (1 + $taux / 100);
                                         return number_format($ht * $tauxIrnc / 100, 0, ',', ' ') . ' FCFA';
                                     }),
@@ -646,22 +697,23 @@ class DecisionAdministrativeResource extends Resource
                             Forms\Components\Placeholder::make('resume_montants')
                                 ->label('📊 Résumé des montants et calculs')
                                 ->content(function (Get $get) {
-                                    $brut = (float)($get('montant_brut') ?? 0);
-                                    $tauxTva = (float)($get('taux_tva') ?? 19.25);
-                                    if ($brut <= 0) return 'Veuillez saisir un montant brut';
+                                    $brut = (float) ($get('montant_brut') ?? 0);
+                                    $tauxTva = (float) ($get('taux_tva') ?? 19.25);
+                                    if ($brut <= 0)
+                                        return 'Veuillez saisir un montant brut';
                                     $ht = $brut / (1 + $tauxTva / 100);
                                     $tva = $ht * ($tauxTva / 100);
-                                    $cnps = $ht * ((float)($get('taux_cnps') ?? 0) / 100);
-                                    $irnc = $ht * ((float)($get('taux_irnc') ?? 0) / 100);
+                                    $cnps = $ht * ((float) ($get('taux_cnps') ?? 0) / 100);
+                                    $irnc = $ht * ((float) ($get('taux_irnc') ?? 0) / 100);
                                     $typeRed = $get('type_redevance_audiovisuelle') ?? 'forfait';
                                     $redevance = $typeRed === 'taux'
-                                        ? $ht * ((float)($get('taux_redevance_audiovisuelle') ?? 0) / 100)
-                                        : (float)($get('montant_redevance_audiovisuelle') ?? 0);
+                                        ? $ht * ((float) ($get('taux_redevance_audiovisuelle') ?? 0) / 100)
+                                        : (float) ($get('montant_redevance_audiovisuelle') ?? 0);
                                     $typeFei = $get('type_feicom') ?? 'forfait';
                                     $feicom = $typeFei === 'taux'
-                                        ? $ht * ((float)($get('taux_feicom') ?? 0) / 100)
-                                        : (float)($get('montant_feicom') ?? 0);
-                                    $autres = (float)($get('autres_retenues') ?? 0);
+                                        ? $ht * ((float) ($get('taux_feicom') ?? 0) / 100)
+                                        : (float) ($get('montant_feicom') ?? 0);
+                                    $autres = (float) ($get('autres_retenues') ?? 0);
                                     $total = $cnps + $irnc + $redevance + $feicom + $autres;
                                     $net = $ht - $total;
                                     return collect([
@@ -740,18 +792,18 @@ class DecisionAdministrativeResource extends Resource
                             Forms\Components\Placeholder::make('_resume_forfait')
                                 ->label('📊 Vérification des montants saisis')
                                 ->content(function (Get $get) {
-                                    $brut    = (float)($get('montant_brut') ?? 0);
-                                    $ht      = (float)($get('montant_ht') ?? 0);
-                                    $tva     = (float)($get('montant_tva') ?? 0);
-                                    $cnps    = (float)($get('montant_cnps') ?? 0);
-                                    $irnc    = (float)($get('montant_irnc') ?? 0);
-                                    $red     = (float)($get('montant_redevance_audiovisuelle') ?? 0);
-                                    $feicom  = (float)($get('montant_feicom') ?? 0);
-                                    $autres  = (float)($get('autres_retenues') ?? 0);
-                                    $net     = (float)($get('montant_net') ?? 0);
+                                    $brut = (float) ($get('montant_brut') ?? 0);
+                                    $ht = (float) ($get('montant_ht') ?? 0);
+                                    $tva = (float) ($get('montant_tva') ?? 0);
+                                    $cnps = (float) ($get('montant_cnps') ?? 0);
+                                    $irnc = (float) ($get('montant_irnc') ?? 0);
+                                    $red = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
+                                    $feicom = (float) ($get('montant_feicom') ?? 0);
+                                    $autres = (float) ($get('autres_retenues') ?? 0);
+                                    $net = (float) ($get('montant_net') ?? 0);
                                     $totalRet = $cnps + $irnc + $red + $feicom + $autres;
-                                    $netCalc  = $ht - $totalRet;
-                                    $ecart    = $net - $netCalc;
+                                    $netCalc = $ht - $totalRet;
+                                    $ecart = $net - $netCalc;
                                     $ok = abs($ecart) < 1;
 
                                     return collect([
@@ -769,8 +821,8 @@ class DecisionAdministrativeResource extends Resource
                                         "Net calculé (HT-Ret): " . number_format($netCalc, 0, ',', ' ') . " FCFA",
                                         "Net saisi          : " . number_format($net, 0, ',', ' ') . " FCFA",
                                         $ok
-                                            ? "✅ Cohérence OK"
-                                            : "⚠️ Écart de " . number_format(abs($ecart), 0, ',', ' ') . " FCFA — vérifiez vos montants",
+                                        ? "✅ Cohérence OK"
+                                        : "⚠️ Écart de " . number_format(abs($ecart), 0, ',', ' ') . " FCFA — vérifiez vos montants",
                                     ])->implode("\n");
                                 })->columnSpanFull(),
 
@@ -984,9 +1036,9 @@ class DecisionAdministrativeResource extends Resource
                     ->query(function ($query, array $data) {
                         return $query
                             ->when($data['date_decision_from'], fn($q, $date) =>
-                            $q->whereDate('date_decision', '>=', $date))
+                                $q->whereDate('date_decision', '>=', $date))
                             ->when($data['date_decision_until'], fn($q, $date) =>
-                            $q->whereDate('date_decision', '<=', $date));
+                                $q->whereDate('date_decision', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -1093,19 +1145,19 @@ class DecisionAdministrativeResource extends Resource
                                 // OU
                                 // 2. Transmis À MOI (en attente de mon action)
                                 ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
-                                })
+                                $transmission->where('destinataire_id', $userId)
+                                    ->where('statut', 'en_attente');
+                            })
                                 // OU
                                 // 3. Retournés À MOI pour correction
                                 ->orWhere(function ($subQ) use ($userId) {
-                                    $subQ->where('created_by', $userId)
-                                        ->whereHas('transmissions', function ($transmission) {
-                                            $transmission->where('statut', 'retourne')
-                                                ->latest()
-                                                ->limit(1);
-                                        });
-                                });
+                                $subQ->where('created_by', $userId)
+                                    ->whereHas('transmissions', function ($transmission) {
+                                        $transmission->where('statut', 'retourne')
+                                            ->latest()
+                                            ->limit(1);
+                                    });
+                            });
                         });
                     })
                     ->toggle()
@@ -1138,9 +1190,9 @@ class DecisionAdministrativeResource extends Resource
                                 // OU
                                 // 2. Décisions transmises à moi (en attente)
                                 ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
-                                });
+                                $transmission->where('destinataire_id', $userId)
+                                    ->where('statut', 'en_attente');
+                            });
                         });
                     })
                     ->toggle()
@@ -1231,14 +1283,14 @@ class DecisionAdministrativeResource extends Resource
         // ── Mode forfait : conserver UNIQUEMENT ce que l'utilisateur a saisi ──
         if (($data['mode_saisie'] ?? 'calcule') === 'forfait') {
             // Neutraliser tous les taux pour éviter tout recalcul
-            $data['taux_tva']                    = 0;
-            $data['taux_cnps']                   = 0;
-            $data['taux_irnc']                   = 0;
+            $data['taux_tva'] = 0;
+            $data['taux_cnps'] = 0;
+            $data['taux_irnc'] = 0;
             $data['taux_redevance_audiovisuelle'] = 0;
-            $data['taux_feicom']                 = 0;
+            $data['taux_feicom'] = 0;
 
             // Forcer type_tva = forfait pour bloquer calculerMontants()
-            $data['type_tva']                    = 'forfait';
+            $data['type_tva'] = 'forfait';
 
             // montant_ht, montant_tva, montant_cnps, montant_irnc,
             // montant_redevance_audiovisuelle, montant_feicom,
@@ -1248,20 +1300,20 @@ class DecisionAdministrativeResource extends Resource
         }
 
         // ── Mode calculé : valeurs par défaut habituelles ──
-        $data['taux_cnps']                   = $data['taux_cnps']                   ?? 0;
-        $data['taux_irnc']                   = $data['taux_irnc']                   ?? 0;
-        $data['taux_tva']                    = $data['taux_tva']                    ?? 0;
+        $data['taux_cnps'] = $data['taux_cnps'] ?? 0;
+        $data['taux_irnc'] = $data['taux_irnc'] ?? 0;
+        $data['taux_tva'] = $data['taux_tva'] ?? 0;
         $data['taux_redevance_audiovisuelle'] = $data['taux_redevance_audiovisuelle'] ?? 0;
-        $data['taux_feicom']                 = $data['taux_feicom']                 ?? 0;
-        $data['montant_cnps']                = $data['montant_cnps']                ?? 0;
-        $data['montant_irnc']                = $data['montant_irnc']                ?? 0;
-        $data['montant_tva']                 = $data['montant_tva']                 ?? 0;
+        $data['taux_feicom'] = $data['taux_feicom'] ?? 0;
+        $data['montant_cnps'] = $data['montant_cnps'] ?? 0;
+        $data['montant_irnc'] = $data['montant_irnc'] ?? 0;
+        $data['montant_tva'] = $data['montant_tva'] ?? 0;
         $data['montant_redevance_audiovisuelle'] = $data['montant_redevance_audiovisuelle'] ?? 0;
-        $data['montant_feicom']              = $data['montant_feicom']              ?? 0;
-        $data['autres_retenues']             = $data['autres_retenues']             ?? 0;
-        $data['reference_decision']          = $data['reference_decision']          ?? '';
-        $data['signataire']                  = $data['signataire']                  ?? '';
-        $data['observations']                = $data['observations']                ?? '';
+        $data['montant_feicom'] = $data['montant_feicom'] ?? 0;
+        $data['autres_retenues'] = $data['autres_retenues'] ?? 0;
+        $data['reference_decision'] = $data['reference_decision'] ?? '';
+        $data['signataire'] = $data['signataire'] ?? '';
+        $data['observations'] = $data['observations'] ?? '';
 
         return $data;
     }

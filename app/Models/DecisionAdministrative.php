@@ -753,115 +753,111 @@ class DecisionAdministrative extends Model
      */
     public function desengagerBudget(): void
     {
-        // ✅ VÉRIFICATION PERMISSION
-        // On utilise annuler_decision_administrative car désengager fait partie du processus d'annulation
         if (!auth()->check() || !auth()->user()->can('annuler_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de désengager cette décision.");
         }
 
         if (!$this->engagee) {
+            throw new \Exception("Cette décision n'est pas engagée.");
+        }
+
+        // ✅ Requête directe — contourne le problème morphOne/morphMap
+        $engagement = \App\Models\Engagement::where('engageable_id', $this->id)
+            ->where(function ($q) {
+                $q->where('engageable_type', static::class)
+                    ->orWhere('engageable_type', 'decision_administrative');
+            })
+            ->first();
+
+        if (!$engagement) {
+            // Engagement absent — juste nettoyer la DA
+            $this->updateQuietly([
+                'engagee' => false,
+                'montant_engage' => 0,
+                'date_engagement' => null,
+                'statut' => 'validee', // ← ajouter
+            ]);
             return;
         }
 
-        DB::beginTransaction();
-        try {
-            $engagement = $this->engagement;
+        // ✅ Charger les lignes avant d'appeler annuler()
+        $engagement->load('lignes');
 
-            if ($engagement) {
-                // ✅ Désengager chaque ligne budgétaire
-                foreach ($engagement->lignes as $ligne) {
-                    $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                        ->where('nomenclature_id', $ligne->nomenclature_id)
-                        ->firstOrFail();
+        // ✅ annuler() libère crédits + supprime définitivement
+        $engagement->annuler(force: true);
 
-                    // Utilise la méthode propre de LigneBudgetaire
-                    $ligneBudgetaire->annulerEngagement($ligne->montant);
-                }
+        // ✅ Nettoyer la DA
+        $this->updateQuietly([
+            'engagee' => false,
+            'montant_engage' => 0,
+            'date_engagement' => null,
+        ]);
 
-                // ✅ SUPPRIMER l'engagement (au lieu de annuler())
-                // Évite les engagements orphelins
-                $engagement->delete();
-            }
-
-            // ✅ Remettre la DA en statut 'validee' (retour en arrière)
-            $this->engagee = false;
-            $this->montant_engage = 0;
-            $this->statut = 'validee'; // ← CORRECTION ICI
-            $this->save();
-
-            DB::commit();
-
-            \Log::info("DA désengagée avec succès", [
-                'da_numero' => $this->numero,
-                'montant' => $this->montant_brut,
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            \Log::error("Erreur désengagement DA", [
-                'da_id' => $this->id,
-                'erreur' => $e->getMessage(),
-            ]);
-
-            throw $e;
-        }
+        \Log::info("DA {$this->numero} désengagée — engagement supprimé définitivement");
     }
-
     /**
      * Annuler la décision
      */
     public function annuler(?string $motif = null): void
     {
-        // ✅ VÉRIFICATION PERMISSION
         if (!auth()->check() || !auth()->user()->can('annuler_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission d'annuler cette décision.");
         }
+
+        if ($this->statut === 'annulee') {
+            throw new \Exception("Cette décision est déjà annulée.");
+        }
+
+        // ✅ Bloquer si engagée — l'utilisateur doit d'abord annuler l'engagement
+        if ($this->engagee) {
+            throw new \Exception(
+                "❌ Annulation impossible : cette décision est déjà engagée.\n\n" .
+                "Veuillez d'abord annuler l'engagement N° " . ($this->engagement?->numero ?? '') .
+                " depuis la fiche de l'engagement, puis revenez annuler la décision."
+            );
+        }
+
+        \DB::beginTransaction();
         try {
-            DB::beginTransaction();
+            $statutAvant = $this->statut;
 
-            // Si la DA est engagée, désengager d'abord
-            if ($this->engagee && $this->engagement_id) {
-                \Log::info("DA {$this->numero} engagée, désengagement automatique avant annulation");
+            $observationsAjout = "\n\n--- ANNULÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                "Statut avant : {$statutAvant}\n" .
+                "Motif : " . ($motif ?? 'Non précisé') . "\n" .
+                "Par : " . auth()->user()->name;
 
-                $this->desengagerBudget();
-                $this->refresh();
-            }
-
-            // Annuler la DA
-            $this->statut = 'annulee';
-
-            if ($motif) {
-                $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
-                    "--- ANNULÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
-                    "Motif : " . $motif . "\n" .
-                    "Par : " . auth()->user()->name;
-            }
-
-            $this->save();
-
-            DB::commit();
-
-            \Log::info("DA {$this->numero} annulée avec succès", [
-                'user' => auth()->id(),
-                'motif' => $motif,
+            $this->update([
+                'statut' => 'annulee',
+                'statut_avant_annulation' => $statutAvant,
+                'observations' => ($this->observations ?? '') . $observationsAjout,
             ]);
+
+            \DB::commit();
+
+            \Log::info("DA {$this->numero} annulée", [
+                'statut_avant' => $statutAvant,
+                'user' => auth()->id(),
+            ]);
+
         } catch (\Exception $e) {
-            DB::rollBack();
-
-            \Log::error("Erreur annulation DA {$this->numero} : " . $e->getMessage());
-
+            \DB::rollBack();
             throw $e;
         }
     }
 
     public function peutEtreRecuperee(): bool
     {
-        if ($this->statut !== 'annulee') {
-            return false;
-        }
+        return $this->statut === 'annulee';
+    }
 
-        if ($this->engagement && $this->engagement->statut !== 'annule') {
+    public function peutEtreAnnulee(): bool
+    {
+        if ($this->statut === 'annulee')
             return false;
+
+        // Si engagée, vérifier qu'il n'y a pas d'OP
+        if ($this->engagee && $this->engagement) {
+            return $this->engagement->ordonnancesPaiement()->count() === 0;
         }
 
         return true;
@@ -869,74 +865,38 @@ class DecisionAdministrative extends Model
 
     public function recuperer(?string $motif = null): void
     {
-        // ✅ VÉRIFICATION PERMISSION
         if (!auth()->check() || !auth()->user()->can('recuperer_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de récupérer cette décision.");
         }
 
-        if (!$this->peutEtreRecuperee()) {
-            throw new \Exception("Seule une DA annulée peut être récupérée.");
+        if ($this->statut !== 'annulee') {
+            throw new \Exception("Seule une décision annulée peut être récupérée.");
         }
 
+        \DB::beginTransaction();
         try {
-            DB::beginTransaction();
-
-            // Si un engagement existe encore (engagement orphelin)
-            if ($this->engagement) {
-                \Log::warning("DA {$this->numero} : Engagement {$this->engagement->id} existe encore, nettoyage...");
-
-                if ($this->engagement) {
-                    // Vérifier qu'il n'y a pas d'OP
-                    if ($this->engagement->ordonnancesPaiement()->count() > 0) {
-                        throw new \Exception("Impossible de récupérer : des ordonnances de paiement existent sur l'engagement.");
-                    }
-
-                    // ✅ CORRECTION : Libérer les crédits via les lignes d'engagement
-                    // Au lieu de libererCreditsEngagement() qui est obsolète
-                    foreach ($this->engagement->lignes as $ligne) {
-                        $ligneBudgetaire = LigneBudgetaire::where('budget_id', $this->budget_id)
-                            ->where('nomenclature_id', $ligne->nomenclature_id)
-                            ->first();
-
-                        if ($ligneBudgetaire) {
-                            $ligneBudgetaire->annulerEngagement($ligne->montant);
-                        }
-                    }
-
-                    // Supprimer l'engagement
-                    $this->engagement->delete();
-
-                    \Log::info("Engagement nettoyé lors de la récupération de la DA {$this->numero}");
-                }
-            }
-
-            // Réinitialiser tous les champs
-            // $this->engagement_id = null;
-            $this->engagee = false;
-            $this->date_engagement = null;
-            $this->montant_engage = 0;
-            $this->validee_par = null;
-            $this->date_validation = null;
-            $this->statut = 'brouillon';
-
-            $this->observations = ($this->observations ? $this->observations . "\n\n" : '') .
-                "--- RÉCUPÉRÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
+            $observationsAjout = "\n\n--- RÉCUPÉRÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
                 "Motif : " . ($motif ?? 'Document récupéré pour modification') . "\n" .
                 "Par : " . auth()->user()->name;
 
-            $this->save();
-
-            DB::commit();
-
-            \Log::info("DA {$this->numero} récupérée et remise en brouillon", [
-                'user' => auth()->id(),
-                'motif' => $motif,
+            // ✅ Toujours retourner en brouillon — l'utilisateur réengagera si besoin
+            $this->update([
+                'statut' => 'brouillon',
+                'statut_avant_annulation' => null,
+                'engagee' => false,
+                'montant_engage' => 0,
+                'date_engagement' => null,
+                'validee_par' => null,
+                'date_validation' => null,
+                'observations' => ($this->observations ?? '') . $observationsAjout,
             ]);
+
+            \DB::commit();
+
+            \Log::info("DA {$this->numero} récupérée — remise en brouillon");
+
         } catch (\Exception $e) {
-            DB::rollBack();
-
-            \Log::error("Erreur récupération DA {$this->numero} : " . $e->getMessage());
-
+            \DB::rollBack();
             throw $e;
         }
     }

@@ -48,6 +48,8 @@ class Engagement extends Model
         'statut',
         'engage_par',
         'date_validation',
+        'date_annulation',
+        'annule_par',
         'observations',
     ];
 
@@ -270,9 +272,9 @@ class Engagement extends Model
      */
     public static function genererNumero(): string
     {
-        $annee       = now()->year;
+        $annee = now()->year;
         $anneeCourte = substr($annee, -2);
-        $prefixe     = "BE{$anneeCourte}-";
+        $prefixe = "BE{$anneeCourte}-";
 
         return \DB::transaction(function () use ($anneeCourte, $prefixe) {
             // ✅ withTrashed() — inclure les soft-deleted
@@ -352,45 +354,70 @@ class Engagement extends Model
     /**
      * Annuler l'engagement
      */
-    public function annuler(): void
+    public function annuler(bool $force = false): void
     {
-        // ✅ Vérifications de sécurité
-        if ($this->statut === 'definitif') {
-            throw new \Exception("Impossible d'annuler un engagement définitif.");
-        }
-
         if ($this->statut === 'annule') {
             throw new \Exception("Cet engagement est déjà annulé.");
         }
 
+        if (!$force && $this->statut === 'definitif') {
+            throw new \Exception("Impossible d'annuler un engagement définitif.");
+        }
+
         if ($this->ordonnancesPaiement()->exists()) {
-            throw new \Exception("Impossible d'annuler un engagement qui a des ordonnances de paiement.");
+            throw new \Exception(
+                "Impossible d'annuler : des ordonnances de paiement existent sur cet engagement."
+            );
         }
 
-        // Libérer les crédits engagés
-        if ($this->nomenclature_principale_id) {
-            $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-                ->where('nomenclature_id', $this->nomenclature_principale_id)
-                ->first();
+        \DB::beginTransaction();
+        try {
+            // ✅ Libérer les crédits via les lignes d'engagement
+            foreach ($this->lignes as $ligne) {
+                $lb = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+                    ->where('nomenclature_id', $ligne->nomenclature_id)
+                    ->first();
 
-            if ($ligneBudgetaire) {
-                $ligneBudgetaire->engage -= $this->montant_engage;
-                $ligneBudgetaire->save();
+                if ($lb && $lb->engage > 0) {
+                    $lb->engage = max(0, $lb->engage - $ligne->montant);
+                    $lb->save();
+
+                    \Log::info("Crédit libéré via Engagement::annuler()", [
+                        'nomenclature_id' => $ligne->nomenclature_id,
+                        'montant' => $ligne->montant,
+                    ]);
+                }
             }
+
+            // ✅ Fallback — si pas de lignes, utiliser nomenclature_principale_id
+            if ($this->lignes->isEmpty() && $this->nomenclature_principale_id) {
+                $lb = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+                    ->where('nomenclature_id', $this->nomenclature_principale_id)
+                    ->first();
+
+                if ($lb && $lb->engage > 0) {
+                    $lb->engage = max(0, $lb->engage - $this->montant_engage);
+                    $lb->save();
+                }
+            }
+
+            \Log::info("Engagement {$this->numero} — crédits libérés — suppression définitive");
+
+            // ✅ Supprimer lignes puis engagement (forceDelete libère le numéro)
+            // Sans forceDelete → numéro bloqué → doublon au réengagement
+            $this->lignes()->delete();
+            $this->forceDelete();
+
+            \DB::commit();
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            \Log::error("Erreur annulation engagement", [
+                'engagement_id' => $this->id,
+                'erreur' => $e->getMessage(),
+            ]);
+            throw $e;
         }
-
-        // Marquer comme annulé
-        $this->statut = 'annule';
-        $this->date_annulation = now();
-        $this->annule_par = auth()->id();
-        $this->save();
-
-        // Log
-        \Log::info("Engagement {$this->numero} annulé", [
-            'id' => $this->id,
-            'montant' => $this->montant_engage,
-            'user' => auth()->id(),
-        ]);
     }
 
     /**
@@ -751,30 +778,30 @@ class Engagement extends Model
                 if (!$da->relationLoaded('fournisseur')) {
                     $da->load('fournisseur');
                 }
-                $beneficiaire     = $da->fournisseur;
+                $beneficiaire = $da->fournisseur;
                 $beneficiaireType = 'App\Models\Fournisseur';
 
                 \Log::info("DA - Bénéficiaire Fournisseur trouvé", [
-                    'fournisseur_id'     => $beneficiaire?->id,
-                    'raison_sociale'     => $beneficiaire?->raison_sociale ?? 'NULL',
+                    'fournisseur_id' => $beneficiaire?->id,
+                    'raison_sociale' => $beneficiaire?->raison_sociale ?? 'NULL',
                 ]);
             } elseif ($da->personnel_id) {
                 if (!$da->relationLoaded('personnel')) {
                     $da->load('personnel');
                 }
-                $beneficiaire     = $da->personnel;
+                $beneficiaire = $da->personnel;
                 $beneficiaireType = 'App\Models\Personnel';
 
                 \Log::info("DA - Bénéficiaire Personnel trouvé", [
                     'personnel_id' => $beneficiaire?->id,
-                    'nom'          => $beneficiaire?->nom_complet ?? 'NULL',
+                    'nom' => $beneficiaire?->nom_complet ?? 'NULL',
                 ]);
             } else {
                 \Log::error("DA - Aucun bénéficiaire trouvé", [
-                    'da_id'             => $da->id,
+                    'da_id' => $da->id,
                     'type_beneficiaire' => $da->type_beneficiaire,
-                    'personnel_id'      => $da->personnel_id,
-                    'fournisseur_id'    => $da->fournisseur_id,
+                    'personnel_id' => $da->personnel_id,
+                    'fournisseur_id' => $da->fournisseur_id,
                 ]);
             }
 
@@ -860,7 +887,8 @@ class Engagement extends Model
         $montant = $this->montant_engage;
 
         // Pour les fournisseurs
-        if (($this->beneficiaire_type === 'fournisseur' || $this->beneficiaire_type === 'App\Models\Fournisseur')
+        if (
+            ($this->beneficiaire_type === 'fournisseur' || $this->beneficiaire_type === 'App\Models\Fournisseur')
             && $this->beneficiaireFournisseur
         ) {
 
