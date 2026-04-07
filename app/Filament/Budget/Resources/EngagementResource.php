@@ -10,12 +10,14 @@ use App\Models\User;
 use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use Illuminate\Database\Eloquent\Model;
 
 
 class EngagementResource extends Resource
@@ -33,6 +35,24 @@ class EngagementResource extends Resource
     protected static ?string $navigationGroup = 'Commandes & Engagement';
 
     protected static ?int $navigationSort = 1;
+
+    protected static ?string $recordTitleAttribute = 'numero';
+
+    protected static int $globalSearchResultsLimit = 20;
+
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet', 'montant_engage'];
+    }
+
+     public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'Objet' => $record->objet,
+            'Montant engagé' => $record->montant_engage,
+        ];
+    }
 
 
     public static function getNavigationBadge(): ?string
@@ -202,8 +222,10 @@ class EngagementResource extends Resource
                             ->searchable()
                             ->live()
                             ->helperText(function ($record) {
-                                if ($record?->estBonCommande()) return '📦 Types issus du référentiel Bons de Commande';
-                                if ($record?->estDecision())    return '📋 Types issus du référentiel Décisions Administratives';
+                                if ($record?->estBonCommande())
+                                    return '📦 Types issus du référentiel Bons de Commande';
+                                if ($record?->estDecision())
+                                    return '📋 Types issus du référentiel Décisions Administratives';
                                 return 'Type d\'engagement';
                             }),
 
@@ -230,7 +252,7 @@ class EngagementResource extends Resource
                                     ->filter(fn($lb) => $lb->nomenclature) // Filtrer les NULL
                                     ->mapWithKeys(fn($lb) => [
                                         $lb->nomenclature_id =>
-                                        "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} " .
+                                            "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} " .
                                             "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                     ]);
 
@@ -243,8 +265,8 @@ class EngagementResource extends Resource
                             ->helperText(
                                 fn(callable $get) =>
                                 !$get('budget_id')
-                                    ? 'Veuillez d\'abord sélectionner un budget'
-                                    : 'Ligne budgétaire sur laquelle imputer cet engagement'
+                                ? 'Veuillez d\'abord sélectionner un budget'
+                                : 'Ligne budgétaire sur laquelle imputer cet engagement'
                             )
                             ->disabled(fn(callable $get) => !$get('budget_id')),
 
@@ -451,19 +473,19 @@ class EngagementResource extends Resource
                                 'beneficiaire',
                                 [\App\Models\Fournisseur::class],
                                 function ($subQ) use ($search) {
-                                    $subQ->where('raison_sociale', 'like', "%{$search}%")
-                                        ->orWhere('code', 'like', "%{$search}%");
-                                }
+                                $subQ->where('raison_sociale', 'like', "%{$search}%")
+                                    ->orWhere('code', 'like', "%{$search}%");
+                            }
                             )
                                 // Recherche personnels (polymorphique)
                                 ->orWhereHasMorph(
                                     'beneficiaire',
                                     [\App\Models\Personnel::class],
                                     function ($subQ) use ($search) {
-                                        $subQ->where('nom', 'like', "%{$search}%")
-                                            ->orWhere('prenoms', 'like', "%{$search}%")
-                                            ->orWhere('matricule', 'like', "%{$search}%");
-                                    }
+                                $subQ->where('nom', 'like', "%{$search}%")
+                                    ->orWhere('prenoms', 'like', "%{$search}%")
+                                    ->orWhere('matricule', 'like', "%{$search}%");
+                            }
                                 );
                         });
                     })
@@ -531,9 +553,9 @@ class EngagementResource extends Resource
                     ->query(function ($query, array $data) {
                         return $query
                             ->when($data['date_engagement_from'], fn($q, $date) =>
-                            $q->whereDate('date_engagement', '>=', $date))
+                                $q->whereDate('date_engagement', '>=', $date))
                             ->when($data['date_engagement_until'], fn($q, $date) =>
-                            $q->whereDate('date_engagement', '<=', $date));
+                                $q->whereDate('date_engagement', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
