@@ -7,7 +7,6 @@ use App\Models\Engagement;
 use App\Models\Budget;
 use App\Models\Fournisseur;
 use App\Models\User;
-use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -19,41 +18,30 @@ use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use Illuminate\Database\Eloquent\Model;
 
-
 class EngagementResource extends Resource
 {
-    protected static ?string $model = Engagement::class;
-
-    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-
-    protected static ?string $navigationLabel = 'Engagements';
-
-    protected static ?string $modelLabel = 'Engagement';
-
+    protected static ?string $model            = Engagement::class;
+    protected static ?string $navigationIcon   = 'heroicon-o-banknotes';
+    protected static ?string $navigationLabel  = 'Engagements';
+    protected static ?string $modelLabel       = 'Engagement';
     protected static ?string $pluralModelLabel = 'Engagements';
-
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
-
-    protected static ?int $navigationSort = 1;
-
+    protected static ?string $navigationGroup  = 'Commandes & Engagement';
+    protected static ?int    $navigationSort   = 1;
     protected static ?string $recordTitleAttribute = 'numero';
-
-    protected static int $globalSearchResultsLimit = 20;
-
+    protected static int     $globalSearchResultsLimit = 20;
 
     public static function getGloballySearchableAttributes(): array
     {
         return ['numero', 'objet', 'montant_engage'];
     }
 
-     public static function getGlobalSearchResultDetails(Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         return [
-            'Objet' => $record->objet,
+            'Objet'          => $record->objet,
             'Montant engagé' => $record->montant_engage,
         ];
     }
-
 
     public static function getNavigationBadge(): ?string
     {
@@ -71,52 +59,35 @@ class EngagementResource extends Resource
         return 'warning';
     }
 
-
-    /**
-     * Permissions – Engagements budgétaires
-     */
+    // ── Permissions ───────────────────────────────────────────
     public static function canViewAny(): bool
     {
-        return auth()->check()
-            && auth()->user()->can('view_any_engagement');
+        return auth()->check() && auth()->user()->can('view_any_engagement');
     }
 
     public static function canView($record): bool
     {
-        return auth()->check()
-            && auth()->user()->can('view_engagement');
+        return auth()->check() && auth()->user()->can('view_engagement');
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check()
-            && auth()->user()->can('create_engagement');
+        return auth()->check() && auth()->user()->can('create_engagement');
     }
 
     public static function canEdit($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
+        if (!auth()->check()) return false;
+        if (!auth()->user()->can('update_engagement')) return false;
 
-        $user = auth()->user();
-
-        if (!$user->can('update_engagement')) {
-            return false;
-        }
-
+        // ✅ Seuls les engagements manuels provisoires sont éditables
         if (!$record->estModifiable()) {
             if ($record->estLectureSeule()) {
-                \Filament\Notifications\Notification::make()
-                    ->title('Modification impossible')
-                    ->warning()
-                    ->body(
-                        "L'exercice {$record->exercice->annee} est {$record->exercice->statut}.
-                    Modification interdite."
-                    )
+                Notification::make()
+                    ->title('Modification impossible')->warning()
+                    ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")
                     ->send();
             }
-
             return false;
         }
 
@@ -125,243 +96,175 @@ class EngagementResource extends Resource
 
     public static function canDelete($record): bool
     {
-        if (!auth()->check()) {
-            return false;
-        }
-
-        if (!auth()->user()->can('delete_engagement')) {
-            return false;
-        }
-
+        if (!auth()->check()) return false;
+        if (!auth()->user()->can('delete_engagement')) return false;
         return $record->estModifiable();
     }
 
-    /**
-     * Action spéciale : Valider un engagement
-     * (Contrôle financier)
-     */
     public static function canValider($record): bool
     {
-        return auth()->check()
-            && auth()->user()->can('valider_engagement');
+        return auth()->check() && auth()->user()->can('valider_engagement');
     }
 
-    /**
-     * Action spéciale : Annuler un engagement
-     */
     public static function canAnnuler($record): bool
     {
-        return auth()->check()
-            && auth()->user()->can('annuler_engagement');
+        return auth()->check() && auth()->user()->can('annuler_engagement');
     }
 
-
+    // ── Form (utilisé uniquement pour EditEngagement) ─────────
+    // La création est gérée par CreateEngagement.php (wizard BC/DA)
     public static function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Exercice')
-                    ->description('Exercice budgétaire de rattachement')
-                    ->schema([
-                        ExerciceSelect::make(),
-                    ])
-                    ->collapsible()
-                    ->collapsed(fn($record) => $record !== null),
+        return $form->schema([
 
-                Forms\Components\Section::make('Informations principales')
-                    ->schema([
-                        Forms\Components\Select::make('budget_id')
-                            ->label('Budget')
-                            ->options(Budget::where('actif', true)
-                                ->whereNotNull('libelle')
-                                ->pluck('libelle', 'id'))
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->live()
-                            ->afterStateUpdated(fn(callable $set) => $set('nomenclature_principale_id', null)),
+            // ── Info source — lecture seule ───────────────────
+            Forms\Components\Section::make('Document source')
+                ->schema([
+                    Forms\Components\Placeholder::make('source_info')
+                        ->label('Document lié')
+                        ->content(function ($record) {
+                            if (!$record) return '—';
 
-                        Forms\Components\Select::make('type_engagement')
-                            ->label('Type d\'engagement')
-                            ->options(function (Get $get, $record) {
+                            if ($record->estBonCommande() && $record->engageable) {
+                                $bc = $record->engageable;
+                                return new \Illuminate\Support\HtmlString(
+                                    "<span style='background:#dbeafe;color:#1d4ed8;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>BC</span> " .
+                                        "<strong>{$bc->numero}</strong> — {$bc->fournisseur?->raison_sociale}"
+                                );
+                            }
 
-                                // ── Engagement lié à un BC ───────────────────────────
-                                if (
-                                    $record?->estBonCommande() ||
-                                    str_contains($get('engageable_type') ?? '', 'BonCommande')
-                                ) {
-                                    return \App\Models\TypeEngagement::actifs()
-                                        ->pluck('libelle', 'libelle');
-                                }
+                            if ($record->estDecision() && $record->engageable) {
+                                $da = $record->engageable;
+                                $beneficiaire = $da->personnel?->nom_complet
+                                    ?? $da->fournisseur?->raison_sociale
+                                    ?? '—';
+                                return new \Illuminate\Support\HtmlString(
+                                    "<span style='background:#fef9c3;color:#a16207;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>DA</span> " .
+                                        "<strong>{$da->numero}</strong> — {$beneficiaire}"
+                                );
+                            }
 
-                                // ── Engagement lié à une DA ──────────────────────────
-                                if (
-                                    $record?->estDecision() ||
-                                    str_contains($get('engageable_type') ?? '', 'Decision')
-                                ) {
-                                    return \App\Models\TypeDecision::actif()
-                                        ->ordonne()
-                                        ->pluck('libelle', 'libelle');
-                                }
+                            return new \Illuminate\Support\HtmlString(
+                                "<span style='background:#f1f5f9;color:#475569;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>Manuel</span>"
+                            );
+                        })
+                        ->columnSpanFull(),
+                ])
+                ->visible(fn($record) => $record !== null)
+                ->collapsible()->collapsed(false),
 
-                                // ── Fallback : liste combinée avec séparateurs ────────
-                                return collect()
-                                    ->merge(
-                                        \App\Models\TypeEngagement::actifs()
-                                            ->pluck('libelle', 'libelle')
-                                            ->mapWithKeys(fn($v, $k) => ["BC:{$k}" => "BC — {$v}"])
-                                    )
-                                    ->merge(
-                                        \App\Models\TypeDecision::actif()->ordonne()
-                                            ->pluck('libelle', 'libelle')
-                                            ->mapWithKeys(fn($v, $k) => ["DA:{$k}" => "DA — {$v}"])
-                                    )
-                                    ->toArray();
-                            })
-                            ->required()
-                            ->searchable()
-                            ->live()
-                            ->helperText(function ($record) {
-                                if ($record?->estBonCommande())
-                                    return '📦 Types issus du référentiel Bons de Commande';
-                                if ($record?->estDecision())
-                                    return '📋 Types issus du référentiel Décisions Administratives';
-                                return 'Type d\'engagement';
-                            }),
+            // ── Exercice ──────────────────────────────────────
+            Forms\Components\Section::make('Exercice')
+                ->schema([ExerciceSelect::make()])
+                ->collapsible()->collapsed(fn($record) => $record !== null),
 
-                        Forms\Components\DatePicker::make('date_engagement')
-                            ->label('Date d\'engagement')
-                            ->required()
-                            ->default(now()),
-                    ])
-                    ->columns(3),
+            // ── Informations principales ──────────────────────
+            Forms\Components\Section::make('Informations principales')
+                ->schema([
+                    Forms\Components\Select::make('budget_id')
+                        ->label('Budget')
+                        ->options(Budget::where('actif', true)->whereNotNull('libelle')->pluck('libelle', 'id'))
+                        ->required()->searchable()->preload()->live()
+                        ->afterStateUpdated(fn(callable $set) => $set('nomenclature_principale_id', null))
+                        ->disabled(fn($record) => $record?->engageable_id !== null),
 
-                Forms\Components\Section::make('Nomenclature et montant')
-                    ->schema([
-                        Forms\Components\Select::make('nomenclature_principale_id')
-                            ->label('Nomenclature budgétaire principale')
-                            ->options(function (callable $get) {
-                                $budgetId = $get('budget_id');
-                                if (!$budgetId) {
-                                    return [];
-                                }
+                    Forms\Components\TextInput::make('type_engagement')
+                        ->label('Type d\'engagement')
+                        ->disabled(fn($record) => $record?->engageable_id !== null)
+                        ->dehydrated(),
 
-                                $lignes = \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
-                                    ->with('nomenclature')
-                                    ->get()
-                                    ->filter(fn($lb) => $lb->nomenclature) // Filtrer les NULL
-                                    ->mapWithKeys(fn($lb) => [
-                                        $lb->nomenclature_id =>
-                                            "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} " .
-                                            "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
-                                    ]);
+                    Forms\Components\DatePicker::make('date_engagement')
+                        ->label('Date d\'engagement')->required()->default(now()),
+                ])
+                ->columns(3),
 
-                                return $lignes->toArray();
-                            })
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->live()
-                            ->helperText(
-                                fn(callable $get) =>
-                                !$get('budget_id')
-                                ? 'Veuillez d\'abord sélectionner un budget'
-                                : 'Ligne budgétaire sur laquelle imputer cet engagement'
-                            )
-                            ->disabled(fn(callable $get) => !$get('budget_id')),
+            // ── Nomenclature et montant ───────────────────────
+            Forms\Components\Section::make('Nomenclature et montant')
+                ->schema([
+                    Forms\Components\Select::make('nomenclature_principale_id')
+                        ->label('Nomenclature budgétaire principale')
+                        ->options(function (callable $get) {
+                            $budgetId = $get('budget_id');
+                            if (!$budgetId) return [];
+                            return \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
+                                ->with('nomenclature')->get()
+                                ->filter(fn($lb) => $lb->nomenclature)
+                                ->mapWithKeys(fn($lb) => [
+                                    $lb->nomenclature_id =>
+                                    "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} " .
+                                        "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
+                                ])->toArray();
+                        })
+                        ->required()->searchable()->preload()->live()
+                        ->helperText(function (callable $get) {
+                            $nomenclatureId = $get('nomenclature_principale_id');
+                            $budgetId       = $get('budget_id');
+                            $montant        = $get('montant_engage');
+                            if (!$nomenclatureId || !$budgetId || !$montant) return '';
+                            $lb = \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
+                                ->where('nomenclature_id', $nomenclatureId)->first();
+                            if (!$lb) return '';
+                            return $montant > $lb->disponible_engagement
+                                ? '⚠️ Crédit insuffisant ! Disponible: ' . number_format($lb->disponible_engagement, 0, ',', ' ') . ' FCFA'
+                                : '✅ Disponible: ' . number_format($lb->disponible_engagement, 0, ',', ' ') . ' FCFA';
+                        })
+                        ->disabled(fn(callable $get) => !$get('budget_id')),
 
-                        Forms\Components\TextInput::make('montant_engage')
-                            ->label('Montant à engager')
-                            ->required()
-                            ->numeric()
-                            ->prefix('FCFA')
-                            ->live(onBlur: true)
-                            ->helperText(function (callable $get) {
-                                $nomenclatureId = $get('nomenclature_principale_id');
-                                $budgetId = $get('budget_id');
-                                $montant = $get('montant_engage');
+                    Forms\Components\TextInput::make('montant_engage')
+                        ->label('Montant à engager')->required()->numeric()->prefix('FCFA')
+                        ->live(onBlur: true)
+                        // ✅ Readonly si lié à un BC/DA — montant imposé par le document
+                        ->readOnly(fn($record) => $record?->engageable_id !== null),
+                ])
+                ->columns(2),
 
-                                if (!$nomenclatureId || !$budgetId || !$montant) {
-                                    return '';
-                                }
+            // ── Bénéficiaire ──────────────────────────────────
+            Forms\Components\Section::make('Bénéficiaire')
+                ->schema([
+                    Forms\Components\Radio::make('type_beneficiaire')
+                        ->label('Type de bénéficiaire')
+                        ->options(['fournisseur' => 'Fournisseur', 'personnel' => 'Personnel (Agent)'])
+                        ->required()->live()->default('fournisseur')->inline()
+                        ->disabled(fn($record) => $record?->engageable_id !== null),
 
-                                $ligne = \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
-                                    ->where('nomenclature_id', $nomenclatureId)
-                                    ->first();
+                    Forms\Components\Select::make('beneficiaire_fournisseur_id')
+                        ->label('Fournisseur')
+                        ->options(Fournisseur::whereNotNull('raison_sociale')->pluck('raison_sociale', 'id'))
+                        ->searchable()->preload()
+                        ->required(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
+                        ->visible(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
+                        ->disabled(fn($record) => $record?->engageable_id !== null),
 
-                                if (!$ligne) {
-                                    return '';
-                                }
+                    Forms\Components\Select::make('beneficiaire_personnel_id')
+                        ->label('Personnel')
+                        ->options(User::whereNotNull('name')->pluck('name', 'id'))
+                        ->searchable()->preload()
+                        ->required(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
+                        ->visible(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
+                        ->disabled(fn($record) => $record?->engageable_id !== null),
+                ])
+                ->columns(2),
 
-                                if ($montant > $ligne->disponible_engagement) {
-                                    return '⚠️ Crédit insuffisant ! Disponible: ' .
-                                        number_format($ligne->disponible_engagement, 0, ',', ' ') . ' FCFA';
-                                }
+            // ── Objet et référence ────────────────────────────
+            Forms\Components\Section::make('Objet et référence')
+                ->schema([
+                    Forms\Components\Textarea::make('objet')
+                        ->label('Objet de l\'engagement')->required()->rows(3)
+                        ->columnSpanFull(),
 
-                                return '✅ Crédit disponible: ' .
-                                    number_format($ligne->disponible_engagement, 0, ',', ' ') . ' FCFA';
-                            }),
-                    ])
-                    ->columns(2),
+                    Forms\Components\TextInput::make('reference_document')
+                        ->label('Référence du document')->maxLength(255)
+                        ->disabled(fn($record) => $record?->engageable_id !== null),
+                ]),
 
-                Forms\Components\Section::make('Bénéficiaire')
-                    ->schema([
-                        Forms\Components\Radio::make('type_beneficiaire')
-                            ->label('Type de bénéficiaire')
-                            ->options([
-                                'fournisseur' => 'Fournisseur',
-                                'personnel' => 'Personnel (Agent)',
-                            ])
-                            ->required()
-                            ->live()
-                            ->default('fournisseur')
-                            ->inline(),
-
-                        Forms\Components\Select::make('beneficiaire_fournisseur_id')
-                            ->label('Fournisseur')
-                            ->options(Fournisseur::whereNotNull('raison_sociale')
-                                ->pluck('raison_sociale', 'id'))
-                            ->searchable()
-                            ->preload()
-                            ->required(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
-                            ->visible(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur'),
-
-                        Forms\Components\Select::make('beneficiaire_personnel_id')
-                            ->label('Personnel')
-                            ->options(User::whereNotNull('name')->pluck('name', 'id'))
-                            ->searchable()
-                            ->preload()
-                            ->required(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
-                            ->visible(fn(callable $get) => $get('type_beneficiaire') === 'personnel'),
-                    ])
-                    ->columns(2),
-
-                Forms\Components\Section::make('Objet et référence')
-                    ->schema([
-                        Forms\Components\Textarea::make('objet')
-                            ->label('Objet de l\'engagement')
-                            ->required()
-                            ->rows(3)
-                            ->placeholder('Ex: Fourniture de matériel informatique, Mission Yaoundé...')
-                            ->columnSpanFull(),
-
-                        Forms\Components\TextInput::make('reference_document')
-                            ->label('Référence du document')
-                            ->maxLength(255)
-                            ->placeholder('Ex: BC-2025-001, Arrêté n°...')
-                            ->helperText('Référence du document justificatif (optionnel)'),
-                    ]),
-
-                Forms\Components\Section::make('Observations')
-                    ->schema([
-                        Forms\Components\Textarea::make('observations')
-                            ->label('Observations')
-                            ->rows(2)
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible()
-                    ->collapsed(),
-            ]);
+            // ── Observations ──────────────────────────────────
+            Forms\Components\Section::make('Observations')
+                ->schema([
+                    Forms\Components\Textarea::make('observations')
+                        ->label('Observations')->rows(2)->columnSpanFull(),
+                ])
+                ->collapsible()->collapsed(),
+        ]);
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
@@ -369,6 +272,7 @@ class EngagementResource extends Resource
         return parent::getEloquentQuery()->with('exercice');
     }
 
+    // ── Table ─────────────────────────────────────────────────
     public static function table(Table $table): Table
     {
         return $table
@@ -376,564 +280,268 @@ class EngagementResource extends Resource
             ->persistSearchInSession()
             ->persistSortInSession()
             ->columns([
-                // Tables\Columns\BadgeColumn::make('exercice.annee')
-                //     ->label('Exercice')
-                //     ->sortable()
-                //     ->colors([
-                //         'success' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                //         'warning' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                //         'danger' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                //         'gray' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
-                //     ])
-                //     ->tooltip(
-                //         fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice
-                //             ? $record->exercice->libelle
-                //             : null
-                //     )
-                //     ->toggleable(),
-
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N° Engagement')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold')
-                    ->copyable(),
-
-                // Tables\Columns\TextColumn::make('budget.code')
-                //     ->label('Budget')
-                //     ->searchable()
-                //     ->badge()
-                //     ->color('info'),
+                    ->label('N° Engagement')->searchable()->sortable()->weight('bold')->copyable(),
 
                 Tables\Columns\TextColumn::make('engageable_type')
-                    ->label('Source')
-                    ->sortable()
+                    ->label('Source')->sortable()
                     ->formatStateUsing(fn($state) => match ($state) {
-                        'App\Models\BonCommande' => 'BC',
+                        'App\Models\BonCommande'            => 'BC',
                         'App\Models\DecisionAdministrative' => 'DA',
-                        null => 'Manuel',
-                        default => 'Autre',
+                        null                                => 'Manuel',
+                        default                             => 'Autre',
                     })
-                    ->badge()
-                    ->color('gray')
-                    ->toggleable(),
+                    ->badge()->color(fn($state) => match ($state) {
+                        'App\Models\BonCommande'            => 'info',
+                        'App\Models\DecisionAdministrative' => 'warning',
+                        default                             => 'gray',
+                    }),
 
                 Tables\Columns\TextColumn::make('document_source')
                     ->label('N° Document')
-                    ->getStateUsing(function ($record) {
-                        // Utiliser reference_document (plus fiable)
-                        return $record->reference_document ?? $record->engageable?->numero ?? null;
-                    })
+                    ->getStateUsing(
+                        fn($record) =>
+                        $record->reference_document ?? $record->engageable?->numero ?? null
+                    )
                     ->searchable(['reference_document'])
-                    ->copyable()
-                    ->placeholder('Manuel')
-                    ->badge()
-                    ->color(fn($record) => match ($record->engageable_type) {
-                        'App\Models\BonCommande' => 'info',
-                        'App\Models\DecisionAdministrative' => 'warning',
-                        default => 'gray',
-                    }),
+                    ->copyable()->placeholder('Manuel')
+                    ->badge()->color('gray'),
 
                 Tables\Columns\TextColumn::make('nomenclaturePrincipale.code')
-                    ->label('Nomenclature')
-                    ->searchable()
-                    ->badge()
-                    ->color('warning'),
-
-                Tables\Columns\TextColumn::make('beneficiaire')
-                    ->label('Bénéficiaire')
-                    ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini')
-                    ->searchable(query: function ($query, string $search) {
-                        return $query->where(function ($q) use ($search) {
-                            $q->orWhereHas('beneficiaireFournisseur', function ($subQ) use ($search) {
-                                $subQ->where('raison_sociale', 'like', "%{$search}%")
-                                    ->orWhere('code', 'like', "%{$search}%");
-                            })
-                                ->orWhereHas('beneficiairePersonnel', function ($subQ) use ($search) {
-                                    $subQ->where('nom', 'like', "%{$search}%")
-                                        ->orWhere('prenoms', 'like', "%{$search}%")
-                                        ->orWhere('matricule', 'like', "%{$search}%");
-                                });
-                        });
-                    })
-                    ->limit(30),
+                    ->label('Nomenclature')->searchable()->badge()->color('warning'),
 
                 Tables\Columns\TextColumn::make('beneficiaire')
                     ->label('Bénéficiaire')
                     ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini')
                     ->searchable(query: function ($query, $search) {
                         return $query->where(function ($q) use ($search) {
-                            // Recherche fournisseurs (polymorphique)
-                            $q->whereHasMorph(
-                                'beneficiaire',
-                                [\App\Models\Fournisseur::class],
-                                function ($subQ) use ($search) {
-                                $subQ->where('raison_sociale', 'like', "%{$search}%")
-                                    ->orWhere('code', 'like', "%{$search}%");
-                            }
-                            )
-                                // Recherche personnels (polymorphique)
-                                ->orWhereHasMorph(
-                                    'beneficiaire',
-                                    [\App\Models\Personnel::class],
-                                    function ($subQ) use ($search) {
-                                $subQ->where('nom', 'like', "%{$search}%")
-                                    ->orWhere('prenoms', 'like', "%{$search}%")
-                                    ->orWhere('matricule', 'like', "%{$search}%");
-                            }
-                                );
+                            $q->whereHasMorph('beneficiaire', [\App\Models\Fournisseur::class], fn($sq) =>
+                            $sq->where('raison_sociale', 'like', "%{$search}%"))
+                                ->orWhereHasMorph('beneficiaire', [\App\Models\Personnel::class], fn($sq) =>
+                                $sq->where('nom', 'like', "%{$search}%")
+                                    ->orWhere('prenoms', 'like', "%{$search}%"));
                         });
                     })
                     ->limit(30),
 
                 Tables\Columns\TextColumn::make('date_engagement')
-                    ->label('Date')
-                    ->date('d/m/Y')
-                    ->sortable(),
+                    ->label('Date')->date('d/m/Y')->sortable(),
 
                 Tables\Columns\TextColumn::make('montant_engage')
-                    ->label('Montant')
-                    ->money('XAF')
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('success'),
+                    ->label('Montant')->money('XAF')->sortable()->weight('bold')->color('success'),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
                     ->colors([
                         'secondary' => 'provisoire',
-                        'success' => 'definitif',
-                        'danger' => 'annule',
+                        'success'   => 'definitif',
+                        'danger'    => 'annule',
                     ])
                     ->formatStateUsing(fn(string $state): string => match ($state) {
                         'provisoire' => 'Provisoire',
-                        'definitif' => 'Définitif',
-                        'annule' => 'Annulé',
-                        default => $state,
+                        'definitif'  => 'Définitif',
+                        'annule'     => 'Annulé',
+                        default      => $state,
                     }),
-
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('engageable_type')
                     ->label('Source')
                     ->options([
-                        'all' => 'Tout',
-                        'App\Models\BonCommande' => 'Bon de Commande',
+                        'all'                               => 'Tout',
+                        'App\Models\BonCommande'            => 'Bon de Commande',
                         'App\Models\DecisionAdministrative' => 'Décision Administrative',
-                        'manuel' => 'Engagement Manuel',
+                        'manuel'                            => 'Engagement Manuel',
                     ])
                     ->default('all')
                     ->query(function ($query, $state) {
-                        // Si "Tout" est sélectionné, ne pas filtrer
-                        if ($state['value'] === 'all' || !isset($state['value'])) {
-                            return $query;
-                        }
-
-                        if ($state['value'] === 'manuel') {
-                            return $query->whereNull('engageable_type');
-                        }
-
+                        if (($state['value'] ?? 'all') === 'all') return $query;
+                        if ($state['value'] === 'manuel') return $query->whereNull('engageable_type');
                         return $query->where('engageable_type', $state['value']);
                     }),
 
-                Tables\Filters\Filter::make('date_engagement')
-                    ->form([
-                        Forms\Components\DatePicker::make('date_engagement_from')
-                            ->label('Date d\'engagement du')
-                            ->placeholder('JJ/MM/AAAA'),
-                        Forms\Components\DatePicker::make('date_engagement_until')
-                            ->label('Date d\'engagement au')
-                            ->placeholder('JJ/MM/AAAA'),
-                    ])
-                    ->query(function ($query, array $data) {
-                        return $query
-                            ->when($data['date_engagement_from'], fn($q, $date) =>
-                                $q->whereDate('date_engagement', '>=', $date))
-                            ->when($data['date_engagement_until'], fn($q, $date) =>
-                                $q->whereDate('date_engagement', '<=', $date));
-                    })
-                    ->indicateUsing(function (array $data): array {
-                        $indicators = [];
-
-                        if ($data['date_engagement_from'] ?? null) {
-                            $indicators[] = Tables\Filters\Indicator::make('Engagé depuis le ' . \Carbon\Carbon::parse($data['date_engagement_from'])->format('d/m/Y'))
-                                ->removeField('date_engagement_from');
-                        }
-
-                        if ($data['date_engagement_until'] ?? null) {
-                            $indicators[] = Tables\Filters\Indicator::make('Engagé jusqu\'au ' . \Carbon\Carbon::parse($data['date_engagement_until'])->format('d/m/Y'))
-                                ->removeField('date_engagement_until');
-                        }
-
-                        return $indicators;
-                    }),
-
-                Tables\Filters\Filter::make('periode')
-                    ->form([
-                        Forms\Components\Select::make('periode')
-                            ->label('Période prédéfinie')
-                            ->options([
-                                'today' => 'Aujourd\'hui',
-                                'yesterday' => 'Hier',
-                                'this_week' => 'Cette semaine',
-                                'last_week' => 'Semaine dernière',
-                                'this_month' => 'Ce mois',
-                                'last_month' => 'Mois dernier',
-                                'this_quarter' => 'Ce trimestre',
-                                'last_quarter' => 'Trimestre dernier',
-                                'this_year' => 'Cette année',
-                                'last_year' => 'Année dernière',
-                            ])
-                            ->default('today')
-                            ->placeholder('Sélectionner une période')
-                    ])
-                    ->query(function ($query, array $data) {
-                        // Utiliser 'today' par défaut si aucune période n'est sélectionnée
-                        $periode = $data['periode'] ?? 'today';
-
-                        return match ($periode) {
-                            'today' => $query->whereDate('date_engagement', today()),
-                            'yesterday' => $query->whereDate('date_engagement', today()->subDay()),
-                            'this_week' => $query->whereBetween('date_engagement', [
-                                now()->startOfWeek(),
-                                now()->endOfWeek()
-                            ]),
-                            'last_week' => $query->whereBetween('date_engagement', [
-                                now()->subWeek()->startOfWeek(),
-                                now()->subWeek()->endOfWeek()
-                            ]),
-                            'this_month' => $query->whereMonth('date_engagement', now()->month)
-                                ->whereYear('date_engagement', now()->year),
-                            'last_month' => $query->whereMonth('date_engagement', now()->subMonth()->month)
-                                ->whereYear('date_engagement', now()->subMonth()->year),
-                            'this_quarter' => $query->whereBetween('date_engagement', [
-                                now()->startOfQuarter(),
-                                now()->endOfQuarter()
-                            ]),
-                            'last_quarter' => $query->whereBetween('date_engagement', [
-                                now()->subQuarter()->startOfQuarter(),
-                                now()->subQuarter()->endOfQuarter()
-                            ]),
-                            'this_year' => $query->whereYear('date_engagement', now()->year),
-                            'last_year' => $query->whereYear('date_engagement', now()->subYear()->year),
-                            default => $query->whereDate('date_engagement', today()),
-                        };
-                    })
-                    ->indicateUsing(function (array $data): ?string {
-                        if (!($data['periode'] ?? null)) {
-                            return 'Période : Aujourd\'hui';
-                        }
-
-                        $labels = [
-                            'today' => 'Aujourd\'hui',
-                            'yesterday' => 'Hier',
-                            'this_week' => 'Cette semaine',
-                            'last_week' => 'Semaine dernière',
-                            'this_month' => 'Ce mois',
-                            'last_month' => 'Mois dernier',
-                            'this_quarter' => 'Ce trimestre',
-                            'last_quarter' => 'Trimestre dernier',
-                            'this_year' => 'Cette année',
-                            'last_year' => 'Année dernière',
-                        ];
-
-                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
-                    }),
-
-                Tables\Filters\SelectFilter::make('exercice_id')
-                    ->label('Exercice')
-                    ->relationship('exercice', 'annee')
-                    ->searchable()
-                    ->preload()
-                    ->placeholder('Tous les exercices')
-                    ->default(fn() => Exercice::getActif()?->id),
-
-
-                Tables\Filters\SelectFilter::make('budget_id')
-                    ->label('Budget')
-                    ->relationship('budget', 'libelle')
-                    ->searchable()
-                    ->preload(),
-
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
-                    ->options([
-                        'provisoire' => 'Provisoire',
-                        'definitif' => 'Définitif',
-                        'annule' => 'Annulé',
-                    ]),
+                    ->options(['provisoire' => 'Provisoire', 'definitif' => 'Définitif', 'annule' => 'Annulé']),
+
+                Tables\Filters\SelectFilter::make('exercice_id')
+                    ->label('Exercice')->relationship('exercice', 'annee')
+                    ->searchable()->preload()->placeholder('Tous les exercices')
+                    ->default(fn() => Exercice::getActif()?->id),
+
+                Tables\Filters\SelectFilter::make('budget_id')
+                    ->label('Budget')->relationship('budget', 'libelle')
+                    ->searchable()->preload(),
+
+                Tables\Filters\Filter::make('date_engagement')
+                    ->form([
+                        Forms\Components\DatePicker::make('du')->label('Du'),
+                        Forms\Components\DatePicker::make('au')->label('Au'),
+                    ])
+                    ->query(
+                        fn($query, array $data) => $query
+                            ->when($data['du'], fn($q, $v) => $q->whereDate('date_engagement', '>=', $v))
+                            ->when($data['au'], fn($q, $v) => $q->whereDate('date_engagement', '<=', $v))
+                    ),
             ])
             ->actions([
-                // =============================================
-                // ✅ ACTION 1 : VALIDER (Passer définitif)
-                // =============================================
+
+                // ── Passer définitif ──────────────────────────
                 Tables\Actions\Action::make('valider')
                     ->label('Passer définitif')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(function ($record) {
-                        return $record->statut === 'provisoire'
-                            && auth()->user()?->can('valider_engagement');
-                    })
+                    ->icon('heroicon-o-check-circle')->color('success')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'provisoire'
+                            && auth()->user()?->can('valider_engagement')
+                    )
                     ->requiresConfirmation()
                     ->modalHeading('Confirmer le passage en définitif')
-                    ->modalDescription(fn($record) => "L'engagement {$record->numero} sera marqué comme définitif et pourra recevoir des ordonnances de paiement.")
+                    ->modalDescription(
+                        fn($record) =>
+                        "L'engagement {$record->numero} sera définitif et pourra recevoir des ordonnances."
+                    )
                     ->action(function ($record) {
                         try {
                             $record->passerDefinitif(auth()->user());
-
-                            Notification::make()
-                                ->title('✅ Engagement passé en définitif')
-                                ->success()
-                                ->body("L'engagement {$record->numero} est maintenant définitif. Vous pouvez créer les ordonnances de paiement.")
-                                ->send();
+                            Notification::make()->title('✅ Engagement définitif')->success()->send();
                         } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('❌ Erreur')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
+                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
                         }
                     }),
 
-                // =============================================
-                // ✅ ACTION 2 : CRÉER ORDONNANCES
-                // =============================================
+                // ── Créer ordonnances ─────────────────────────
                 Tables\Actions\Action::make('creer_ordonnances')
                     ->label('Créer OP')
-                    ->icon('heroicon-o-document-currency-dollar')
-                    ->color('success')
-                    ->visible(function ($record) {
-                        return $record->statut === 'definitif'
+                    ->icon('heroicon-o-document-currency-dollar')->color('success')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'definitif'
                             && !$record->hasOrdonnancesPaiement()
-                            && auth()->user()?->can('creer_ordonnance_paiement');
-                    })
+                            && auth()->user()?->can('creer_ordonnance_paiement')
+                    )
                     ->requiresConfirmation()
                     ->modalHeading('Créer les ordonnances de paiement')
-                    ->modalDescription(fn($record) => "Voulez-vous créer les ordonnances de paiement pour l'engagement {$record->numero} ?")
                     ->modalContent(function ($record) {
                         $montantTotal = $record->montant_engage;
-                        $montantIR = 0;
-
-                        if ($record->estBonCommande() && $record->engageable) {
-                            $bc = $record->engageable;
-                            $montantIR = $bc->montant_ir ?? 0;
-                        } elseif ($record->estDecision() && $record->engageable) {
-                            $da = $record->engageable;
-                            $montantIR = $da->montant_ir ?? 0;
-                        }
-
-                        $montantNet = $montantTotal - $montantIR;
+                        $montantIR    = 0;
+                        if ($record->estBonCommande() && $record->engageable)
+                            $montantIR = $record->engageable->montant_ir ?? 0;
+                        elseif ($record->estDecision() && $record->engageable)
+                            $montantIR = $record->engageable->montant_ir ?? 0;
 
                         return view('filament.modals.recap-ordonnances', [
-                            'engagement' => $record,
+                            'engagement'    => $record,
                             'montant_total' => $montantTotal,
-                            'montant_ir' => $montantIR,
-                            'montant_net' => $montantNet,
+                            'montant_ir'    => $montantIR,
+                            'montant_net'   => $montantTotal - $montantIR,
                         ]);
                     })
                     ->action(function ($record) {
                         try {
                             $ordonnances = $record->creerOrdonnancesPaiement();
-
-                            $message = "Ordonnances créées avec succès :\n";
-                            if (isset($ordonnances['standard'])) {
-                                $message .= "• OP Standard : {$ordonnances['standard']->numero}\n";
-                            }
-                            if (isset($ordonnances['impot'])) {
-                                $message .= "• OP Impôt : {$ordonnances['impot']->numero}";
-                            }
-
-                            Notification::make()
-                                ->title('✅ Ordonnances créées')
-                                ->success()
-                                ->body($message)
-                                ->duration(8000)
-                                ->send();
+                            $msg = '';
+                            if (isset($ordonnances['standard'])) $msg .= "• OP Standard : {$ordonnances['standard']->numero}\n";
+                            if (isset($ordonnances['impot']))    $msg .= "• OP Impôt : {$ordonnances['impot']->numero}";
+                            Notification::make()->title('✅ Ordonnances créées')->success()->body($msg)->duration(8000)->send();
                         } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('❌ Erreur lors de la création des ordonnances')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->persistent()
-                                ->send();
+                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->persistent()->send();
                         }
                     }),
 
-                // =============================================
-                // ✅ ACTION 3 : VOIR ORDONNANCES (MODAL)
-                // =============================================
+                // ── Voir ordonnances ──────────────────────────
                 Tables\Actions\Action::make('voir_ordonnances')
                     ->label('Voir OP')
-                    ->icon('heroicon-o-eye')
-                    ->color('info')
-                    ->visible(function ($record) {
-                        return $record->ordonnancesPaiement()->exists();
-                    })
-                    ->badge(fn($record) => $record->ordonnancesPaiement()->count())
-                    ->badgeColor('success')
-                    ->modalHeading(fn($record) => "Ordonnances de paiement - {$record->numero}")
-                    ->modalContent(function ($record) {
-                        $ordonnances = $record->ordonnancesPaiement()->with('beneficiaire')->get();
+                    ->icon('heroicon-o-eye')->color('info')
+                    ->visible(fn($record) => $record->ordonnancesPaiement()->exists())
+                    ->badge(fn($record) => $record->ordonnancesPaiement()->count())->badgeColor('success')
+                    ->modalHeading(fn($record) => "Ordonnances — {$record->numero}")
+                    ->modalContent(fn($record) => view('filament.modals.ordonnances-list', [
+                        'ordonnances' => $record->ordonnancesPaiement()->with('beneficiaire')->get(),
+                        'engagement'  => $record,
+                    ]))
+                    ->modalWidth('5xl')->modalSubmitAction(false)->modalCancelActionLabel('Fermer'),
 
-                        return view('filament.modals.ordonnances-list', [
-                            'ordonnances' => $ordonnances,
-                            'engagement' => $record,
-                        ]);
-                    })
-                    ->modalWidth('5xl')
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Fermer'),
-
-                // =============================================
-                // ✅ ACTION 4 : ANNULER (Seulement si provisoire)
-                // =============================================
+                // ── Annuler ───────────────────────────────────
                 Tables\Actions\Action::make('annuler')
                     ->label('Annuler')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->visible(function ($record) {
-                        // ✅ Visible uniquement si provisoire
-                        return $record->statut === 'provisoire'
+                    ->icon('heroicon-o-x-circle')->color('danger')
+                    ->visible(
+                        fn($record) =>
+                        in_array($record->statut, ['provisoire', 'definitif'])
                             && $record->peutEtreAnnule()
-                            && auth()->user()?->can('annuler_engagement');
-                    })
+                            && auth()->user()?->can('annuler_engagement')
+                    )
                     ->requiresConfirmation()
-                    ->modalHeading('Confirmer l\'annulation')
-                    ->modalDescription(fn($record) => "L'engagement {$record->numero} sera annulé et les crédits seront libérés.")
+                    ->modalHeading('Annuler l\'engagement')
+                    ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
+                        "<div style='color:#dc2626;font-weight:600;'>
+                        L'engagement <strong>{$record->numero}</strong> sera supprimé définitivement.<br>
+                        Les crédits seront libérés sur la ligne budgétaire.
+                        </div>"
+                    ))
                     ->form([
                         Forms\Components\Textarea::make('motif')
-                            ->label('Motif de l\'annulation')
-                            ->required()
-                            ->rows(3),
+                            ->label('Motif')->required()->rows(3),
                     ])
                     ->action(function ($record, array $data) {
-                        // ✅ Vérification supplémentaire
-                        if ($record->statut !== 'provisoire') {
-                            Notification::make()
-                                ->title('❌ Impossible d\'annuler')
-                                ->danger()
-                                ->body("Seuls les engagements provisoires peuvent être annulés. Statut actuel : {$record->statut}")
-                                ->persistent()
-                                ->send();
-                            return;
-                        }
-
                         if ($record->ordonnancesPaiement()->exists()) {
-                            Notification::make()
-                                ->title('❌ Impossible d\'annuler')
-                                ->danger()
-                                ->body("Cet engagement a déjà des ordonnances de paiement.")
-                                ->persistent()
-                                ->send();
+                            Notification::make()->title('❌ Impossible — des OP existent')
+                                ->danger()->persistent()->send();
                             return;
                         }
-
                         try {
-                            $record->annuler();
-
-                            Notification::make()
-                                ->title('✅ Engagement annulé')
-                                ->warning()
-                                ->body("L'engagement {$record->numero} a été annulé.")
-                                ->send();
+                            $record->annuler(force: true);
+                            Notification::make()->title('✅ Engagement annulé et crédits libérés')
+                                ->warning()->send();
                         } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('❌ Erreur')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
+                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
                         }
                     }),
 
-                // =============================================
-                // ✅ ACTIONS STANDARD
-                // =============================================
-                Tables\Actions\ViewAction::make()
-                    ->label('Voir'),
+                // ── Standard ──────────────────────────────────
+                Tables\Actions\ViewAction::make()->label('Voir'),
 
                 Tables\Actions\EditAction::make()
                     ->label('Modifier')
+                    // ✅ Editable seulement si engagement manuel provisoire
                     ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
 
-                // =============================================
-                // ✅ GROUPE : TÉLÉCHARGEMENTS PDF
-                // =============================================
+                // ── PDF ───────────────────────────────────────
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('telecharger_certificat')
-                        ->label('Certificat (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('success')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'certificat_engagement',
-                            'id' => $record->id
-                        ]))
+                        ->label('Certificat (PDF)')->icon('heroicon-o-arrow-down-tray')->color('success')
+                        ->url(fn($record) => route('pdf.telecharger', ['etat' => 'certificat_engagement', 'id' => $record->id]))
                         ->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('afficher_certificat')
-                        ->label('Certificat (Aperçu)')
-                        ->icon('heroicon-o-eye')
-                        ->color('info')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'certificat_engagement',
-                            'id' => $record->id
-                        ]))
-                        ->openUrlInNewTab()
-                        ->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Certificat (Aperçu)')->icon('heroicon-o-eye')->color('info')
+                        ->url(fn($record) => route('pdf.afficher', ['etat' => 'certificat_engagement', 'id' => $record->id]))
+                        ->openUrlInNewTab()->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('telecharger_autorisation')
-                        ->label('Autorisation (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('primary')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'autorisation_engagement',
-                            'id' => $record->id
-                        ]))
+                        ->label('Autorisation (PDF)')->icon('heroicon-o-arrow-down-tray')->color('primary')
+                        ->url(fn($record) => route('pdf.telecharger', ['etat' => 'autorisation_engagement', 'id' => $record->id]))
                         ->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('afficher_autorisation')
-                        ->label('Autorisation (Aperçu)')
-                        ->icon('heroicon-o-eye')
-                        ->color('gray')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'autorisation_engagement',
-                            'id' => $record->id
-                        ]))
-                        ->openUrlInNewTab()
-                        ->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Autorisation (Aperçu)')->icon('heroicon-o-eye')->color('gray')
+                        ->url(fn($record) => route('pdf.afficher', ['etat' => 'autorisation_engagement', 'id' => $record->id]))
+                        ->openUrlInNewTab()->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('telecharger_fiche')
-                        ->label('Fiche Perf. (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('warning')
-                        ->url(fn($record) => route('pdf.telecharger', [
-                            'etat' => 'fiche_performance',
-                            'id' => $record->id
-                        ]))
+                        ->label('Fiche Perf. (PDF)')->icon('heroicon-o-arrow-down-tray')->color('warning')
+                        ->url(fn($record) => route('pdf.telecharger', ['etat' => 'fiche_performance', 'id' => $record->id]))
                         ->disabled(fn($record) => $record->statut !== 'definitif'),
 
                     Tables\Actions\Action::make('afficher_fiche')
-                        ->label('Fiche Perf. (Aperçu)')
-                        ->icon('heroicon-o-eye')
-                        ->color('secondary')
-                        ->url(fn($record) => route('pdf.afficher', [
-                            'etat' => 'fiche_performance',
-                            'id' => $record->id
-                        ]))
-                        ->openUrlInNewTab()
-                        ->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Fiche Perf. (Aperçu)')->icon('heroicon-o-eye')->color('secondary')
+                        ->url(fn($record) => route('pdf.afficher', ['etat' => 'fiche_performance', 'id' => $record->id]))
+                        ->openUrlInNewTab()->disabled(fn($record) => $record->statut !== 'definitif'),
                 ])
-                    ->label('Télécharger')
-                    ->icon('heroicon-m-document-arrow-down')
-                    ->size('sm')
-                    ->color('success')
-                    ->button()
-                    ->visible(fn($record) => $record->statut === 'definitif')
+                    ->label('PDF')->icon('heroicon-m-document-arrow-down')
+                    ->size('sm')->color('success')->button()
+                    ->visible(fn($record) => $record->statut === 'definitif'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -945,18 +553,16 @@ class EngagementResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListEngagements::route('/'),
+            'index'  => Pages\ListEngagements::route('/'),
             'create' => Pages\CreateEngagement::route('/create'),
-            'edit' => Pages\EditEngagement::route('/{record}/edit'),
-            'view' => Pages\ViewEngagement::route('/{record}'),
+            'edit'   => Pages\EditEngagement::route('/{record}/edit'),
+            'view'   => Pages\ViewEngagement::route('/{record}'),
         ];
     }
 }
