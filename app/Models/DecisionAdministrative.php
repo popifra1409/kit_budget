@@ -80,6 +80,7 @@ class DecisionAdministrative extends Model
         //simulation de decision
         'est_previsionnel',
         'da_reelle_id',
+        'statut_avant_annulation',
     ];
 
     protected $casts = [
@@ -160,12 +161,14 @@ class DecisionAdministrative extends Model
                 'montant_engage',
                 'date_engagement',
                 'statut',
+                'statut_avant_annulation',
                 'validee_par',
                 'date_validation',
                 'observations',
                 'updated_by',
                 'updated_at',
-                'mode_saisie', // ← ajouter au cas où
+                'mode_saisie',
+                'da_reelle_id',
             ];
 
             $champsDirty = array_keys($decision->getDirty());
@@ -636,18 +639,18 @@ class DecisionAdministrative extends Model
 
                     throw new \App\Exceptions\CreditBudgetaireInsuffisantException(
                         "❌ CRÉDIT INSUFFISANT\n\n" .
-                        "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
-                        "📊 DÉTAILS:\n" .
-                        "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
-                        "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
-                        "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
-                        "💰 ENGAGEMENT DEMANDÉ:\n" .
-                        "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
-                        "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
-                        "✅ SOLUTIONS:\n" .
-                        "1. Réduire le montant de la décision\n" .
-                        "2. Demander un virement budgétaire vers cette ligne\n" .
-                        "3. Utiliser une autre nomenclature budgétaire"
+                            "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
+                            "📊 DÉTAILS:\n" .
+                            "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
+                            "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
+                            "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
+                            "💰 ENGAGEMENT DEMANDÉ:\n" .
+                            "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
+                            "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
+                            "✅ SOLUTIONS:\n" .
+                            "1. Réduire le montant de la décision\n" .
+                            "2. Demander un virement budgétaire vers cette ligne\n" .
+                            "3. Utiliser une autre nomenclature budgétaire"
                     );
                 }
             }
@@ -717,11 +720,12 @@ class DecisionAdministrative extends Model
             }
 
             // Marquer la décision comme engagée
-            $this->engagee = true;
-            $this->montant_engage = $this->montant_brut;
-            $this->date_engagement = now();
-            $this->statut = 'engagee';
-            $this->save();
+            $this->updateQuietly([
+                'engagee'         => true,
+                'montant_engage'  => $this->montant_brut,
+                'date_engagement' => now(),
+                'statut'          => 'engagee',
+            ]);
 
             \DB::commit();
 
@@ -733,7 +737,6 @@ class DecisionAdministrative extends Model
             ]);
 
             return $engagement;
-
         } catch (\Exception $e) {
             \DB::rollBack();
 
@@ -775,7 +778,7 @@ class DecisionAdministrative extends Model
                 'engagee' => false,
                 'montant_engage' => 0,
                 'date_engagement' => null,
-                'statut' => 'validee', // ← ajouter
+                'statut' => 'validee',
             ]);
             return;
         }
@@ -812,8 +815,8 @@ class DecisionAdministrative extends Model
         if ($this->engagee) {
             throw new \Exception(
                 "❌ Annulation impossible : cette décision est déjà engagée.\n\n" .
-                "Veuillez d'abord annuler l'engagement N° " . ($this->engagement?->numero ?? '') .
-                " depuis la fiche de l'engagement, puis revenez annuler la décision."
+                    "Veuillez d'abord annuler l'engagement N° " . ($this->engagement?->numero ?? '') .
+                    " depuis la fiche de l'engagement, puis revenez annuler la décision."
             );
         }
 
@@ -838,7 +841,6 @@ class DecisionAdministrative extends Model
                 'statut_avant' => $statutAvant,
                 'user' => auth()->id(),
             ]);
-
         } catch (\Exception $e) {
             \DB::rollBack();
             throw $e;
@@ -894,7 +896,6 @@ class DecisionAdministrative extends Model
             \DB::commit();
 
             \Log::info("DA {$this->numero} récupérée — remise en brouillon");
-
         } catch (\Exception $e) {
             \DB::rollBack();
             throw $e;
