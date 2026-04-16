@@ -9,6 +9,9 @@ use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 
+use App\Models\EtatConfig;
+use Filament\Forms;
+
 class ViewEngagement extends ViewRecord
 {
     protected static string $resource = EngagementResource::class;
@@ -172,6 +175,116 @@ class ViewEngagement extends ViewRecord
                             ->send();
                     }
                 }),
+
+            // ── Télécharger Certificat d'Engagement ──────────────
+            Actions\Action::make('telecharger_ce')
+                ->label('Télécharger CE')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('success')
+                ->visible(fn($record) => $record->statut === 'definitif')
+                ->form([
+                    Forms\Components\Select::make('variante')
+                        ->label('Modèle d\'état')
+                        ->options(fn() => EtatConfig::variantesPour('certificat_engagement'))
+                        ->default(fn() => EtatConfig::defautPour('certificat_engagement')?->code)
+                        ->required()
+                        ->helperText('⭐ = modèle par défaut'),
+                ])
+                ->action(function (array $data) {
+                    $url = route('pdf.telecharger', [
+                        'etat' => $data['variante'],
+                        'id'   => $this->record->id,
+                    ]);
+                    $this->dispatch('open-url-new-tab', url: $url);
+                }),
+
+            // ── Aperçu Certificat d'Engagement ───────────────────
+            Actions\Action::make('apercu_ce')
+                ->label('Aperçu CE')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->visible(fn($record) => $record->statut === 'definitif')
+                ->form([
+                    Forms\Components\Select::make('variante')
+                        ->label('Modèle d\'état')
+                        ->options(fn() => EtatConfig::variantesPour('certificat_engagement'))
+                        ->default(fn() => EtatConfig::defautPour('certificat_engagement')?->code)
+                        ->required()
+                        ->helperText('⭐ = modèle par défaut'),
+                ])
+                ->action(function (array $data) {
+                    $url = route('pdf.afficher', [
+                        'etat' => $data['variante'],
+                        'id'   => $this->record->id,
+                    ]);
+                    $this->dispatch('open-url-new-tab', url: $url);
+                }),
+
+            // ── Télécharger Autorisation d'Engagement ────────────
+            Actions\Action::make('telecharger_ae')
+                ->label('Télécharger AE')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('primary')
+                ->visible(fn($record) => $record->statut === 'definitif')
+                ->form([
+                    Forms\Components\Select::make('variante')
+                        ->label('Modèle d\'état')
+                        ->options(fn() => EtatConfig::variantesPour('autorisation_engagement'))
+                        ->default(fn() => EtatConfig::defautPour('autorisation_engagement')?->code)
+                        ->required()
+                        ->helperText('⭐ = modèle par défaut'),
+                ])
+                ->action(function (array $data) {
+                    $url = route('pdf.telecharger', [
+                        'etat' => $data['variante'],
+                        'id'   => $this->record->id,
+                    ]);
+                    $this->dispatch('open-url-new-tab', url: $url);
+                }),
+
+            // ── Aperçu Autorisation d'Engagement ─────────────────
+            Actions\Action::make('apercu_ae')
+                ->label('Aperçu AE')
+                ->icon('heroicon-o-eye')
+                ->color('gray')
+                ->visible(fn($record) => $record->statut === 'definitif')
+                ->form([
+                    Forms\Components\Select::make('variante')
+                        ->label('Modèle d\'état')
+                        ->options(fn() => EtatConfig::variantesPour('autorisation_engagement'))
+                        ->default(fn() => EtatConfig::defautPour('autorisation_engagement')?->code)
+                        ->required()
+                        ->helperText('⭐ = modèle par défaut'),
+                ])
+                ->action(function (array $data) {
+                    $url = route('pdf.afficher', [
+                        'etat' => $data['variante'],
+                        'id'   => $this->record->id,
+                    ]);
+                    $this->dispatch('open-url-new-tab', url: $url);
+                }),
+
+            // // ── Télécharger Bordereau d'Engagement ───────────────
+            // Actions\Action::make('telecharger_be')
+            //     ->label('Télécharger BE')
+            //     ->icon('heroicon-o-arrow-down-tray')
+            //     ->color('warning')
+            //     ->visible(fn($record) => $record->statut === 'definitif')
+            //     ->form([
+            //         Forms\Components\Select::make('variante')
+            //             ->label('Modèle d\'état')
+            //             ->options(fn() => EtatConfig::variantesPour('bordereau_engagement'))
+            //             ->default(fn() => EtatConfig::defautPour('bordereau_engagement')?->code)
+            //             ->required()
+            //             ->helperText('⭐ = modèle par défaut'),
+            //     ])
+            //     ->action(function (array $data) {
+            //         $url = route('pdf.telecharger', [
+            //             'etat' => $data['variante'],
+            //             'id'   => $this->record->id,
+            //         ]);
+            //         $this->dispatch('open-url-new-tab', url: $url);
+            //     }),
         ];
     }
 

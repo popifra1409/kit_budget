@@ -509,35 +509,112 @@ class EngagementResource extends Resource
 
                 // ── PDF ───────────────────────────────────────
                 Tables\Actions\ActionGroup::make([
+
+                    // ── Certificat ────────────────────────────
                     Tables\Actions\Action::make('telecharger_certificat')
-                        ->label('Certificat (PDF)')->icon('heroicon-o-arrow-down-tray')->color('success')
-                        ->url(fn($record) => route('pdf.telecharger', ['etat' => 'certificat_engagement', 'id' => $record->id]))
-                        ->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Certificat (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')->color('success')
+                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->form([
+                            \Filament\Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
+                                ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function (array $data, $record, $livewire) {
+                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
                     Tables\Actions\Action::make('afficher_certificat')
-                        ->label('Certificat (Aperçu)')->icon('heroicon-o-eye')->color('info')
-                        ->url(fn($record) => route('pdf.afficher', ['etat' => 'certificat_engagement', 'id' => $record->id]))
-                        ->openUrlInNewTab()->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Certificat (Aperçu)')
+                        ->icon('heroicon-o-eye')->color('info')
+                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->form([
+                            \Filament\Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
+                                ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function (array $data, $record, $livewire) {
+                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
+                    // ── Autorisation ──────────────────────────
                     Tables\Actions\Action::make('telecharger_autorisation')
-                        ->label('Autorisation (PDF)')->icon('heroicon-o-arrow-down-tray')->color('primary')
-                        ->url(fn($record) => route('pdf.telecharger', ['etat' => 'autorisation_engagement', 'id' => $record->id]))
-                        ->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Autorisation (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')->color('primary')
+                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->form([
+                            \Filament\Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
+                                ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function (array $data, $record, $livewire) {
+                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
                     Tables\Actions\Action::make('afficher_autorisation')
-                        ->label('Autorisation (Aperçu)')->icon('heroicon-o-eye')->color('gray')
-                        ->url(fn($record) => route('pdf.afficher', ['etat' => 'autorisation_engagement', 'id' => $record->id]))
-                        ->openUrlInNewTab()->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Autorisation (Aperçu)')
+                        ->icon('heroicon-o-eye')->color('gray')
+                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->form([
+                            \Filament\Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
+                                ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function (array $data, $record, $livewire) {
+                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
+                    // ── Fiche de Performance ──────────────────────
                     Tables\Actions\Action::make('telecharger_fiche')
-                        ->label('Fiche Perf. (PDF)')->icon('heroicon-o-arrow-down-tray')->color('warning')
-                        ->url(fn($record) => route('pdf.telecharger', ['etat' => 'fiche_performance', 'id' => $record->id]))
-                        ->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Fiche Perf. (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')->color('warning')
+                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->form([
+                            \Filament\Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
+                                ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function (array $data, $record, $livewire) {
+                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
 
                     Tables\Actions\Action::make('afficher_fiche')
-                        ->label('Fiche Perf. (Aperçu)')->icon('heroicon-o-eye')->color('secondary')
-                        ->url(fn($record) => route('pdf.afficher', ['etat' => 'fiche_performance', 'id' => $record->id]))
-                        ->openUrlInNewTab()->disabled(fn($record) => $record->statut !== 'definitif'),
+                        ->label('Fiche Perf. (Aperçu)')
+                        ->icon('heroicon-o-eye')->color('secondary')
+                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->form([
+                            \Filament\Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
+                                ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
+                        ])
+                        ->action(function (array $data, $record, $livewire) {
+                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        }),
+
                 ])
                     ->label('PDF')->icon('heroicon-m-document-arrow-down')
                     ->size('sm')->color('success')->button()
