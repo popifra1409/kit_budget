@@ -16,16 +16,23 @@ class ViewBonCommande extends ViewRecord
 
     protected ?array $verificationsCache = null;
 
-    public function mount(int|string $record): void
+    public function mount(int | string $record): void
     {
         parent::mount($record);
-        $this->record->refresh();
-        $this->record->load(['lignes', 'fournisseur', 'budget', 'engagement']);
+        // ✅ Fresh complet — pas de cache de relations
+        $this->record = $this->record->fresh([
+            'lignes.nomenclature',
+            'fournisseur',
+            'budget',
+            'engagement',
+        ]);
     }
 
     protected function getVerifications(): array
     {
         if ($this->verificationsCache === null) {
+            // ✅ Toujours fresh avant vérification
+            $this->record = $this->record->fresh(['lignes.nomenclature', 'fournisseur', 'budget']);
             $this->verificationsCache = $this->record->verifierDisponibiliteBudgetaire();
         }
         return $this->verificationsCache;
@@ -52,7 +59,7 @@ class ViewBonCommande extends ViewRecord
 
         return [
             // ── Actualiser ────────────────────────────────────
-            Actions\ViewAction::make()
+            Actions\Action::make('actualiser')
                 ->label('Actualiser')
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
@@ -67,7 +74,7 @@ class ViewBonCommande extends ViewRecord
                 ->visible(
                     fn() =>
                     $this->record->estModifiable()
-                    && static::getResource()::canEdit($this->record)
+                        && static::getResource()::canEdit($this->record)
                 ),
 
             // ── Supprimer ─────────────────────────────────────
@@ -75,7 +82,7 @@ class ViewBonCommande extends ViewRecord
                 ->visible(
                     fn() =>
                     $this->record->statut === 'brouillon'
-                    && static::getResource()::canDelete($this->record)
+                        && static::getResource()::canDelete($this->record)
                 )
                 ->requiresConfirmation(),
 
@@ -87,7 +94,7 @@ class ViewBonCommande extends ViewRecord
                 ->visible(
                     fn() =>
                     $this->record->statut === 'brouillon'
-                    && static::getResource()::canValider($this->record)
+                        && static::getResource()::canValider($this->record)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Valider le bon de commande')
@@ -103,9 +110,10 @@ class ViewBonCommande extends ViewRecord
                     $this->refreshFormData(['statut']);
                 }),
 
-            // ── Engager ───────────────────────────────────────
             Actions\Action::make('engager')
                 ->label(function () {
+                    // ✅ Fresh à chaque évaluation
+                    $this->record = $this->record->fresh(['lignes.nomenclature', 'fournisseur', 'budget']);
                     $verifications = $this->record->verifierDisponibiliteBudgetaire();
                     return $verifications['peut_engager']
                         ? 'Engager le Budget'
@@ -113,16 +121,18 @@ class ViewBonCommande extends ViewRecord
                 })
                 ->icon('heroicon-o-currency-dollar')
                 ->color(function () {
+                    $this->record = $this->record->fresh(['lignes.nomenclature', 'fournisseur', 'budget']);
                     $verifications = $this->record->verifierDisponibiliteBudgetaire();
                     return $verifications['peut_engager'] ? 'success' : 'danger';
                 })
                 ->visible(
                     fn() =>
                     $this->record->statut === 'valide'
-                    && !$this->record->engagement_id
-                    && static::getResource()::canEngager($this->record)
+                        && !$this->record->engagement_id
+                        && static::getResource()::canEngager($this->record)
                 )
                 ->tooltip(function () {
+                    $this->record = $this->record->fresh(['lignes.nomenclature', 'fournisseur', 'budget']);
                     $verifications = $this->record->verifierDisponibiliteBudgetaire();
                     if (!$verifications['peut_engager']) {
                         $details = [];
@@ -140,13 +150,19 @@ class ViewBonCommande extends ViewRecord
                 ->modalDescription('Vérification de la disponibilité budgétaire')
                 ->modalWidth('5xl')
                 ->modalContent(function () {
+                    // ✅ Fresh obligatoire — recharge les lignes avec la nouvelle nomenclature
+                    $this->record = $this->record->fresh(['lignes.nomenclature', 'fournisseur', 'budget']);
+                    $this->verificationsCache = null; // ← vider le cache
                     $verifications = $this->record->verifierDisponibiliteBudgetaire();
+
                     return view('filament.modals.engagement-budget-verification', [
-                        'bonCommande' => $this->record,
+                        'bonCommande'   => $this->record,
                         'verifications' => $verifications,
                     ]);
                 })
                 ->modalSubmitActionLabel(function () {
+                    $this->record = $this->record->fresh(['lignes.nomenclature']);
+                    $this->verificationsCache = null;
                     $verifications = $this->record->verifierDisponibiliteBudgetaire();
                     return $verifications['peut_engager']
                         ? '✅ Confirmer l\'engagement'
@@ -154,11 +170,17 @@ class ViewBonCommande extends ViewRecord
                 })
                 ->modalCancelActionLabel('Annuler')
                 ->disabled(function () {
+                    $this->record = $this->record->fresh(['lignes.nomenclature']);
+                    $this->verificationsCache = null;
                     $verifications = $this->record->verifierDisponibiliteBudgetaire();
                     return !$verifications['peut_engager'];
                 })
                 ->action(function () {
                     try {
+                        // ✅ Fresh complet — données à jour depuis la base
+                        $this->verificationsCache = null;
+                        $this->record = $this->record->fresh(['lignes.nomenclature', 'fournisseur', 'budget']);
+
                         $verifications = $this->record->verifierDisponibiliteBudgetaire();
 
                         if (!$verifications['peut_engager']) {
@@ -171,17 +193,14 @@ class ViewBonCommande extends ViewRecord
                             }
                             Notification::make()
                                 ->title('❌ Crédit budgétaire insuffisant')
-                                ->danger()
-                                ->body(implode("\n", $details))
-                                ->persistent()->send();
+                                ->danger()->body(implode("\n", $details))->persistent()->send();
                             return;
                         }
 
                         $engagement = $this->record->engagerBudget($verifications);
                         $this->record->refresh();
                         Notification::make()
-                            ->title('✅ Budget engagé avec succès')
-                            ->success()
+                            ->title('✅ Budget engagé avec succès')->success()
                             ->body("BC {$this->record->numero} engagé. Engagement : {$engagement->numero}")
                             ->duration(5000)->send();
                         $this->refreshFormData(['statut', 'engage']);
@@ -200,8 +219,8 @@ class ViewBonCommande extends ViewRecord
                 ->visible(
                     fn() =>
                     $this->record->engage
-                    && $this->record->peutEtreDesengage()
-                    && static::getResource()::canDesengager($this->record)
+                        && $this->record->peutEtreDesengage()
+                        && static::getResource()::canDesengager($this->record)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Annuler l\'engagement du bon de commande')
@@ -209,9 +228,9 @@ class ViewBonCommande extends ViewRecord
                     // ✅ Requête directe — contourne morphMap
                     $engagement = \App\Models\Engagement::where('engageable_id', $this->record->id)
                         ->where(function ($q) {
-                        $q->where('engageable_type', \App\Models\BonCommande::class)
-                            ->orWhere('engageable_type', 'bon_commande');
-                    })->first();
+                            $q->where('engageable_type', \App\Models\BonCommande::class)
+                                ->orWhere('engageable_type', 'bon_commande');
+                        })->first();
 
                     $numEngagement = $engagement?->numero ?? '—';
 
@@ -229,16 +248,18 @@ class ViewBonCommande extends ViewRecord
                     try {
                         $this->record->desengagerBudget();
                         $this->record->refresh();
+
+                        // ✅ Vider le cache des vérifications
+                        $this->verificationsCache = null;
+
                         Notification::make()
                             ->title('✅ Engagement annulé — crédits libérés')
-                            ->success()
-                            ->body("Le BC {$this->record->numero} est de nouveau en statut Validé.")
-                            ->duration(5000)->send();
+                            ->success()->send();
+
                         $this->refreshFormData(['statut', 'engage']);
                     } catch (\Exception $e) {
-                        Notification::make()
-                            ->title('❌ Impossible de désengager')
-                            ->danger()->body($e->getMessage())->persistent()->send();
+                        Notification::make()->title('❌ Erreur')->danger()
+                            ->body($e->getMessage())->persistent()->send();
                     }
                 }),
 
@@ -249,26 +270,27 @@ class ViewBonCommande extends ViewRecord
                 ->color('danger')
                 ->visible(
                     fn() =>
-                    $this->record->peutEtreAnnule()
-                    && static::getResource()::canAnnuler($this->record)
+                    $this->record->statut !== 'brouillon'   // ← AJOUT
+                        && $this->record->peutEtreAnnule()
+                        && static::getResource()::canAnnuler($this->record)
                 )
                 ->form([
                     Forms\Components\Placeholder::make('info_annulation')
                         ->label('')
                         ->content(
                             fn() => $this->record->engage
-                            ? new \Illuminate\Support\HtmlString(
-                                '<div style="background:#fef2f2;border:1px solid #dc2626;
+                                ? new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef2f2;border:1px solid #dc2626;
                                              border-radius:.5rem;padding:.75rem;color:#dc2626;font-weight:600;">
                                 ❌ Ce BC est engagé.<br>
                                 Veuillez d\'abord annuler l\'engagement via le bouton
                                 "Annuler l\'engagement", puis revenez annuler le BC.</div>'
-                            )
-                            : new \Illuminate\Support\HtmlString(
-                                '<div style="background:#fef9c3;border:1px solid #ca8a04;
+                                )
+                                : new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef9c3;border:1px solid #ca8a04;
                                              border-radius:.5rem;padding:.75rem;">
                                 ⚠️ Le bon de commande sera annulé. Il restera récupérable.</div>'
-                            )
+                                )
                         )
                         ->columnSpanFull(),
 
@@ -302,8 +324,8 @@ class ViewBonCommande extends ViewRecord
                 ->visible(
                     fn() =>
                     $this->record->statut === 'annule'
-                    && $this->record->peutEtreRecupere()
-                    && static::getResource()::canRecuperer($this->record)
+                        && $this->record->peutEtreRecupere()
+                        && static::getResource()::canRecuperer($this->record)
                 )
                 ->form([
                     Forms\Components\Placeholder::make('info_recuperation')

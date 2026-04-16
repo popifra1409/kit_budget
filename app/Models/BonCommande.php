@@ -113,110 +113,79 @@ class BonCommande extends Model
      */
     public function verifierDisponibiliteBudgetaire(): array
     {
-        $lignes = $this->lignes()->with('nomenclature')->get();
-
-        if ($lignes->isEmpty()) {
+        // ✅ Utiliser nomenclature_commune_id — pas les lignes individuelles
+        if (!$this->nomenclature_commune_id) {
             return [
-                'peut_engager' => false,
-                'montant_total' => 0,
+                'peut_engager'     => false,
+                'montant_total'    => 0,
                 'lignes_budgetaires' => [],
-                'message' => 'Aucune ligne de commande',
+                'message'          => 'Aucune nomenclature commune définie sur ce bon de commande',
             ];
         }
 
-        // Grouper par nomenclature
-        $lignesParNomenclature = [];
-        foreach ($lignes as $ligne) {
-            $nomenclatureId = $ligne->nomenclature_id;
+        $nomenclature = \App\Models\NomenclatureBudgetaire::find($this->nomenclature_commune_id);
+        $montantTotal = (float) $this->montant_ttc;
 
-            if (!isset($lignesParNomenclature[$nomenclatureId])) {
-                $lignesParNomenclature[$nomenclatureId] = [
-                    'nomenclature' => $ligne->nomenclature,
-                    'montant_a_engager' => 0,
-                    'lignes' => [],
-                ];
-            }
+        $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+            ->where('nomenclature_id', $this->nomenclature_commune_id)
+            ->first();
 
-            $lignesParNomenclature[$nomenclatureId]['montant_a_engager'] += $ligne->montant_ttc;
-            $lignesParNomenclature[$nomenclatureId]['lignes'][] = $ligne->designation;
-        }
-
-        // Vérifier chaque ligne budgétaire
-        $verifications = [];
-        $peutEngager = true;
-        $montantTotal = 0;
-
-        foreach ($lignesParNomenclature as $nomenclatureId => $data) {
-            $nomenclature = $data['nomenclature'];
-            $montantAEngager = $data['montant_a_engager'];
-            $montantTotal += $montantAEngager;
-
-            // Récupérer la ligne budgétaire
-            $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-                ->where('nomenclature_id', $nomenclatureId)
-                ->first();
-
-            if (!$ligneBudgetaire) {
-                $verifications[] = [
-                    'nomenclature' => $nomenclature,
-                    'montant_a_engager' => $montantAEngager,
-                    'disponible_avant' => 0,
-                    'disponible_apres' => 0,
-                    'suffisant' => false,
-                    'manque' => $montantAEngager,
-                    'taux_utilisation' => 100,
+        if (!$ligneBudgetaire) {
+            return [
+                'peut_engager'     => false,
+                'montant_total'    => $montantTotal,
+                'nombre_nomenclatures' => 1,
+                'lignes_budgetaires' => [[
+                    'nomenclature'      => $nomenclature,
+                    'montant_a_engager' => $montantTotal,
+                    'disponible_avant'  => 0,
+                    'disponible_apres'  => 0,
+                    'suffisant'         => false,
+                    'manque'            => $montantTotal,
+                    'taux_utilisation'  => 100,
                     'taux_utilisation_avant' => 0,
-                    'lignes_designation' => $data['lignes'],
-                    'provision_totale' => 0,
-                    'deja_engage' => 0,
-                    'message' => 'Ligne budgétaire introuvable',
-                ];
-                $peutEngager = false;
-                continue;
-            }
-
-            $disponibleAvant = $ligneBudgetaire->disponible_engagement;
-            $disponibleApres = $disponibleAvant - $montantAEngager;
-            $suffisant = $disponibleAvant >= $montantAEngager;
-            $manque = $suffisant ? 0 : ($montantAEngager - $disponibleAvant);
-
-            // Calcul du taux d'utilisation
-            $tauxUtilisationAvant = $ligneBudgetaire->montant_vote > 0
-                ? (($ligneBudgetaire->engage) / $ligneBudgetaire->montant_vote) * 100
-                : 0;
-
-            $tauxUtilisationApres = $ligneBudgetaire->montant_vote > 0
-                ? (($ligneBudgetaire->engage + $montantAEngager) / $ligneBudgetaire->montant_vote) * 100
-                : 0;
-
-            $verifications[] = [
-                'nomenclature' => $nomenclature,
-                'ligne_budgetaire' => $ligneBudgetaire,
-                'montant_a_engager' => $montantAEngager,
-                'disponible_avant' => $disponibleAvant,
-                'disponible_apres' => $disponibleApres,
-                'suffisant' => $suffisant,
-                'manque' => $manque,
-                'taux_utilisation' => round($tauxUtilisationApres, 2),
-                'taux_utilisation_avant' => round($tauxUtilisationAvant, 2),
-                'lignes_designation' => $data['lignes'],
-                'provision_totale' => $ligneBudgetaire->montant_vote,
-                'deja_engage' => $ligneBudgetaire->engage,
+                    'lignes_designation' => [],
+                    'provision_totale'  => 0,
+                    'deja_engage'       => 0,
+                    'message'           => 'Ligne budgétaire introuvable',
+                ]],
+                'message' => 'Ligne budgétaire introuvable pour cette nomenclature',
             ];
-
-            if (!$suffisant) {
-                $peutEngager = false;
-            }
         }
+
+        $disponibleAvant = $ligneBudgetaire->disponible_engagement;
+        $disponibleApres = $disponibleAvant - $montantTotal;
+        $suffisant       = $disponibleAvant >= $montantTotal;
+        $manque          = $suffisant ? 0 : ($montantTotal - $disponibleAvant);
+
+        $tauxAvant = $ligneBudgetaire->montant_vote > 0
+            ? ($ligneBudgetaire->engage / $ligneBudgetaire->montant_vote) * 100
+            : 0;
+        $tauxApres = $ligneBudgetaire->montant_vote > 0
+            ? (($ligneBudgetaire->engage + $montantTotal) / $ligneBudgetaire->montant_vote) * 100
+            : 0;
 
         return [
-            'peut_engager' => $peutEngager,
-            'montant_total' => $montantTotal,
-            'nombre_nomenclatures' => count($verifications),
-            'lignes_budgetaires' => $verifications,
-            'message' => $peutEngager
-                ? 'Toutes les lignes budgétaires ont un crédit suffisant'
-                : 'Crédit insuffisant sur une ou plusieurs lignes budgétaires',
+            'peut_engager'         => $suffisant,
+            'montant_total'        => $montantTotal,
+            'nombre_nomenclatures' => 1,
+            'lignes_budgetaires'   => [[
+                'nomenclature'           => $nomenclature,
+                'ligne_budgetaire'       => $ligneBudgetaire,
+                'montant_a_engager'      => $montantTotal,
+                'disponible_avant'       => $disponibleAvant,
+                'disponible_apres'       => $disponibleApres,
+                'suffisant'              => $suffisant,
+                'manque'                 => $manque,
+                'taux_utilisation'       => round($tauxApres, 2),
+                'taux_utilisation_avant' => round($tauxAvant, 2),
+                'lignes_designation'     => $this->lignes()->pluck('designation')->toArray(),
+                'provision_totale'       => $ligneBudgetaire->montant_vote,
+                'deja_engage'            => $ligneBudgetaire->engage,
+            ]],
+            'message' => $suffisant
+                ? 'Crédit suffisant pour l\'engagement'
+                : 'Crédit insuffisant sur la ligne budgétaire',
         ];
     }
 
@@ -463,7 +432,6 @@ class BonCommande extends Model
             \DB::commit();
 
             \Log::info("BC {$this->numero} récupéré — remis en brouillon");
-
         } catch (\Exception $e) {
             \DB::rollBack();
             \Log::error("Erreur récupération BC {$this->numero} : " . $e->getMessage());
@@ -474,36 +442,36 @@ class BonCommande extends Model
     /**
      * ✅ Libérer les crédits d'un engagement annulé
      */
-    protected function libererCreditsEngagement(): void
-    {
-        $lignesBudgetaires = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-            ->whereIn('nomenclature_id', $this->lignes->pluck('nomenclature_id'))
-            ->get();
+    // protected function libererCreditsEngagement(): void
+    // {
+    //     $lignesBudgetaires = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
+    //         ->whereIn('nomenclature_id', $this->lignes->pluck('nomenclature_id'))
+    //         ->get();
 
-        foreach ($lignesBudgetaires as $ligneBudgetaire) {
-            // Calculer le montant engagé pour cette nomenclature
-            $montantEngagePourNomenclature = $this->lignes()
-                ->where('nomenclature_id', $ligneBudgetaire->nomenclature_id)
-                ->sum('montant_ttc');
+    //     foreach ($lignesBudgetaires as $ligneBudgetaire) {
+    //         // Calculer le montant engagé pour cette nomenclature
+    //         $montantEngagePourNomenclature = $this->lignes()
+    //             ->where('nomenclature_id', $ligneBudgetaire->nomenclature_id)
+    //             ->sum('montant_ttc');
 
-            if ($montantEngagePourNomenclature > 0) {
-                // Libérer le crédit
-                $ligneBudgetaire->engage -= $montantEngagePourNomenclature;
+    //         if ($montantEngagePourNomenclature > 0) {
+    //             // Libérer le crédit
+    //             $ligneBudgetaire->engage -= $montantEngagePourNomenclature;
 
-                // Sécurité : ne pas avoir de montant négatif
-                if ($ligneBudgetaire->engage < 0) {
-                    $ligneBudgetaire->engage = 0;
-                }
+    //             // Sécurité : ne pas avoir de montant négatif
+    //             if ($ligneBudgetaire->engage < 0) {
+    //                 $ligneBudgetaire->engage = 0;
+    //             }
 
-                $ligneBudgetaire->save();
+    //             $ligneBudgetaire->save();
 
-                \Log::info("Crédit libéré sur {$ligneBudgetaire->nomenclature->code}", [
-                    'montant_libere' => $montantEngagePourNomenclature,
-                    'nouveau_engage' => $ligneBudgetaire->engage,
-                ]);
-            }
-        }
-    }
+    //             \Log::info("Crédit libéré sur {$ligneBudgetaire->nomenclature->code}", [
+    //                 'montant_libere' => $montantEngagePourNomenclature,
+    //                 'nouveau_engage' => $ligneBudgetaire->engage,
+    //             ]);
+    //         }
+    //     }
+    // }
 
     /**
      * Vérifier si le document est transmis à quelqu'un d'autre
@@ -645,8 +613,8 @@ class BonCommande extends Model
 
                 throw new \Exception(
                     'Modification interdite : bon de commande non brouillon. ' .
-                    'Seul le super administrateur peut modifier un BC validé. ' .
-                    'Champs tentés : ' . implode(', ', $champsDirty)
+                        'Seul le super administrateur peut modifier un BC validé. ' .
+                        'Champs tentés : ' . implode(', ', $champsDirty)
                 );
             }
 
@@ -954,8 +922,8 @@ class BonCommande extends Model
 
                 throw new \Exception(
                     "Crédit budgétaire insuffisant :\n\n" .
-                    implode("\n", $details) .
-                    "\n\nVeuillez augmenter le crédit ou réduire le montant du bon de commande."
+                        implode("\n", $details) .
+                        "\n\nVeuillez augmenter le crédit ou réduire le montant du bon de commande."
                 );
             }
 
@@ -964,7 +932,7 @@ class BonCommande extends Model
                 'numero' => $this->genererNumeroEngagement(),
                 'exercice_id' => $this->exercice_id,
                 'budget_id' => $this->budget_id,
-                'nomenclature_principale_id' => $this->lignes->first()->nomenclature_id ?? null,
+                'nomenclature_principale_id' => $this->nomenclature_commune_id,
                 'type_engagement' => 'BC',
                 'engageable_type' => get_class($this),
                 'engageable_id' => $this->id,
@@ -1159,85 +1127,73 @@ class BonCommande extends Model
             throw new \Exception("Ce bon de commande ne peut pas être désengagé.");
         }
 
-        // ✅ Requête directe — contourne le problème morphOne/morphMap
+        // ✅ Requête directe — contourne morphMap
         $engagement = \App\Models\Engagement::where('engageable_id', $this->id)
             ->where(function ($q) {
                 $q->where('engageable_type', static::class)
                     ->orWhere('engageable_type', 'bon_commande');
-            })
-            ->first();
+            })->first();
 
         if (!$engagement) {
-            // Engagement absent — juste nettoyer le BC
             $this->updateQuietly([
-                'engage' => false,
-                'montant_engage' => 0,
+                'engage'          => false,
+                'montant_engage'  => 0,
                 'date_engagement' => null,
-                'statut' => 'valide',
+                'statut'          => 'valide',
             ]);
             return;
         }
 
         \DB::beginTransaction();
         try {
-            // ✅ Libérer les crédits via les lignes d'engagement
             $engagement->load('lignes');
 
+            // ✅ Libérer depuis les LIGNES D'ENGAGEMENT (pas les lignes du BC)
+            // Car les lignes du BC peuvent avoir changé de nomenclature
             foreach ($engagement->lignes as $ligne) {
                 $lb = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-                    ->where('nomenclature_id', $ligne->nomenclature_id)
+                    ->where('nomenclature_id', $ligne->nomenclature_id) // ← nomenclature de l'engagement
                     ->first();
 
                 if ($lb && $lb->engage > 0) {
                     $lb->engage = max(0, $lb->engage - $ligne->montant);
                     $lb->save();
 
-                    \Log::info("Crédit libéré (BC desengagerBudget)", [
-                        'nomenclature_id' => $ligne->nomenclature_id,
-                        'montant' => $ligne->montant,
+                    \Log::info("Crédit libéré sur nomenclature {$ligne->nomenclature_id}", [
+                        'montant'       => $ligne->montant,
+                        'nouveau_engage' => $lb->engage,
                     ]);
                 }
             }
 
-            // ✅ Fallback — si pas de lignes, via nomenclature principale
+            // ✅ Fallback — si pas de lignes d'engagement
             if ($engagement->lignes->isEmpty() && $engagement->nomenclature_principale_id) {
                 $lb = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
                     ->where('nomenclature_id', $engagement->nomenclature_principale_id)
                     ->first();
-
                 if ($lb && $lb->engage > 0) {
                     $lb->engage = max(0, $lb->engage - $engagement->montant_engage);
                     $lb->save();
                 }
             }
 
-            // ✅ Supprimer les lignes puis l'engagement définitivement
-            // forceDelete libère le numéro pour réutilisation au réengagement
+            // ✅ Supprimer définitivement — libère le numéro pour réengagement
             $engagement->lignes()->delete();
             $engagement->forceDelete();
 
-            \Log::info("Engagement {$engagement->numero} supprimé définitivement", [
-                'bc_numero' => $this->numero,
-            ]);
+            \Log::info("Engagement {$engagement->numero} supprimé — crédits libérés");
 
-            // ✅ Nettoyer le BC — retour en validé (peut être réengagé)
             $this->updateQuietly([
-                'engage' => false,
-                'montant_engage' => 0,
+                'engage'          => false,
+                'montant_engage'  => 0,
                 'date_engagement' => null,
-                'statut' => 'valide',
+                'statut'          => 'valide',
             ]);
 
             \DB::commit();
-
-            \Log::info("BC {$this->numero} désengagé — crédits libérés — prêt à réengager");
-
         } catch (\Exception $e) {
             \DB::rollBack();
-            \Log::error("Erreur désengagement BC", [
-                'bc_id' => $this->id,
-                'erreur' => $e->getMessage(),
-            ]);
+            \Log::error("Erreur désengagement BC", ['erreur' => $e->getMessage()]);
             throw $e;
         }
     }
@@ -1245,8 +1201,8 @@ class BonCommande extends Model
 
     public function peutEtreAnnule(): bool
     {
-        if ($this->statut === 'annule')
-            return false;
+        // ✅ Brouillon = pas besoin d'annuler, on supprime
+        if (in_array($this->statut, ['annule', 'brouillon'])) return false;
 
         // Si engagé avec OP → impossible
         if ($this->engage) {
@@ -1257,7 +1213,7 @@ class BonCommande extends Model
                 })->first();
 
             if ($engagement && $engagement->ordonnancesPaiement()->count() > 0) {
-                return false; // OP existent → annulation impossible
+                return false;
             }
         }
 
@@ -1285,8 +1241,8 @@ class BonCommande extends Model
 
             throw new \Exception(
                 "❌ Annulation impossible : ce bon de commande est engagé.\n\n" .
-                "Veuillez d'abord annuler l'engagement N° {$numEngagement}, " .
-                "puis revenez annuler le bon de commande."
+                    "Veuillez d'abord annuler l'engagement N° {$numEngagement}, " .
+                    "puis revenez annuler le bon de commande."
             );
         }
 
@@ -1311,7 +1267,6 @@ class BonCommande extends Model
                 'statut_avant' => $statutAvant,
                 'user' => auth()->id(),
             ]);
-
         } catch (\Exception $e) {
             \DB::rollBack();
             \Log::error("Erreur annulation BC {$this->numero} : " . $e->getMessage());
@@ -1329,11 +1284,10 @@ class BonCommande extends Model
 
     public function getNomenclaturePrincipale()
     {
-        if ($this->lignes && $this->lignes->count() > 0) {
-            return $this->lignes->first()->nomenclature;
+        if ($this->nomenclature_commune_id) {
+            return $this->nomenclatureCommune;
         }
-
-        return $this->engagement?->nomenclaturePrincipale;
+        return $this->lignes()->first()?->nomenclature;
     }
 
     /**
