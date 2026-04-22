@@ -51,6 +51,7 @@ class RolePermissionSeeder extends Seeder
             'user',
             'virement_budgetaire',
             'fiche_controle_engagements',
+            'avenant_engagement',
         ];
 
         // ====================================================
