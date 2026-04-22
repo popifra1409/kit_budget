@@ -757,23 +757,38 @@ class BonCommande extends Model
             throw new \Exception("Aucun exercice disponible pour générer le numéro");
         }
 
-        $annee = substr($exercice->annee, -2);
+        $annee   = substr($exercice->annee, -2);
+        $prefixe = $this->determinerPrefixeNumero();
 
-        return \DB::transaction(function () use ($annee, $exercice) {
-            // ✅ withTrashed() — inclure les soft-deleted
+        return \DB::transaction(function () use ($annee, $exercice, $prefixe) {
             $dernier = self::withTrashed()
                 ->where('exercice_id', $exercice->id)
-                ->where('numero', 'like', "BC{$annee}-%")
+                ->where('numero', 'like', "{$prefixe}{$annee}-%")
                 ->lockForUpdate()
                 ->orderBy('numero', 'desc')
                 ->first();
 
-            $nouveauNumero = $dernier
+            $sequence = $dernier
                 ? intval(substr($dernier->numero, -5)) + 1
                 : 1;
 
-            return sprintf('BC%s-%05d', $annee, $nouveauNumero);
+            return sprintf('%s%s-%05d', $prefixe, $annee, $sequence);
         });
+    }
+
+    protected function determinerPrefixeNumero(): string
+    {
+        if ($this->type_engagement_id && !$this->relationLoaded('typeEngagement')) {
+            $this->load('typeEngagement');
+        }
+
+        return match ($this->typeEngagement?->code ?? 'BC') {
+            'LC'   => 'LC',
+            'MA'   => 'MA',
+            'DL'   => 'DL',
+            'DM'   => 'DM',
+            default => 'BC',
+        };
     }
 
     /**
