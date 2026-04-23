@@ -173,7 +173,10 @@ class BonCommandeResource extends Resource
                 Forms\Components\Section::make('Exercice')
                     ->description('Exercice budgétaire de rattachement')
                     ->schema([
-                        ExerciceSelect::make(),
+                        // ✅ avecReports=true si super_admin
+                        ExerciceSelect::make(
+                            avecReports: auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                        ),
                     ])
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null),
@@ -206,7 +209,7 @@ class BonCommandeResource extends Resource
                                 );
 
                                 // $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($state);
-                    
+
                                 if (!$fournisseur || !$fournisseur->regimeFiscal) {
                                     return;
                                 }
@@ -491,114 +494,7 @@ class BonCommandeResource extends Resource
                     ->columns(2)
                     ->collapsible(),
 
-                // Forms\Components\Toggle::make('exonere_tva')
-                //     ->label('Exonération de TVA')
-                //     ->live(debounce: 1000)
-                //     ->reactive()
-                //     ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                //         // Forcer l'état booléen
-                //         $set('exonere_tva', (bool) $state);
 
-                //         // Recalculer toutes les lignes lors du chargement
-                //         if ($state) {
-                //             $lignes = $get('lignes') ?? [];
-                //             foreach ($lignes as $index => $ligne) {
-                //                 $set("lignes.$index.taux_tva", 0);
-                //                 // Recalculer la ligne
-                //                 static::recalculerLigne(
-                //                     function ($key, $value) use ($set, $index) {
-                //                         $set("lignes.$index.$key", $value);
-                //                     },
-                //                     function ($key) use ($get, $index) {
-                //                         return $get("lignes.$index.$key");
-                //                     }
-                //                 );
-                //             }
-                //         }
-                //     })
-                //     ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                //         $lignes = $get('lignes') ?? [];
-
-                //         foreach ($lignes as $index => $ligne) {
-                //             $set("lignes.$index.taux_tva", $state ? 0 : 19.25);
-                //             // Recalculer immédiatement chaque ligne
-                //             static::recalculerLigne(
-                //                 function ($key, $value) use ($set, $index) {
-                //                     $set("lignes.$index.$key", $value);
-                //                 },
-                //                 function ($key) use ($get, $index) {
-                //                     return $get("lignes.$index.$key");
-                //                 }
-                //             );
-                //         }
-
-                //         // Recalculer les totaux
-                //         static::recalculerTotaux($lignes, $set);
-                //     }),
-
-                // Forms\Components\Toggle::make('exonere_ir')
-                //     ->label('Exonération d\'IR')
-                //     ->helperText('Forcer l\'IR à 0% (même si le fournisseur est assujetti)')
-                //     ->live(debounce: 1000)
-                //     ->reactive()
-                //     ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                //         // Forcer l'état booléen
-                //         $set('exonere_ir', (bool) $state);
-
-                //         // Recalculer toutes les lignes lors du chargement
-                //         if ($state) {
-                //             $lignes = $get('lignes') ?? [];
-                //             foreach ($lignes as $index => $ligne) {
-                //                 $set("lignes.$index.taux_ir", 0);
-                //                 // Recalculer la ligne
-                //                 static::recalculerLigne(
-                //                     function ($key, $value) use ($set, $index) {
-                //                         $set("lignes.$index.$key", $value);
-                //                     },
-                //                     function ($key) use ($get, $index) {
-                //                         return $get("lignes.$index.$key");
-                //                     }
-                //                 );
-                //             }
-                //         }
-                //     })
-                //     ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                //         $lignes = $get('lignes') ?? [];
-
-                //         foreach ($lignes as $index => $ligne) {
-                //             if ($state) {
-                //                 // Si exonéré, forcer IR à 0
-                //                 $set("lignes.$index.taux_ir", 0);
-                //             } else {
-                //                 // Si non exonéré, recalculer l'IR selon le régime fiscal
-                //                 $typeEngagementId = $get('type_engagement_id');
-                //                 $fournisseurId = $get('fournisseur_id');
-
-                //                 if ($typeEngagementId && $fournisseurId) {
-                //                     $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
-                //                     $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
-
-                //                     if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
-                //                         $tauxIR = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
-                //                         $set("lignes.$index.taux_ir", $tauxIR);
-                //                     }
-                //                 }
-                //             }
-
-                //             // Recalculer immédiatement chaque ligne
-                //             static::recalculerLigne(
-                //                 function ($key, $value) use ($set, $index) {
-                //                     $set("lignes.$index.$key", $value);
-                //                 },
-                //                 function ($key) use ($get, $index) {
-                //                     return $get("lignes.$index.$key");
-                //                 }
-                //             );
-                //         }
-
-                //         // Recalculer les totaux
-                //         static::recalculerTotaux($lignes, $set);
-                //     }),
                 Forms\Components\Section::make('Taux Communs et Exonérations')
                     ->description('Appliquez des taux communs à toutes les lignes ou gérez les exonérations')
                     ->schema([
@@ -626,11 +522,11 @@ class BonCommandeResource extends Resource
                                             // Recalculer la ligne
                                             static::recalculerLigne(
                                                 function ($key, $value) use ($set, $index) {
-                                                $set("lignes.$index.$key", $value);
-                                            },
+                                                    $set("lignes.$index.$key", $value);
+                                                },
                                                 function ($key) use ($get, $index) {
-                                                return $get("lignes.$index.$key");
-                                            }
+                                                    return $get("lignes.$index.$key");
+                                                }
                                             );
                                         }
 
@@ -672,11 +568,11 @@ class BonCommandeResource extends Resource
                                             // Recalculer la ligne
                                             static::recalculerLigne(
                                                 function ($key, $value) use ($set, $index) {
-                                                $set("lignes.$index.$key", $value);
-                                            },
+                                                    $set("lignes.$index.$key", $value);
+                                                },
                                                 function ($key) use ($get, $index) {
-                                                return $get("lignes.$index.$key");
-                                            }
+                                                    return $get("lignes.$index.$key");
+                                                }
                                             );
                                         }
 
@@ -710,11 +606,11 @@ class BonCommandeResource extends Resource
                                                 // Recalculer la ligne
                                                 static::recalculerLigne(
                                                     function ($key, $value) use ($set, $index) {
-                                                    $set("lignes.$index.$key", $value);
-                                                },
+                                                        $set("lignes.$index.$key", $value);
+                                                    },
                                                     function ($key) use ($get, $index) {
-                                                    return $get("lignes.$index.$key");
-                                                }
+                                                        return $get("lignes.$index.$key");
+                                                    }
                                                 );
                                             }
                                         }
@@ -731,7 +627,7 @@ class BonCommandeResource extends Resource
                                                 // ✅ Si non exonéré, vérifier dans cet ordre :
                                                 // 1. IR Commun s'il existe
                                                 // 2. Sinon calculer selon le régime fiscal
-                            
+
                                                 $irCommun = (float) ($get('ir_commun') ?? 0);
 
                                                 if ($irCommun > 0) {
@@ -757,11 +653,11 @@ class BonCommandeResource extends Resource
                                             // Recalculer immédiatement chaque ligne
                                             static::recalculerLigne(
                                                 function ($key, $value) use ($set, $index) {
-                                                $set("lignes.$index.$key", $value);
-                                            },
+                                                    $set("lignes.$index.$key", $value);
+                                                },
                                                 function ($key) use ($get, $index) {
-                                                return $get("lignes.$index.$key");
-                                            }
+                                                    return $get("lignes.$index.$key");
+                                                }
                                             );
                                         }
 
@@ -1182,41 +1078,33 @@ class BonCommandeResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $query = parent::getEloquentQuery()->with('exercice');
+        // ✅ withoutGlobalScope — inclut tous les exercices (actif + clôturé)
+        $query = parent::getEloquentQuery()
+            ->withoutGlobalScope('exercice')
+            ->with('exercice');
 
         $user = auth()->user();
 
-        // Super admin voit TOUT
         if ($user && $user->hasRole('super_admin')) {
             return $query;
         }
 
         if (!$user) {
-            return $query->whereRaw('1 = 0'); // Aucun résultat
+            return $query->whereRaw('1 = 0');
         }
 
-        // Pour les autres utilisateurs
         return $query->where(function ($q) use ($user) {
-            // 1. Documents créés par moi (toujours visibles)
             $q->where('created_by', $user->id)
-
-                // OU
-
-                // 2. Documents sans transmission en cours (tout le monde peut voir)
                 ->orWhereDoesntHave('transmissions', function ($transmission) {
                     $transmission->where('statut', 'en_attente');
                 })
-
-                // OU
-
-                // 3. Documents dont je suis le destinataire actuel
                 ->orWhereHas('transmissions', function ($transmission) use ($user) {
                     $transmission->where('statut', 'en_attente')
                         ->where('destinataire_id', $user->id);
                 });
         });
     }
-
+    
     public static function table(Table $table): Table
     {
         return $table
@@ -1328,8 +1216,8 @@ class BonCommandeResource extends Resource
                     ->description(
                         fn($record) =>
                         $record && $record->engagement && $record->date_engagement
-                        ? 'Engagé le ' . $record->date_engagement->format('d/m/Y')
-                        : null
+                            ? 'Engagé le ' . $record->date_engagement->format('d/m/Y')
+                            : null
                     ),
 
                 // Modifier la colonne montant_ir pour montant_total_impots
@@ -1408,9 +1296,9 @@ class BonCommandeResource extends Resource
                     ->query(function ($query, array $data) {
                         return $query
                             ->when($data['date_emission_from'], fn($q, $date) =>
-                                $q->whereDate('date_emission', '>=', $date))
+                            $q->whereDate('date_emission', '>=', $date))
                             ->when($data['date_emission_until'], fn($q, $date) =>
-                                $q->whereDate('date_emission', '<=', $date));
+                            $q->whereDate('date_emission', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -1526,19 +1414,19 @@ class BonCommandeResource extends Resource
                                 // OU
                                 // 2. Transmis À MOI (en attente de mon action)
                                 ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                $transmission->where('destinataire_id', $userId)
-                                    ->where('statut', 'en_attente');
-                            })
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                })
                                 // OU
                                 // 3. Retournés À MOI pour correction
                                 ->orWhere(function ($subQ) use ($userId) {
-                                $subQ->where('created_by', $userId)
-                                    ->whereHas('transmissions', function ($transmission) {
-                                        $transmission->where('statut', 'retourne')
-                                            ->latest()
-                                            ->limit(1);
-                                    });
-                            });
+                                    $subQ->where('created_by', $userId)
+                                        ->whereHas('transmissions', function ($transmission) {
+                                            $transmission->where('statut', 'retourne')
+                                                ->latest()
+                                                ->limit(1);
+                                        });
+                                });
                         });
                     })
                     ->toggle()

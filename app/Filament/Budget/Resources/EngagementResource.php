@@ -269,9 +269,10 @@ class EngagementResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()
+            ->withoutGlobalScope('exercice')
+            ->with('exercice');
     }
-
     // ── Table ─────────────────────────────────────────────────
     public static function table(Table $table): Table
     {

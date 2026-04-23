@@ -7,16 +7,21 @@ use Filament\Forms\Components\Select;
 
 class ExerciceSelect
 {
-    public static function make(string $name = 'exercice_id'): Select
-    {
+    public static function make(
+        string $name      = 'exercice_id',
+        bool   $avecReports = false  // ← NOUVEAU paramètre
+    ): Select {
+        // ✅ Statuts autorisés selon le contexte
+        $statuts = $avecReports
+            ? ['brouillon', 'actif', 'cloture']
+            : ['brouillon', 'actif'];
+
         return Select::make($name)
-            ->label('Exercice budgétaire')
+            ->label($avecReports ? 'Exercice budgétaire (reports inclus)' : 'Exercice budgétaire')
             ->relationship(
                 'exercice',
                 'annee',
-                fn($query) =>
-                $query->whereIn('statut', ['brouillon', 'actif'])
-                    ->orderBy('annee', 'desc')
+                fn($query) => $query->whereIn('statut', $statuts)->orderBy('annee', 'desc')
             )
             ->searchable()
             ->preload()
@@ -26,14 +31,16 @@ class ExerciceSelect
                 fn($record) =>
                 $record && method_exists($record, 'estLectureSeule') && $record->estLectureSeule()
             )
-            ->helperText(
-                fn($record) =>
-                $record && method_exists($record, 'estLectureSeule') && $record->estLectureSeule()
-                    ? '⚠️ Exercice clôturé - Modification impossible'
-                    : 'Exercice dans lequel sera créé cet élément'
-            )
-            ->getSearchResultsUsing(function (string $search) {
-                return Exercice::whereIn('statut', ['brouillon', 'actif'])
+            ->helperText(function ($record) use ($avecReports) {
+                if ($record && method_exists($record, 'estLectureSeule') && $record->estLectureSeule()) {
+                    return '⚠️ Exercice clôturé - Modification impossible';
+                }
+                return $avecReports
+                    ? '📅 Sélectionnez l\'exercice d\'origine pour les documents reportés (ex: 2025)'
+                    : 'Exercice dans lequel sera créé cet élément';
+            })
+            ->getSearchResultsUsing(function (string $search) use ($statuts) {
+                return Exercice::whereIn('statut', $statuts)
                     ->where(function ($query) use ($search) {
                         $query->where('annee', 'like', "%{$search}%")
                             ->orWhere('libelle', 'like', "%{$search}%");
@@ -42,24 +49,20 @@ class ExerciceSelect
                     ->limit(50)
                     ->get()
                     ->mapWithKeys(fn($exercice) => [
-                        $exercice->id => $exercice->annee . ' - ' . $exercice->getBadgeStatut()
+                        $exercice->id => $exercice->annee
+                            . ' - ' . $exercice->getBadgeStatut()
+                            . ($exercice->statut === 'cloture' ? ' 📋 (report)' : '')
                     ]);
             })
-            ->getOptionLabelUsing(function ($value): ?string {
-                if (!$value) {
-                    return null;
-                }
-
-                // Si $value est déjà un objet Exercice
+            ->getOptionLabelUsing(function ($value) {
+                if (!$value) return null;
                 if ($value instanceof Exercice) {
                     return $value->annee . ' - ' . $value->getBadgeStatut();
                 }
-
-                // Si $value est un ID, récupérer l'exercice
                 $exercice = Exercice::find($value);
-
                 return $exercice
                     ? $exercice->annee . ' - ' . $exercice->getBadgeStatut()
+                    . ($exercice->statut === 'cloture' ? ' 📋 (report)' : '')
                     : null;
             });
     }

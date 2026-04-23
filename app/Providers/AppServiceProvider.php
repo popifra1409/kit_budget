@@ -49,6 +49,7 @@ class AppServiceProvider extends ServiceProvider
             'activite' => \App\Models\Activite::class,
             'tache' => \App\Models\Tache::class,
             'nomenclature_budgetaire' => \App\Models\NomenclatureBudgetaire::class,
+            'exercice' => \App\Models\Exercice::class,
             'budget' => \App\Models\Budget::class,
             'prevision_recette' => \App\Models\PrevisionRecette::class,
             'recette_reelle' => \App\Models\RecetteReelle::class,

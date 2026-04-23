@@ -19,9 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DecisionAdministrative extends Model
 {
-    // DecisionAdministrative.php
     use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions;
-    // HasWorkflow ET HasRecentValues retirés
 
     protected $table = 'decisions_administratives';
 
@@ -42,14 +40,10 @@ class DecisionAdministrative extends Model
         'objet',
         'montant_brut',
         'montant_ht',
-
-        // Taxes CNPS et IRNC
         'taux_cnps',
         'taux_irnc',
         'montant_cnps',
         'montant_irnc',
-
-        // Nouvelles taxes
         'type_tva',
         'taux_tva',
         'montant_tva',
@@ -59,7 +53,6 @@ class DecisionAdministrative extends Model
         'type_feicom',
         'taux_feicom',
         'montant_feicom',
-
         'autres_retenues',
         'total_taxes',
         'montant_net',
@@ -75,73 +68,67 @@ class DecisionAdministrative extends Model
         'created_by',
         'updated_by',
         'service_emetteur_id',
-        //selection de mode de saise
         'mode_saisie',
-        //simulation de decision
         'est_previsionnel',
         'da_reelle_id',
         'statut_avant_annulation',
     ];
 
     protected $casts = [
-        'date_decision' => 'date',
-        'date_effet' => 'date',
-        'date_fin' => 'date',
-        'date_validation' => 'datetime',
-        'date_engagement' => 'datetime',
-
-        // Montants de base
-        'montant_brut' => 'decimal:2',
-        'montant_ht' => 'decimal:2',
-        'montant_cnps' => 'decimal:2',
-        'montant_irnc' => 'decimal:2',
-        'autres_retenues' => 'decimal:2',
-        'total_taxes' => 'decimal:2',
-        'montant_net' => 'decimal:2',
-        'montant_engage' => 'decimal:2',
-
-        // Taux CNPS et IRNC
-        'taux_cnps' => 'decimal:2',
-        'taux_irnc' => 'decimal:2',
-
-        // TVA
-        'type_tva' => 'string',
-        'taux_tva' => 'decimal:2',
-        'montant_tva' => 'decimal:2',
-
-        // Redevance audiovisuelle
-        'type_redevance_audiovisuelle' => 'string',
-        'taux_redevance_audiovisuelle' => 'decimal:2',
-        'montant_redevance_audiovisuelle' => 'decimal:2',
-
-        // FEICOM
-        'type_feicom' => 'string',
-        'taux_feicom' => 'decimal:2',
-        'montant_feicom' => 'decimal:2',
-
-        'engagee' => 'boolean',
-
-        'est_previsionnel' => 'boolean',
+        'date_decision'                    => 'date',
+        'date_effet'                       => 'date',
+        'date_fin'                         => 'date',
+        'date_validation'                  => 'datetime',
+        'date_engagement'                  => 'datetime',
+        'montant_brut'                     => 'decimal:2',
+        'montant_ht'                       => 'decimal:2',
+        'montant_cnps'                     => 'decimal:2',
+        'montant_irnc'                     => 'decimal:2',
+        'autres_retenues'                  => 'decimal:2',
+        'total_taxes'                      => 'decimal:2',
+        'montant_net'                      => 'decimal:2',
+        'montant_engage'                   => 'decimal:2',
+        'taux_cnps'                        => 'decimal:2',
+        'taux_irnc'                        => 'decimal:2',
+        'type_tva'                         => 'string',
+        'taux_tva'                         => 'decimal:2',
+        'montant_tva'                      => 'decimal:2',
+        'type_redevance_audiovisuelle'     => 'string',
+        'taux_redevance_audiovisuelle'     => 'decimal:2',
+        'montant_redevance_audiovisuelle'  => 'decimal:2',
+        'type_feicom'                      => 'string',
+        'taux_feicom'                      => 'decimal:2',
+        'montant_feicom'                   => 'decimal:2',
+        'engagee'                          => 'boolean',
+        'est_previsionnel'                 => 'boolean',
     ];
 
-
+    // =========================================================
+    // BOOT
+    // =========================================================
     protected static function booted(): void
     {
         static::creating(function ($decision) {
             if (!$decision->numero) {
-                $decision->numero = static::genererNumero();
+                // ✅ Lire exercice_id depuis les attributs bruts AVANT que HasExercice
+                // ne puisse le remplacer par l'exercice actif
+                $exerciceId = $decision->attributes['exercice_id']
+                    ?? $decision->exercice_id
+                    ?? null;
+
+                $decision->numero = static::genererNumero($exerciceId);
             }
             if (!$decision->created_by) {
                 $decision->created_by = auth()->id();
             }
         });
 
-        // ✅ MODIFICATION — respecter le mode_saisie forfait
+        // ✅ Respecter le mode_saisie forfait
         static::saving(function ($decision) {
             \Log::info('SAVING DA', [
                 'mode_saisie_attributes' => $decision->attributes['mode_saisie'] ?? 'NON DÉFINI',
-                'mode_saisie_property' => $decision->mode_saisie ?? 'NON DÉFINI',
-                'dirty' => $decision->getDirty(),
+                'mode_saisie_property'   => $decision->mode_saisie ?? 'NON DÉFINI',
+                'dirty'                  => $decision->getDirty(),
             ]);
 
             if (($decision->attributes['mode_saisie'] ?? 'calcule') === 'forfait') {
@@ -171,11 +158,10 @@ class DecisionAdministrative extends Model
                 'da_reelle_id',
             ];
 
-            $champsDirty = array_keys($decision->getDirty());
+            $champsDirty         = array_keys($decision->getDirty());
             $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
 
-            if ($modificationAutorisee)
-                return;
+            if ($modificationAutorisee) return;
 
             if (
                 $decision->isDirty() &&
@@ -197,35 +183,25 @@ class DecisionAdministrative extends Model
             if (!auth()->user()?->hasRole('super_admin')) {
                 throw new \Exception('Suppression interdite : réservé au super administrateur.');
             }
-            if ($decision->engage) {
-                throw new \Exception('Suppression interdite : décision déjà engagée. Annulez-la d\'abord.');
+            if ($decision->engagee) {
+                throw new \Exception("Suppression interdite : décision déjà engagée. Annulez-la d'abord.");
             }
         });
     }
 
-    // ========================================
+    // =========================================================
     // RELATIONS
-    // ========================================
-
-    /**
-     * Relation : Budget
-     */
+    // =========================================================
     public function budget(): BelongsTo
     {
         return $this->belongsTo(Budget::class);
     }
 
-    /**
-     * Relation : Type de décision
-     */
     public function typeDecision()
     {
         return $this->belongsTo(TypeDecision::class, 'type_decision_id');
     }
 
-    /**
-     * Relation polymorphique : Les engagements
-     */
     public function engagements()
     {
         return $this->morphMany(\App\Models\Engagement::class, 'engageable');
@@ -236,33 +212,21 @@ class DecisionAdministrative extends Model
         return $this->belongsTo(LigneBudgetaire::class, 'budgetaire_ligne_id');
     }
 
-    /**
-     * Relation : Personnel
-     */
     public function personnel(): BelongsTo
     {
         return $this->belongsTo(Personnel::class, 'personnel_id');
     }
 
-    /**
-     * Relation : Service émetteur
-     */
     public function serviceEmetteur(): BelongsTo
     {
         return $this->belongsTo(Service::class, 'service_emetteur_id');
     }
 
-    /**
-     * Relation : Validée par
-     */
     public function validateurUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'validee_par');
     }
 
-    /**
-     * Relation : Engagement (polymorphique)
-     */
     public function engagement(): MorphOne
     {
         return $this->morphOne(Engagement::class, 'engageable');
@@ -273,9 +237,6 @@ class DecisionAdministrative extends Model
         return $this->belongsTo(Fournisseur::class, 'fournisseur_id');
     }
 
-    /**
-     * Relation polymorphique : Transmissions
-     */
     public function transmissions()
     {
         return $this->morphMany(Transmission::class, 'document');
@@ -291,140 +252,89 @@ class DecisionAdministrative extends Model
         return $this->hasMany(DecisionAdministrative::class, 'da_reelle_id');
     }
 
-    // ========================================
+    // =========================================================
     // SCOPES
-    // ========================================
-
-    /**
-     * Scope : Par type
-     */
+    // =========================================================
     public function scopeType($query, $type)
     {
         return $query->where('type_decision', $type);
     }
 
-    /**
-     * Scope : Par statut
-     */
     public function scopeStatut($query, $statut)
     {
         return $query->where('statut', $statut);
     }
 
-    /**
-     * Scope : Engagées
-     */
     public function scopeEngagees($query)
     {
         return $query->where('engagee', true);
     }
 
-    // ========================================
-    // ACCESSEURS (GETTERS) POUR LES MONTANTS
-    // ========================================
-
-    /**
-     * ✅ Calculer le montant CNPS
-     */
+    // =========================================================
+    // ACCESSEURS
+    // =========================================================
     public function getMontantCnpsCalculeAttribute(): float
     {
-        // $brut = (float) ($this->montant_brut ?? 0);
-        $ht = (float) ($this->montant_ht ?? 0);
+        $ht   = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_cnps ?? 0);
-
         return $ht * ($taux / 100);
     }
 
-    /**
-     * ✅ Calculer le montant IRNC
-     */
     public function getMontantIrncCalculeAttribute(): float
     {
-        // $brut = (float) ($this->montant_brut ?? 0);
+        $ht   = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_irnc ?? 0);
-        $ht = (float) ($this->montant_ht ?? 0);
-
         return $ht * ($taux / 100);
     }
 
-    /**
-     * ✅ Calculer le montant de la TVA selon le type
-     */
     public function getMontantTvaCalculeAttribute(): float
     {
         if ($this->type_tva === 'forfait') {
             return (float) ($this->attributes['montant_tva'] ?? 0);
         }
-
-        // Type = taux
         $brut = (float) ($this->montant_brut ?? 0);
-        $ht = (float) ($this->montant_ht ?? 0);
-
+        $ht   = (float) ($this->montant_ht ?? 0);
         return $brut - $ht;
     }
 
-    /**
-     * ✅ Calculer le montant de la Redevance audiovisuelle selon le type
-     */
     public function getMontantRedevanceAudiovisuelleCalculeAttribute(): float
     {
         if ($this->type_redevance_audiovisuelle === 'forfait') {
             return (float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0);
         }
-
-        // Type = taux
-        // $brut = (float) ($this->montant_brut ?? 0);
-        $ht = (float) ($this->montant_ht ?? 0);
+        $ht   = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_redevance_audiovisuelle ?? 0);
-
         return $ht * ($taux / 100);
     }
 
-    /**
-     * ✅ Calculer le montant du FEICOM selon le type
-     */
     public function getMontantFeicomCalculeAttribute(): float
     {
         if ($this->type_feicom === 'forfait') {
             return (float) ($this->attributes['montant_feicom'] ?? 0);
         }
-
-        // Type = taux
-        // $brut = (float) ($this->montant_brut ?? 0);
-        $ht = (float) ($this->montant_ht ?? 0);
+        $ht   = (float) ($this->montant_ht ?? 0);
         $taux = (float) ($this->taux_feicom ?? 0);
-
         return $ht * ($taux / 100);
     }
 
-    /**
-     * ✅ Calculer le total de toutes les retenues et taxes
-     */
     public function getTotalRetenuesCalculeAttribute(): float
     {
-        return $this->montant_cnps_calcule +
-            $this->montant_irnc_calcule +
-            $this->montant_tva_calcule +
-            $this->montant_redevance_audiovisuelle_calcule +
-            $this->montant_feicom_calcule +
-            ((float) ($this->autres_retenues ?? 0));
+        return $this->montant_cnps_calcule
+            + $this->montant_irnc_calcule
+            + $this->montant_tva_calcule
+            + $this->montant_redevance_audiovisuelle_calcule
+            + $this->montant_feicom_calcule
+            + ((float) ($this->autres_retenues ?? 0));
     }
 
-    /**
-     * ✅ Calculer le montant net à payer
-     */
     public function getMontantNetCalculeAttribute(): float
     {
-        $brut = (float) ($this->montant_brut ?? 0);
-
-        return $brut - $this->total_retenues_calcule;
+        return (float) ($this->montant_brut ?? 0) - $this->total_retenues_calcule;
     }
 
-
-    // ──Autres Accesseurs ────────────────────────────────────────────────
     public function getEstPrevisionnelAttribute(): bool
     {
-        return (bool) $this->attributes['est_previsionnel'];
+        return (bool) ($this->attributes['est_previsionnel'] ?? false);
     }
 
     public function getEstConvertiAttribute(): bool
@@ -432,18 +342,21 @@ class DecisionAdministrative extends Model
         return $this->est_previsionnel && !is_null($this->da_reelle_id);
     }
 
-    // ========================================
+    // =========================================================
     // MÉTHODES MÉTIER
-    // ========================================
+    // =========================================================
 
     /**
-     * Générer le numéro de décision
-     * Format: DA-YYYY-XXXXX
+     * Générer le numéro de décision.
+     * ✅ Accepte un exercice_id explicite pour les reports (2025 → DA25-XXXXX)
+     * Format: DA25-00001 / DA26-00001
      */
-    public static function genererNumero(): string
+    public static function genererNumero(?int $exerciceId = null): string
     {
-        // ✅ static — pas de $this
-        $exercice = \App\Models\Exercice::getActif();
+        // ✅ Exercice passé en paramètre (report) OU exercice actif (normal)
+        $exercice = $exerciceId
+            ? \App\Models\Exercice::find($exerciceId)
+            : \App\Models\Exercice::getActif();
 
         if (!$exercice) {
             throw new \Exception("Aucun exercice disponible pour générer le numéro");
@@ -452,9 +365,10 @@ class DecisionAdministrative extends Model
         $annee = substr($exercice->annee, -2);
 
         return \DB::transaction(function () use ($annee, $exercice) {
+            // ✅ withTrashed — inclure les soft-deleted dans la séquence
             $dernier = self::withTrashed()
                 ->where('exercice_id', $exercice->id)
-                ->where('numero', 'like', "DA{$annee}-%")  // ← DA pas BC
+                ->where('numero', 'like', "DA{$annee}-%")
                 ->lockForUpdate()
                 ->orderBy('numero', 'desc')
                 ->first();
@@ -468,159 +382,114 @@ class DecisionAdministrative extends Model
         });
     }
 
+    /**
+     * Générer le numéro d'engagement lié à cette DA.
+     * ✅ Utilise l'exercice_id du document pour cohérence BE-DA25-XXXXX
+     */
     protected function genererNumeroEngagement(): string
     {
         if (!$this->numero) {
-            $this->numero = static::genererNumero();
+            $this->numero = static::genererNumero($this->exercice_id);
             $this->saveQuietly();
         }
-
         return 'BE-' . $this->numero;
     }
+
     /**
-     * ✅ Calculer tous les montants (CNPS, IRNC, TVA, Redevance, FEICOM, net)
+     * Calculer tous les montants (CNPS, IRNC, TVA, Redevance, FEICOM, net)
      */
     public function calculerMontants(): void
     {
         $mode = $this->attributes['mode_saisie'] ?? $this->getOriginal('mode_saisie') ?? 'calcule';
 
-        if ($mode === 'forfait') {
-            return; // Aucun recalcul en mode forfait
-        }
+        if ($mode === 'forfait') return;
 
         $brut = (float) ($this->montant_brut ?? 0);
 
         if ($brut <= 0) {
-            $this->montant_ht = 0;
+            $this->montant_ht   = 0;
             $this->montant_cnps = 0;
             $this->montant_irnc = 0;
-            $this->total_taxes = 0;
-            $this->montant_net = 0;
+            $this->total_taxes  = 0;
+            $this->montant_net  = 0;
             return;
         }
 
-        // ========================================
-        // ÉTAPE 1 : CALCULER LE MONTANT HT
-        // ========================================
-        // Le montant brut est le TTC (incluant la TVA)
-        // Formule : HT = Brut / (1 + TVA/100)
-
+        // ── Étape 1 : HT ─────────────────────────────────────
         $tauxTva = 0;
         if ($this->type_tva === 'taux') {
             $tauxTva = (float) ($this->taux_tva ?? 0);
         }
 
-        // Calculer HT
-        if ($tauxTva > 0) {
-            $this->montant_ht = $brut / (1 + ($tauxTva / 100));
-        } else {
-            // Si pas de TVA, HT = Brut
-            $this->montant_ht = $brut;
-        }
+        $this->montant_ht = $tauxTva > 0
+            ? $brut / (1 + ($tauxTva / 100))
+            : $brut;
 
-        // Arrondir à 2 décimales
-        $montantHT = round($this->montant_ht, 2);
+        $montantHT        = round($this->montant_ht, 2);
         $this->montant_ht = $montantHT;
 
-        // ========================================
-        // ÉTAPE 2 : CALCULER LES TAXES SUR HT
-        // ========================================
-
-        // CNPS (calculée sur HT)
-        $tauxCnps = (float) ($this->taux_cnps ?? 0);
+        // ── Étape 2 : Taxes ───────────────────────────────────
+        $tauxCnps         = (float) ($this->taux_cnps ?? 0);
         $this->montant_cnps = round($montantHT * ($tauxCnps / 100), 2);
 
-        // IRNC (calculée sur HT)
-        $tauxIrnc = (float) ($this->taux_irnc ?? 0);
+        $tauxIrnc         = (float) ($this->taux_irnc ?? 0);
         $this->montant_irnc = round($montantHT * ($tauxIrnc / 100), 2);
 
-        // TVA (montant de la TVA elle-même)
         if ($this->type_tva === 'taux') {
-            // TVA = HT × (taux/100)
-            $montantTva = round($montantHT * ($tauxTva / 100), 2);
-            $this->attributes['montant_tva'] = $montantTva;
+            $this->attributes['montant_tva'] = round($montantHT * ($tauxTva / 100), 2);
         }
-        // Si type = forfait, on garde la valeur saisie manuellement
 
-        // Redevance audiovisuelle (calculée sur HT)
         if ($this->type_redevance_audiovisuelle === 'taux') {
             $tauxRedevance = (float) ($this->taux_redevance_audiovisuelle ?? 0);
-            $montantRedevance = round($montantHT * ($tauxRedevance / 100), 2);
-            $this->attributes['montant_redevance_audiovisuelle'] = $montantRedevance;
+            $this->attributes['montant_redevance_audiovisuelle'] = round($montantHT * ($tauxRedevance / 100), 2);
         }
 
-        // FEICOM (calculé sur HT)
         if ($this->type_feicom === 'taux') {
             $tauxFeicom = (float) ($this->taux_feicom ?? 0);
-            $montantFeicom = round($montantHT * ($tauxFeicom / 100), 2);
-            $this->attributes['montant_feicom'] = $montantFeicom;
+            $this->attributes['montant_feicom'] = round($montantHT * ($tauxFeicom / 100), 2);
         }
 
-        // Autres retenues
-        $autresRetenues = (float) ($this->autres_retenues ?? 0);
+        // ── Étape 3 : Total et net ────────────────────────────
+        $autresRetenues  = (float) ($this->autres_retenues ?? 0);
+        $this->total_taxes = $this->montant_cnps
+            + $this->montant_irnc
+            + ((float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0))
+            + ((float) ($this->attributes['montant_feicom'] ?? 0))
+            + $autresRetenues;
 
-        // ========================================
-        // ÉTAPE 3 : CALCULER LE TOTAL DES RETENUES ET LE NET
-        // ========================================
-
-        // Total des retenues (SANS la TVA car elle est déjà dans le brut)
-        $this->total_taxes =
-            $this->montant_cnps +
-            $this->montant_irnc +
-            ((float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0)) +
-            ((float) ($this->attributes['montant_feicom'] ?? 0)) +
-            $autresRetenues;
-
-        // Montant net = HT - Retenues
-        // (on ne soustrait PAS la TVA car elle est déjà déduite dans le calcul du HT)
         $this->montant_net = round($montantHT - $this->total_taxes, 2);
     }
 
-    /**
-     * Valider la décision
-     */
+    // ── Valider ───────────────────────────────────────────────
     public function valider(User $user): void
     {
-        // ✅ VÉRIFICATION PERMISSION
         if (!auth()->check() || !auth()->user()->can('valider_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de valider cette décision.");
         }
-
-        $this->statut = 'validee';
-        $this->validee_par = $user->id;
+        $this->statut         = 'validee';
+        $this->validee_par    = $user->id;
         $this->date_validation = now();
         $this->save();
     }
 
+    // ── peutEtreDesengagee ────────────────────────────────────
     public function peutEtreDesengagee(): bool
     {
-        if (!$this->engagee || !$this->engagement_id) {
-            return false;
-        }
-
-        if ($this->engagement) {
-            if ($this->engagement->ordonnancesPaiement()->count() > 0) {
-                return false;
-            }
-        }
-
-        if ($this->statut === 'annulee') {
-            return false;
-        }
-
+        if (!$this->engagee) return false;
+        if ($this->engagement?->ordonnancesPaiement()->count() > 0) return false;
+        if ($this->statut === 'annulee') return false;
         return true;
     }
 
+    // ── engagerBudget ─────────────────────────────────────────
     public function engagerBudget(int $nomenclatureId): Engagement
     {
         if (!auth()->check() || !auth()->user()->can('engager_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission d'engager cette décision.");
         }
-
         if ($this->statut !== 'validee') {
             throw new \Exception("La décision doit être validée avant d'engager le budget.");
         }
-
         if ($this->engagee) {
             throw new \Exception("Le budget est déjà engagé pour cette décision.");
         }
@@ -631,95 +500,70 @@ class DecisionAdministrative extends Model
                 ->where('nomenclature_id', $nomenclatureId)
                 ->firstOrFail();
 
-            // ✅ Vérification crédit — BYPASÉE pour les décisions prévisionnelles
             if (!$this->est_previsionnel) {
                 if (!$ligneBudgetaire->peutEngager($this->montant_brut)) {
                     $nomenclature = $ligneBudgetaire->nomenclature;
-                    $manque = $this->montant_brut - $ligneBudgetaire->disponible_engagement;
-
+                    $manque       = $this->montant_brut - $ligneBudgetaire->disponible_engagement;
                     throw new \App\Exceptions\CreditBudgetaireInsuffisantException(
                         "❌ CRÉDIT INSUFFISANT\n\n" .
                             "Ligne budgétaire: {$nomenclature->code} - {$nomenclature->libelle}\n\n" .
-                            "📊 DÉTAILS:\n" .
                             "• Provision totale: " . number_format($ligneBudgetaire->montant_vote, 0, ',', ' ') . " FCFA\n" .
-                            "• Déjà engagé: " . number_format($ligneBudgetaire->engage, 0, ',', ' ') . " FCFA\n" .
-                            "• Disponible: " . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
-                            "💰 ENGAGEMENT DEMANDÉ:\n" .
-                            "• Montant brut: " . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
-                            "• Manque: " . number_format($manque, 0, ',', ' ') . " FCFA\n\n" .
-                            "✅ SOLUTIONS:\n" .
-                            "1. Réduire le montant de la décision\n" .
-                            "2. Demander un virement budgétaire vers cette ligne\n" .
-                            "3. Utiliser une autre nomenclature budgétaire"
+                            "• Déjà engagé: "      . number_format($ligneBudgetaire->engage, 0, ',', ' ')       . " FCFA\n" .
+                            "• Disponible: "        . number_format($ligneBudgetaire->disponible_engagement, 0, ',', ' ') . " FCFA\n\n" .
+                            "• Montant demandé: "   . number_format($this->montant_brut, 0, ',', ' ') . " FCFA\n" .
+                            "• Manque: "            . number_format($manque, 0, ',', ' ') . " FCFA"
                     );
                 }
             }
 
             $numeroEngagement = $this->genererNumeroEngagement();
 
-            \Log::info("Création engagement " . ($this->est_previsionnel ? '[PRÉVISIONNEL]' : ''), [
-                'da_numero' => $this->numero,
-                'numero_engagement' => $numeroEngagement,
-                'montant' => $this->montant_brut,
-                'est_previsionnel' => $this->est_previsionnel,
-            ]);
-
-            // Créer l'engagement
             $engagement = Engagement::create([
-                'numero' => $numeroEngagement,
-                'exercice_id' => $this->exercice_id,
-                'budget_id' => $this->budget_id,
-                'type_engagement' => 'Décision',
+                'numero'                     => $numeroEngagement,
+                'exercice_id'                => $this->exercice_id,
+                'budget_id'                  => $this->budget_id,
+                'type_engagement'            => 'Décision',
                 'nomenclature_principale_id' => $nomenclatureId,
-                'reference_document' => $this->numero,
-                'engageable_type' => get_class($this),
-                'engageable_id' => $this->id,
-                'beneficiaire_type' => $this->type_beneficiaire === 'fournisseur'
+                'reference_document'         => $this->numero,
+                'engageable_type'            => get_class($this),
+                'engageable_id'              => $this->id,
+                'beneficiaire_type'          => $this->type_beneficiaire === 'fournisseur'
                     ? 'App\Models\Fournisseur'
                     : 'App\Models\Personnel',
-                'beneficiaire_id' => $this->type_beneficiaire === 'fournisseur'
+                'beneficiaire_id'            => $this->type_beneficiaire === 'fournisseur'
                     ? $this->fournisseur_id
                     : $this->personnel_id,
-                'date_engagement' => now(),
-                'exercice' => $this->exercice?->annee ?? now()->year,
-                'objet' => $this->objet,
-                'montant_engage' => $this->montant_brut,
-                'statut' => 'provisoire',
-                // ✅ Type spécial pour prévisionnel — pas de déduction budget
-                'type' => $this->est_previsionnel ? 'previsionnel' : 'standard',
-                'created_by' => auth()->id(),
+                'date_engagement'            => now(),
+                'exercice'                   => $this->exercice?->annee ?? now()->year,
+                'objet'                      => $this->objet,
+                'montant_engage'             => $this->montant_brut,
+                'statut'                     => 'provisoire',
+                'type'                       => $this->est_previsionnel ? 'previsionnel' : 'standard',
+                'created_by'                 => auth()->id(),
             ]);
 
-            if (!$engagement || !$engagement->id) {
+            if (!$engagement?->id) {
                 throw new \Exception("Erreur lors de la création de l'engagement.");
             }
 
             $engagement->refresh();
 
-            // Créer la ligne d'engagement
             $ligneEngagement = LigneEngagement::create([
-                'engagement_id' => $engagement->id,
+                'engagement_id'  => $engagement->id,
                 'nomenclature_id' => $nomenclatureId,
-                'numero_ligne' => 1,
-                'libelle' => $this->objet,
-                'montant' => $this->montant_brut,
+                'numero_ligne'   => 1,
+                'libelle'        => $this->objet,
+                'montant'        => $this->montant_brut,
             ]);
 
-            if (!$ligneEngagement || !$ligneEngagement->id) {
+            if (!$ligneEngagement?->id) {
                 throw new \Exception("Erreur lors de la création de la ligne d'engagement.");
             }
 
-            // ✅ Engager la ligne budgétaire — SKIP pour prévisionnel
             if (!$this->est_previsionnel) {
                 $ligneBudgetaire->enregistrerEngagement($this->montant_brut);
-            } else {
-                \Log::info("Prévisionnel — ligne budgétaire NON impactée", [
-                    'nomenclature_id' => $nomenclatureId,
-                    'montant' => $this->montant_brut,
-                ]);
             }
 
-            // Marquer la décision comme engagée
             $this->updateQuietly([
                 'engagee'         => true,
                 'montant_engage'  => $this->montant_brut,
@@ -730,88 +574,67 @@ class DecisionAdministrative extends Model
             \DB::commit();
 
             \Log::info("Engagement créé depuis DA" . ($this->est_previsionnel ? ' [PRÉVISIONNEL]' : ''), [
-                'da_numero' => $this->numero,
+                'da_numero'         => $this->numero,
                 'engagement_numero' => $engagement->numero,
-                'montant' => $this->montant_brut,
-                'budget_impacte' => !$this->est_previsionnel,
+                'montant'           => $this->montant_brut,
             ]);
 
             return $engagement;
         } catch (\Exception $e) {
             \DB::rollBack();
-
-            \Log::error("Erreur lors de l'engagement DA", [
-                'da_id' => $this->id,
-                'da_numero' => $this->numero,
-                'est_previsionnel' => $this->est_previsionnel,
-                'erreur' => $e->getMessage(),
-            ]);
-
+            \Log::error("Erreur engagement DA", ['da_id' => $this->id, 'erreur' => $e->getMessage()]);
             throw $e;
         }
     }
 
-    /**
-     * Désengager le budget
-     */
+    // ── desengagerBudget ──────────────────────────────────────
     public function desengagerBudget(): void
     {
         if (!auth()->check() || !auth()->user()->can('annuler_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de désengager cette décision.");
         }
-
         if (!$this->engagee) {
             throw new \Exception("Cette décision n'est pas engagée.");
         }
 
-        // ✅ Requête directe — contourne le problème morphOne/morphMap
         $engagement = \App\Models\Engagement::where('engageable_id', $this->id)
             ->where(function ($q) {
                 $q->where('engageable_type', static::class)
                     ->orWhere('engageable_type', 'decision_administrative');
-            })
-            ->first();
+            })->first();
 
         if (!$engagement) {
-            // Engagement absent — juste nettoyer la DA
             $this->updateQuietly([
-                'engagee' => false,
-                'montant_engage' => 0,
+                'engagee'         => false,
+                'montant_engage'  => 0,
                 'date_engagement' => null,
-                'statut' => 'validee',
+                'statut'          => 'validee',
             ]);
             return;
         }
 
-        // ✅ Charger les lignes avant d'appeler annuler()
         $engagement->load('lignes');
-
-        // ✅ annuler() libère crédits + supprime définitivement
         $engagement->annuler(force: true);
 
-        // ✅ Nettoyer la DA
         $this->updateQuietly([
-            'engagee' => false,
-            'montant_engage' => 0,
+            'engagee'         => false,
+            'montant_engage'  => 0,
             'date_engagement' => null,
+            'statut'          => 'validee',
         ]);
 
         \Log::info("DA {$this->numero} désengagée — engagement supprimé définitivement");
     }
-    /**
-     * Annuler la décision
-     */
+
+    // ── annuler ───────────────────────────────────────────────
     public function annuler(?string $motif = null): void
     {
         if (!auth()->check() || !auth()->user()->can('annuler_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission d'annuler cette décision.");
         }
-
         if ($this->statut === 'annulee') {
             throw new \Exception("Cette décision est déjà annulée.");
         }
-
-        // ✅ Bloquer si engagée — l'utilisateur doit d'abord annuler l'engagement
         if ($this->engagee) {
             throw new \Exception(
                 "❌ Annulation impossible : cette décision est déjà engagée.\n\n" .
@@ -823,78 +646,65 @@ class DecisionAdministrative extends Model
         \DB::beginTransaction();
         try {
             $statutAvant = $this->statut;
-
-            $observationsAjout = "\n\n--- ANNULÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
-                "Statut avant : {$statutAvant}\n" .
-                "Motif : " . ($motif ?? 'Non précisé') . "\n" .
-                "Par : " . auth()->user()->name;
-
             $this->update([
-                'statut' => 'annulee',
+                'statut'                  => 'annulee',
                 'statut_avant_annulation' => $statutAvant,
-                'observations' => ($this->observations ?? '') . $observationsAjout,
+                'observations'            => ($this->observations ?? '') .
+                    "\n\n--- ANNULÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                    "Statut avant : {$statutAvant}\n" .
+                    "Motif : " . ($motif ?? 'Non précisé') . "\n" .
+                    "Par : " . auth()->user()->name,
             ]);
-
             \DB::commit();
-
-            \Log::info("DA {$this->numero} annulée", [
-                'statut_avant' => $statutAvant,
-                'user' => auth()->id(),
-            ]);
+            \Log::info("DA {$this->numero} annulée", ['statut_avant' => $statutAvant]);
         } catch (\Exception $e) {
             \DB::rollBack();
             throw $e;
         }
     }
 
+    // ── peutEtreAnnulee ───────────────────────────────────────
+    public function peutEtreAnnulee(): bool
+    {
+        if ($this->statut === 'annulee') return false;
+        if ($this->engagee && $this->engagement) {
+            return $this->engagement->ordonnancesPaiement()->count() === 0;
+        }
+        return true;
+    }
+
+    // ── peutEtreRecuperee ─────────────────────────────────────
     public function peutEtreRecuperee(): bool
     {
         return $this->statut === 'annulee';
     }
 
-    public function peutEtreAnnulee(): bool
-    {
-        if ($this->statut === 'annulee')
-            return false;
-
-        // Si engagée, vérifier qu'il n'y a pas d'OP
-        if ($this->engagee && $this->engagement) {
-            return $this->engagement->ordonnancesPaiement()->count() === 0;
-        }
-
-        return true;
-    }
-
+    // ── recuperer ─────────────────────────────────────────────
     public function recuperer(?string $motif = null): void
     {
         if (!auth()->check() || !auth()->user()->can('recuperer_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de récupérer cette décision.");
         }
-
         if ($this->statut !== 'annulee') {
             throw new \Exception("Seule une décision annulée peut être récupérée.");
         }
 
         \DB::beginTransaction();
         try {
-            $observationsAjout = "\n\n--- RÉCUPÉRÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
-                "Motif : " . ($motif ?? 'Document récupéré pour modification') . "\n" .
-                "Par : " . auth()->user()->name;
-
-            // ✅ Toujours retourner en brouillon — l'utilisateur réengagera si besoin
             $this->update([
-                'statut' => 'brouillon',
+                'statut'                  => 'brouillon',
                 'statut_avant_annulation' => null,
-                'engagee' => false,
-                'montant_engage' => 0,
-                'date_engagement' => null,
-                'validee_par' => null,
-                'date_validation' => null,
-                'observations' => ($this->observations ?? '') . $observationsAjout,
+                'engagee'                 => false,
+                'montant_engage'          => 0,
+                'date_engagement'         => null,
+                'validee_par'             => null,
+                'date_validation'         => null,
+                'observations'            => ($this->observations ?? '') .
+                    "\n\n--- RÉCUPÉRÉE LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                    "Motif : " . ($motif ?? 'Document récupéré pour modification') . "\n" .
+                    "Par : " . auth()->user()->name,
             ]);
-
             \DB::commit();
-
             \Log::info("DA {$this->numero} récupérée — remise en brouillon");
         } catch (\Exception $e) {
             \DB::rollBack();
@@ -902,145 +712,94 @@ class DecisionAdministrative extends Model
         }
     }
 
-    /**
-     * Vérifier si la décision est modifiable
-     */
+    // ── estModifiable ─────────────────────────────────────────
     public function estModifiable(): bool
     {
         return in_array($this->statut, ['brouillon', 'validee']);
     }
 
-    /**
-     * Obtenir le nom complet du personnel
-     */
+    // ── getNomCompletPersonnel ────────────────────────────────
     public function getNomCompletPersonnel(): string
     {
-        // Si c'est un fournisseur
         if ($this->type_beneficiaire === 'fournisseur' && $this->fournisseur) {
             return $this->fournisseur->raison_sociale;
         }
-
-        // Si c'est un personnel
         if ($this->personnel && !empty($this->personnel->nom_complet)) {
             return $this->personnel->nom_complet;
         }
-
-        // Ancien système (compatibilité)
-        if (!empty($this->personnel_id_ancien)) {
-            $user = User::find($this->personnel_id_ancien);
-            if ($user && !empty($user->name)) {
-                return $user->name;
-            }
-        }
-
         return '';
     }
 
-    // ── Méthode : Convertir en DA réelle ─────────────────────────
+    // ── convertirEnDAReelle ───────────────────────────────────
     public function convertirEnDAReelle(): DecisionAdministrative
     {
         if (!$this->est_previsionnel) {
-            throw new \Exception('Cette décision n\'est pas prévisionnelle.');
+            throw new \Exception("Cette décision n'est pas prévisionnelle.");
         }
-
         if ($this->est_converti) {
-            throw new \Exception('Cette décision prévisionnelle a déjà été convertie.');
+            throw new \Exception("Cette décision prévisionnelle a déjà été convertie.");
         }
 
         return \DB::transaction(function () {
-            // Créer une DA réelle avec les mêmes données
             $daReelle = static::create([
-                'exercice_id' => $this->exercice_id,
-                'budget_id' => $this->budget_id,
-                'type_decision_id' => $this->type_decision_id,
+                'exercice_id'       => $this->exercice_id,
+                'budget_id'         => $this->budget_id,
+                'type_decision_id'  => $this->type_decision_id,
                 'type_beneficiaire' => $this->type_beneficiaire,
-                'personnel_id' => $this->personnel_id,
-                'fournisseur_id' => $this->fournisseur_id,
-                'date_decision' => now()->toDateString(),
-                'date_effet' => $this->date_effet,
-                'date_fin' => $this->date_fin,
-                'objet' => $this->objet,
-                'mode_saisie' => $this->mode_saisie,
-                'est_previsionnel' => false, // ← DA réelle
-                'montant_brut' => $this->montant_brut,
-                'montant_ht' => $this->montant_ht,
-                'montant_tva' => $this->montant_tva,
-                'montant_cnps' => $this->montant_cnps,
-                'montant_irnc' => $this->montant_irnc,
-                'total_taxes' => $this->total_taxes,
-                'montant_net' => $this->montant_net,
-                'taux_tva' => $this->taux_tva,
-                'taux_cnps' => $this->taux_cnps,
-                'taux_irnc' => $this->taux_irnc,
-                'type_tva' => $this->type_tva,
-                'autres_retenues' => $this->autres_retenues,
-                'signataire' => $this->signataire,
-                'observations' => "Convertie depuis DA Prévisionnelle N° {$this->numero}",
-                'statut' => 'brouillon',
-                'created_by' => auth()->id(),
+                'personnel_id'      => $this->personnel_id,
+                'fournisseur_id'    => $this->fournisseur_id,
+                'date_decision'     => now()->toDateString(),
+                'date_effet'        => $this->date_effet,
+                'date_fin'          => $this->date_fin,
+                'objet'             => $this->objet,
+                'mode_saisie'       => $this->mode_saisie,
+                'est_previsionnel'  => false,
+                'montant_brut'      => $this->montant_brut,
+                'montant_ht'        => $this->montant_ht,
+                'montant_tva'       => $this->montant_tva,
+                'montant_cnps'      => $this->montant_cnps,
+                'montant_irnc'      => $this->montant_irnc,
+                'total_taxes'       => $this->total_taxes,
+                'montant_net'       => $this->montant_net,
+                'taux_tva'          => $this->taux_tva,
+                'taux_cnps'         => $this->taux_cnps,
+                'taux_irnc'         => $this->taux_irnc,
+                'type_tva'          => $this->type_tva,
+                'autres_retenues'   => $this->autres_retenues,
+                'signataire'        => $this->signataire,
+                'observations'      => "Convertie depuis DA Prévisionnelle N° {$this->numero}",
+                'statut'            => 'brouillon',
+                'created_by'        => auth()->id(),
             ]);
 
-            // Lier la prévisionnelle à la réelle
-            $this->updateQuietly([
-                'da_reelle_id' => $daReelle->id,
-            ]);
+            $this->updateQuietly(['da_reelle_id' => $daReelle->id]);
 
             return $daReelle;
         });
     }
 
-    // ========================================
-    // MÉTHODES DE TRANSMISSION
-    // ========================================
-
-    /**
-     * Vérifier si la décision est en cours de transmission
-     */
+    // =========================================================
+    // TRANSMISSIONS
+    // =========================================================
     public function estEnCoursDeTransmission(): bool
     {
-        return $this->transmissions()
-            ->where('statut', 'en_attente')
-            ->exists();
+        return $this->transmissions()->where('statut', 'en_attente')->exists();
     }
 
-    /**
-     * Vérifier si l'utilisateur actuel est le destinataire
-     */
     public function estDestinataireActuel(): bool
     {
-        $transmissionEnCours = $this->transmissions()
-            ->where('statut', 'en_attente')
-            ->latest()
-            ->first();
-
-        return $transmissionEnCours
-            && $transmissionEnCours->destinataire_id === auth()->id();
+        $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
+        return $t && $t->destinataire_id === auth()->id();
     }
 
-    /**
-     * Vérifier si peut être vu par l'utilisateur
-     */
     public function peutEtreVuPar(?int $userId = null): bool
     {
         $userId = $userId ?? auth()->id();
-
-        // Super admin peut tout voir
-        if (auth()->user()?->hasRole('super_admin')) {
-            return true;
-        }
-
-        // Si pas de transmission en cours, tout le monde peut voir
-        if (!$this->estEnCoursDeTransmission()) {
-            return true;
-        }
-
-        // Si en cours de transmission, seul le destinataire actuel peut voir
+        if (auth()->user()?->hasRole('super_admin')) return true;
+        if (!$this->estEnCoursDeTransmission()) return true;
         return $this->estDestinataireActuel();
     }
 
-    /**
-     * Transmettre la décision à un destinataire
-     */
     public function transmettreA(
         User $destinataire,
         string $actionAttendue,
@@ -1050,105 +809,60 @@ class DecisionAdministrative extends Model
         if ($this->estEnCoursDeTransmission()) {
             throw new \Exception('Cette décision est déjà en cours de transmission.');
         }
-
         $transmission = new Transmission([
-            'document_type' => static::class,
-            'document_id' => $this->id,
-            'expediteur_id' => auth()->id(),
-            'destinataire_id' => $destinataire->id,
-            'action_attendue' => $actionAttendue,
-            'commentaire' => $commentaire,
-            'statut' => 'en_attente',
-            'priorite' => $metadata['priorite'] ?? 'normale',
-            'date_limite' => $metadata['date_limite'] ?? null,
-            'date_transmission' => now(),
+            'document_type'      => static::class,
+            'document_id'        => $this->id,
+            'expediteur_id'      => auth()->id(),
+            'destinataire_id'    => $destinataire->id,
+            'action_attendue'    => $actionAttendue,
+            'commentaire'        => $commentaire,
+            'statut'             => 'en_attente',
+            'priorite'           => $metadata['priorite'] ?? 'normale',
+            'date_limite'        => $metadata['date_limite'] ?? null,
+            'date_transmission'  => now(),
         ]);
-
         $transmission->save();
-
-        activity()
-            ->performedOn($this)
-            ->causedBy(auth()->user())
+        activity()->performedOn($this)->causedBy(auth()->user())
             ->withProperties(['destinataire' => $destinataire->name])
             ->log('Décision transmise');
-
         return $transmission;
     }
 
-
-    /**
-     * Clôturer la transmission
-     */
     public function cloturerTransmission(?string $reponse = null): void
     {
-        $transmission = $this->transmissions()
-            ->where('statut', 'en_attente')
-            ->latest()
-            ->first();
-
-        if (!$transmission || $transmission->destinataire_id !== auth()->id()) {
-            throw new \Exception('Vous n\'êtes pas le destinataire de cette transmission.');
+        $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
+        if (!$t || $t->destinataire_id !== auth()->id()) {
+            throw new \Exception("Vous n'êtes pas le destinataire de cette transmission.");
         }
-
-        $transmission->statut = 'traite';
-        $transmission->date_traitement = now();
-        $transmission->reponse = $reponse;
-        $transmission->save();
-
-        activity()
-            ->performedOn($this)
-            ->causedBy(auth()->user())
-            ->log('Transmission clôturée');
+        $t->update(['statut' => 'traite', 'date_traitement' => now(), 'reponse' => $reponse]);
+        activity()->performedOn($this)->causedBy(auth()->user())->log('Transmission clôturée');
     }
 
-    /**
-     * Vérifier si peut être transmis
-     */
     public function peutEtreTransmis(): bool
     {
-        // Ne peut pas transmettre si déjà en cours de transmission
-        if ($this->estEnCoursDeTransmission()) {
-            return false;
-        }
-
-        // Peut transmettre si brouillon ou validé
+        if ($this->estEnCoursDeTransmission()) return false;
         return in_array($this->statut, ['brouillon', 'valide']);
     }
 
-    /**
-     * Obtenir la transmission en cours
-     */
     public function transmissionEnCours(): ?Transmission
     {
-        return $this->transmissions()
-            ->where('statut', 'en_attente')
-            ->latest()
-            ->first();
+        return $this->transmissions()->where('statut', 'en_attente')->latest()->first();
     }
 
-    /**
-     * Vérifier si a été transmis
-     */
     public function aEteTransmis(): bool
     {
         return $this->transmissions()->exists();
     }
 
-    /**
-     * Obtenir l'historique des transmissions
-     */
     public function historiqueTransmissions()
     {
-        return $this->transmissions()
-            ->with(['expediteur', 'destinataire'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        return $this->transmissions()->with(['expediteur', 'destinataire'])
+            ->orderBy('created_at', 'desc')->get();
     }
 
-    // ========================================
+    // =========================================================
     // ACTIVITY LOG
-    // ========================================
-
+    // =========================================================
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

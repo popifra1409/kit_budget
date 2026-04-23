@@ -62,15 +62,15 @@ class DecisionAdministrativeResource extends Resource
 
     public static function getGlobalSearchResultDetails(Model $record): array
     { // 'beneficiaire_type' => $record->type_beneficiaire === 'fournisseur'
-            //     ? 'Fournisseur::class'
-            //     : 'App\Models\Personnel',
-            // 'beneficiaire_id' => $record->type_beneficiaire === 'fournisseur'
-            //     ? $record->fournisseur_id
-            //     : $record->personnel_id,
+        //     ? 'Fournisseur::class'
+        //     : 'App\Models\Personnel',
+        // 'beneficiaire_id' => $record->type_beneficiaire === 'fournisseur'
+        //     ? $record->fournisseur_id
+        //     : $record->personnel_id,
         return [
             'Objet' => $record->objet,
             'statut' => $record->statut,
-            
+
             // 'beneficiaire_type' => $record->type_beneficiaire === 'fournisseur'
             //     ? 'Fournisseur::class'
             //     : 'App\Models\Personnel',
@@ -184,34 +184,26 @@ class DecisionAdministrativeResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $query = parent::getEloquentQuery()->with('exercice');
+        // ✅ withoutGlobalScope — inclut tous les exercices (actif + clôturé)
+        $query = parent::getEloquentQuery()
+            ->withoutGlobalScope('exercice')
+            ->with('exercice');
 
         $user = auth()->user();
 
-        // Super admin voit TOUT
         if ($user && $user->hasRole('super_admin')) {
             return $query;
         }
 
         if (!$user) {
-            return $query->whereRaw('1 = 0'); // Aucun résultat
+            return $query->whereRaw('1 = 0');
         }
 
-        // Pour les autres utilisateurs
         return $query->where(function ($q) use ($user) {
-            // 1. Décisions créées par moi (toujours visibles)
             $q->where('created_by', $user->id)
-
-                // OU
-
-                // 2. Décisions sans transmission en cours (tout le monde peut voir)
                 ->orWhereDoesntHave('transmissions', function ($transmission) {
                     $transmission->where('statut', 'en_attente');
                 })
-
-                // OU
-
-                // 3. Décisions dont je suis le destinataire actuel
                 ->orWhereHas('transmissions', function ($transmission) use ($user) {
                     $transmission->where('statut', 'en_attente')
                         ->where('destinataire_id', $user->id);
@@ -223,10 +215,14 @@ class DecisionAdministrativeResource extends Resource
     {
         return $form
             ->schema([
+                // Dans CreateBonCommande::form() et CreateDecisionAdministrative::form()
                 Forms\Components\Section::make('Exercice')
                     ->description('Exercice budgétaire de rattachement')
                     ->schema([
-                        ExerciceSelect::make(),
+                        // ✅ avecReports=true si super_admin
+                        ExerciceSelect::make(
+                            avecReports: auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                        ),
                     ])
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null),
@@ -588,8 +584,8 @@ class DecisionAdministrativeResource extends Resource
                             ->helperText(
                                 fn(Get $get) =>
                                 $get('mode_saisie') === 'forfait'
-                                ? '⚠️ Mode forfaitaire : vous saisissez tous les montants manuellement, aucune formule appliquée.'
-                                : '💡 Mode calculé : les retenues sont calculées automatiquement depuis le montant brut TTC.'
+                                    ? '⚠️ Mode forfaitaire : vous saisissez tous les montants manuellement, aucune formule appliquée.'
+                                    : '💡 Mode calculé : les retenues sont calculées automatiquement depuis le montant brut TTC.'
                             ),
 
                         // ==========================================================
@@ -821,8 +817,8 @@ class DecisionAdministrativeResource extends Resource
                                         "Net calculé (HT-Ret): " . number_format($netCalc, 0, ',', ' ') . " FCFA",
                                         "Net saisi          : " . number_format($net, 0, ',', ' ') . " FCFA",
                                         $ok
-                                        ? "✅ Cohérence OK"
-                                        : "⚠️ Écart de " . number_format(abs($ecart), 0, ',', ' ') . " FCFA — vérifiez vos montants",
+                                            ? "✅ Cohérence OK"
+                                            : "⚠️ Écart de " . number_format(abs($ecart), 0, ',', ' ') . " FCFA — vérifiez vos montants",
                                     ])->implode("\n");
                                 })->columnSpanFull(),
 
@@ -1036,9 +1032,9 @@ class DecisionAdministrativeResource extends Resource
                     ->query(function ($query, array $data) {
                         return $query
                             ->when($data['date_decision_from'], fn($q, $date) =>
-                                $q->whereDate('date_decision', '>=', $date))
+                            $q->whereDate('date_decision', '>=', $date))
                             ->when($data['date_decision_until'], fn($q, $date) =>
-                                $q->whereDate('date_decision', '<=', $date));
+                            $q->whereDate('date_decision', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -1145,19 +1141,19 @@ class DecisionAdministrativeResource extends Resource
                                 // OU
                                 // 2. Transmis À MOI (en attente de mon action)
                                 ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                $transmission->where('destinataire_id', $userId)
-                                    ->where('statut', 'en_attente');
-                            })
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                })
                                 // OU
                                 // 3. Retournés À MOI pour correction
                                 ->orWhere(function ($subQ) use ($userId) {
-                                $subQ->where('created_by', $userId)
-                                    ->whereHas('transmissions', function ($transmission) {
-                                        $transmission->where('statut', 'retourne')
-                                            ->latest()
-                                            ->limit(1);
-                                    });
-                            });
+                                    $subQ->where('created_by', $userId)
+                                        ->whereHas('transmissions', function ($transmission) {
+                                            $transmission->where('statut', 'retourne')
+                                                ->latest()
+                                                ->limit(1);
+                                        });
+                                });
                         });
                     })
                     ->toggle()
@@ -1190,9 +1186,9 @@ class DecisionAdministrativeResource extends Resource
                                 // OU
                                 // 2. Décisions transmises à moi (en attente)
                                 ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                $transmission->where('destinataire_id', $userId)
-                                    ->where('statut', 'en_attente');
-                            });
+                                    $transmission->where('destinataire_id', $userId)
+                                        ->where('statut', 'en_attente');
+                                });
                         });
                     })
                     ->toggle()

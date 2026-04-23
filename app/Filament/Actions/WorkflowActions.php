@@ -108,28 +108,14 @@ class WorkflowActions
                 ->label('Aperçu BC')
                 ->icon('heroicon-o-eye')
                 ->color('info')
-                ->url(fn($record) => route('bons-commande.pdf.preview.simple', ['bonCommande' => $record->id]))
+                ->url(fn($record) => route('bons-commande.pdf.preview.simple', ['id' => $record->id]))
                 ->openUrlInNewTab(),
 
             Tables\Actions\Action::make('telecharger_pdf_simple')
                 ->label('Télécharger BC')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('success')
-                ->url(fn($record) => route('bons-commande.pdf.download.simple', ['bonCommande' => $record->id])),
-
-            // === BON DE COMMANDE SIMPLE PRÉIMPRIMÉ (sans en-tête/footer) ===
-            // Tables\Actions\Action::make('apercu_pdf_simple_preimprime')
-            //     ->label('Aperçu BC Préimprimé')
-            //     ->icon('heroicon-o-eye')
-            //     ->color('gray')
-            //     ->url(fn($record) => route('bons-commande.pdf.preview.simple-preimprime', ['bonCommande' => $record->id]))
-            //     ->openUrlInNewTab(),
-
-            // Tables\Actions\Action::make('telecharger_pdf_simple_preimprime')
-            //     ->label('Télécharger BC Préimprimé')
-            //     ->icon('heroicon-o-arrow-down-on-square')
-            //     ->color('gray')
-            //     ->url(fn($record) => route('bons-commande.pdf.download.simple-preimprime', ['bonCommande' => $record->id])),
+                ->url(fn($record) => route('bons-commande.pdf.download.simple', ['id' => $record->id])),
 
             // === SÉPARATEUR ===
             Tables\Actions\Action::make('separator_1')
@@ -142,14 +128,14 @@ class WorkflowActions
                 ->label('Aperçu BCA')
                 ->icon('heroicon-o-eye')
                 ->color('warning')
-                ->url(fn($record) => route('bons-commande.pdf.preview.complet', ['bonCommande' => $record->id]))
+                ->url(fn($record) => route('bons-commande.pdf.preview.complet', ['id' => $record->id]))
                 ->openUrlInNewTab(),
 
             Tables\Actions\Action::make('telecharger_pdf_complet')
                 ->label('Télécharger BCA')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('danger')
-                ->url(fn($record) => route('bons-commande.pdf.download.complet', ['bonCommande' => $record->id])),
+                ->url(fn($record) => route('bons-commande.pdf.download.complet', ['id' => $record->id])),
         ])
             ->label('Télécharger')
             ->icon('heroicon-o-document')
