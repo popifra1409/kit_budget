@@ -751,7 +751,9 @@ class BonCommande extends Model
      */
     public function genererNumero(): string
     {
-        $exercice = $this->exercice ?? \App\Models\Exercice::getActif();
+        $exercice = $this->exercice
+            ?? ($this->exercice_id ? \App\Models\Exercice::find($this->exercice_id) : null)
+            ?? \App\Models\Exercice::getActif();
 
         if (!$exercice) {
             throw new \Exception("Aucun exercice disponible pour générer le numéro");
@@ -761,15 +763,18 @@ class BonCommande extends Model
         $prefixe = $this->determinerPrefixeNumero();
 
         return \DB::transaction(function () use ($annee, $exercice, $prefixe) {
-            $dernier = self::withTrashed()
+            // ✅ withoutGlobalScope — sinon HasExercice filtre sur l'exercice actif
+            // et ne trouve pas les BC des exercices clôturés (ex: BC25-XXXXX)
+            $dernier = self::withoutGlobalScope('exercice')
+                ->withTrashed()
                 ->where('exercice_id', $exercice->id)
                 ->where('numero', 'like', "{$prefixe}{$annee}-%")
                 ->lockForUpdate()
-                ->orderBy('numero', 'desc')
+                ->orderByRaw("CAST(SPLIT_PART(numero, '-', 2) AS INTEGER) DESC")
                 ->first();
 
             $sequence = $dernier
-                ? intval(substr($dernier->numero, -5)) + 1
+                ? intval(explode('-', $dernier->numero)[1]) + 1
                 : 1;
 
             return sprintf('%s%s-%05d', $prefixe, $annee, $sequence);

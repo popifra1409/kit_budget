@@ -51,13 +51,20 @@ class CreateBonCommande extends CreateRecord
     protected function afterCreate(): void
     {
         try {
+            // ✅ Recalculer les montants — les lignes sont maintenant en base
+            $this->record->load('lignes');
+            $this->record->recalculerTousLesMontants();
+
+            \Log::info("BC {$this->record->numero} — montants recalculés", [
+                'montant_ttc' => $this->record->montant_ttc,
+                'nb_lignes'   => $this->record->lignes->count(),
+            ]);
+
             Notification::make()
                 ->title('✅ Brouillon créé')
                 ->success()
                 ->body("Le brouillon {$this->record->numero} a été créé. Vous pouvez maintenant le valider.")
                 ->send();
-
-            \Log::info("BC brouillon {$this->record->numero} créé");
         } catch (\Exception $e) {
             \Log::error("Erreur après création BC : " . $e->getMessage());
         }

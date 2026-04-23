@@ -15,22 +15,18 @@ class PdfDownloadController extends Controller
 {
     public function __construct(private PdfGenerator $generator) {}
 
-    // ✅ Map type_document → Model class
     private const TYPE_MODEL_MAP = [
-        'certificat_engagement'    => Engagement::class,
-        'autorisation_engagement'  => Engagement::class,
-        'fiche_performance'        => Engagement::class,
-        'bordereau_engagement'     => BordereauEngagement::class,
-        'bon_commande'             => BonCommande::class,
-        'decision_administrative'  => DecisionAdministrative::class,
-        'decision_previsionnelle'  => DecisionAdministrative::class,
-        'ordonnance_paiement'      => OrdonnancePaiement::class,
+        'certificat_engagement'     => Engagement::class,
+        'autorisation_engagement'   => Engagement::class,
+        'fiche_performance'         => Engagement::class,
+        'bordereau_engagement'      => BordereauEngagement::class,
+        'bon_commande'              => BonCommande::class,
+        'decision_administrative'   => DecisionAdministrative::class,
+        'decision_previsionnelle'   => DecisionAdministrative::class,
+        'ordonnance_paiement'       => OrdonnancePaiement::class,
         'ordonnance_paiement_impot' => OrdonnancePaiement::class,
     ];
 
-    /**
-     * Résoudre le model depuis le code d'état.
-     */
     private function resoudreModel(string $codeEtat): string
     {
         $config  = EtatConfig::where('code', $codeEtat)->first();
@@ -46,10 +42,31 @@ class PdfDownloadController extends Controller
     }
 
     /**
-     * Charger le record avec ses relations selon le model.
-     * ✅ withoutGlobalScope('exercice') sur tous les modèles
-     *    pour permettre l'accès aux documents des exercices clôturés (reports 2025→2026)
+     * ✅ Charger l'engageable d'un engagement sans global scope exercice.
+     * Nécessaire pour les DA/BC des exercices clôturés (reports 2025→2026).
      */
+    private function chargerEngageable(Engagement $engagement): void
+    {
+        if (!$engagement->engageable_type || !$engagement->engageable_id) return;
+
+        $modelClass = $engagement->engageable_type;
+
+        if ($engagement->estBonCommande()) {
+            $engageable = $modelClass::withoutGlobalScope('exercice')
+                ->with(['typeEngagement', 'fournisseur', 'lignes'])
+                ->find($engagement->engageable_id);
+        } elseif ($engagement->estDecision()) {
+            $engageable = $modelClass::withoutGlobalScope('exercice')
+                ->with(['typeDecision', 'personnel', 'fournisseur'])
+                ->find($engagement->engageable_id);
+        } else {
+            $engageable = $modelClass::withoutGlobalScope('exercice')
+                ->find($engagement->engageable_id);
+        }
+
+        $engagement->setRelation('engageable', $engageable);
+    }
+
     private function chargerRecord(string $model, int $id)
     {
         return match ($model) {
@@ -66,36 +83,39 @@ class PdfDownloadController extends Controller
                 ])
                 ->findOrFail($id),
 
-            Engagement::class => $model::withoutGlobalScope('exercice')
-                ->with([
-                    'budget',
-                    'exercice',
-                    'nomenclaturePrincipale.parent',
-                    'nomenclaturePrincipale.tache.activite.action.programme',
-                    'beneficiaire',
-                    'lignes.nomenclature',
-                    'engageable',
-                    'ordonnancesPaiement',
-                ])
-                ->findOrFail($id),
+            // ✅ Engagement — engageable chargé via chargerEngageable()
+            Engagement::class => (function () use ($model, $id) {
+                $engagement = $model::withoutGlobalScope('exercice')
+                    ->with([
+                        'budget',
+                        'exercice',
+                        'nomenclaturePrincipale.parent',
+                        'nomenclaturePrincipale.tache.activite.action.programme',
+                        'beneficiaire',
+                        'lignes.nomenclature',
+                        'ordonnancesPaiement',
+                    ])
+                    ->findOrFail($id);
 
+                $this->chargerEngageable($engagement);
+
+                return $engagement;
+            })(),
+
+            // ✅ OrdonnancePaiement — idem pour l'engageable de l'engagement
             OrdonnancePaiement::class => (function () use ($model, $id) {
                 $record = $model::withoutGlobalScope('exercice')
                     ->with([
                         'engagement.nomenclaturePrincipale',
                         'engagement.exercice',
                         'engagement.budget',
-                        'engagement.engageable',
                         'beneficiaire',
                         'exercice',
                     ])
                     ->findOrFail($id);
 
-                // ✅ Charger les relations du document source sans scope exercice
-                if ($record->engagement?->engageable instanceof BonCommande) {
-                    $record->engagement->engageable->load('fournisseur');
-                } elseif ($record->engagement?->engageable instanceof DecisionAdministrative) {
-                    $record->engagement->engageable->load('personnel');
+                if ($record->engagement) {
+                    $this->chargerEngageable($record->engagement);
                 }
 
                 return $record;
@@ -105,6 +125,7 @@ class PdfDownloadController extends Controller
                 ->with([
                     'fournisseur',
                     'serviceDemandeur',
+                    'typeEngagement',
                     'lignes',
                     'engagement.beneficiaire',
                 ])
@@ -125,9 +146,6 @@ class PdfDownloadController extends Controller
         };
     }
 
-    /**
-     * Télécharger le PDF
-     */
     public function telecharger(Request $request, string $etat, int $id)
     {
         $model  = $this->resoudreModel($etat);
@@ -136,9 +154,6 @@ class PdfDownloadController extends Controller
         return $this->generator->telecharger($etat, $record);
     }
 
-    /**
-     * Afficher le PDF dans le navigateur
-     */
     public function afficher(Request $request, string $etat, int $id)
     {
         try {

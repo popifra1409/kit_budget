@@ -353,7 +353,6 @@ class DecisionAdministrative extends Model
      */
     public static function genererNumero(?int $exerciceId = null): string
     {
-        // ✅ Exercice passé en paramètre (report) OU exercice actif (normal)
         $exercice = $exerciceId
             ? \App\Models\Exercice::find($exerciceId)
             : \App\Models\Exercice::getActif();
@@ -365,12 +364,13 @@ class DecisionAdministrative extends Model
         $annee = substr($exercice->annee, -2);
 
         return \DB::transaction(function () use ($annee, $exercice) {
-            // ✅ withTrashed — inclure les soft-deleted dans la séquence
-            $dernier = self::withTrashed()
+            // ✅ withoutGlobalScope — idem
+            $dernier = self::withoutGlobalScope('exercice')
+                ->withTrashed()
                 ->where('exercice_id', $exercice->id)
                 ->where('numero', 'like', "DA{$annee}-%")
                 ->lockForUpdate()
-                ->orderBy('numero', 'desc')
+                ->orderByRaw("CAST(SPLIT_PART(numero, '-', 2) AS INTEGER) DESC")
                 ->first();
 
             $sequence = 1;
@@ -534,7 +534,7 @@ class DecisionAdministrative extends Model
                     ? $this->fournisseur_id
                     : $this->personnel_id,
                 'date_engagement'            => now(),
-                'exercice'                   => $this->exercice?->annee ?? now()->year,
+                'exercice'    => \App\Models\Exercice::getActif()?->annee ?? now()->year,
                 'objet'                      => $this->objet,
                 'montant_engage'             => $this->montant_brut,
                 'statut'                     => 'provisoire',

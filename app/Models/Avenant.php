@@ -82,55 +82,57 @@ class Avenant extends Model
             throw new \Exception("Cet avenant a déjà été appliqué ou annulé.");
         }
 
-        \DB::beginTransaction();
+        DB::beginTransaction();
         try {
-            $budgetId        = $this->engagementOriginal->budget_id;
-            $montantOriginal = (float) $this->montant_original;
-            $montantCorrige  = (float) $this->montant_corrige;
-            $delta           = (float) $this->delta_montant;
+            // ✅ Recharger sans global scope
+            $engagement = \App\Models\Engagement::withoutGlobalScope('exercice')
+                ->find($this->engagement_original_id);
 
-            // ── ÉTAPE 1 : Ajustement ligne(s) budgétaire(s) ──────
-            if ($this->type_correction !== 'objet') {
+            if (!$engagement) {
+                throw new \Exception("Engagement original introuvable.");
+            }
 
-                if (
-                    $this->nomenclature_originale_id !== $this->nomenclature_corrigee_id
-                    && $this->nomenclature_corrigee_id !== null
-                ) {
+            $budgetId = $engagement->budget_id;
 
-                    // Changement de nomenclature — libérer ancienne
-                    $lbOriginale = \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
-                        ->where('nomenclature_id', $this->nomenclature_originale_id)
-                        ->first();
+            // ── Cas 1 : Changement de nomenclature ───────────
+            if (
+                $this->nomenclature_originale_id !== $this->nomenclature_corrigee_id
+                && $this->nomenclature_corrigee_id !== null
+            ) {
 
-                    if ($lbOriginale) {
-                        $lbOriginale->engage = max(0, $lbOriginale->engage - $montantOriginal);
-                        $lbOriginale->save();
-                    }
+                $lbOriginale = LigneBudgetaire::where('budget_id', $budgetId)
+                    ->where('nomenclature_id', $this->nomenclature_originale_id)
+                    ->first();
 
-                    // Engager la nouvelle ligne
-                    $lbCorrigee = \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
-                        ->where('nomenclature_id', $this->nomenclature_corrigee_id)
-                        ->firstOrFail();
+                if ($lbOriginale) {
+                    $lbOriginale->engage = max(0, $lbOriginale->engage - $this->montant_original);
+                    $lbOriginale->save();
+                }
 
-                    if (!$lbCorrigee->peutEngager($montantCorrige)) {
-                        throw new \Exception(
-                            "Crédit insuffisant sur la nouvelle ligne budgétaire.\n" .
-                                "Disponible : " . number_format($lbCorrigee->disponible_engagement, 0, ',', ' ') . " FCFA\n" .
-                                "Demandé : "    . number_format($montantCorrige, 0, ',', ' ') . " FCFA"
-                        );
-                    }
+                $lbCorrigee = LigneBudgetaire::where('budget_id', $budgetId)
+                    ->where('nomenclature_id', $this->nomenclature_corrigee_id)
+                    ->firstOrFail();
 
-                    $lbCorrigee->engage += $montantCorrige;
-                    $lbCorrigee->save();
+                if (!$lbCorrigee->peutEngager($this->montant_corrige)) {
+                    throw new \Exception(
+                        "Crédit insuffisant sur la nouvelle ligne budgétaire.\n" .
+                            "Disponible : " . number_format($lbCorrigee->disponible_engagement, 0, ',', ' ') . " FCFA"
+                    );
+                }
 
-                    // Mettre à jour l'engagement
-                    $this->engagementOriginal->update([
-                        'nomenclature_principale_id' => $this->nomenclature_corrigee_id,
-                        'montant_engage'             => $montantCorrige,
-                    ]);
-                } elseif ($delta != 0) {
-                    // Même nomenclature, delta de montant
-                    $lb = \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
+                $lbCorrigee->engage += $this->montant_corrige;
+                $lbCorrigee->save();
+
+                $engagement->update([
+                    'nomenclature_principale_id' => $this->nomenclature_corrigee_id,
+                    'montant_engage'             => $this->montant_corrige,
+                ]);
+            } else {
+                // ── Cas 2 : Delta de montant ──────────────────
+                $delta = $this->delta_montant;
+
+                if ($delta != 0) {
+                    $lb = LigneBudgetaire::where('budget_id', $budgetId)
                         ->where('nomenclature_id', $this->nomenclature_originale_id)
                         ->firstOrFail();
 
@@ -138,7 +140,7 @@ class Avenant extends Model
                         if (!$lb->peutEngager($delta)) {
                             throw new \Exception(
                                 "Crédit insuffisant pour l'augmentation.\n" .
-                                    "Delta : "      . number_format($delta, 0, ',', ' ') . " FCFA\n" .
+                                    "Delta : " . number_format($delta, 0, ',', ' ') . " FCFA\n" .
                                     "Disponible : " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA"
                             );
                         }
@@ -148,34 +150,31 @@ class Avenant extends Model
                     }
                     $lb->save();
 
-                    $this->engagementOriginal->update([
-                        'montant_engage' => $montantCorrige,
-                    ]);
+                    $engagement->update(['montant_engage' => $this->montant_corrige]);
                 }
             }
 
-            // ── ÉTAPE 2 : Mise à jour des Ordonnances de Paiement ──
-            if ($this->corriger_ordonnances) {
-                $this->mettreAJourOrdonnances();
+            if ($this->engagement_differentiel_id) {
+                \App\Models\Engagement::withoutGlobalScope('exercice')
+                    ->find($this->engagement_differentiel_id)
+                    ?->update(['statut' => 'definitif']);
             }
 
-            // ── ÉTAPE 3 : Marquer l'avenant comme appliqué ────────
             $this->update([
                 'statut'           => 'applique',
                 'applique_par'     => auth()->id(),
                 'date_application' => now(),
             ]);
 
-            \DB::commit();
+            DB::commit();
 
             \Log::info("Avenant #{$this->numero_avenant} appliqué", [
-                'engagement' => $this->engagementOriginal->numero,
+                'engagement' => $engagement->numero,
                 'delta'      => $this->delta_montant,
                 'type'       => $this->type_correction,
-                'op_mises_a_jour' => $this->corriger_ordonnances,
             ]);
         } catch (\Exception $e) {
-            \DB::rollBack();
+            DB::rollBack();
             throw $e;
         }
     }
