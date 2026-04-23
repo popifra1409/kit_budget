@@ -99,7 +99,7 @@ class EtatConfig extends Model
     public function estModifiable(): bool
     {
         // Logique métier : certains états système ne peuvent pas être modifiés
-        $etatsSysteme = ['certificat_engagement', 'autorisation_engagement'];
+        $etatsSysteme = ['autorisation_engagement'];
         return !in_array($this->code, $etatsSysteme);
     }
 
