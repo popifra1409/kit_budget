@@ -7,6 +7,7 @@
 @endsection
 
 @php
+
 $engagement = $donnees['_raw'];
 $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 

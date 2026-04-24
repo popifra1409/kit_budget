@@ -1,20 +1,20 @@
 <?php
 
-namespace App\Services;
+namespace App\Helpers;
 
 class NombreEnLettres
 {
-    private static $unites = [
-        0 => '',
-        1 => 'un',
-        2 => 'deux',
-        3 => 'trois',
-        4 => 'quatre',
-        5 => 'cinq',
-        6 => 'six',
-        7 => 'sept',
-        8 => 'huit',
-        9 => 'neuf',
+    private static array $unites = [
+        0  => '',
+        1  => 'un',
+        2  => 'deux',
+        3  => 'trois',
+        4  => 'quatre',
+        5  => 'cinq',
+        6  => 'six',
+        7  => 'sept',
+        8  => 'huit',
+        9  => 'neuf',
         10 => 'dix',
         11 => 'onze',
         12 => 'douze',
@@ -24,208 +24,153 @@ class NombreEnLettres
         16 => 'seize',
         17 => 'dix-sept',
         18 => 'dix-huit',
-        19 => 'dix-neuf'
+        19 => 'dix-neuf',
     ];
 
-    private static $dizaines = [
+    private static array $dizaines = [
         2 => 'vingt',
         3 => 'trente',
         4 => 'quarante',
         5 => 'cinquante',
         6 => 'soixante',
-        7 => 'soixante',
+        7 => 'soixante',   // base 60 + 10..19
         8 => 'quatre-vingt',
-        9 => 'quatre-vingt'
+        9 => 'quatre-vingt', // base 80 + 10..19
     ];
 
     /**
      * Convertir un nombre en lettres (français)
-     * 
-     * @param float $nombre Le nombre à convertir
-     * @param string $devise La devise (FCFA par défaut)
-     * @return string Le nombre en lettres
      */
-    public static function convertir(float $nombre, string $devise = 'FRANCS CFA'): string
+    public static function convertir($nombre, bool $majuscule = false, string $devise = 'Fcfa'): string
     {
-        // Séparer partie entière et décimale
-        $partieEntiere = floor($nombre);
-
-        if ($partieEntiere == 0) {
-            return 'ZERO ' . $devise;
-        }
-
-        $lettres = self::convertirNombre($partieEntiere);
-
-        // Mettre en majuscules et ajouter la devise
-        return strtoupper($lettres) . ' ' . $devise;
-    }
-
-    /**
-     * Convertir un nombre entier en lettres
-     */
-    private static function convertirNombre(int $nombre): string
-    {
-        if ($nombre == 0) {
+        if (!is_numeric($nombre)) {
             return '';
         }
 
-        if ($nombre < 20) {
-            return self::$unites[$nombre];
+        // ✅ Conversion sécurisée : éviter les problèmes de float pour grands nombres
+        $nombre  = (int) round((float) $nombre);
+        $entier  = abs($nombre);
+        $negatif = $nombre < 0;
+
+        if ($entier === 0) {
+            $resultat = 'zéro';
+        } else {
+            $resultat = ($negatif ? 'moins ' : '') . self::convertirEntier($entier);
         }
 
-        if ($nombre < 100) {
-            return self::convertirDizaines($nombre);
+        if (!empty($devise)) {
+            $resultat .= ' ' . $devise;
         }
 
-        if ($nombre < 1000) {
-            return self::convertirCentaines($nombre);
-        }
-
-        if ($nombre < 1000000) {
-            return self::convertirMilliers($nombre);
-        }
-
-        if ($nombre < 1000000000) {
-            return self::convertirMillions($nombre);
-        }
-
-        return self::convertirMilliards($nombre);
+        return $majuscule ? ucfirst(trim($resultat)) : trim($resultat);
     }
 
     /**
-     * Convertir les dizaines (20-99)
+     * Convertir un entier positif en lettres
      */
-    private static function convertirDizaines(int $nombre): string
+    private static function convertirEntier(int $nombre): string
     {
-        $dizaine = floor($nombre / 10);
-        $unite = $nombre % 10;
-
-        $resultat = self::$dizaines[$dizaine];
-
-        if ($dizaine == 7 || $dizaine == 9) {
-            // Soixante-dix, quatre-vingt-dix
-            $resultat .= '-' . self::$unites[10 + $unite];
-        } elseif ($unite == 1 && $dizaine != 8) {
-            // Vingt et un, trente et un, etc. (mais quatre-vingt-un)
-            $resultat .= ' et un';
-        } elseif ($unite > 0) {
-            $resultat .= '-' . self::$unites[$unite];
-        } elseif ($dizaine == 8) {
-            // Quatre-vingts (avec s)
-            $resultat .= 's';
-        }
-
-        return $resultat;
-    }
-
-    /**
-     * Convertir les centaines (100-999)
-     */
-    private static function convertirCentaines(int $nombre): string
-    {
-        $centaine = floor($nombre / 100);
-        $reste = $nombre % 100;
+        if ($nombre === 0) return '';
 
         $resultat = '';
 
-        if ($centaine == 1) {
-            $resultat = 'cent';
-        } else {
-            $resultat = self::$unites[$centaine] . ' cent';
+        // ── Milliards ─────────────────────────────────────────
+        if ($nombre >= 1_000_000_000) {
+            $n = intdiv($nombre, 1_000_000_000);
+            $resultat .= self::convertirEntier($n) . ' milliard' . ($n > 1 ? 's' : '');
+            $nombre   %= 1_000_000_000;
+            if ($nombre > 0) $resultat .= ' ';
         }
 
-        // Ajouter un 's' si centaines multiples et pas de reste
-        if ($centaine > 1 && $reste == 0) {
-            $resultat .= 's';
+        // ── Millions ──────────────────────────────────────────
+        if ($nombre >= 1_000_000) {
+            $n = intdiv($nombre, 1_000_000);
+            $resultat .= self::convertirEntier($n) . ' million' . ($n > 1 ? 's' : '');
+            $nombre   %= 1_000_000;
+            if ($nombre > 0) $resultat .= ' ';
         }
 
-        if ($reste > 0) {
-            $resultat .= ' ' . self::convertirNombre($reste);
+        // ── Milliers ──────────────────────────────────────────
+        if ($nombre >= 1_000) {
+            $n = intdiv($nombre, 1_000);
+            $resultat .= ($n === 1 ? 'mille' : self::convertirEntier($n) . ' mille');
+            $nombre   %= 1_000;
+            if ($nombre > 0) $resultat .= ' ';
         }
 
-        return $resultat;
-    }
-
-    /**
-     * Convertir les milliers (1000-999999)
-     */
-    private static function convertirMilliers(int $nombre): string
-    {
-        $milliers = floor($nombre / 1000);
-        $reste = $nombre % 1000;
-
-        $resultat = '';
-
-        if ($milliers == 1) {
-            $resultat = 'mille';
-        } else {
-            $resultat = self::convertirNombre($milliers) . ' mille';
+        // ── Centaines ─────────────────────────────────────────
+        if ($nombre >= 100) {
+            $n = intdiv($nombre, 100);
+            if ($n === 1) {
+                $resultat .= 'cent';
+            } else {
+                $resultat .= self::$unites[$n] . ' cent';
+            }
+            $nombre %= 100;
+            if ($nombre === 0 && $n > 1) {
+                $resultat .= 's'; // deux cents (pluriel si exact)
+            } elseif ($nombre > 0) {
+                $resultat .= ' ';
+            }
         }
 
-        if ($reste > 0) {
-            $resultat .= ' ' . self::convertirNombre($reste);
-        }
+        // ── Dizaines et unités (0-99) ─────────────────────────
+        if ($nombre >= 20) {
+            $dizaine = intdiv($nombre, 10);
+            $unite   = $nombre % 10;
 
-        return $resultat;
-    }
-
-    /**
-     * Convertir les millions (1000000-999999999)
-     */
-    private static function convertirMillions(int $nombre): string
-    {
-        $millions = floor($nombre / 1000000);
-        $reste = $nombre % 1000000;
-
-        $resultat = self::convertirNombre($millions) . ' million';
-
-        // Ajouter un 's' si plusieurs millions
-        if ($millions > 1) {
-            $resultat .= 's';
-        }
-
-        if ($reste > 0) {
-            $resultat .= ' ' . self::convertirNombre($reste);
-        }
-
-        return $resultat;
-    }
-
-    /**
-     * Convertir les milliards
-     */
-    private static function convertirMilliards(int $nombre): string
-    {
-        $milliards = floor($nombre / 1000000000);
-        $reste = $nombre % 1000000000;
-
-        $resultat = self::convertirNombre($milliards) . ' milliard';
-
-        if ($milliards > 1) {
-            $resultat .= 's';
-        }
-
-        if ($reste > 0) {
-            $resultat .= ' ' . self::convertirNombre($reste);
+            if ($dizaine === 7) {
+                // 70-79 : soixante + dix..dix-neuf
+                $resultat .= 'soixante-' . self::convertirUnite(10 + $unite);
+            } elseif ($dizaine === 8) {
+                // 80 : quatre-vingts / 81-89 : quatre-vingt-X
+                $resultat .= 'quatre-vingt';
+                if ($unite > 0) {
+                    $resultat .= '-' . self::$unites[$unite];
+                } else {
+                    $resultat .= 's'; // quatre-vingts (pluriel si exact)
+                }
+            } elseif ($dizaine === 9) {
+                // 90-99 : quatre-vingt + dix..dix-neuf
+                $resultat .= 'quatre-vingt-' . self::convertirUnite(10 + $unite);
+            } else {
+                // 20-69 classique
+                $resultat .= self::$dizaines[$dizaine];
+                if ($unite === 1 && $dizaine !== 8) {
+                    $resultat .= ' et un';
+                } elseif ($unite > 0) {
+                    $resultat .= '-' . self::$unites[$unite];
+                }
+            }
+        } elseif ($nombre > 0) {
+            // 1-19
+            $resultat .= self::convertirUnite($nombre);
         }
 
         return $resultat;
     }
 
     /**
-     * Convertir un montant avec centimes
+     * Convertir une unité (1-19)
      */
-    public static function convertirMontant(float $montant): string
+    private static function convertirUnite(int $n): string
     {
-        $partieEntiere = floor($montant);
-        $centimes = round(($montant - $partieEntiere) * 100);
+        return self::$unites[$n] ?? '';
+    }
 
-        $lettres = self::convertir($partieEntiere, 'FRANCS CFA');
+    /**
+     * Convertir un montant avec devise CFA
+     */
+    public static function montantCFA($montant): string
+    {
+        return self::convertir($montant, true, 'Francs CFA');
+    }
 
-        if ($centimes > 0) {
-            $lettres .= ' ET ' . self::convertirNombre($centimes) . ' CENTIMES';
-        }
-
-        return $lettres;
+    /**
+     * Convertir un montant sans devise
+     */
+    public static function nombreSeul($nombre): string
+    {
+        return self::convertir($nombre, false, '');
     }
 }
