@@ -30,7 +30,7 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->modalDescription(
                     fn($record) =>
                     "Valider la décision pour {$record->getNomCompletPersonnel()} d'un montant net de " .
-                    number_format($record->montant_net, 0, ',', ' ') . " FCFA ?"
+                        number_format($record->montant_net, 0, ',', ' ') . " FCFA ?"
                 )
                 ->action(function ($record) {
                     $record->valider(auth()->user());
@@ -50,7 +50,7 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->modalDescription(
                     fn($record) =>
                     "Engager le budget pour un montant de " .
-                    number_format($record->montant_brut, 0, ',', ' ') . " FCFA ?"
+                        number_format($record->montant_brut, 0, ',', ' ') . " FCFA ?"
                 )
                 ->form([
                     Forms\Components\Select::make('nomenclature_id')
@@ -160,15 +160,15 @@ class ViewDecisionAdministrative extends ViewRecord
                         ->label('')
                         ->content(
                             fn() => $this->record->engagee
-                            ? new \Illuminate\Support\HtmlString(
-                                '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:.5rem;padding:.75rem;color:#dc2626;font-weight:600;">
+                                ? new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:.5rem;padding:.75rem;color:#dc2626;font-weight:600;">
                     ❌ Cette décision est engagée (N° ' . ($this->record->engagement?->numero ?? '') . ').<br>
                     Veuillez d\'abord annuler l\'engagement, puis revenez annuler la décision.</div>'
-                            )
-                            : new \Illuminate\Support\HtmlString(
-                                '<div style="background:#fef9c3;border:1px solid #ca8a04;border-radius:.5rem;padding:.75rem;">
+                                )
+                                : new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef9c3;border:1px solid #ca8a04;border-radius:.5rem;padding:.75rem;">
                     ⚠️ La décision sera annulée. Elle restera récupérable.</div>'
-                            )
+                                )
                         )
                         ->columnSpanFull(),
 
@@ -654,6 +654,19 @@ class ViewDecisionAdministrative extends ViewRecord
                     ->visible(fn($record) => $record->validee_par)
                     ->collapsible()
                     ->collapsed(),
+
+                Infolists\Components\TextEntry::make('source_memoire')
+                    ->label('')
+                    ->getStateUsing(
+                        fn($record) =>
+                        str_starts_with($record->reference_decision ?? '', 'MD-')
+                            ? "📋 Créée depuis le Mémoire N° {$record->reference_decision}"
+                            : null
+                    )
+                    ->visible(fn($record) => str_starts_with($record->reference_decision ?? '', 'MD-'))
+                    ->badge()
+                    ->color('info')
+                    ->columnSpanFull(),
 
                 Infolists\Components\Section::make('Observations')
                     ->schema([

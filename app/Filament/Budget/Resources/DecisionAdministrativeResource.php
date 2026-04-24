@@ -973,6 +973,20 @@ class DecisionAdministrativeResource extends Resource
                         default => $state,
                     }),
 
+                // Dans table() de DecisionAdministrativeResource
+                Tables\Columns\IconColumn::make('from_memoire')
+                    ->label('MD')
+                    ->getStateUsing(fn($record) => str_starts_with($record->reference_decision ?? '', 'MD-'))
+                    ->boolean()
+                    ->trueIcon('heroicon-o-document-text')
+                    ->trueColor('info')
+                    ->falseIcon('')
+                    ->tooltip(
+                        fn($record) => str_starts_with($record->reference_document ?? '', 'MD-')
+                            ? "Créée depuis {$record->reference_decision}"
+                            : null
+                    ),
+
                 Tables\Columns\IconColumn::make('engagee')
                     ->label('Engagée')
                     ->boolean()

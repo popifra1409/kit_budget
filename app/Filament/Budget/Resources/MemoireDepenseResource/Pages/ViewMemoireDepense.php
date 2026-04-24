@@ -284,94 +284,181 @@ class ViewMemoireDepense extends ViewRecord
                 ])
                 ->action(function (array $data) {
                     try {
-                        // Récupérer l'exercice actif
                         $exercice = \App\Models\Exercice::getActif();
                         if (!$exercice) {
                             throw new \Exception('Aucun exercice actif trouvé.');
                         }
 
+                        // ✅ Variables calculées depuis le mémoire
+                        $montantTtc = (float) $this->record->montant_ttc;
+                        $montantHt  = (float) $this->record->montant_ht;
+                        $montantTva = (float) $this->record->montant_tva;
+                        $montantIr  = (float) $this->record->montant_ir;   // IR du mémoire
+                        $montantNet = (float) $this->record->montant_net;
+                        $totalTaxes = $montantTva + $montantIr;            // TVA + IR
+
+                        $numeroDA = DecisionAdministrative::genererNumero($exercice->id);
+
                         // ── Créer la DA depuis le mémoire ─────────
-                        $da = DecisionAdministrative::create([
-                            'exercice_id'       => $exercice->id,
-                            'budget_id'         => $data['budget_id'],
-                            'type_decision_id'  => $data['type_decision_id'],
-                            'type_beneficiaire' => $data['type_beneficiaire'],
-                            'personnel_id'      => $data['type_beneficiaire'] === 'personnel'
-                                ? $data['personnel_id'] : null,
-                            'fournisseur_id'    => $data['type_beneficiaire'] === 'fournisseur'
-                                ? $data['fournisseur_id'] : null,
-                            'date_decision'     => $data['date_decision'],
-                            'objet'             => $this->record->objet,
-                            'reference_decision' => $this->record->numero,
-                            'signataire'        => $this->record->signataire_nom,
+                        $da = DecisionAdministrative::withoutEvents(function () use (
+                            $data,
+                            $exercice,
+                            $numeroDA,
+                            $montantTtc,
+                            $montantHt,
+                            $montantTva,
+                            $montantIr,
+                            $montantNet,
+                            $totalTaxes
+                        ) {
+                            return DecisionAdministrative::create([
+                                'numero'            => $numeroDA,
+                                'exercice_id'       => $exercice->id,
+                                'budget_id'         => $data['budget_id'],
+                                'type_decision_id'  => $data['type_decision_id'],
+                                'type_beneficiaire' => $data['type_beneficiaire'],
+                                'personnel_id'      => $data['type_beneficiaire'] === 'personnel'
+                                    ? $data['personnel_id'] : null,
+                                'fournisseur_id'    => $data['type_beneficiaire'] === 'fournisseur'
+                                    ? $data['fournisseur_id'] : null,
+                                'date_decision'     => $data['date_decision'],
+                                'objet'             => $this->record->objet,
+                                'reference_decision' => $this->record->numero,
+                                'signataire'        => $this->record->signataire_nom,
 
-                            // ── Montants depuis le mémoire ─────────
-                            // Mode forfait — les montants sont pré-calculés
-                            'mode_saisie'       => 'forfait',
-                            'montant_brut'      => (float)$this->record->montant_ttc,
-                            'montant_ht'        => (float)$this->record->montant_ht,
-                            'montant_tva'       => (float)$this->record->montant_tva,
-                            'montant_cnps'      => 0,
-                            'montant_irnc'      => (float)$this->record->montant_ir,
-                            'autres_retenues'   => 0,
-                            'total_taxes'       => (float)$this->record->montant_ir,
-                            'montant_net'       => (float)$this->record->montant_net,
-                            'taux_cnps'         => 0,
-                            'taux_irnc'         => 0,
-                            'taux_tva'          => 0,
-                            'type_tva'          => 'forfait',
-                            'type_redevance_audiovisuelle' => 'forfait',
-                            'type_feicom'       => 'forfait',
-                            'montant_redevance_audiovisuelle' => 0,
-                            'montant_feicom'    => 0,
+                                // ✅ Mode forfait — stoppe tout recalcul
+                                'mode_saisie'       => 'forfait',
 
-                            'statut'            => 'brouillon',
-                            'observations'      => $data['observations'] ?? null,
-                            'created_by'        => auth()->id(),
-                        ]);
+                                // ✅ Mapping exact mémoire → DA
+                                'montant_brut'      => $montantTtc,  // TTC du mémoire
+                                'montant_ht'        => $montantHt,   // HT du mémoire
+                                'montant_tva'       => $montantTva,  // TVA du mémoire
+                                'montant_cnps'      => 0,
+                                'montant_irnc'      => $montantIr,   // ✅ IR du mémoire → IRNC de la DA
+                                'autres_retenues'   => 0,
+                                'total_taxes'       => $totalTaxes,  // ✅ TVA + IR
+                                'montant_net'       => $montantNet,  // Net du mémoire
+
+                                // Taux neutralisés
+                                'taux_cnps'         => 0,
+                                'taux_irnc'         => 0,
+                                'taux_tva'          => 0,
+                                'type_tva'                        => 'forfait',
+                                'type_redevance_audiovisuelle'    => 'forfait',
+                                'montant_redevance_audiovisuelle' => 0,
+                                'type_feicom'                     => 'forfait',
+                                'montant_feicom'                  => 0,
+
+                                'statut'            => 'brouillon',
+                                'observations' => "📋 Créée par transformation du Mémoire de Dépense N° {$this->record->numero}\n"
+                                    . "Date mémoire : " . ($this->record->date_memoire?->format('d/m/Y') ?? '—') . "\n"
+                                    . ($data['observations'] ? "\n" . $data['observations'] : ''),
+                                'created_by'        => auth()->id(),
+                            ]);
+                        });
+
                         $this->record->update([
                             'decision_administrative_id' => $da->id,
-                            'numero_decision'             => $da->numero,
-                            'date_decision'               => $da->date_decision,
-                            'statut'                      => 'transforme',
+                            'numero_decision'            => $da->numero,
+                            'date_decision'              => $da->date_decision,
+                            'statut'                     => 'transforme',
                         ]);
 
-                        // ── Marquer le mémoire comme transformé ───
-                        // (optionnel — si vous avez un champ da_id sur memoires_depense)
-                        // $this->record->update(['da_id' => $da->id, 'statut' => 'transforme']);
-
                         Notification::make()
-                            ->title('✅ DA créée avec succès')
-                            ->success()
+                            ->title('✅ DA créée avec succès')->success()
                             ->body("La décision {$da->numero} a été créée depuis le mémoire {$this->record->numero}.")
                             ->send();
 
-                        // Rediriger vers la DA créée
                         $this->redirect(
                             DecisionAdministrativeResource::getUrl('view', ['record' => $da->id])
                         );
                     } catch (\Exception $e) {
                         Notification::make()
                             ->title('❌ Erreur lors de la transformation')
-                            ->danger()
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                            ->danger()->body($e->getMessage())->persistent()->send();
                     }
                 }),
 
-            // ── Annuler ──────────────────────────────────────────
+            // ── Annuler ─────────────────────────────────────────────
             Action::make('annuler')
                 ->label('Annuler')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn() => !in_array($this->record->statut, ['annule', 'approuve']))
+                ->visible(fn() => !in_array($this->record->statut, ['annule', 'transforme']))
                 ->requiresConfirmation()
                 ->modalHeading('Annuler le mémoire')
-                ->modalDescription('Cette action est irréversible.')
-                ->action(function () {
-                    $this->record->update(['statut' => 'annule']);
-                    Notification::make()->title('Mémoire annulé')->warning()->send();
+                ->modalDescription('Le mémoire sera annulé. Vous pourrez le récupérer ultérieurement.')
+                ->form([
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif d\'annulation')
+                        ->rows(2)
+                        ->placeholder('Précisez le motif...'),
+                ])
+                ->action(function (array $data) {
+                    $this->record->update([
+                        'statut'       => 'annule',
+                        'observations' => ($this->record->observations ?? '') .
+                            "\n\n--- ANNULÉ LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                            "Motif : " . ($data['motif'] ?? 'Non précisé') . "\n" .
+                            "Par : " . auth()->user()->name,
+                    ]);
+                    Notification::make()
+                        ->title('⚠️ Mémoire annulé')
+                        ->warning()
+                        ->body('Vous pouvez le récupérer via le bouton "Récupérer".')
+                        ->send();
+                }),
+
+            Action::make('recuperer')
+                ->label('Récupérer')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('warning')
+                ->visible(fn() => $this->record->statut === 'annule')
+                ->requiresConfirmation()
+                ->modalHeading('Récupérer le mémoire')
+                ->modalDescription('Le mémoire sera remis en brouillon et pourra être modifié.')
+                ->form([
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif de récupération')
+                        ->rows(2)
+                        ->placeholder('Précisez le motif...'),
+                ])
+                ->action(function (array $data) {
+                    \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+
+                        // ✅ 1. Annuler toutes les transmissions en attente
+                        $this->record->transmissions()
+                            ->where('statut', 'en_attente')
+                            ->update([
+                                'statut'          => 'annule',
+                                'date_traitement' => now(),
+                                'reponse'         => 'Annulée — mémoire récupéré le ' . now()->format('d/m/Y H:i'),
+                            ]);
+
+                        // ✅ 2. Remettre en brouillon + réinitialiser les champs de validation
+                        $this->record->update([
+                            'statut'             => 'brouillon',    // ← état modifiable
+                            'date_signature'     => null,           // ← réinitialiser signature
+                            'fichier_pdf'        => null,           // ← réinitialiser PDF généré
+                            'observations'       => ($this->record->observations ?? '') .
+                                "\n\n--- RÉCUPÉRÉ LE " . now()->format('d/m/Y H:i') . " ---\n" .
+                                "Motif : " . ($data['motif'] ?? 'Document récupéré pour modification') . "\n" .
+                                "Par : " . auth()->user()->name,
+                        ]);
+                    });
+
+                    Notification::make()
+                        ->title('✅ Mémoire récupéré et modifiable')
+                        ->success()
+                        ->body("Le mémoire {$this->record->numero} est en brouillon — vous pouvez le modifier.")
+                        ->send();
+
+                    // ✅ Rediriger vers l'édition directement
+                    $this->redirect(
+                        \App\Filament\Budget\Resources\MemoireDepenseResource::getUrl('edit', [
+                            'record' => $this->record->id,
+                        ])
+                    );
                 }),
         ];
     }

@@ -763,19 +763,19 @@ class BonCommande extends Model
         $prefixe = $this->determinerPrefixeNumero();
 
         return \DB::transaction(function () use ($annee, $exercice, $prefixe) {
-            // ✅ withoutGlobalScope — sinon HasExercice filtre sur l'exercice actif
-            // et ne trouve pas les BC des exercices clôturés (ex: BC25-XXXXX)
-            $dernier = self::withoutGlobalScope('exercice')
-                ->withTrashed()
-                ->where('exercice_id', $exercice->id)
-                ->where('numero', 'like', "{$prefixe}{$annee}-%")
-                ->lockForUpdate()
-                ->orderByRaw("CAST(SPLIT_PART(numero, '-', 2) AS INTEGER) DESC")
-                ->first();
+            // ✅ SQL direct — bypass tous les scopes Eloquent
+            // Inclut soft-deleted ET actifs pour éviter les doublons
+            $result = \DB::selectOne("
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(numero, '-', 2) AS INTEGER)), 0) AS max_seq
+            FROM bons_commande
+            WHERE exercice_id = :exercice_id
+            AND numero LIKE :pattern
+        ", [
+                'exercice_id' => $exercice->id,
+                'pattern'     => "{$prefixe}{$annee}-%",
+            ]);
 
-            $sequence = $dernier
-                ? intval(explode('-', $dernier->numero)[1]) + 1
-                : 1;
+            $sequence = ($result->max_seq ?? 0) + 1;
 
             return sprintf('%s%s-%05d', $prefixe, $annee, $sequence);
         });

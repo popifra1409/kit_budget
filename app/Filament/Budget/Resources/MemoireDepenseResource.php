@@ -413,6 +413,83 @@ class MemoireDepenseResource extends Resource
                         'transforme' => 'Transformé en DA',
                         'annule'     => 'Annulé',
                     ]),
+
+                // Filtre par période sur date_memoire
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période')
+                            ->options([
+                                'today'         => "Aujourd'hui",
+                                'yesterday'     => 'Hier',
+                                'this_week'     => 'Cette semaine',
+                                'last_week'     => 'Semaine dernière',
+                                'this_month'    => 'Ce mois',
+                                'last_month'    => 'Mois dernier',
+                                'this_quarter'  => 'Ce trimestre',
+                                'last_quarter'  => 'Trimestre dernier',
+                                'this_year'     => 'Cette année',
+                                'last_year'     => 'Année dernière',
+                            ])
+                            ->default('today')
+                            ->placeholder('Toutes les périodes'),
+                    ])
+                    ->default(['periode' => 'today'])
+                    ->query(function ($query, array $data) {
+                        return $query->when(
+                            $data['periode'] ?? null,
+                            fn($q, $periode) =>
+                            match ($periode) {
+                                'today'         => $q->whereDate('date_memoire', today()),
+                                'yesterday'     => $q->whereDate('date_memoire', today()->subDay()),
+                                'this_week'     => $q->whereBetween('date_memoire', [now()->startOfWeek(), now()->endOfWeek()]),
+                                'last_week'     => $q->whereBetween('date_memoire', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
+                                'this_month'    => $q->whereMonth('date_memoire', now()->month)->whereYear('date_memoire', now()->year),
+                                'last_month'    => $q->whereMonth('date_memoire', now()->subMonth()->month)->whereYear('date_memoire', now()->subMonth()->year),
+                                'this_quarter'  => $q->whereBetween('date_memoire', [now()->startOfQuarter(), now()->endOfQuarter()]),
+                                'last_quarter'  => $q->whereBetween('date_memoire', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
+                                'this_year'     => $q->whereYear('date_memoire', now()->year),
+                                'last_year'     => $q->whereYear('date_memoire', now()->subYear()->year),
+                                default         => $q,
+                            }
+                        );
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) return null;
+                        $labels = [
+                            'today'        => "Aujourd'hui",
+                            'yesterday'    => 'Hier',
+                            'this_week'    => 'Cette semaine',
+                            'last_week'    => 'Semaine dernière',
+                            'this_month'   => 'Ce mois',
+                            'last_month'   => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year'    => 'Cette année',
+                            'last_year'    => 'Année dernière',
+                        ];
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
+
+                // Filtre par date personnalisée
+                Tables\Filters\Filter::make('date_range')
+                    ->form([
+                        Forms\Components\DatePicker::make('du')->label('Du'),
+                        Forms\Components\DatePicker::make('au')->label('Au'),
+                    ])
+                    ->query(
+                        fn($query, array $data) => $query
+                            ->when($data['du'], fn($q, $v) => $q->whereDate('date_memoire', '>=', $v))
+                            ->when($data['au'], fn($q, $v) => $q->whereDate('date_memoire', '<=', $v))
+                    )
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['du'] ?? null)
+                            $indicators[] = Tables\Filters\Indicator::make('Du ' . \Carbon\Carbon::parse($data['du'])->format('d/m/Y'))->removeField('du');
+                        if ($data['au'] ?? null)
+                            $indicators[] = Tables\Filters\Indicator::make('Au ' . \Carbon\Carbon::parse($data['au'])->format('d/m/Y'))->removeField('au');
+                        return $indicators;
+                    }),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),

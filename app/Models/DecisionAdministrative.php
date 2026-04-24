@@ -364,19 +364,19 @@ class DecisionAdministrative extends Model
         $annee = substr($exercice->annee, -2);
 
         return \DB::transaction(function () use ($annee, $exercice) {
-            // ✅ withoutGlobalScope — idem
-            $dernier = self::withoutGlobalScope('exercice')
-                ->withTrashed()
-                ->where('exercice_id', $exercice->id)
-                ->where('numero', 'like', "DA{$annee}-%")
-                ->lockForUpdate()
-                ->orderByRaw("CAST(SPLIT_PART(numero, '-', 2) AS INTEGER) DESC")
-                ->first();
+            // ✅ SQL direct — bypass tous les scopes Eloquent
+            // Inclut soft-deleted ET actifs pour éviter les doublons
+            $result = \DB::selectOne("
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(numero, '-', 2) AS INTEGER)), 0) AS max_seq
+            FROM decisions_administratives
+            WHERE exercice_id = :exercice_id
+            AND numero LIKE :pattern
+        ", [
+                'exercice_id' => $exercice->id,
+                'pattern'     => "DA{$annee}-%",
+            ]);
 
-            $sequence = 1;
-            if ($dernier && preg_match('/DA\d{2}-(\d+)/', $dernier->numero, $matches)) {
-                $sequence = intval($matches[1]) + 1;
-            }
+            $sequence = ($result->max_seq ?? 0) + 1;
 
             return sprintf('DA%s-%05d', $annee, $sequence);
         });

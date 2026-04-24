@@ -71,29 +71,23 @@ class RolePermissionSeeder extends Seeder
             'registre_consommation',
         ];
 
-        // ====================================================
-        // 3. MODULES CRUD — Marchés Publics (à compléter)
-        // ====================================================
-        $modulesMarches = [
-            // 'appel_offre', 'offre', 'marche', 'avenant',
-            // 'caution', 'penalite', 'reception_marche',
-        ];
+        $modulesMarches = [];
 
-        // Créer toutes les permissions CRUD
+        // ── Créer permissions CRUD (firstOrCreate = non destructif) ──
         $this->command->info('📝 Création permissions CRUD...');
         foreach (array_merge($modulesBudget, $modulesComptable, $modulesMarches) as $module) {
             foreach (['view', 'view_any', 'create', 'update', 'delete'] as $action) {
                 Permission::firstOrCreate([
-                    'name' => "{$action}_{$module}",
+                    'name'       => "{$action}_{$module}",
                     'guard_name' => 'web',
                 ]);
             }
         }
 
         // ====================================================
-        // 4. PERMISSIONS SPÉCIALES — Budget
+        // 3. PERMISSIONS SPÉCIALES
         // ====================================================
-        $specialBudget = [
+        $special = [
             // Paramètres
             'activer_parametres_fournisseur',
             'blacklister_fournisseur',
@@ -116,6 +110,7 @@ class RolePermissionSeeder extends Seeder
             // Engagement
             'valider_engagement',
             'annuler_engagement',
+            'creer_avenant_engagement',
             // Décision Administrative
             'valider_decision_administrative',
             'annuler_decision_administrative',
@@ -123,7 +118,7 @@ class RolePermissionSeeder extends Seeder
             'engager_decision_administrative',
             'desengager_decision_administrative',
             'recuperer_decision_administrative',
-            // Ordonnance de paiement
+            // Ordonnance
             'emettre_ordonnance_paiement',
             'viser_ordonnance_paiement',
             'valider_ordonnance_paiement',
@@ -132,7 +127,7 @@ class RolePermissionSeeder extends Seeder
             'creer_op_depuis_engagement',
             'telecharger_ordonnance_paiement',
             'override_ordonnance_paiement',
-            // Bordereau d'engagement
+            // Bordereau
             'transmettre_bordereau_engagement',
             'receptionner_bordereau_engagement',
             'valider_bordereau_engagement',
@@ -141,17 +136,17 @@ class RolePermissionSeeder extends Seeder
             'telecharger_bordereau_engagement',
             'override_bordereau_engagement',
             'gerer_engagements_bordereau',
-            // Mémoire de dépense
+            // Mémoire dépense
             'valider_memoire_depense',
             'transformer_memoire_depense_en_da',
-            // Workflow / Transmissions
+            // Workflow
             'transmettre_document',
             'retourner_document',
             'cloturer_transmission',
             'annuler_transmission',
             'view_all_transmissions',
             'view_my_transmissions',
-            // Dossiers Fournisseurs
+            // Dossiers
             'cloturer_dossier_fournisseur',
             'annuler_dossier_fournisseur',
             'ajouter_piece_dossier',
@@ -161,102 +156,93 @@ class RolePermissionSeeder extends Seeder
             'telecharger_piece_dossier',
             'view_all_dossiers',
             'view_my_dossiers',
-            // Mercuriale
+            // Divers
             'activer_reference_mercuriale',
-            // Fiche contrôle
             'generer_pdf_fiche_controle_engagements',
-        ];
-
-        // ====================================================
-        // 5. PERMISSIONS SPÉCIALES — Comptabilité Matières
-        // ====================================================
-        $specialComptable = [
-            // Expressions de besoins
+            // Comptabilité matières
             'soumettre_expression_besoin',
             'valider_expression_besoin',
             'rejeter_expression_besoin',
-            // Réceptions
             'signer_pv_reception',
             'integrer_reception_stock',
-            // Ordres d'entrée
             'signer_ordre_entree',
             'transmettre_ordre_entree',
-            // BSF
             'soumettre_bon_sortie_fourniture',
-            // BSP — 3 signataires distincts
             'signer_bsp_demandeur',
             'signer_bsp_comptable',
             'signer_bsp_ordonnateur',
             'executer_bon_sortie_provisoire',
-            // Ordres de sortie
             'signer_ordre_sortie',
             'transmettre_ordre_sortie',
-            // Fiche détenteur
             'retourner_fiche_detenteur',
-            // Stock
             'ajuster_stock',
             'inventorier_stock',
-        ];
-
-        // ====================================================
-        // 6. PERMISSIONS SPÉCIALES — Marchés Publics
-        // ====================================================
-        $specialMarches = [
-            // 'publier_appel_offre', 'depouiller_offre',
-            // 'attribuer_marche', 'resoudre_marche',
-        ];
-
-        // ====================================================
-        // 7. PERMISSIONS D'ACCÈS AUX MODULES
-        // ====================================================
-        $moduleAccess = [
+            // Accès modules
             'access_module_portal',
             'access_module_budget',
             'access_module_comptable',
             'access_module_marches',
         ];
 
-        $this->command->info('📝 Création permissions spéciales & accès modules...');
-        foreach (array_merge($specialBudget, $specialComptable, $specialMarches, $moduleAccess) as $perm) {
+        $this->command->info('📝 Création permissions spéciales...');
+        foreach ($special as $perm) {
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
         // ====================================================
-        // 8. RÔLES ET ATTRIBUTIONS
+        // 4. RÔLES ET ATTRIBUTIONS
         // ====================================================
         $this->command->info('🔐 Attribution permissions aux rôles...');
 
-        // ── SUPER ADMIN — tout ───────────────────────────────
+        // ── SUPER ADMIN — absolument tout ────────────────────
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $superAdmin->syncPermissions(Permission::all());
+        $this->command->line("  ✓ super_admin — " . Permission::count() . " permissions (tout)");
 
-        // ── ADMIN — tout ─────────────────────────────────────
+        // ── ADMIN — tout sauf rôles/permissions ──────────────
+        // ✅ Admin peut gérer les utilisateurs mais PAS les rôles/permissions
+        $exclureAdmin = [
+            // Gestion des rôles — réservée super_admin
+            'view_role',
+            'view_any_role',
+            'create_role',
+            'update_role',
+            'delete_role',
+            // Gestion des permissions — réservée super_admin
+            'view_permission',
+            'view_any_permission',
+            'create_permission',
+            'update_permission',
+            'delete_permission',
+            // Suppression utilisateurs — réservée super_admin
+            'delete_user',
+        ];
+
+        $permissionsAdmin = Permission::whereNotIn('name', $exclureAdmin)
+            ->pluck('name')->toArray();
+
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-        $admin->syncPermissions(Permission::all());
+        $admin->syncPermissions($permissionsAdmin);
+        $this->command->line("  ✓ admin — " . count($permissionsAdmin) . " permissions (sans rôles/permissions)");
 
         // ── OPÉRATEUR BUDGET ─────────────────────────────────
         $this->syncRolePermissions('operateur_budget', [
             'access_module_portal',
             'access_module_budget',
-            // Budget
             'view_budget',
             'view_any_budget',
             'view_prevision_recette',
             'view_any_prevision_recette',
-            // Engagements
             'create_engagement',
             'view_engagement',
             'view_any_engagement',
-            // Bon de commande
             'create_bon_commande',
             'view_bon_commande',
             'view_any_bon_commande',
             'update_bon_commande',
-            // Ordonnance
             'view_ordonnance_paiement',
             'view_any_ordonnance_paiement',
             'telecharger_ordonnance_paiement',
-            // Bordereau
             'view_bordereau_engagement',
             'view_any_bordereau_engagement',
             'create_bordereau_engagement',
@@ -264,22 +250,17 @@ class RolePermissionSeeder extends Seeder
             'gerer_engagements_bordereau',
             'transmettre_bordereau_engagement',
             'telecharger_bordereau_engagement',
-            // Mémoire dépense
             'view_memoire_depense',
             'view_any_memoire_depense',
             'create_memoire_depense',
             'update_memoire_depense',
-            // Personnel
             'view_personnel',
             'view_any_personnel',
-            // Type décision
             'view_any_type_decision',
             'view_type_decision',
-            // Workflow
             'transmettre_document',
             'view_my_transmissions',
             'view_transmission',
-            // Dossiers
             'view_dossier_fournisseur',
             'view_any_dossier_fournisseur',
             'create_dossier_fournisseur',
@@ -346,7 +327,6 @@ class RolePermissionSeeder extends Seeder
             'access_module_portal',
             'access_module_budget',
             'access_module_comptable',
-            // Budget complet
             'view_any_recette_reelle',
             'view_recette_reelle',
             'create_recette_reelle',
@@ -403,7 +383,6 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'telecharger_piece_dossier',
             'view_all_dossiers',
-            // Comptabilité matières — lecture + validation
             'view_any_article',
             'view_article',
             'view_any_expression_besoin',
@@ -501,8 +480,9 @@ class RolePermissionSeeder extends Seeder
             'view_type_decision',
             'view_any_personnel',
             'view_personnel',
-            'view_any_role',
-            'view_role',
+            // ✅ DG voit les utilisateurs mais PAS les rôles/permissions
+            'view_any_user',
+            'view_user',
             'transmettre_document',
             'retourner_document',
             'cloturer_transmission',
@@ -544,7 +524,6 @@ class RolePermissionSeeder extends Seeder
             'ajouter_piece_dossier',
             'telecharger_piece_dossier',
             'view_my_dossiers',
-            // Comptabilité matières — lecture complète
             'view_any_article',
             'view_article',
             'view_any_stock',
@@ -573,60 +552,50 @@ class RolePermissionSeeder extends Seeder
         $this->syncRolePermissions('comptable_matieres', [
             'access_module_portal',
             'access_module_comptable',
-            // Articles
             'view_any_article',
             'view_article',
             'create_article',
             'update_article',
-            // Stock
             'view_any_stock',
             'view_stock',
             'ajuster_stock',
             'inventorier_stock',
             'view_any_fiche_stock',
             'view_fiche_stock',
-            // Expressions de besoins
             'view_any_expression_besoin',
             'view_expression_besoin',
             'create_expression_besoin',
             'update_expression_besoin',
             'valider_expression_besoin',
-            // Réceptions
             'view_any_reception',
             'view_reception',
             'create_reception',
             'update_reception',
             'signer_pv_reception',
             'integrer_reception_stock',
-            // Ordres d'entrée
             'view_any_ordre_entree',
             'view_ordre_entree',
             'update_ordre_entree',
             'signer_ordre_entree',
             'transmettre_ordre_entree',
-            // BSF
             'view_any_bon_sortie_fourniture',
             'view_bon_sortie_fourniture',
-            // BSP
             'view_any_bon_sortie_provisoire',
             'view_bon_sortie_provisoire',
             'create_bon_sortie_provisoire',
             'update_bon_sortie_provisoire',
             'signer_bsp_comptable',
             'executer_bon_sortie_provisoire',
-            // OS
             'view_any_ordre_sortie',
             'view_ordre_sortie',
             'create_ordre_sortie',
             'update_ordre_sortie',
             'signer_ordre_sortie',
-            // Fiches détenteurs
             'view_any_fiche_detenteur',
             'view_fiche_detenteur',
             'create_fiche_detenteur',
             'update_fiche_detenteur',
             'retourner_fiche_detenteur',
-            // Registres
             'view_any_registre_consommation',
             'view_registre_consommation',
         ]);
@@ -678,12 +647,10 @@ class RolePermissionSeeder extends Seeder
             'view_registre_consommation',
         ]);
 
-        // ── CHEF SERVICE MARCHÉS ─────────────────────────────────
+        // ── CHEF SERVICE MARCHÉS ─────────────────────────────
         $this->syncRolePermissions('chef_service_marches', [
             'access_module_portal',
             'access_module_marches',
-
-            // Fournisseurs — lecture + gestion dossiers
             'view_any_fournisseur',
             'view_fournisseur',
             'view_any_dossier_fournisseur',
@@ -694,61 +661,55 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'telecharger_piece_dossier',
             'view_all_dossiers',
-
-            // Budget — lecture des engagements et BC
             'view_any_bon_commande',
             'view_bon_commande',
             'view_any_engagement',
             'view_engagement',
             'view_any_ordonnance_paiement',
             'view_ordonnance_paiement',
-
-            // Personnel
             'view_personnel',
             'view_any_personnel',
-
-            // Workflow
             'transmettre_document',
             'retourner_document',
             'cloturer_transmission',
             'view_my_transmissions',
-
-            // Marchés publics (à activer quand le module sera créé)
-            // 'view_any_appel_offre', 'view_appel_offre', 'create_appel_offre',
-            // 'update_appel_offre', 'publier_appel_offre', 'depouiller_offre',
-            // 'view_any_marche', 'view_marche', 'create_marche', 'update_marche',
-            // 'attribuer_marche', 'view_any_avenant', 'create_avenant',
-            // 'view_any_caution', 'view_caution', 'create_caution',
         ]);
-
-        // ── Accès modules — consolidation ────────────────────
-        $accessMap = [
-            'access_module_portal' => ['super_admin', 'admin', 'operateur_budget', 'chef_service_budget', 'daaf', 'controleur_financier', 'directeur_general', 'agence_comptable', 'comptable_matieres', 'ordonnateur_matieres', 'service_utilisateur'],
-            'access_module_budget' => ['super_admin', 'admin', 'operateur_budget', 'chef_service_budget', 'daaf', 'controleur_financier', 'directeur_general', 'agence_comptable'],
-            'access_module_comptable' => ['super_admin', 'admin', 'daaf', 'agence_comptable', 'comptable_matieres', 'ordonnateur_matieres', 'service_utilisateur'],
-            'access_module_marches' => ['super_admin', 'admin', 'daaf', 'controleur_financier', 'chef_service_marches'],
-        ];
-
-        foreach ($accessMap as $permission => $roles) {
-            foreach ($roles as $roleName) {
-                $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
-                if (!$role->hasPermissionTo($permission)) {
-                    $role->givePermissionTo($permission);
-                }
-            }
-        }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->command->info('');
-        $this->command->info('✅ Rôles et permissions mis à jour !');
+        $this->command->newLine();
+        $this->command->info('✅ Rôles et permissions mis à jour avec succès !');
         $this->command->info('📊 Total permissions : ' . Permission::count());
         $this->command->info('👥 Total rôles : ' . Role::count());
+        $this->command->newLine();
+        $this->command->warn('⚠️  Note importante pour la production :');
+        $this->command->line('   • firstOrCreate — aucun rôle/permission supprimé');
+        $this->command->line('   • syncPermissions — permissions des rôles mises à jour');
+        $this->command->line('   • Permissions custom ajoutées manuellement → à remettre après');
+        $this->command->line('   • Admin : accès utilisateurs ✅ | rôles/permissions ❌');
     }
 
+    /**
+     * Sync les permissions d'un rôle de façon sécurisée.
+     * - firstOrCreate : ne recrée pas un rôle existant
+     * - Filtre les permissions inexistantes avec un warning
+     * - syncPermissions : remplace la liste du rôle
+     */
     protected function syncRolePermissions(string $roleName, array $permissions): void
     {
         $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
-        $role->syncPermissions($permissions);
+
+        // ✅ Filtrer les permissions qui n'existent pas encore en base
+        $existantes = Permission::whereIn('name', $permissions)->pluck('name')->toArray();
+        $manquantes = array_diff($permissions, $existantes);
+
+        if (!empty($manquantes)) {
+            $this->command->warn(
+                "  ⚠️  [{$roleName}] permissions introuvables : " . implode(', ', $manquantes)
+            );
+        }
+
+        $role->syncPermissions($existantes);
+        $this->command->line("  ✓ {$roleName} — " . count($existantes) . " permissions");
     }
 }
