@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Services\NombreEnLettres;
+use App\Helpers\NombreEnLettres;
 use App\Traits\GereTransmissions;
 
 class MemoireDepense extends Model
