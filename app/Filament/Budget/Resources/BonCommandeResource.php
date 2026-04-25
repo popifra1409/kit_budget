@@ -1104,7 +1104,7 @@ class BonCommandeResource extends Resource
                 });
         });
     }
-    
+
     public static function table(Table $table): Table
     {
         return $table
@@ -1114,173 +1114,131 @@ class BonCommandeResource extends Resource
             ->columns([
 
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N° BC')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold')
-                    ->copyable(),
+                    ->label('N° BC')->searchable()->sortable()->weight('bold')->copyable(),
 
                 Tables\Columns\TextColumn::make('fournisseur.raison_sociale')
-                    ->label('Fournisseur')
-                    ->searchable()
-                    ->limit(30)
-                    ->wrap(),
+                    ->label('Fournisseur')->searchable()->limit(30)->wrap(),
 
                 Tables\Columns\TextColumn::make('serviceDemandeur.nom')
-                    ->label('Service')
-                    ->searchable(),
-                // ->toggleable(),
+                    ->label('Service')->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('date_emission')
-                    ->label('Date')
-                    ->date('d/m/Y')
-                    ->sortable(),
+                    ->label('Date')->date('d/m/Y')->sortable()
+                    ->toggleable(),
 
-                Tables\Columns\TextColumn::make('montant_ttc')
-                    ->label('Montant TTC')
-                    ->money('XAF')
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('success'),
+                Tables\Columns\TextColumn::make('montant_ht')
+                    ->label('Montant HT')->money('XAF')->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('montant_tva')
+                    ->label('TVA')->money('XAF')->sortable()->color('warning')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('montant_ir')
-                    ->label('IR')
-                    ->money('XAF')
-                    ->sortable()
-                    ->color('warning'),
-                // ->toggleable(),
+                    ->label('IR')->money('XAF')->sortable()->color('warning')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('   ')
-                    ->label('Net à Percevoir')
-                    ->money('XAF')
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('primary')
-                    ->description(fn($record) => "HT: " . number_format($record->montant_ht, 0, ',', ' ') . " - IR: " . number_format($record->montant_ir, 0, ',', ' ')),
-                // ->toggleable(),
+                Tables\Columns\TextColumn::make('montant_ttc')
+                    ->label('Montant TTC')->money('XAF')->sortable()->weight('bold')->color('success')
+                    ->toggleable(),
+
+                // ✅ Correction — champ réel net_a_percevoir
+                Tables\Columns\TextColumn::make('net_a_percevoir')
+                    ->label('Net à Percevoir')->money('XAF')->sortable()->weight('bold')->color('primary')
+                    ->description(
+                        fn($record) =>
+                        "HT: " . number_format($record->montant_ht, 0, ',', ' ') .
+                            " | IR: " . number_format($record->montant_ir, 0, ',', ' ')
+                    )
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('montant_total_impots')
+                    ->label('Total Impôts')
+                    ->getStateUsing(fn($record) => $record->calculerMontantTotalImpots())
+                    ->money('XAF')->sortable()->color('warning')
+                    ->description(function ($record) {
+                        $details = [];
+                        if ($record->montant_tva > 0) $details[] = "TVA: " . number_format($record->montant_tva, 0, ',', ' ');
+                        if ($record->montant_ir  > 0) $details[] = "IR: "  . number_format($record->montant_ir,  0, ',', ' ');
+                        if ($record->montant_tsr > 0) $details[] = "TSR: " . number_format($record->montant_tsr, 0, ',', ' ');
+                        if ($record->montant_cnps > 0) $details[] = "CNPS: " . number_format($record->montant_cnps, 0, ',', ' ');
+                        return implode(' | ', $details);
+                    })
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
                     ->colors([
                         'secondary' => 'brouillon',
-                        'warning' => 'valide',
-                        'primary' => 'engage',
-                        'info' => 'en_cours',
-                        'success' => fn($state) => in_array($state, ['livre_partiellement', 'livre']),
-                        'danger' => 'annule',
+                        'warning'   => 'valide',
+                        'primary'   => 'engage',
+                        'info'      => 'en_cours',
+                        'success'   => fn($state) => in_array($state, ['livre_partiellement', 'livre']),
+                        'danger'    => 'annule',
                     ])
                     ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'brouillon' => 'Brouillon',
-                        'valide' => 'Validé',
-                        'engage' => 'Engagé',
-                        'en_cours' => 'En cours',
+                        'brouillon'          => 'Brouillon',
+                        'valide'             => 'Validé',
+                        'engage'             => 'Engagé',
+                        'en_cours'           => 'En cours',
                         'livre_partiellement' => 'Livré part.',
-                        'livre' => 'Livré',
-                        'annule' => 'Annulé',
-                        default => $state,
+                        'livre'              => 'Livré',
+                        'annule'             => 'Annulé',
+                        default              => $state,
                     }),
 
                 Tables\Columns\IconColumn::make('engage')
-                    ->label('Engagé')
-                    ->boolean()
-                    ->trueColor('success')
-                    ->falseColor('gray'),
+                    ->label('Engagé')->boolean()->trueColor('success')->falseColor('gray')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('typeEngagement.libelle')
-                    ->label('Type')
-                    ->badge()
+                    ->label('Type')->badge()
                     ->color(fn($record) => match ($record->typeEngagement?->code) {
                         'BC' => 'success',
                         'LC' => 'warning',
-                        'MARCHE' => 'primary',
-                        'DECOMPTE_LC', 'DECOMPTE_MARCHE' => 'info',
+                        'MA' => 'primary',
+                        'DL', 'DM' => 'info',
                         default => 'gray',
                     })
-                    ->searchable(),
-                // ->toggleable(),
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('reference')
-                    ->label('Référence')
-                    ->searchable()
-                    // ->toggleable()
-                    ->placeholder('-'),
+                    ->label('Référence')->searchable()->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('engagement.reference_document')
-                    ->label('N° Engagement')
-                    ->searchable()
-                    ->badge()
-                    ->color('success')
-                    ->icon('heroicon-o-banknotes')
-                    ->placeholder('-')
+                    ->label('N° Engagement')->searchable()->badge()->color('success')
+                    ->icon('heroicon-o-banknotes')->placeholder('-')
                     ->visible(fn($record) => $record && $record->engage && $record->engagement)
                     ->description(
                         fn($record) =>
-                        $record && $record->engagement && $record->date_engagement
+                        $record?->engagement && $record->date_engagement
                             ? 'Engagé le ' . $record->date_engagement->format('d/m/Y')
                             : null
-                    ),
-
-                // Modifier la colonne montant_ir pour montant_total_impots
-                Tables\Columns\TextColumn::make('montant_total_impots')
-                    ->label('Total Impôts')
-                    ->getStateUsing(fn($record) => $record->calculerMontantTotalImpots())
-                    ->money('XAF')
-                    ->sortable()
-                    ->color('warning')
-                    ->description(function ($record) {
-                        $details = [];
-                        if ($record->montant_tva > 0)
-                            $details[] = "TVA: " . number_format($record->montant_tva, 0, ',', ' ');
-                        if ($record->montant_ir > 0)
-                            $details[] = "IR: " . number_format($record->montant_ir, 0, ',', ' ');
-                        if ($record->montant_tsr > 0)
-                            $details[] = "TSR: " . number_format($record->montant_tsr, 0, ',', ' ');
-                        if ($record->montant_cnps > 0)
-                            $details[] = "CNPS: " . number_format($record->montant_cnps, 0, ',', ' ');
-
-                        return implode(' | ', $details);
-                    }),
-                // ->toggleable(),
+                    )
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('transmission_status')
                     ->label('Transmission')
                     ->getStateUsing(function ($record) {
                         $transmission = $record->transmissions()
-                            ->where('statut', 'en_attente')
-                            ->latest()
-                            ->first();
-
-                        if (!$transmission) {
-                            return null;
-                        }
-
-                        // Si je suis le destinataire
-                        if ($transmission->destinataire_id === auth()->id()) {
-                            return 'À traiter';
-                        }
-
-                        // Si je suis l'expéditeur
-                        if ($transmission->expediteur_id === auth()->id()) {
+                            ->where('statut', 'en_attente')->latest()->first();
+                        if (!$transmission) return null;
+                        if ($transmission->destinataire_id === auth()->id()) return 'À traiter';
+                        if ($transmission->expediteur_id === auth()->id())
                             return 'En attente chez ' . $transmission->destinataire->name;
-                        }
-
-                        // Sinon affichage générique
                         return 'Transmis à ' . $transmission->destinataire->name;
                     })
                     ->badge()
                     ->color(fn($state) => match (true) {
-                        $state === 'À traiter' => 'warning',
+                        $state === 'À traiter'                       => 'warning',
                         str_starts_with($state ?? '', 'En attente') => 'info',
-                        default => 'gray'
+                        default                                      => 'gray',
                     })
-                    ->icon(fn($state) => match (true) {
-                        $state === 'À traiter' => 'heroicon-o-bell-alert',
-                        str_starts_with($state ?? '', 'En attente') => 'heroicon-o-clock',
-                        default => 'heroicon-o-paper-airplane'
-                    })
-                    ->placeholder('-'),
-                // ->toggleable(),
-
+                    ->placeholder('-')
+                    ->toggleable(),
             ])
             ->filters([
 

@@ -282,7 +282,8 @@ class EngagementResource extends Resource
             ->persistSortInSession()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N° Engagement')->searchable()->sortable()->weight('bold')->copyable(),
+                    ->label('N° Engagement')->searchable()->sortable()->weight('bold')->copyable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('engageable_type')
                     ->label('Source')->sortable()
@@ -296,7 +297,8 @@ class EngagementResource extends Resource
                         'App\Models\BonCommande'            => 'info',
                         'App\Models\DecisionAdministrative' => 'warning',
                         default                             => 'gray',
-                    }),
+                    })
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('document_source')
                     ->label('N° Document')
@@ -306,10 +308,12 @@ class EngagementResource extends Resource
                     )
                     ->searchable(['reference_document'])
                     ->copyable()->placeholder('Manuel')
-                    ->badge()->color('gray'),
+                    ->badge()->color('gray')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('nomenclaturePrincipale.code')
-                    ->label('Nomenclature')->searchable()->badge()->color('warning'),
+                    ->label('Nomenclature')->searchable()->badge()->color('warning')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('beneficiaire')
                     ->label('Bénéficiaire')
@@ -323,10 +327,11 @@ class EngagementResource extends Resource
                                     ->orWhere('prenoms', 'like', "%{$search}%"));
                         });
                     })
+                    ->toggleable()
                     ->limit(30),
 
                 Tables\Columns\TextColumn::make('date_engagement')
-                    ->label('Date')->date('d/m/Y')->sortable(),
+                    ->label('Date')->date('d/m/Y')->sortable()->toggleable(),
 
                 Tables\Columns\TextColumn::make('montant_engage')
                     ->label('Montant')->money('XAF')->sortable()->weight('bold')->color('success'),
@@ -343,7 +348,7 @@ class EngagementResource extends Resource
                         'definitif'  => 'Définitif',
                         'annule'     => 'Annulé',
                         default      => $state,
-                    }),
+                    })->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('engageable_type')
