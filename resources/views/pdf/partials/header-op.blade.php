@@ -62,13 +62,6 @@
                 </p>
 
                 <p style="margin: 0 0 5px 0;">
-                    <strong>N° de bon de caisse:</strong>
-                    {{-- {{ $ordonnance->numero_bon ?? ($bonCommande->numero ?? '-') }} --}}
-                    {{ $engagement->numero }}
-                    <br><i>N° of the cash voucher</i>
-                </p>
-
-                <p style="margin: 0 0 5px 0;">
                     <strong>N° Emission:</strong>
                     {{ $ordonnance->numero_emission ?? ($engagement->numero ?? '-') }}
                     <br><i>N° of emission</i>
