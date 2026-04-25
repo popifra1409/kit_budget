@@ -389,6 +389,62 @@ class EngagementResource extends Resource
                             ->when($data['du'], fn($q, $v) => $q->whereDate('date_engagement', '>=', $v))
                             ->when($data['au'], fn($q, $v) => $q->whereDate('date_engagement', '<=', $v))
                     ),
+                // ✅ Filtre par période — Aujourd'hui par défaut
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période')
+                            ->options([
+                                'today'        => "Aujourd'hui",
+                                'yesterday'    => 'Hier',
+                                'this_week'    => 'Cette semaine',
+                                'last_week'    => 'Semaine dernière',
+                                'this_month'   => 'Ce mois',
+                                'last_month'   => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year'    => 'Cette année',
+                                'last_year'    => 'Année dernière',
+                            ])
+                            ->default('today')
+                            ->placeholder('Toutes les périodes'),
+                    ])
+                    ->default(['periode' => 'today'])
+                    ->query(function ($query, array $data) {
+                        return $query->when(
+                            $data['periode'] ?? null,
+                            fn($q, $periode) =>
+                            match ($periode) {
+                                'today'        => $q->whereDate('date_engagement', today()),
+                                'yesterday'    => $q->whereDate('date_engagement', today()->subDay()),
+                                'this_week'    => $q->whereBetween('date_engagement', [now()->startOfWeek(), now()->endOfWeek()]),
+                                'last_week'    => $q->whereBetween('date_engagement', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
+                                'this_month'   => $q->whereMonth('date_engagement', now()->month)->whereYear('date_engagement', now()->year),
+                                'last_month'   => $q->whereMonth('date_engagement', now()->subMonth()->month)->whereYear('date_engagement', now()->subMonth()->year),
+                                'this_quarter' => $q->whereBetween('date_engagement', [now()->startOfQuarter(), now()->endOfQuarter()]),
+                                'last_quarter' => $q->whereBetween('date_engagement', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
+                                'this_year'    => $q->whereYear('date_engagement', now()->year),
+                                'last_year'    => $q->whereYear('date_engagement', now()->subYear()->year),
+                                default        => $q,
+                            }
+                        );
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) return null;
+                        $labels = [
+                            'today'        => "Aujourd'hui",
+                            'yesterday'    => 'Hier',
+                            'this_week'    => 'Cette semaine',
+                            'last_week'    => 'Semaine dernière',
+                            'this_month'   => 'Ce mois',
+                            'last_month'   => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year'    => 'Cette année',
+                            'last_year'    => 'Année dernière',
+                        ];
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
             ])
             ->actions([
 
