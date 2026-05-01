@@ -123,26 +123,26 @@ class DecisionAdministrative extends Model
             }
         });
 
-        // ✅ Respecter le mode_saisie forfait
-        static::saving(function ($decision) {
-            // ✅ Lire depuis attributs ET depuis l'original (DB)
-            $mode = $decision->attributes['mode_saisie']
-                ?? $decision->getOriginal('mode_saisie')
-                ?? 'calcule';
+        // // ✅ Respecter le mode_saisie forfait
+        // static::saving(function ($decision) {
+        //     // ✅ Lire depuis attributs ET depuis l'original (DB)
+        //     $mode = $decision->attributes['mode_saisie']
+        //         ?? $decision->getOriginal('mode_saisie')
+        //         ?? 'calcule';
 
-            \Log::info('SAVING DA', [
-                'numero'     => $decision->numero ?? 'nouveau',
-                'mode_saisie' => $mode,
-                'dirty'       => array_keys($decision->getDirty()),
-            ]);
+        //     \Log::info('SAVING DA', [
+        //         'numero'     => $decision->numero ?? 'nouveau',
+        //         'mode_saisie' => $mode,
+        //         'dirty'       => array_keys($decision->getDirty()),
+        //     ]);
 
-            if ($mode === 'forfait') {
-                \Log::info('FORFAIT — calculerMontants() ignoré');
-                return;
-            }
+        //     if ($mode === 'forfait') {
+        //         \Log::info('FORFAIT — calculerMontants() ignoré');
+        //         return;
+        //     }
 
-            $decision->calculerMontants();
-        });
+        //     $decision->calculerMontants();
+        // });
 
         static::updating(function ($decision) {
             $decision->updated_by = auth()->id();

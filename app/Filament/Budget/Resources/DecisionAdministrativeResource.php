@@ -580,6 +580,7 @@ class DecisionAdministrativeResource extends Resource
                             ->default('calcule')
                             ->inline()
                             ->live()
+                            ->dehydrated(true)
                             ->columnSpanFull()
                             ->helperText(
                                 fn(Get $get) =>
@@ -731,7 +732,7 @@ class DecisionAdministrativeResource extends Resource
                                 ->columnSpanFull(),
 
                         ])
-                            ->visible(fn(Get $get) => ($get('mode_saisie') ?? 'calcule') === 'calcule'),
+                            ->hidden(fn(Get $get) => ($get('mode_saisie') ?? 'calcule') === 'forfait'),
 
                         // ==========================================================
                         // MODE FORFAITAIRE (saisie libre — aucune formule)
@@ -754,7 +755,7 @@ class DecisionAdministrativeResource extends Resource
                                     ->helperText('Montant total TTC'),
 
                                 Forms\Components\TextInput::make('montant_ht')
-                                    ->label('Montant HT')->numeric()->required()->prefix('FCFA')
+                                    ->label('Montant HT')->numeric()->prefix('FCFA')
                                     ->helperText('Montant hors taxes'),
 
                                 Forms\Components\TextInput::make('montant_tva')
@@ -763,24 +764,24 @@ class DecisionAdministrativeResource extends Resource
 
                             Forms\Components\Grid::make(3)->schema([
                                 Forms\Components\TextInput::make('montant_cnps')
-                                    ->label('Montant CNPS')->numeric()->default(0)->prefix('FCFA'),
+                                    ->label('Montant CNPS')->numeric()->default(0)->prefix('FCFA')->dehydrated(true),
 
                                 Forms\Components\TextInput::make('montant_irnc')
-                                    ->label('Montant IR(NC)')->numeric()->default(0)->prefix('FCFA'),
+                                    ->label('Montant IR(NC)')->numeric()->default(0)->prefix('FCFA')->dehydrated(true),
 
                                 Forms\Components\TextInput::make('montant_redevance_audiovisuelle')
-                                    ->label('Redevance audiovisuelle')->numeric()->default(0)->prefix('FCFA'),
+                                    ->label('Redevance audiovisuelle')->numeric()->default(0)->prefix('FCFA')->dehydrated(true),
                             ])->columnSpanFull(),
 
                             Forms\Components\Grid::make(3)->schema([
                                 Forms\Components\TextInput::make('montant_feicom')
-                                    ->label('Montant FEICOM')->numeric()->default(0)->prefix('FCFA'),
+                                    ->label('Montant FEICOM')->numeric()->default(0)->prefix('FCFA')->dehydrated(true),
 
                                 Forms\Components\TextInput::make('autres_retenues')
-                                    ->label('Autres retenues')->numeric()->default(0)->prefix('FCFA'),
+                                    ->label('Autres retenues')->numeric()->default(0)->prefix('FCFA')->dehydrated(true),
 
                                 Forms\Components\TextInput::make('montant_net')
-                                    ->label('Net à payer')->numeric()->required()->prefix('FCFA')
+                                    ->label('Net à payer')->numeric()->required()->prefix('FCFA')->dehydrated(true)
                                     ->helperText('Montant net que vous avez calculé'),
                             ])->columnSpanFull(),
 
@@ -788,42 +789,53 @@ class DecisionAdministrativeResource extends Resource
                             Forms\Components\Placeholder::make('_resume_forfait')
                                 ->label('📊 Vérification des montants saisis')
                                 ->content(function (Get $get) {
-                                    $brut = (float) ($get('montant_brut') ?? 0);
-                                    $ht = (float) ($get('montant_ht') ?? 0);
-                                    $tva = (float) ($get('montant_tva') ?? 0);
-                                    $cnps = (float) ($get('montant_cnps') ?? 0);
-                                    $irnc = (float) ($get('montant_irnc') ?? 0);
-                                    $red = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
-                                    $feicom = (float) ($get('montant_feicom') ?? 0);
-                                    $autres = (float) ($get('autres_retenues') ?? 0);
-                                    $net = (float) ($get('montant_net') ?? 0);
+                                    $brut   = (float) ($get('montant_brut') ?? 0);
+                                    $ht     = (float) ($get('montant_ht')   ?? 0);
+                                    $tva    = (float) ($get('montant_tva')  ?? 0);
+                                    $cnps   = (float) ($get('montant_cnps') ?? 0);
+                                    // ✅ IRNC = IR Non Commercial — même taxe que l'IR du Mémoire de Dépense
+                                    $irnc   = (float) ($get('montant_irnc') ?? 0);
+                                    // ✅ Clé DB correcte : montant_redevance_audiovisuelle (pas _calcule)
+                                    $red    = (float) ($get('montant_redevance_audiovisuelle') ?? 0);
+                                    // ✅ Clé DB correcte : montant_feicom (pas _calcule)
+                                    $feicom = (float) ($get('montant_feicom')    ?? 0);
+                                    $autres = (float) ($get('autres_retenues')   ?? 0);
+                                    $net    = (float) ($get('montant_net')       ?? 0);
+
                                     $totalRet = $cnps + $irnc + $red + $feicom + $autres;
+
+                                    // ✅ Net calculé = HT - retenues (SANS TVA — TVA déjà déduite du brut)
                                     $netCalc = $ht - $totalRet;
-                                    $ecart = $net - $netCalc;
-                                    $ok = abs($ecart) < 1;
+                                    $ecart   = $net - $netCalc;
+                                    $ok      = abs($ecart) < 1;
 
                                     return collect([
-                                        "MONTANT BRUT (TTC) : " . number_format($brut, 0, ',', ' ') . " FCFA",
-                                        "Montant HT         : " . number_format($ht, 0, ',', ' ') . " FCFA",
-                                        "TVA forfait        : " . number_format($tva, 0, ',', ' ') . " FCFA",
+                                        "MONTANT BRUT (TTC)  : " . number_format($brut,     0, ',', ' ') . " FCFA",
+                                        "Montant HT          : " . number_format($ht,       0, ',', ' ') . " FCFA",
+                                        "TVA (forfait)       : " . number_format($tva,      0, ',', ' ') . " FCFA",
                                         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                        "CNPS               : " . number_format($cnps, 0, ',', ' ') . " FCFA",
-                                        "IR(NC)             : " . number_format($irnc, 0, ',', ' ') . " FCFA",
-                                        "Redevance          : " . number_format($red, 0, ',', ' ') . " FCFA",
-                                        "FEICOM             : " . number_format($feicom, 0, ',', ' ') . " FCFA",
-                                        "Autres             : " . number_format($autres, 0, ',', ' ') . " FCFA",
-                                        "Total retenues     : " . number_format($totalRet, 0, ',', ' ') . " FCFA",
+                                        "💸 RETENUES (sur HT) :",
+                                        "   CNPS             : " . number_format($cnps,     0, ',', ' ') . " FCFA",
+                                        // ✅ Libellé unifié : IR (Non Commercial) au lieu de IRNC
+                                        "   IR (Non Comm.)   : " . number_format($irnc,     0, ',', ' ') . " FCFA",
+                                        "   Redevance AV     : " . number_format($red,      0, ',', ' ') . " FCFA",
+                                        "   FEICOM           : " . number_format($feicom,   0, ',', ' ') . " FCFA",
+                                        "   Autres retenues  : " . number_format($autres,   0, ',', ' ') . " FCFA",
+                                        "   TOTAL retenues   : " . number_format($totalRet, 0, ',', ' ') . " FCFA",
                                         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                        "Net calculé (HT-Ret): " . number_format($netCalc, 0, ',', ' ') . " FCFA",
-                                        "Net saisi          : " . number_format($net, 0, ',', ' ') . " FCFA",
+                                        // ✅ Net calculé depuis HT - retenues pour vérification
+                                        "Net calculé (HT-Ret): " . number_format($netCalc,  0, ',', ' ') . " FCFA",
+                                        "Net saisi           : " . number_format($net,       0, ',', ' ') . " FCFA",
                                         $ok
-                                            ? "✅ Cohérence OK"
-                                            : "⚠️ Écart de " . number_format(abs($ecart), 0, ',', ' ') . " FCFA — vérifiez vos montants",
+                                            ? "✅ Cohérence OK — les montants sont cohérents"
+                                            : "⚠️ Écart de " . number_format(abs($ecart), 0, ',', ' ')
+                                            . " FCFA — vérifiez vos montants",
                                     ])->implode("\n");
-                                })->columnSpanFull(),
+                                })
+                                ->columnSpanFull(),
 
                         ])
-                            ->visible(fn(Get $get) => ($get('mode_saisie') ?? 'calcule') === 'forfait'),
+                            ->hidden(fn(Get $get) => ($get('mode_saisie') ?? 'calcule') === 'calcule'),
 
                     ])
                     ->columns(2),
