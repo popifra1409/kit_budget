@@ -172,7 +172,7 @@ class MemoireDepenseResource extends Resource
 
                                 // Nature
                                 Forms\Components\TextInput::make('nature_depense')
-                                    ->label('Nature de la dépense')->required()->columnSpan(3),
+                                    ->label('Nature de la dépense (Désignation)')->required()->columnSpan(3),
 
                                 // Quantité
                                 Forms\Components\TextInput::make('quantite')

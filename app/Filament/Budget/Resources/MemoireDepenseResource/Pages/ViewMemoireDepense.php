@@ -293,9 +293,13 @@ class ViewMemoireDepense extends ViewRecord
                         $montantTtc = (float) $this->record->montant_ttc;
                         $montantHt  = (float) $this->record->montant_ht;
                         $montantTva = (float) $this->record->montant_tva;
-                        $montantIr  = (float) $this->record->montant_ir;   // IR du mémoire
+                        $montantIr  = (float) $this->record->montant_ir;
                         $montantNet = (float) $this->record->montant_net;
-                        $totalTaxes = $montantTva + $montantIr;            // TVA + IR
+                        $totalTaxes = $montantTva + $montantIr;
+
+                        $premiereLigne = $this->record->lignes->first();
+                        $tauxIr  = (float) ($premiereLigne?->taux_ir  ?? 5.5);
+                        $tauxTva = (float) ($premiereLigne?->taux_tva ?? 19.25);
 
                         $numeroDA = DecisionAdministrative::genererNumero($exercice->id);
 
@@ -309,7 +313,9 @@ class ViewMemoireDepense extends ViewRecord
                             $montantTva,
                             $montantIr,
                             $montantNet,
-                            $totalTaxes
+                            $totalTaxes,
+                            $tauxIr,  
+                            $tauxTva
                         ) {
                             return DecisionAdministrative::create([
                                 'numero'            => $numeroDA,
@@ -341,8 +347,8 @@ class ViewMemoireDepense extends ViewRecord
 
                                 // Taux neutralisés
                                 'taux_cnps'         => 0,
-                                'taux_irnc'         => 0,
-                                'taux_tva'          => 0,
+                                'taux_irnc'         => $tauxIr,
+                                'taux_tva'          => $tauxTva,
                                 'type_tva'                        => 'forfait',
                                 'type_redevance_audiovisuelle'    => 'forfait',
                                 'montant_redevance_audiovisuelle' => 0,

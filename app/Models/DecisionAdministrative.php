@@ -125,13 +125,18 @@ class DecisionAdministrative extends Model
 
         // ✅ Respecter le mode_saisie forfait
         static::saving(function ($decision) {
+            // ✅ Lire depuis attributs ET depuis l'original (DB)
+            $mode = $decision->attributes['mode_saisie']
+                ?? $decision->getOriginal('mode_saisie')
+                ?? 'calcule';
+
             \Log::info('SAVING DA', [
-                'mode_saisie_attributes' => $decision->attributes['mode_saisie'] ?? 'NON DÉFINI',
-                'mode_saisie_property'   => $decision->mode_saisie ?? 'NON DÉFINI',
-                'dirty'                  => $decision->getDirty(),
+                'numero'     => $decision->numero ?? 'nouveau',
+                'mode_saisie' => $mode,
+                'dirty'       => array_keys($decision->getDirty()),
             ]);
 
-            if (($decision->attributes['mode_saisie'] ?? 'calcule') === 'forfait') {
+            if ($mode === 'forfait') {
                 \Log::info('FORFAIT — calculerMontants() ignoré');
                 return;
             }
@@ -400,9 +405,15 @@ class DecisionAdministrative extends Model
      */
     public function calculerMontants(): void
     {
-        $mode = $this->attributes['mode_saisie'] ?? $this->getOriginal('mode_saisie') ?? 'calcule';
+        $mode = $this->attributes['mode_saisie']
+            ?? $this->getOriginal('mode_saisie')
+            ?? $this->mode_saisie
+            ?? 'calcule';
 
-        if ($mode === 'forfait') return;
+        if ($mode === 'forfait') {
+            \Log::info('calculerMontants() — ignoré (forfait)', ['da' => $this->numero]);
+            return;
+        }
 
         $brut = (float) ($this->montant_brut ?? 0);
 
@@ -466,10 +477,13 @@ class DecisionAdministrative extends Model
         if (!auth()->check() || !auth()->user()->can('valider_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de valider cette décision.");
         }
-        $this->statut         = 'validee';
-        $this->validee_par    = $user->id;
-        $this->date_validation = now();
-        $this->save();
+
+        // ✅ updateQuietly → bypass saving → calculerMontants() jamais appelé
+        $this->updateQuietly([
+            'statut'           => 'validee',
+            'validee_par'      => $user->id,
+            'date_validation'  => now(),
+        ]);
     }
 
     // ── peutEtreDesengagee ────────────────────────────────────

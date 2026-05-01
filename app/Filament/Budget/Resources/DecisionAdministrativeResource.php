@@ -863,26 +863,6 @@ class DecisionAdministrativeResource extends Resource
             ->persistSearchInSession()
             ->persistSortInSession()
             ->columns([
-                // Tables\Columns\BadgeColumn::make('exercice.annee')
-                //     ->label('Exercice')
-                //     ->sortable()
-                //     ->colors([
-                //         'success' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                //         'warning' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                //         'danger' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                //         'gray' => fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
-                //     ])
-                //     ->tooltip(
-                //         fn($record) =>
-                //         $record->exercice instanceof \App\Models\Exercice
-                //             ? $record->exercice->libelle
-                //             : null
-                //     )
-                //     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° DA')
