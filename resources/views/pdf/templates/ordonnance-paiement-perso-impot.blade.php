@@ -1,98 +1,98 @@
 {{-- resources/views/pdf/templates/ordonnance-paiement-impot-perso.blade.php --}}
 {{-- Portrait A4 — OPT Impôts/Taxes — Calqué sur ordonnance-paiement-perso.blade --}}
 @php
-    $ordonnance = $donnees['_raw'];
-    $params = \App\Models\ParametresStructure::where('actif', true)->first();
+$ordonnance = $donnees['_raw'];
+$params = \App\Models\ParametresStructure::where('actif', true)->first();
 
-    // ── Charger les relations ─────────────────────────────
-    if (!$ordonnance->relationLoaded('engagement')) {
-        $ordonnance->load([
-            'engagement.nomenclaturePrincipale',
-            'engagement.engageable',
-            'engagement.exercice',
-            'exercice',
-            'beneficiaire',
-        ]);
-    }
+// ── Charger les relations ─────────────────────────────
+if (!$ordonnance->relationLoaded('engagement')) {
+$ordonnance->load([
+'engagement.nomenclaturePrincipale',
+'engagement.engageable',
+'engagement.exercice',
+'exercice',
+'beneficiaire',
+]);
+}
 
-    $engagement = $ordonnance->engagement;
-    $engageable = $engagement?->engageable;
-    $documentSource = $engageable;
+$engagement = $ordonnance->engagement;
+$engageable = $engagement?->engageable;
+$documentSource = $engageable;
 
-    // ── Paramètres structure ──────────────────────────────
-    $nomStructure = $params?->nom_complet ?? 'HOPITAL GENERAL DE YAOUNDE';
-    $sigle = $params?->sigle ?? 'HGY';
-    $ville = $params?->ville ?? 'Yaoundé';
-    $bp = $params?->bp ?? 'B.P 5408 YAOUNDE';
-    $tel = $params?->telephone ?? '(237) 222 21 20 18';
-    $fax = $params?->fax ?? '(237) 222 21 20 15';
-    $nomCourtEn = $params?->nom_structure_en ?? '';
-    $sous_direction = $params?->sous_direction ?? 'DAAF';
+// ── Paramètres structure ──────────────────────────────
+$nomStructure = $params?->nom_complet ?? 'HOPITAL GENERAL DE YAOUNDE';
+$sigle = $params?->sigle ?? 'HGY';
+$ville = $params?->ville ?? 'Yaoundé';
+$bp = $params?->bp ?? 'B.P 5408 YAOUNDE';
+$tel = $params?->telephone ?? '(237) 222 21 20 18';
+$fax = $params?->fax ?? '(237) 222 21 20 15';
+$nomCourtEn = $params?->nom_structure_en ?? '';
+$sous_direction = $params?->sous_direction ?? 'DAAF';
 
-    // ── Logo ──────────────────────────────────────────────
-    $logoPath = null;
-    $logoExists = false;
-    if ($params?->logo) {
-        $logoPath = public_path('storage/' . ltrim($params->logo, '/'));
-        $logoExists = file_exists($logoPath);
-    }
+// ── Logo ──────────────────────────────────────────────
+$logoPath = null;
+$logoExists = false;
+if ($params?->logo) {
+$logoPath = public_path('storage/' . ltrim($params->logo, '/'));
+$logoExists = file_exists($logoPath);
+}
 
-    // ── Numéros ───────────────────────────────────────────
-    $numOP = $ordonnance->numero ?? '—';
-    $numEngagement = $engagement?->numero ?? '—';
-    $annee = $ordonnance->exercice?->annee
-        ?? $engagement?->exercice?->annee
-        ?? now()->year;
-    $moisEmission = $ordonnance->date_emission
-        ? $ordonnance->date_emission->format('m/Y')
-        : now()->format('m/Y');
-    $dateEmission = $ordonnance->date_emission
-        ? $ordonnance->date_emission->format('d/m/Y')
-        : now()->format('d/m/Y');
+// ── Numéros ───────────────────────────────────────────
+$numOP = $ordonnance->numero ?? '—';
+$numEngagement = $engagement?->numero ?? '—';
+$annee = $ordonnance->exercice?->annee
+?? $engagement?->exercice?->annee
+?? now()->year;
+$moisEmission = $ordonnance->date_emission
+? $ordonnance->date_emission->format('m/Y')
+: now()->format('m/Y');
+$dateEmission = $ordonnance->date_emission
+? $ordonnance->date_emission->format('d/m/Y')
+: now()->format('d/m/Y');
 
-    $imputation = $engagement?->nomenclaturePrincipale?->code ?? '';
+$imputation = $engagement?->nomenclaturePrincipale?->code ?? '';
 
-    // ── Reverseur (contribuable ayant subi les retenues) ──
-    $reverseur = null;
-    if ($documentSource) {
-        if ($engagement?->estBonCommande()) {
-            $reverseur = $documentSource->fournisseur;
-        } elseif ($engagement?->estDecision()) {
-            $reverseur = $documentSource->personnel;
-        }
-    }
-    if (!$reverseur && $ordonnance->beneficiaire) {
-        $reverseur = $ordonnance->beneficiaire;
-    }
-    $nomReverseur = $reverseur?->raison_sociale
-        ?? $reverseur?->nom_complet
-        ?? $reverseur?->name
-        ?? '—';
+// ── Reverseur (contribuable ayant subi les retenues) ──
+$reverseur = null;
+if ($documentSource) {
+if ($engagement?->estBonCommande()) {
+$reverseur = $documentSource->fournisseur;
+} elseif ($engagement?->estDecision()) {
+$reverseur = $documentSource->personnel;
+}
+}
+if (!$reverseur && $ordonnance->beneficiaire) {
+$reverseur = $ordonnance->beneficiaire;
+}
+$nomReverseur = $reverseur?->raison_sociale
+?? $reverseur?->nom_complet
+?? $reverseur?->name
+?? '—';
 
-    // ── Bénéficiaire OPT = LE RECEVEUR ────────────────────
-    $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
+// ── Bénéficiaire OPT = LE RECEVEUR ────────────────────
+$nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
 
-    // ── Détail impôts via getDetailImpots() ───────────────
-    $detailImpots = $ordonnance->getDetailImpots();
-    $montantTotalImpots = (float) ($detailImpots['total'] ?? 0);
+// ── Détail impôts via getDetailImpots() ───────────────
+$detailImpots = $ordonnance->getDetailImpots();
+$montantTotalImpots = (float) ($detailImpots['total'] ?? 0);
 
-    // ── Montants OPT ──────────────────────────────────────
-    // Montant brut OPT = 0 (pas de brut propre à l'OPT)
-    $montantBrut = 0;
-    // A précompter = total des impôts
-    $aPrecompter = $montantTotalImpots;
-    // Somme nette = total impôts (ce qu'on reverse)
-    $sommeNette = $montantTotalImpots;
+// ── Montants OPT ──────────────────────────────────────
+// Montant brut OPT = 0 (pas de brut propre à l'OPT)
+$montantBrut = 0;
+// A précompter = total des impôts
+$aPrecompter = $montantTotalImpots;
+// Somme nette = total impôts (ce qu'on reverse)
+$sommeNette = $montantTotalImpots;
 
-    // Référence OP principale
-    $opPrincipaleNumero = $ordonnance->op_principale_numero
-        ?? $ordonnance->opPrincipale?->numero
-        ?? $numEngagement;
+// Référence OP principale
+$opPrincipaleNumero = $ordonnance->op_principale_numero
+?? $ordonnance->opPrincipale?->numero
+?? $numEngagement;
 
-    $objet = $ordonnance->objet
-        ?? 'Reversement des impôts et taxes' . $opPrincipaleNumero;
+$objet = $ordonnance->objet
+?? 'Reversement des impôts et taxes' . $opPrincipaleNumero;
 
-    $montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
+$montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
 @endphp
 <!DOCTYPE html>
 <html lang="fr">
@@ -211,9 +211,9 @@
             {{-- Col 1 : Logo + Visa DAAF --}}
             <td class="ba" style="width:22%; padding:2mm; vertical-align:top;">
                 @if($logoExists)
-                    <div style="text-align:center; margin-bottom:1.5mm;">
-                        <img src="{{ $logoPath }}" style="max-height:14mm; max-width:26mm;">
-                    </div>
+                <div style="text-align:center; margin-bottom:1.5mm;">
+                    <img src="{{ $logoPath }}" style="max-height:14mm; max-width:26mm;">
+                </div>
                 @endif
                 <div class="b" style="font-size:7.5pt; line-height:1.3; text-align:center;">
                     VISA {{ $sous_direction }}
@@ -302,7 +302,10 @@
         {{-- ── R2 : Référence OPT principale ── --}}
         <tr>
             <td class="ba" style="padding:1mm 2mm;">
-                <span style="font-size:7.5pt;">Reversement impôts et taxes du bon N°</span>
+                <span style="font-size:7.5pt;">
+                    Reversement impôts et taxes
+                    {{ $sourceEstDecision ? 'de la décision N°' : 'du bon N°' }}
+                </span>
                 <strong style="margin-left:4mm;">{{ $opPrincipaleNumero }}</strong>
             </td>
             <td class="ba tr" style="padding:1mm 2mm;">{{ $imputation }}</td>
@@ -334,70 +337,72 @@
                 <div class="b sm" style="margin-bottom:1mm;">DÉTAIL DES IMPÔTS ET TAXES:</div>
                 <table style="width:100%;">
                     @if(($detailImpots['ir'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm; width:65%;">
-                                Impôt sur le Revenu (IR)
-                            </td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['ir'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm; width:65%;">
+                            Impôt sur le Revenu (IR)
+                        </td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['ir'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['tva'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">TVA</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['tva'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">TVA</td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['tva'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['tsr'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">TSR</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['tsr'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">TSR</td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['tsr'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['cnps'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">CNPS</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['cnps'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">CNPS</td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['cnps'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['irnc'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">IRNC</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['irnc'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">
+                            {{ $sourceEstDecision ? 'IR' : 'IRNC' }}
+                        </td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['irnc'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['feicom'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">FEICOM</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['feicom'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">FEICOM</td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['feicom'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['redevance_av'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">Redevance AV</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['redevance_av'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">Redevance AV</td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['redevance_av'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     @if(($detailImpots['autres'] ?? 0) > 0)
-                        <tr>
-                            <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">Autres retenues</td>
-                            <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
-                                {{ number_format($detailImpots['autres'], 0, ',', ' ') }}
-                            </td>
-                        </tr>
+                    <tr>
+                        <td class="ba bg xsm" style="padding:0.5mm 1.5mm;">Autres retenues</td>
+                        <td class="ba tr b xsm" style="padding:0.5mm 1.5mm;">
+                            {{ number_format($detailImpots['autres'], 0, ',', ' ') }}
+                        </td>
+                    </tr>
                     @endif
                     {{-- Total --}}
                     <tr class="bg">

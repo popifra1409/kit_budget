@@ -270,7 +270,7 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
             </div>
             {{-- DETAIL IMPOTS --}}
             <div style="margin-top:8px;">
-                <div class="font-bold">DETAIL IMPOTS</div>
+                <div class="font-bold">DETAIL IMPOTS ET TAXES</div>
 
                 <table class="border-all" style="margin-top:3px;">
                     @foreach ($detailImpots as $key => $val)

@@ -201,7 +201,6 @@ class OrdonnancePaiement extends Model
      */
     public function getDetailImpots(): array
     {
-        // Charger l'engagement si nécessaire
         if (!$this->relationLoaded('engagement')) {
             $this->load('engagement.engageable');
         }
@@ -215,45 +214,58 @@ class OrdonnancePaiement extends Model
                 'tsr' => 0,
                 'cnps' => 0,
                 'irnc' => 0,
-                'redevance' => 0,
+                'redevance_av' => 0,
                 'feicom' => 0,
                 'autres' => 0,
                 'total' => 0,
             ];
         }
 
-        // Extraire les données depuis l'engagement
         $donnees = $engagement->extraireDonneesDocument();
 
-        // Récupérer toutes les taxes
-        $ir = $donnees['montant_ir'] ?? 0;
-        $tva = $donnees['montant_tva'] ?? 0;
-        $tsr = $donnees['montant_tsr'] ?? 0;
-        $cnps = $donnees['montant_cnps'] ?? 0;
-        $irnc = $donnees['montant_irnc'] ?? 0;
-        $redevance = $donnees['montant_redevance'] ?? 0;
-        $feicom = $donnees['montant_feicom'] ?? 0;
-        $autres = $donnees['autres_retenues'] ?? 0;
+        $ir       = (float) ($donnees['montant_ir']       ?? 0);
+        $tva      = (float) ($donnees['montant_tva']      ?? 0);
+        $tsr      = (float) ($donnees['montant_tsr']      ?? 0);
+        $cnps     = (float) ($donnees['montant_cnps']     ?? 0);
+        $irnc     = (float) ($donnees['montant_irnc']     ?? 0);
+        $redevance = (float) ($donnees['montant_redevance'] ?? $donnees['montant_redevance_audiovisuelle'] ?? 0);
+        $feicom   = (float) ($donnees['montant_feicom']   ?? 0);
+        $autres   = (float) ($donnees['autres_retenues']  ?? 0);
 
-        // ✅ CORRIGÉ : Calculer le total selon le type de document
         if ($engagement->estBonCommande()) {
-            // Pour BC : IR + TVA + TSR
+            // ── Bon de Commande : IR (retenu à la source) + TVA + TSR ──
             $total = $ir + $tva + $tsr;
-        } else {
-            // Pour DA : IR + CNPS + IRNC + TVA + Redevance + FEICOM + Autres
-            $total = $ir + $cnps + $irnc + $tva + $redevance + $feicom + $autres;
+
+            return [
+                'ir'          => $ir,
+                'tva'         => $tva,
+                'tsr'         => $tsr,
+                'cnps'        => $cnps,
+                'irnc'        => 0,
+                'redevance_av' => 0,
+                'feicom'      => 0,
+                'autres'      => 0,
+                'total'       => $total,
+            ];
         }
 
+        // ── Décision Administrative : IRNC = IR (même taxe, champ différent) ──
+        // On fusionne dans 'ir' pour l'affichage — 'irnc' reste à 0
+        // pour éviter tout double-comptage dans le PDF
+        $irTotal = $ir + $irnc;  // ← cumul : au cas où les deux seraient renseignés
+
+        $total = $irTotal + $cnps + $tva + $redevance + $feicom + $autres;
+
         return [
-            'ir' => $ir,
-            'tva' => $tva,
-            'tsr' => $tsr,
-            'cnps' => $cnps,
-            'irnc' => $irnc,
-            'redevance' => $redevance,
-            'feicom' => $feicom,
-            'autres' => $autres,
-            'total' => $total,
+            'ir'          => $irTotal,
+            'tva'         => $tva,
+            'tsr'         => 0,
+            'cnps'        => $cnps,
+            'irnc'        => 0,
+            'redevance_av' => $redevance,
+            'feicom'      => $feicom,
+            'autres'      => $autres,
+            'total'       => $total,
         ];
     }
 

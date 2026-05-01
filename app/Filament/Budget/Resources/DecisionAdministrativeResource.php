@@ -644,7 +644,7 @@ class DecisionAdministrativeResource extends Resource
                                     ->label('IR(NC) (%)')->numeric()->placeholder(11)->step(0.01)->suffix('%')
                                     ->helperText('IR (Non Commercial)')->live(onBlur: true),
                                 Forms\Components\Placeholder::make('montant_irnc_calcule')
-                                    ->label('Montant IRNC calculé')
+                                    ->label('Montant IR calculé')
                                     ->content(function (Get $get) {
                                         $brut = (float) ($get('montant_brut') ?? 0);
                                         $taux = (float) ($get('taux_tva') ?? 19.25);
@@ -719,7 +719,7 @@ class DecisionAdministrativeResource extends Resource
                                         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                                         "💸 RETENUES :",
                                         "   CNPS : " . number_format($cnps, 0, ',', ' ') . " FCFA",
-                                        "   IRNC : " . number_format($irnc, 0, ',', ' ') . " FCFA",
+                                        "   IR : " . number_format($irnc, 0, ',', ' ') . " FCFA",
                                         "   Redevance : " . number_format($redevance, 0, ',', ' ') . " FCFA",
                                         "   FEICOM : " . number_format($feicom, 0, ',', ' ') . " FCFA",
                                         "   Autres : " . number_format($autres, 0, ',', ' ') . " FCFA",
