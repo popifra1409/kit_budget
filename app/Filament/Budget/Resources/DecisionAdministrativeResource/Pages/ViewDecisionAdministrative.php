@@ -443,31 +443,26 @@ class ViewDecisionAdministrative extends ViewRecord
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->montant_irnc ?? 0) > 0),
 
-                            Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle_calcule')
+                            // ✅ APRÈS — lire directement depuis la colonne DB réelle
+                            Infolists\Components\TextEntry::make('montant_redevance_audiovisuelle')
                                 ->label(function ($record) {
                                     return $record->type_redevance_audiovisuelle === 'taux'
                                         ? 'Redevance audiovisuelle (' . number_format($record->taux_redevance_audiovisuelle ?? 0, 2) . '%)'
                                         : 'Redevance audiovisuelle (forfait)';
                                 })
-                                ->formatStateUsing(
-                                    fn($state, $record) =>
-                                    number_format((float) $record->montant_redevance_audiovisuelle_calcule, 0, ',', ' ') . ' FCFA'
-                                )
+                                ->formatStateUsing(fn($state) => number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ($record->montant_redevance_audiovisuelle_calcule ?? 0) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_redevance_audiovisuelle'] ?? 0)) > 0),
 
-                            Infolists\Components\TextEntry::make('montant_feicom_calcule')
+                            Infolists\Components\TextEntry::make('montant_feicom')
                                 ->label(function ($record) {
                                     return $record->type_feicom === 'taux'
                                         ? 'FEICOM (' . number_format($record->taux_feicom ?? 0, 2) . '%)'
                                         : 'FEICOM (forfait)';
                                 })
-                                ->formatStateUsing(
-                                    fn($state, $record) =>
-                                    number_format((float) $record->montant_feicom_calcule, 0, ',', ' ') . ' FCFA'
-                                )
+                                ->formatStateUsing(fn($state) => number_format((float) ($state ?? 0), 0, ',', ' ') . ' FCFA')
                                 ->color('warning')
-                                ->visible(fn($record) => ($record->montant_feicom_calcule ?? 0) > 0),
+                                ->visible(fn($record) => ((float) ($record->getAttributes()['montant_feicom'] ?? 0)) > 0),
 
                             Infolists\Components\TextEntry::make('autres_retenues')
                                 ->label('Autres retenues')
@@ -475,8 +470,19 @@ class ViewDecisionAdministrative extends ViewRecord
                                 ->color('warning')
                                 ->visible(fn($record) => ($record->autres_retenues ?? 0) > 0),
 
+                            // ✅ APRÈS — recalcul depuis les attributs bruts, cohérent avec les lignes affichées
                             Infolists\Components\TextEntry::make('total_taxes')
                                 ->label('📊 Total retenues')
+                                ->getStateUsing(function ($record) {
+                                    $attrs = $record->getAttributes();
+                                    // ✅ CNPS + IRNC + redevance + feicom + autres — SANS la TVA
+                                    // TVA est déjà déduite du brut pour obtenir le HT, elle n'est PAS une retenue
+                                    return (float) ($attrs['montant_cnps']                   ?? 0)
+                                        + (float) ($attrs['montant_irnc']                   ?? 0)
+                                        + (float) ($attrs['montant_redevance_audiovisuelle'] ?? 0)
+                                        + (float) ($attrs['montant_feicom']                  ?? 0)
+                                        + (float) ($attrs['autres_retenues']                 ?? 0);
+                                })
                                 ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('danger')
                                 ->weight('bold')
@@ -485,6 +491,20 @@ class ViewDecisionAdministrative extends ViewRecord
 
                             Infolists\Components\TextEntry::make('montant_net')
                                 ->label('✅ Montant net à payer')
+                                ->getStateUsing(function ($record) {
+                                    $attrs = $record->getAttributes();
+                                    $ht = (float) ($attrs['montant_ht'] ?? 0);
+
+                                    // ✅ Net = HT - retenues (CNPS + IRNC + redevance + feicom + autres)
+                                    // CNPS est une retenue légitime SI taux_cnps > 0
+                                    $totalRetenues = (float) ($attrs['montant_cnps']                   ?? 0)
+                                        + (float) ($attrs['montant_irnc']                   ?? 0)
+                                        + (float) ($attrs['montant_redevance_audiovisuelle'] ?? 0)
+                                        + (float) ($attrs['montant_feicom']                  ?? 0)
+                                        + (float) ($attrs['autres_retenues']                 ?? 0);
+
+                                    return $ht - $totalRetenues;
+                                })
                                 ->formatStateUsing(fn($state) => number_format((float) $state, 0, ',', ' ') . ' FCFA')
                                 ->color('success')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
@@ -556,29 +576,49 @@ class ViewDecisionAdministrative extends ViewRecord
                                 ->color('warning')
                                 ->visible(fn($record) => ((float) ($record->getAttributes()['autres_retenues'] ?? 0)) > 0),
 
+                            // ✅ APRÈS — cohérent avec le mode calcule
                             Infolists\Components\TextEntry::make('total_retenues_forfait')
                                 ->label('📊 Total retenues')
                                 ->getStateUsing(function ($record) {
                                     $attrs = $record->getAttributes();
-                                    $total = (float) ($attrs['montant_cnps'] ?? 0)
-                                        + (float) ($attrs['montant_irnc'] ?? 0)
+                                    $total = (float) ($attrs['montant_cnps']                   ?? 0)
+                                        + (float) ($attrs['montant_irnc']                   ?? 0)
                                         + (float) ($attrs['montant_redevance_audiovisuelle'] ?? 0)
-                                        + (float) ($attrs['montant_feicom'] ?? 0)
-                                        + (float) ($attrs['autres_retenues'] ?? 0);
+                                        + (float) ($attrs['montant_feicom']                  ?? 0)
+                                        + (float) ($attrs['autres_retenues']                 ?? 0);
                                     return number_format($total, 0, ',', ' ') . ' FCFA';
                                 })
-                                ->color('danger')
-                                ->weight('bold')
-                                ->columnSpanFull()
+                                ->color('danger')->weight('bold')->columnSpanFull()
                                 ->extraAttributes(['class' => 'border-t border-gray-200 pt-3 mt-2']),
 
                             Infolists\Components\TextEntry::make('montant_net_forfait')
-                                ->label('✅ Montant net à payer (saisi)')
-                                ->getStateUsing(fn($record) => number_format((float) ($record->getAttributes()['montant_net'] ?? 0), 0, ',', ' ') . ' FCFA')
+                                ->label('✅ Montant net à payer')
+                                ->getStateUsing(function ($record) {
+                                    $attrs = $record->getAttributes();
+                                    $ht = (float) ($attrs['montant_ht'] ?? 0);
+
+                                    // ✅ Recalculer depuis les attributs — ne pas lire montant_net stocké
+                                    $totalRetenues = (float) ($attrs['montant_cnps']                   ?? 0)
+                                        + (float) ($attrs['montant_irnc']                   ?? 0)
+                                        + (float) ($attrs['montant_redevance_audiovisuelle'] ?? 0)
+                                        + (float) ($attrs['montant_feicom']                  ?? 0)
+                                        + (float) ($attrs['autres_retenues']                 ?? 0);
+
+                                    $net = $ht - $totalRetenues;
+
+                                    // ✅ Afficher aussi le montant stocké pour comparaison si différent
+                                    $netStocke = (float) ($attrs['montant_net'] ?? 0);
+                                    $ecart     = abs($net - $netStocke);
+
+                                    $affichage = number_format($net, 0, ',', ' ') . ' FCFA';
+                                    if ($ecart > 1) {
+                                        $affichage .= " ⚠️ (stocké : " . number_format($netStocke, 0, ',', ' ') . " FCFA)";
+                                    }
+                                    return $affichage;
+                                })
                                 ->color('success')
                                 ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                                ->weight('bold')
-                                ->columnSpanFull()
+                                ->weight('bold')->columnSpanFull()
                                 ->extraAttributes(['class' => 'border-t-2 border-green-500 pt-3 mt-2']),
 
                         ])
