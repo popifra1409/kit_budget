@@ -18,68 +18,110 @@ class LignesRelationManager extends RelationManager
 
     public function form(Forms\Form $form): Forms\Form
     {
+        // ✅ Charger le BC UNE SEULE FOIS ici — accessible dans toutes les closures via use()
+        $bc = $this->getOwnerRecord();
+
         return $form
             ->schema([
                 Forms\Components\Grid::make(3)
                     ->schema([
                         // ===== RÉFÉRENCE MERCURIALE =====
+                        // ✅ APRÈS — même approche lazy que le repeater de BonCommandeResource
                         Forms\Components\Select::make('reference_mercuriale_id')
                             ->label('Référence Mercuriale')
-                            ->options(function () {
-                                $bc = $this->getOwnerRecord();
-                                $exerciceId = $bc->exercice_id ?? null;
-
-                                if (!$exerciceId) {
-                                    return ['Exercice non défini sur le BC'];
+                            ->searchable()
+                            // ✅ PAS de ->options(), PAS de ->preload()
+                            ->getSearchResultsUsing(function (string $search) use ($bc) {
+                                if (strlen($search) < 3) {
+                                    return ['manual' => '➕ Saisie manuelle (tapez au moins 3 caractères)'];
                                 }
 
-                                $references = \App\Models\ReferenceMercuriale::where('exercice_id', $exerciceId)
-                                    ->where('actif', true)
-                                    ->get()
-                                    ->mapWithKeys(fn($ref) => [
-                                        $ref->id => "{$ref->code_reference} - {$ref->designation} ({$ref->unite}) - " .
-                                            number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
-                                    ]);
+                                $exerciceId = $bc->exercice_id ?? \App\Models\Exercice::getActif()?->id;
 
-                                return ['manual' => '➕ Saisie manuelle'] + $references->toArray();
+                                if (!$exerciceId) {
+                                    return ['manual' => '➕ Saisie manuelle'];
+                                }
+
+                                $cacheKey = "mercuriale_search_{$exerciceId}_" . md5($search);
+
+                                $results = \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($exerciceId, $search) {
+                                    return \App\Models\ReferenceMercuriale::where('exercice_id', $exerciceId)
+                                        ->where('actif', true)
+                                        ->where(function ($query) use ($search) {
+                                            $query->where('code_reference', 'LIKE', "%{$search}%")
+                                                ->orWhere('designation',  'LIKE', "%{$search}%")
+                                                ->orWhere('rubrique',      'LIKE', "%{$search}%");
+                                        })
+                                        ->limit(50)
+                                        ->get()
+                                        ->mapWithKeys(fn($ref) => [
+                                            $ref->id => "{$ref->code_reference} - {$ref->designation} ({$ref->unite}) — "
+                                                . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
+                                        ]);
+                                });
+
+                                return ['manual' => '➕ Saisie manuelle'] + $results->toArray();
                             })
-                            ->searchable()
-                            ->preload()
-                            ->live()
-                            ->afterStateUpdated(function ($state, callable $set) {
-                                if ($state && $state !== 'manual') {
-                                    $reference = \App\Models\ReferenceMercuriale::find($state);
-                                    if ($reference) {
-                                        $set('designation', $reference->designation);
-                                        $set('unite', $reference->unite);
-                                        $set('prix_unitaire_ht', $reference->prix_reference);
-                                        $set('reference_personnalisee', null);
+                            ->getOptionLabelUsing(function ($value) use ($bc) {
+                                if (!$value || $value === 'manual') {
+                                    return '➕ Saisie manuelle';
+                                }
+                                return \Cache::remember(
+                                    "mercuriale_label_{$value}",
+                                    now()->addMinutes(10),
+                                    function () use ($value) {
+                                        $ref = \App\Models\ReferenceMercuriale::find($value);
+                                        if (!$ref) return "Référence #{$value}";
+                                        return "{$ref->code_reference} - {$ref->designation} ({$ref->unite}) — "
+                                            . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA";
                                     }
-                                } else {
+                                );
+                            })
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                if (!$state || $state === 'manual') {
                                     $set('designation', '');
                                     $set('unite', 'pièce');
                                     $set('prix_unitaire_ht', 0);
+                                    $set('reference_personnalisee', null);
+                                    return;
+                                }
+
+                                $ref = \Cache::remember(
+                                    "mercuriale_full_{$state}",
+                                    now()->addMinutes(10),
+                                    fn() => \App\Models\ReferenceMercuriale::find($state)
+                                );
+
+                                if ($ref) {
+                                    $set('designation',             $ref->designation);
+                                    $set('unite',                   $ref->unite);
+                                    $set('prix_unitaire_ht',        $ref->prix_reference);
+                                    $set('reference_personnalisee', null);
+                                    self::recalculerLigne($set, $get);
                                 }
                             })
+                            ->helperText('Tapez au moins 3 caractères pour rechercher')
                             ->dehydrateStateUsing(fn($state) => $state === 'manual' ? null : $state)
                             ->columnSpan(2),
 
-                        // ===== RÉFÉRENCE PERSONNALISÉE =====
                         Forms\Components\TextInput::make('reference_personnalisee')
                             ->label('Réf. perso')
                             ->maxLength(100)
-                            ->visible(fn(callable $get) => $get('reference_mercuriale_id') === 'manual' || !$get('reference_mercuriale_id'))
+                            ->visible(
+                                fn(callable $get) =>
+                                $get('reference_mercuriale_id') === 'manual'
+                                    || !$get('reference_mercuriale_id')
+                            )
                             ->columnSpan(1),
                     ]),
 
-                // ===== DÉSIGNATION =====
                 Forms\Components\TextInput::make('designation')
                     ->label('Désignation')
                     ->required()
                     ->maxLength(500)
                     ->columnSpan(2),
 
-                // ===== OBSERVATIONS =====
                 Forms\Components\Textarea::make('observations')
                     ->label('Observations')
                     ->rows(2)
@@ -95,19 +137,24 @@ class LignesRelationManager extends RelationManager
                             ->default(1)
                             ->minValue(0)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn($state, callable $set, callable $get) => self::recalculerLigne($set, $get))
+                            ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                // Mettre à jour quantite_restante
+                                $livree   = (float) ($get('quantite_livree') ?? 0);
+                                $set('quantite_restante', max(0, (float) $state - $livree));
+                                self::recalculerLigne($set, $get);
+                            })
                             ->columnSpan(1),
 
                         Forms\Components\Select::make('unite')
                             ->label('Unité')
                             ->options([
-                                'pièce' => 'Pièce',
-                                'lot' => 'Lot',
-                                'kg' => 'Kg',
-                                'litre' => 'L',
-                                'mètre' => 'M',
-                                'heure' => 'H',
-                                'jour' => 'J',
+                                'pièce'   => 'Pièce',
+                                'lot'     => 'Lot',
+                                'kg'      => 'Kg',
+                                'litre'   => 'L',
+                                'mètre'   => 'M',
+                                'heure'   => 'H',
+                                'jour'    => 'J',
                                 'forfait' => 'Forfait',
                             ])
                             ->required()
@@ -122,118 +169,138 @@ class LignesRelationManager extends RelationManager
                             ->prefix('FCFA')
                             ->minValue(0)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn($state, callable $set, callable $get) => self::recalculerLigne($set, $get))
+                            ->afterStateUpdated(
+                                fn($state, callable $set, callable $get) =>
+                                self::recalculerLigne($set, $get)
+                            )
                             ->columnSpan(2),
 
-                        // ✅ TVA (avec répercussion du taux commun)
+                        // ✅ Fix 3 : remplacer $this par use($bc) dans tous les callbacks
                         Forms\Components\TextInput::make('taux_tva')
                             ->label('TVA (%)')
                             ->numeric()
                             ->suffix('%')
-                            ->default(function () {
-                                $bc = $this->getOwnerRecord();
-
-                                // 1. Si exonéré → 0
-                                if ($bc->exonere_tva) {
-                                    return 0;
-                                }
-
-                                // 2. Si taux commun défini → utiliser
-                                if (isset($bc->tva_commune) && $bc->tva_commune > 0) {
+                            ->default(function () use ($bc) {
+                                if ($bc->exonere_tva) return 0;
+                                if (!empty($bc->tva_commune) && $bc->tva_commune > 0) {
                                     return (float) $bc->tva_commune;
                                 }
-
-                                // 3. Sinon → calcul selon type engagement
                                 if ($bc->type_engagement_id) {
-                                    $typeEngagement = \App\Models\TypeEngagement::find($bc->type_engagement_id);
-                                    if ($typeEngagement) {
-                                        return $typeEngagement->calcul_tva ? 19.25 : 0;
-                                    }
+                                    $type = \App\Models\TypeEngagement::find($bc->type_engagement_id);
+                                    return $type?->calcul_tva ? 19.25 : 0;
                                 }
-
                                 return 19.25;
                             })
-                            ->disabled(function () {
-                                $bc = $this->getOwnerRecord();
-                                return (bool) $bc->exonere_tva;
-                            })
+                            ->disabled(fn() => (bool) $bc->exonere_tva)
                             ->dehydrated(true)
-                            ->minValue(0)
-                            ->maxValue(100)
+                            ->minValue(0)->maxValue(100)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn($state, callable $set, callable $get) => self::recalculerLigne($set, $get))
-                            ->helperText(function () {
-                                $bc = $this->getOwnerRecord();
-                                if ($bc->exonere_tva) {
-                                    return '⚠️ BC exonéré de TVA';
-                                }
-                                if (isset($bc->tva_commune) && $bc->tva_commune > 0) {
-                                    return "💡 Taux commun du BC : {$bc->tva_commune}%";
+                            ->afterStateUpdated(
+                                fn($state, callable $set, callable $get) =>
+                                self::recalculerLigne($set, $get)
+                            )
+                            ->helperText(function () use ($bc) {
+                                if ($bc->exonere_tva) return '⚠️ BC exonéré de TVA';
+                                if (!empty($bc->tva_commune) && $bc->tva_commune > 0) {
+                                    return "💡 Taux commun BC : {$bc->tva_commune}%";
                                 }
                                 return null;
                             })
                             ->columnSpan(1),
 
-                        // ✅ IR (avec répercussion du taux commun)
                         Forms\Components\TextInput::make('taux_ir')
                             ->label('IR (%)')
                             ->numeric()
                             ->suffix('%')
-                            ->default(function () {
-                                $bc = $this->getOwnerRecord();
-
-                                // 1. Si exonéré → 0
-                                if ($bc->exonere_ir) {
-                                    return 0;
-                                }
-
-                                // 2. Si taux commun défini → utiliser
-                                if (isset($bc->ir_commun) && $bc->ir_commun > 0) {
+                            ->default(function () use ($bc) {
+                                if ($bc->exonere_ir) return 0;
+                                if (!empty($bc->ir_commun) && $bc->ir_commun > 0) {
                                     return (float) $bc->ir_commun;
                                 }
-
-                                // 3. Sinon → calcul selon régime fiscal
                                 if ($bc->type_engagement_id && $bc->fournisseur_id) {
-                                    $typeEngagement = \App\Models\TypeEngagement::find($bc->type_engagement_id);
-                                    $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($bc->fournisseur_id);
-
-                                    if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
-                                        return $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
+                                    $type        = \App\Models\TypeEngagement::find($bc->type_engagement_id);
+                                    $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')
+                                        ->find($bc->fournisseur_id);
+                                    if ($type && $fournisseur?->regimeFiscal) {
+                                        return $type->calculerTauxIR($fournisseur->regimeFiscal);
                                     }
                                 }
-
                                 return 0;
                             })
-                            ->disabled(function () {
-                                $bc = $this->getOwnerRecord();
-                                return (bool) $bc->exonere_ir;
-                            })
+                            ->disabled(fn() => (bool) $bc->exonere_ir)
                             ->dehydrated(true)
-                            ->minValue(0)
-                            ->maxValue(100)
+                            ->minValue(0)->maxValue(100)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn($state, callable $set, callable $get) => self::recalculerLigne($set, $get))
-                            ->helperText(function () {
-                                $bc = $this->getOwnerRecord();
-                                if ($bc->exonere_ir) {
-                                    return '⚠️ BC exonéré d\'IR';
-                                }
-                                if (isset($bc->ir_commun) && $bc->ir_commun > 0) {
-                                    return "💡 Taux commun du BC : {$bc->ir_commun}%";
+                            ->afterStateUpdated(
+                                fn($state, callable $set, callable $get) =>
+                                self::recalculerLigne($set, $get)
+                            )
+                            ->helperText(function () use ($bc) {
+                                if ($bc->exonere_ir) return '⚠️ BC exonéré d\'IR';
+                                if (!empty($bc->ir_commun) && $bc->ir_commun > 0) {
+                                    return "💡 Taux commun BC : {$bc->ir_commun}%";
                                 }
                                 return null;
                             })
                             ->columnSpan(1),
 
-                        // Net à payer
                         Forms\Components\Placeholder::make('net_a_payer_display')
                             ->label('Net à payer')
-                            ->content(function (callable $get) {
-                                $netAPayer = (float) ($get('net_a_payer') ?? 0);
-                                return number_format($netAPayer, 0, ',', ' ') . ' FCFA';
-                            })
+                            ->content(
+                                fn(callable $get) =>
+                                number_format((float) ($get('net_a_payer') ?? 0), 0, ',', ' ') . ' FCFA'
+                            )
                             ->columnSpan(1),
                     ]),
+
+                // ===== SUIVI DES QUANTITÉS =====
+                // ✅ Fix 4 : quantite_livree visible avec validation
+                Forms\Components\Section::make('Suivi de livraison')
+                    ->schema([
+                        Forms\Components\Grid::make(3)->schema([
+
+                            Forms\Components\Placeholder::make('quantite_commandee_affichee')
+                                ->label('Qté commandée')
+                                ->content(fn(callable $get) => (int) ($get('quantite') ?? 0)),
+
+                            Forms\Components\TextInput::make('quantite_livree')
+                                ->label('Qté livrée')
+                                ->numeric()
+                                ->default(0)
+                                ->minValue(0)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                    $commandee = (float) ($get('quantite') ?? 0);
+                                    $livree    = (float) ($state ?? 0);
+
+                                    if ($livree > $commandee) {
+                                        $set('quantite_livree', $commandee);
+                                        $livree = $commandee;
+                                        \Filament\Notifications\Notification::make()
+                                            ->title('Quantité livrée limitée')
+                                            ->warning()
+                                            ->body("Maximum autorisé : {$commandee}")
+                                            ->send();
+                                    }
+                                    $set('quantite_restante', max(0, $commandee - $livree));
+                                })
+                                ->suffix(fn(callable $get) => '/ ' . (int) ($get('quantite') ?? 0)),
+
+                            Forms\Components\Placeholder::make('quantite_restante_affichee')
+                                ->label('Qté restante')
+                                ->content(function (callable $get) {
+                                    $restante = max(
+                                        0,
+                                        (float) ($get('quantite')        ?? 0)
+                                            - (float) ($get('quantite_livree') ?? 0)
+                                    );
+                                    $icone = $restante === 0.0 ? '✅' : '⏳';
+                                    return "{$icone} {$restante}";
+                                }),
+                        ]),
+                    ])
+                    ->collapsible()
+                    ->columnSpanFull(),
 
                 // ===== CHAMPS CACHÉS =====
                 Forms\Components\Hidden::make('montant_ht')->default(0),
@@ -242,37 +309,21 @@ class LignesRelationManager extends RelationManager
                 Forms\Components\Hidden::make('montant_tsr')->default(0),
                 Forms\Components\Hidden::make('montant_ttc')->default(0),
                 Forms\Components\Hidden::make('net_a_payer')->default(0),
-
-                // ✅ NOMENCLATURE : Automatiquement celle du BC
+                Forms\Components\Hidden::make('quantite_restante')->default(0),
                 Forms\Components\Hidden::make('nomenclature_id')
-                    ->default(function () {
-                        $bc = $this->getOwnerRecord();
-                        return $bc->nomenclature_commune_id ?? null;
-                    }),
-
-                Forms\Components\Hidden::make('quantite_livree')->default(0),
-                Forms\Components\Hidden::make('quantite_restante')
-                    ->default(fn(callable $get) => $get('quantite') ?? 0),
+                    ->default(fn() => $bc->nomenclature_commune_id ?? null),
 
                 // ===== RÉCAPITULATIF =====
                 Forms\Components\Placeholder::make('recap_montants')
                     ->label('Récapitulatif')
                     ->content(function (callable $get) {
-                        $montantHT = (float) ($get('montant_ht') ?? 0);
-                        $montantTVA = (float) ($get('montant_tva') ?? 0);
-                        $montantIR = (float) ($get('montant_ir') ?? 0);
-                        $montantTSR = (float) ($get('montant_tsr') ?? 0);
-                        $montantTTC = (float) ($get('montant_ttc') ?? 0);
-                        $netAPayer = (float) ($get('net_a_payer') ?? 0);
-
                         return sprintf(
-                            "HT: %s | TVA: %s | TTC: %s | IR: %s | TSR: %s | Net: %s",
-                            number_format($montantHT, 0, ',', ' '),
-                            number_format($montantTVA, 0, ',', ' '),
-                            number_format($montantTTC, 0, ',', ' '),
-                            number_format($montantIR, 0, ',', ' '),
-                            number_format($montantTSR, 0, ',', ' '),
-                            number_format($netAPayer, 0, ',', ' ')
+                            "HT: %s | TVA: %s | TTC: %s | IR: %s | Net: %s FCFA",
+                            number_format((float) ($get('montant_ht')  ?? 0), 0, ',', ' '),
+                            number_format((float) ($get('montant_tva') ?? 0), 0, ',', ' '),
+                            number_format((float) ($get('montant_ttc') ?? 0), 0, ',', ' '),
+                            number_format((float) ($get('montant_ir')  ?? 0), 0, ',', ' '),
+                            number_format((float) ($get('net_a_payer') ?? 0), 0, ',', ' ')
                         );
                     })
                     ->columnSpan(3),

@@ -722,65 +722,65 @@ class BonCommandeResource extends Resource
                                 Forms\Components\Select::make('reference_mercuriale_id')
                                     ->label('Référence Mercuriale')
                                     ->searchable()
-                                    ->getSearchResultsUsing(function (string $search, callable $get) {
-                                        $exerciceId = $get('../../exercice_id');
-
-                                        if (!$exerciceId || strlen($search) < 3) {
+                                    ->getSearchResultsUsing(function (string $search) {
+                                        // ✅ Pas de $get ici — récupérer l'exercice actif directement
+                                        if (strlen($search) < 3) {
                                             return ['manual' => '➕ Saisie manuelle (tapez au moins 3 caractères)'];
                                         }
 
-                                        // ✅ Cache pour 5 minutes
-                                        $cacheKey = "mercuriale_search_{$exerciceId}_" . md5($search);
+                                        $exercice = \App\Models\Exercice::getActif();
+                                        if (!$exercice) {
+                                            return ['manual' => '➕ Saisie manuelle'];
+                                        }
 
-                                        return \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($exerciceId, $search) {
-                                            $results = \App\Models\ReferenceMercuriale::where('exercice_id', $exerciceId)
+                                        $cacheKey = "mercuriale_search_{$exercice->id}_" . md5($search);
+
+                                        $results = \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($exercice, $search) {
+                                            return \App\Models\ReferenceMercuriale::where('exercice_id', $exercice->id)
                                                 ->where('actif', true)
                                                 ->where(function ($query) use ($search) {
                                                     $query->where('code_reference', 'LIKE', "%{$search}%")
-                                                        ->orWhere('designation', 'LIKE', "%{$search}%")
-                                                        ->orWhere('rubrique', 'LIKE', "%{$search}%");
+                                                        ->orWhere('designation',    'LIKE', "%{$search}%")
+                                                        ->orWhere('rubrique',        'LIKE', "%{$search}%");
                                                 })
                                                 ->limit(50)
                                                 ->get()
                                                 ->mapWithKeys(fn($ref) => [
-                                                    $ref->id => "{$ref->code_reference} - {$ref->designation} - " .
-                                                        number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
+                                                    $ref->id => "{$ref->code_reference} - {$ref->designation} — "
+                                                        . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
                                                 ]);
-
-                                            return ['manual' => '➕ Saisie manuelle'] + $results->toArray();
                                         });
+
+                                        return ['manual' => '➕ Saisie manuelle'] + $results->toArray();
                                     })
                                     ->getOptionLabelUsing(function ($value) {
-                                        if ($value === 'manual') {
+                                        if ($value === 'manual' || !$value) {
                                             return '➕ Saisie manuelle';
                                         }
-
-                                        // Cache aussi la récupération du label
                                         return \Cache::remember("mercuriale_label_{$value}", now()->addMinutes(10), function () use ($value) {
                                             $ref = \App\Models\ReferenceMercuriale::find($value);
-
-                                            if (!$ref) {
-                                                return "Référence #{$value}";
-                                            }
-
-                                            return "{$ref->code_reference} - {$ref->designation} - " .
-                                                number_format($ref->prix_reference, 0, ',', ' ') . " FCFA";
+                                            if (!$ref) return "Référence #{$value}";
+                                            return "{$ref->code_reference} - {$ref->designation} — "
+                                                . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA";
                                         });
                                     })
-                                    ->live(debounce: 1000)
-                                    ->afterStateUpdated(function ($state, callable $set) {
-                                        if ($state && $state !== 'manual') {
-                                            // Cache aussi la récupération de la référence
-                                            $reference = \Cache::remember("mercuriale_full_{$state}", now()->addMinutes(10), function () use ($state) {
-                                                return \App\Models\ReferenceMercuriale::find($state);
-                                            });
-
-                                            if ($reference) {
-                                                $set('designation', $reference->designation);
-                                                $set('unite', $reference->unite);
-                                                $set('prix_unitaire_ht', $reference->prix_reference);
-                                                $set('reference_personnalisee', null);
-                                            }
+                                    ->live(debounce: 800)
+                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                        if (!$state || $state === 'manual') {
+                                            return; // Saisie manuelle — ne rien écraser
+                                        }
+                                        $ref = \Cache::remember(
+                                            "mercuriale_full_{$state}",
+                                            now()->addMinutes(10),
+                                            fn() => \App\Models\ReferenceMercuriale::find($state)
+                                        );
+                                        if ($ref) {
+                                            $set('designation',        $ref->designation);
+                                            $set('unite',              $ref->unite);
+                                            $set('prix_unitaire_ht',   $ref->prix_reference);
+                                            $set('reference_personnalisee', null);
+                                            // ✅ Recalculer immédiatement après remplissage
+                                            static::recalculerLigne($set, $get);
                                         }
                                     })
                                     ->helperText('Tapez au moins 3 caractères pour rechercher')
@@ -898,7 +898,60 @@ class BonCommandeResource extends Resource
                                     ->default(function (callable $get) {
                                         return $get('../../nomenclature_commune_id');
                                     }),
-                                Forms\Components\Hidden::make('quantite_livree')->default(0),
+
+                                Forms\Components\Section::make('Suivi des quantités')
+                                    ->schema([
+                                        Forms\Components\Grid::make(3)->schema([
+
+                                            // Quantité commandée = lecture seule, miroir de quantite
+                                            Forms\Components\Placeholder::make('quantite_commandee_affichee')
+                                                ->label('Qté commandée')
+                                                ->content(fn(callable $get) => (int) ($get('quantite') ?? 0)),
+
+                                            // Quantité livrée — éditable
+                                            Forms\Components\TextInput::make('quantite_livree')
+                                                ->label('Qté livrée')
+                                                ->numeric()
+                                                ->default(0)
+                                                ->minValue(0)
+                                                ->live(onBlur: true)
+                                                ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                                    $commandee = (float) ($get('quantite')      ?? 0);
+                                                    $livree    = (float) ($state               ?? 0);
+
+                                                    // Bloquer si livré > commandé
+                                                    if ($livree > $commandee) {
+                                                        $set('quantite_livree', $commandee);
+                                                        $livree = $commandee;
+                                                        \Filament\Notifications\Notification::make()
+                                                            ->title('Quantité livrée limitée')
+                                                            ->warning()
+                                                            ->body("La quantité livrée ne peut pas dépasser la quantité commandée ({$commandee}).")
+                                                            ->send();
+                                                    }
+
+                                                    $set('quantite_restante', max(0, $commandee - $livree));
+                                                })
+                                                ->suffix(fn(callable $get) => '/ ' . (int) ($get('quantite') ?? 0))
+                                                ->helperText('Ne peut pas dépasser la quantité commandée'),
+
+                                            // Quantité restante — calculée, lecture seule
+                                            Forms\Components\Placeholder::make('quantite_restante_affichee')
+                                                ->label('Qté restante')
+                                                ->content(function (callable $get) {
+                                                    $commandee = (float) ($get('quantite')        ?? 0);
+                                                    $livree    = (float) ($get('quantite_livree') ?? 0);
+                                                    $restante  = max(0, $commandee - $livree);
+                                                    $couleur   = $restante === 0.0 ? '✅' : ($livree > 0 ? '🔄' : '⏳');
+                                                    return "{$couleur} {$restante}";
+                                                }),
+                                        ]),
+                                    ])
+                                    ->collapsible()
+                                    ->collapsed(fn(callable $get) => (float) ($get('quantite_livree') ?? 0) === 0.0)
+                                    ->columnSpanFull(),
+
+                                // ✅ Conserver le Hidden pour la persistance en base
                                 Forms\Components\Hidden::make('quantite_restante')
                                     ->default(fn(callable $get) => $get('quantite') ?? 0),
 
@@ -1141,6 +1194,43 @@ class BonCommandeResource extends Resource
 
                 Tables\Columns\TextColumn::make('montant_ttc')
                     ->label('Montant TTC')->money('XAF')->sortable()->weight('bold')->color('success')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('lignes_count')
+                    ->label('Lignes')
+                    ->counts('lignes')
+                    ->badge()
+                    ->color('info')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                // ✅ Indicateur de livraison global
+                Tables\Columns\TextColumn::make('avancement_livraison')
+                    ->label('Livraison')
+                    ->getStateUsing(function ($record) {
+                        $lignes      = $record->lignes;
+                        $commandee   = $lignes->sum('quantite');
+                        $livree      = $lignes->sum('quantite_livree');
+
+                        if ($commandee <= 0) return '—';
+
+                        $pct = round(($livree / $commandee) * 100);
+                        return "{$pct}% ({$livree}/{$commandee})";
+                    })
+                    ->badge()
+                    ->color(function ($record) {
+                        $lignes    = $record->lignes;
+                        $commandee = $lignes->sum('quantite');
+                        $livree    = $lignes->sum('quantite_livree');
+
+                        if ($commandee <= 0) return 'gray';
+                        $pct = ($livree / $commandee) * 100;
+                        return match (true) {
+                            $pct >= 100 => 'success',
+                            $pct >= 50  => 'warning',
+                            $pct > 0    => 'info',
+                            default     => 'gray',
+                        };
+                    })
                     ->toggleable(),
 
                 // ✅ Correction — champ réel net_a_percevoir
