@@ -116,18 +116,54 @@ class MemoireDepenseResource extends Resource
                 ->schema([
 
                     // ── Mode de saisie global ────────────────────────────
-                    Forms\Components\ToggleButtons::make('mode_saisie_global')
-                        ->label('Mode de saisie')
-                        ->options([
-                            'prix_unitaire' => '💰 Prix Unitaire',
-                            'montant_nap'   => '📊 Montant NAP',
-                        ])
-                        ->default('prix_unitaire')
-                        ->inline()
-                        ->live()
-                        ->dehydrated(false)
-                        ->helperText('Ce mode s\'applique à toutes les lignes du mémoire')
-                        ->columnSpanFull(),
+                    // APRÈS
+                    Forms\Components\Grid::make(6)->schema([
+
+                        Forms\Components\ToggleButtons::make('mode_saisie_global')
+                            ->label('Mode de saisie')
+                            ->options([
+                                'montant_nap'   => '📊 Montant NAP',
+                                'prix_unitaire' => '💰 Prix Unitaire',
+                            ])
+                            ->default('montant_nap')
+                            ->inline()
+                            ->live()
+                            ->dehydrated(false)
+                            ->columnSpan(3),
+
+                        Forms\Components\TextInput::make('taux_tva_global')
+                            ->label('TVA globale (%)')
+                            ->numeric()
+                            ->default(19.25)
+                            ->suffix('%')
+                            ->required()
+                            ->live()
+                            ->dehydrated(false)
+                            ->helperText('S\'applique à toutes les lignes')
+                            ->afterStateHydrated(function ($component, $record) {
+                                if ($record && $record->lignes->isNotEmpty()) {
+                                    $component->state($record->lignes->first()->taux_tva ?? 19.25);
+                                }
+                            })
+                            ->columnSpan(1),
+
+                        Forms\Components\TextInput::make('taux_ir_global')
+                            ->label('IR global (%)')
+                            ->numeric()
+                            ->default(5.5)
+                            ->suffix('%')
+                            ->required()
+                            ->live()
+                            ->dehydrated(false)
+                            ->helperText('S\'applique à toutes les lignes')
+                            ->afterStateHydrated(function ($component, $record) {
+                                if ($record && $record->lignes->isNotEmpty()) {
+                                    $component->state($record->lignes->first()->taux_ir ?? 5.5);
+                                }
+                            })
+                            ->columnSpan(1),
+
+                    ])->columnSpanFull(),
 
                     Forms\Components\Repeater::make('lignes')
                         ->relationship('lignes')
@@ -136,7 +172,7 @@ class MemoireDepenseResource extends Resource
 
                                 // Nature
                                 Forms\Components\TextInput::make('nature_depense')
-                                    ->label('Nature')->required()->columnSpan(3),
+                                    ->label('Nature de la dépense')->required()->columnSpan(3),
 
                                 // Quantité
                                 Forms\Components\TextInput::make('quantite')
@@ -164,7 +200,7 @@ class MemoireDepenseResource extends Resource
                                     ->afterStateUpdated(function (Get $get, Set $set, $state) {
                                         $nap    = floatval($state ?? 0);
                                         $qte    = floatval($get('quantite') ?? 1);
-                                        $tauxIr = floatval($get('taux_ir')  ?? 5.5);
+                                        $tauxIr = floatval($get('../../taux_ir_global') ?? 5.5);
 
                                         if ($nap > 0 && $qte > 0) {
                                             $napTotal = $nap * $qte;
@@ -178,19 +214,19 @@ class MemoireDepenseResource extends Resource
                                     ->dehydrated(true)
                                     ->helperText('Net à payer par unité')
                                     ->columnSpan(2),
-                                // Taux TVA
-                                Forms\Components\TextInput::make('taux_tva')
-                                    ->label('TVA%')
-                                    ->numeric()->default(19.25)->required()
-                                    ->live(onBlur: true)
-                                    ->columnSpan(1),
+                                // // Taux TVA
+                                // Forms\Components\TextInput::make('taux_tva')
+                                //     ->label('TVA%')
+                                //     ->numeric()->default(19.25)->required()
+                                //     ->live(onBlur: true)
+                                //     ->columnSpan(1),
 
-                                // Taux IR
-                                Forms\Components\TextInput::make('taux_ir')
-                                    ->label('IR%')
-                                    ->numeric()->default(5.5)->required()
-                                    ->live(onBlur: true)
-                                    ->columnSpan(1),
+                                // // Taux IR
+                                // Forms\Components\TextInput::make('taux_ir')
+                                //     ->label('IR%')
+                                //     ->numeric()->default(5.5)->required()
+                                //     ->live(onBlur: true)
+                                //     ->columnSpan(1),
 
                                 // ── Previews ───────────────────────────────────
                                 Forms\Components\Placeholder::make('prev_mht')
@@ -291,12 +327,15 @@ class MemoireDepenseResource extends Resource
     // =========================================================================
     protected static function preparerDonneesLigne(array $data, Get $get): array
     {
+        // ← Récupérer les taux globaux et les injecter dans la ligne
+        $data['taux_tva'] = floatval($get('taux_tva_global') ?? 19.25);
+        $data['taux_ir']  = floatval($get('taux_ir_global')  ?? 5.5);
+
         $nap    = floatval($data['montant_nap_input'] ?? 0);
         $pu     = floatval($data['prix_unitaire']     ?? 0);
         $qte    = floatval($data['quantite']          ?? 0);
-        $tauxIr = floatval($data['taux_ir']           ?? 0);
+        $tauxIr = $data['taux_ir'];  // ← utiliser le taux déjà injecté
 
-        // Si prix_unitaire pas encore calculé mais NAP présent → recalculer
         if ($pu <= 0 && $nap > 0 && $qte > 0) {
             $mht                   = ($nap * $qte) / (1 - ($tauxIr / 100));
             $data['prix_unitaire'] = round($mht / $qte, 2);
@@ -318,10 +357,11 @@ class MemoireDepenseResource extends Resource
     {
         $zero = ['mht' => 0, 'tva' => 0, 'ttc' => 0, 'ir' => 0, 'nap' => 0];
 
-        $mode   = $get('../../mode_saisie_global') ?? 'prix_unitaire';
-        $qte    = floatval($get('quantite')   ?? 0);
-        $tauxTv = floatval($get('taux_tva')   ?? 19.25);
-        $tauxIr = floatval($get('taux_ir')    ?? 5.5);
+        $mode   = $get('../../mode_saisie_global')  ?? 'prix_unitaire';
+        $qte    = floatval($get('quantite')          ?? 0);
+        // ← Lecture des taux GLOBAUX au lieu des champs par ligne
+        $tauxTv = floatval($get('../../taux_tva_global') ?? 19.25);
+        $tauxIr = floatval($get('../../taux_ir_global')  ?? 5.5);
 
         if ($qte <= 0) return $zero;
 

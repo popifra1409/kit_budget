@@ -46,22 +46,18 @@ $montantLettres = $donnees['montant_lettres']
 ?? \App\Helpers\NombreEnLettres::montantCFA($memoire->montant_ttc ?? 0);
 
 // ── Taux dynamiques depuis les lignes ─────────────────────
-$tauxTvaLabel = '19,25%'; // défaut
-$tauxIrLabel = '5,5%'; // défaut
+$tauxTvaLabel = '19,25%';
+$tauxIrLabel = '5,5%';
 
-// ✅ Calculer depuis la première ligne qui a des montants
-$premiereLigne = $lignes->first(fn($l) => $l->montant_ht > 0 && $l->montant_tva > 0);
-if ($premiereLigne) {
-$tauxTvaCalc = round(($premiereLigne->montant_tva / $premiereLigne->montant_ht) * 100, 2);
-// Formater : supprimer les zéros inutiles ex: 19.25 → "19,25"
-$tauxTvaLabel = rtrim(rtrim(number_format($tauxTvaCalc, 2, ',', ''), '0'), ',') . '%';
-}
+// APRÈS — simple et fiable : lire le taux stocké directement sur la ligne
+$premiereLigne = $lignes->first();
 
-$premiereIr = $lignes->first(fn($l) => $l->montant_ht > 0 && $l->montant_ir > 0);
-if ($premiereIr) {
-$tauxIrCalc = round(($premiereIr->montant_ir / $premiereIr->montant_ht) * 100, 2);
-$tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . '%';
-}
+$tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
+$tauxIrVal = (float) ($premiereLigne?->taux_ir ?? 5.5);
+
+// Formater : supprimer les zéros décimaux inutiles (19.25 → "19,25", 5.00 → "5", 0.00 → "0")
+$tauxTvaLabel = rtrim(rtrim(number_format($tauxTvaVal, 2, ',', ''), '0'), ',') . '%';
+$tauxIrLabel = rtrim(rtrim(number_format($tauxIrVal, 2, ',', ''), '0'), ',') . '%';
 
 // ✅ Fallback depuis le mémoire lui-même si lignes vides
 if ($memoire->montant_ht > 0) {
