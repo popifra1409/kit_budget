@@ -52,6 +52,12 @@ class RolePermissionSeeder extends Seeder
             'virement_budgetaire',
             'fiche_controle_engagements',
             'avenant_engagement',
+            // ✅ NOUVEAU — modules RAV et Menu Dépense
+            'regie_avance',
+            'menu_depense',
+            'decaissement_regie',
+            'depense_regie',
+            'bon_commande_regie',
         ];
 
         // ====================================================
@@ -182,6 +188,33 @@ class RolePermissionSeeder extends Seeder
             'access_module_budget',
             'access_module_comptable',
             'access_module_marches',
+
+            // ✅ NOUVEAU — Permissions spéciales RAV
+            'valider_regie_avance',
+            'suspendre_regie_avance',
+            'cloturer_regie_avance',
+            'reapprovisionner_regie_avance',
+            'valider_menu_depense',
+            'suspendre_menu_depense',
+            'cloturer_menu_depense',
+            'reapprovisionner_menu_depense',
+
+            // ✅ NOUVEAU — Décaissements
+            'valider_decaissement_regie',
+            'verser_decaissement_regie',
+            'apurer_decaissement_regie',
+
+            // ✅ NOUVEAU — Dépenses régie
+            'valider_depense_regie',
+            'annuler_depense_regie',
+
+            // ✅ NOUVEAU — BCR/BCM
+            'valider_bon_commande_regie',
+            'annuler_bon_commande_regie',
+
+            // ✅ NOUVEAU — États / Rapports régie
+            'imprimer_etat_retenues_regie',
+            'imprimer_compte_emploi_regie',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -200,21 +233,17 @@ class RolePermissionSeeder extends Seeder
         $this->command->line("  ✓ super_admin — " . Permission::count() . " permissions (tout)");
 
         // ── ADMIN — tout sauf rôles/permissions ──────────────
-        // ✅ Admin peut gérer les utilisateurs mais PAS les rôles/permissions
         $exclureAdmin = [
-            // Gestion des rôles — réservée super_admin
             'view_role',
             'view_any_role',
             'create_role',
             'update_role',
             'delete_role',
-            // Gestion des permissions — réservée super_admin
             'view_permission',
             'view_any_permission',
             'create_permission',
             'update_permission',
             'delete_permission',
-            // Suppression utilisateurs — réservée super_admin
             'delete_user',
         ];
 
@@ -223,7 +252,7 @@ class RolePermissionSeeder extends Seeder
 
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions($permissionsAdmin);
-        $this->command->line("  ✓ admin — " . count($permissionsAdmin) . " permissions (sans rôles/permissions)");
+        $this->command->line("  ✓ admin — " . count($permissionsAdmin) . " permissions");
 
         // ── OPÉRATEUR BUDGET ─────────────────────────────────
         $this->syncRolePermissions('operateur_budget', [
@@ -408,6 +437,40 @@ class RolePermissionSeeder extends Seeder
             'view_fiche_detenteur',
             'view_any_registre_consommation',
             'view_registre_consommation',
+            // ✅ NOUVEAU — DAAF gère les régies
+            'view_any_regie_avance',
+            'view_regie_avance',
+            'create_regie_avance',
+            'update_regie_avance',
+            'valider_regie_avance',
+            'suspendre_regie_avance',
+            'cloturer_regie_avance',
+            'reapprovisionner_regie_avance',
+            'view_any_menu_depense',
+            'view_menu_depense',
+            'create_menu_depense',
+            'update_menu_depense',
+            'valider_menu_depense',
+            'suspendre_menu_depense',
+            'cloturer_menu_depense',
+            'reapprovisionner_menu_depense',
+            'view_any_decaissement_regie',
+            'view_decaissement_regie',
+            'create_decaissement_regie',
+            'update_decaissement_regie',
+            'valider_decaissement_regie',
+            'verser_decaissement_regie',
+            'apurer_decaissement_regie',
+            'view_any_depense_regie',
+            'view_depense_regie',
+            'valider_depense_regie',
+            'annuler_depense_regie',
+            'view_any_bon_commande_regie',
+            'view_bon_commande_regie',
+            'valider_bon_commande_regie',
+            'annuler_bon_commande_regie',
+            'imprimer_etat_retenues_regie',
+            'imprimer_compte_emploi_regie',
         ]);
 
         // ── CONTRÔLEUR FINANCIER ─────────────────────────────
@@ -449,6 +512,21 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'telecharger_piece_dossier',
             'view_all_dossiers',
+            // ✅ NOUVEAU — CF vise les dépenses régie
+            'view_any_regie_avance',
+            'view_regie_avance',
+            'view_any_menu_depense',
+            'view_menu_depense',
+            'view_any_decaissement_regie',
+            'view_decaissement_regie',
+            'view_any_depense_regie',
+            'view_depense_regie',
+            'valider_depense_regie',
+            'view_any_bon_commande_regie',
+            'view_bon_commande_regie',
+            'valider_bon_commande_regie',
+            'imprimer_etat_retenues_regie',
+            'imprimer_compte_emploi_regie',
         ]);
 
         // ── DIRECTEUR GÉNÉRAL ────────────────────────────────
@@ -480,7 +558,6 @@ class RolePermissionSeeder extends Seeder
             'view_type_decision',
             'view_any_personnel',
             'view_personnel',
-            // ✅ DG voit les utilisateurs mais PAS les rôles/permissions
             'view_any_user',
             'view_user',
             'transmettre_document',
@@ -493,6 +570,19 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'telecharger_piece_dossier',
             'view_all_dossiers',
+            // ✅ NOUVEAU — DG voit les régies (lecture seule)
+            'view_any_regie_avance',
+            'view_regie_avance',
+            'view_any_menu_depense',
+            'view_menu_depense',
+            'view_any_decaissement_regie',
+            'view_decaissement_regie',
+            'view_any_depense_regie',
+            'view_depense_regie',
+            'view_any_bon_commande_regie',
+            'view_bon_commande_regie',
+            'imprimer_etat_retenues_regie',
+            'imprimer_compte_emploi_regie',
         ]);
 
         // ── AGENCE COMPTABLE ─────────────────────────────────
@@ -546,6 +636,58 @@ class RolePermissionSeeder extends Seeder
             'view_fiche_detenteur',
             'view_any_registre_consommation',
             'view_registre_consommation',
+            // ✅ NOUVEAU — Agent comptable gère les décaissements
+            'view_any_regie_avance',
+            'view_regie_avance',
+            'view_any_menu_depense',
+            'view_menu_depense',
+            'view_any_decaissement_regie',
+            'view_decaissement_regie',
+            'create_decaissement_regie',
+            'update_decaissement_regie',
+            'valider_decaissement_regie',
+            'verser_decaissement_regie',
+            'apurer_decaissement_regie',
+            'view_any_depense_regie',
+            'view_depense_regie',
+            'view_any_bon_commande_regie',
+            'view_bon_commande_regie',
+            'imprimer_etat_retenues_regie',
+            'imprimer_compte_emploi_regie',
+        ]);
+
+        // ── RESPONSABLE RÉGIE (nouveau rôle) ─────────────────
+        // ✅ NOUVEAU — Responsable RAV/Menu Dépense
+        $this->syncRolePermissions('responsable_regie', [
+            'access_module_portal',
+            'access_module_budget',
+            // Vue régies dont il est responsable
+            'view_any_regie_avance',
+            'view_regie_avance',
+            'view_any_menu_depense',
+            'view_menu_depense',
+            // Décaissements — peut demander
+            'view_any_decaissement_regie',
+            'view_decaissement_regie',
+            'create_decaissement_regie',
+            // Dépenses — gestion complète
+            'view_any_depense_regie',
+            'view_depense_regie',
+            'create_depense_regie',
+            'update_depense_regie',
+            'delete_depense_regie',
+            // BCR/BCM — gestion complète
+            'view_any_bon_commande_regie',
+            'view_bon_commande_regie',
+            'create_bon_commande_regie',
+            'update_bon_commande_regie',
+            'delete_bon_commande_regie',
+            // États
+            'imprimer_etat_retenues_regie',
+            'imprimer_compte_emploi_regie',
+            // Fournisseurs — lecture
+            'view_any_fournisseur',
+            'view_fournisseur',
         ]);
 
         // ── COMPTABLE MATIÈRES ───────────────────────────────
@@ -685,21 +827,13 @@ class RolePermissionSeeder extends Seeder
         $this->command->warn('⚠️  Note importante pour la production :');
         $this->command->line('   • firstOrCreate — aucun rôle/permission supprimé');
         $this->command->line('   • syncPermissions — permissions des rôles mises à jour');
-        $this->command->line('   • Permissions custom ajoutées manuellement → à remettre après');
-        $this->command->line('   • Admin : accès utilisateurs ✅ | rôles/permissions ❌');
+        $this->command->line('   • Nouveau rôle ajouté : responsable_regie');
     }
 
-    /**
-     * Sync les permissions d'un rôle de façon sécurisée.
-     * - firstOrCreate : ne recrée pas un rôle existant
-     * - Filtre les permissions inexistantes avec un warning
-     * - syncPermissions : remplace la liste du rôle
-     */
     protected function syncRolePermissions(string $roleName, array $permissions): void
     {
         $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
 
-        // ✅ Filtrer les permissions qui n'existent pas encore en base
         $existantes = Permission::whereIn('name', $permissions)->pluck('name')->toArray();
         $manquantes = array_diff($permissions, $existantes);
 
