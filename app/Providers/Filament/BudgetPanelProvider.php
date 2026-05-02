@@ -33,13 +33,13 @@ class BudgetPanelProvider extends PanelProvider
         $this->app->bind(
             \Filament\Http\Responses\Auth\Contracts\LoginResponse::class,
             fn() => new class implements \Filament\Http\Responses\Auth\Contracts\LoginResponse {
-            public function toResponse($request): \Symfony\Component\HttpFoundation\Response
+                public function toResponse($request): \Symfony\Component\HttpFoundation\Response
                 {
                     return \Illuminate\Support\Facades\Response::make('', 302, [
                         'Location' => '/portal',
                     ]);
                 }
-                }
+            }
         );
     }
 
@@ -89,6 +89,7 @@ class BudgetPanelProvider extends PanelProvider
             // ── Navigation du module Budget ──────────────────────────────
             ->navigationGroups([
                 'Commandes & Engagement',
+                'Régies & Menu Dépenses',
                 'Fournisseurs & Documents',
                 'Gestion Budgétaire',
                 'Cadre Logique',

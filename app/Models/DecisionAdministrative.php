@@ -257,6 +257,13 @@ class DecisionAdministrative extends Model
         return $this->hasMany(DecisionAdministrative::class, 'da_reelle_id');
     }
 
+    // Dans app/Models/DecisionAdministrative.php — ajouter dans la section RELATIONS
+
+    public function regiesAvances(): HasMany
+    {
+        return $this->hasMany(\App\Models\RegieAvance::class, 'decision_administrative_id');
+    }
+
     // =========================================================
     // SCOPES
     // =========================================================
