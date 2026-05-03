@@ -14,11 +14,25 @@ class BonCommandeRegie extends Model
     protected $table = 'bons_commande_regies';
 
     protected $fillable = [
-        'regie_avance_id', 'depense_regie_id',
-        'numero', 'date_emission', 'objet', 'fournisseur_id',
-        'montant_ht', 'montant_tva', 'montant_ttc',
-        'montant_ir', 'net_a_payer', 'statut',
-        'observations', 'created_by', 'updated_by',
+        'regie_avance_id',
+        'depense_regie_id',
+        'numero',
+        'date_emission',
+        'objet',
+        'fournisseur_id',
+        'montant_ht',
+        'montant_tva',
+        'montant_ttc',
+        'montant_ir',
+        'net_a_payer',
+        'statut',
+        'observations',
+        'created_by',
+        'updated_by',
+        'ligne_regie_avance_id',
+        'provision_ligne_regie_id',
+        'engage',
+        'date_engagement',
     ];
 
     protected $casts = [
@@ -28,6 +42,8 @@ class BonCommandeRegie extends Model
         'montant_ttc'   => 'decimal:2',
         'montant_ir'    => 'decimal:2',
         'net_a_payer'   => 'decimal:2',
+        'engage'           => 'boolean',
+        'date_engagement'  => 'datetime',
     ];
 
     protected static function booted(): void
@@ -93,6 +109,55 @@ class BonCommandeRegie extends Model
             'montant_ttc' => $this->lignes()->sum('montant_ttc'),
             'montant_ir'  => $this->lignes()->sum('montant_ir'),
             'net_a_payer' => $this->lignes()->sum('net_a_payer'),
+        ]);
+    }
+
+
+    public function ligneRegieAvance(): BelongsTo
+    {
+        return $this->belongsTo(LigneRegieAvance::class, 'ligne_regie_avance_id');
+    }
+
+    public function provisionLigneRegie(): BelongsTo
+    {
+        return $this->belongsTo(ProvisionLigneRegie::class, 'provision_ligne_regie_id');
+    }
+
+    // ── Engagement ────────────────────────────────────────────────
+    public function engager(): void
+    {
+        if ($this->engage) {
+            throw new \Exception("Ce bon de commande est déjà engagé.");
+        }
+        if ($this->statut !== 'valide') {
+            throw new \Exception("Le BCR doit être validé avant engagement.");
+        }
+
+        $provision = $this->provisionLigneRegie;
+        if (!$provision) {
+            throw new \Exception("Aucune provision associée à ce bon de commande.");
+        }
+
+        // Débiter la provision
+        $provision->debiter($this->montant_ttc);
+
+        $this->updateQuietly([
+            'engage'          => true,
+            'date_engagement' => now(),
+        ]);
+    }
+
+    public function desengager(): void
+    {
+        if (!$this->engage) {
+            throw new \Exception("Ce BCR n'est pas engagé.");
+        }
+
+        $this->provisionLigneRegie?->crediter($this->montant_ttc);
+
+        $this->updateQuietly([
+            'engage'          => false,
+            'date_engagement' => null,
         ]);
     }
 }

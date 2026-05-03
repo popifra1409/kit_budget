@@ -64,6 +64,11 @@ class DecaissementRegie extends Model
         return $this->hasMany(DepenseRegie::class, 'decaissement_regie_id');
     }
 
+    public function provisions(): HasMany
+    {
+        return $this->hasMany(ProvisionLigneRegie::class, 'decaissement_regie_id');
+    }
+
     // ── Numérotation ──────────────────────────────────────────
     public static function genererNumero(RegieAvance $regie): string
     {

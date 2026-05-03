@@ -79,6 +79,11 @@ class AppServiceProvider extends ServiceProvider
             // 🔐 Sécurité (Spatie)
             'role'       => Role::class,
             'permission' => Permission::class,
+            //regie d'avance et menus dépenses
+            'regie_avance'              => \App\Models\RegieAvance::class,
+            'bon_commande_regie'        => \App\Models\BonCommandeRegie::class,
+            'depense_regie'             => \App\Models\DepenseRegie::class,
+            'provision_ligne_regie'     => \App\Models\ProvisionLigneRegie::class,
 
         ]);
 

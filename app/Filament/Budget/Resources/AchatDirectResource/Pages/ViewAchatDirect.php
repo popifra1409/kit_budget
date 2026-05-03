@@ -1,18 +1,18 @@
 <?php
 
-namespace App\Filament\Budget\Resources\BonCommandeRegieResource\Pages;
+namespace App\Filament\Budget\Resources\AchatDirectResource\Pages;
 
-use App\Filament\Budget\Resources\BonCommandeRegieResource;
+use App\Filament\Budget\Resources\AchatDirectResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
-use Filament\Forms;
+use App\Models\ProvisionLigneRegie;
 
-class ViewBonCommandeRegie extends ViewRecord
+class ViewAchatDirect extends ViewRecord
 {
-    protected static string $resource = BonCommandeRegieResource::class;
+    protected static string $resource = AchatDirectResource::class;
 
     protected function getHeaderActions(): array
     {
@@ -26,21 +26,23 @@ class ViewBonCommandeRegie extends ViewRecord
                 ->visible(
                     fn($record) =>
                     $record->statut === 'brouillon'
-                        && auth()->user()?->can('valider_bon_commande_regie')
+                        && auth()->user()?->can('valider_depense_regie')
                 )
                 ->requiresConfirmation()
                 ->action(function ($record) {
-                    $record->update(['statut' => 'valide']);
-                    Notification::make()->title('✅ BCR/BCM validé')->success()->send();
-                    $this->refreshFormData(['statut']);
+                    try {
+                        if ($record->provision_ligne_regie_id) {
+                            ProvisionLigneRegie::findOrFail($record->provision_ligne_regie_id)
+                                ->debiter($record->montant_ttc);
+                        }
+                        $record->update(['statut' => 'valide']);
+                        Notification::make()->title('✅ Validé')->success()->send();
+                        $this->refreshFormData(['statut']);
+                    } catch (\Exception $e) {
+                        Notification::make()->title('❌ Erreur')
+                            ->danger()->body($e->getMessage())->send();
+                    }
                 }),
-
-            // Actions\Action::make('pdf')
-            //     ->label('PDF')
-            //     ->icon('heroicon-o-document-arrow-down')->color('gray')
-            //     ->visible(fn($record) => $record->statut !== 'brouillon')
-            //     ->url(fn($record) => route('bcr.pdf', $record))
-            //     ->openUrlInNewTab(),
         ];
     }
 
@@ -50,43 +52,29 @@ class ViewBonCommandeRegie extends ViewRecord
             Infolists\Components\Section::make('Identification')
                 ->schema([
                     Infolists\Components\TextEntry::make('numero')
-                        ->label('N° BCR/BCM')->copyable()->weight('bold'),
-                    Infolists\Components\TextEntry::make('regieAvance.numero')
-                        ->label('Régie source')->badge()->color('info'),
-                    Infolists\Components\TextEntry::make('regieAvance.type')
-                        ->label('Type')
-                        ->formatStateUsing(fn($state) => match ($state) {
-                            'rav'          => 'Régie d\'Avance',
-                            'menu_depense' => 'Menu Dépense',
-                            default        => $state,
-                        })->badge(),
+                        ->label('N°')->copyable()->weight('bold'),
+                    Infolists\Components\TextEntry::make('regieAvance.libelle')
+                        ->label('Régie'),
+                    Infolists\Components\TextEntry::make('date_depense')
+                        ->label('Date')->date('d/m/Y'),
                     Infolists\Components\TextEntry::make('statut')
                         ->label('Statut')->badge()
                         ->color(fn($state) => match ($state) {
                             'brouillon' => 'gray',
                             'valide'    => 'warning',
-                            'livre'     => 'success',
                             'paye'      => 'success',
                             'annule'    => 'danger',
                             default     => 'gray',
                         }),
-                    Infolists\Components\TextEntry::make('date_emission')
-                        ->label('Date d\'émission')->date('d/m/Y'),
-                    Infolists\Components\TextEntry::make('fournisseur.raison_sociale')
-                        ->label('Fournisseur')->weight('bold'),
+                    Infolists\Components\TextEntry::make('objet')
+                        ->label('Objet')->columnSpan(2),
                 ])
                 ->columns(3),
-
-            Infolists\Components\Section::make('Objet')
-                ->schema([
-                    Infolists\Components\TextEntry::make('objet')
-                        ->label('')->columnSpanFull(),
-                ]),
 
             Infolists\Components\Section::make('Montants')
                 ->schema([
                     Infolists\Components\TextEntry::make('montant_ht')
-                        ->label('Montant HT')
+                        ->label('MHT')
                         ->formatStateUsing(
                             fn($state) =>
                             number_format($state, 0, ',', ' ') . ' FCFA'
@@ -98,7 +86,7 @@ class ViewBonCommandeRegie extends ViewRecord
                             number_format($state, 0, ',', ' ') . ' FCFA'
                         ),
                     Infolists\Components\TextEntry::make('montant_ttc')
-                        ->label('Montant TTC')
+                        ->label('TTC')
                         ->formatStateUsing(
                             fn($state) =>
                             number_format($state, 0, ',', ' ') . ' FCFA'
@@ -110,7 +98,7 @@ class ViewBonCommandeRegie extends ViewRecord
                             number_format($state, 0, ',', ' ') . ' FCFA'
                         )->color('warning'),
                     Infolists\Components\TextEntry::make('net_a_payer')
-                        ->label('✅ Net à payer')
+                        ->label('✅ Net à Payer')
                         ->formatStateUsing(
                             fn($state) =>
                             number_format($state, 0, ',', ' ') . ' FCFA'

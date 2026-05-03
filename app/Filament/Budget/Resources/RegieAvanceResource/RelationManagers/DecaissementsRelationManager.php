@@ -6,6 +6,7 @@ use Filament\Forms;
 use Filament\Tables;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Notifications\Notification;
+use App\Models\ProvisionLigneRegie;
 
 class DecaissementsRelationManager extends RelationManager
 {
@@ -118,6 +119,91 @@ class DecaissementsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
+                Tables\Actions\Action::make('repartir')
+                    ->label('Répartir sur lignes')
+                    ->icon('heroicon-o-arrows-pointing-out')->color('primary')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'verse'
+                            && $record->provisions()->count() === 0
+                            && auth()->user()?->can('valider_decaissement_regie')
+                    )
+                    ->modalHeading('Répartir le décaissement sur les lignes de nomenclature')
+                    ->modalDescription(
+                        fn($record) =>
+                        "Répartir " . number_format($record->montant_accorde, 0, ',', ' ')
+                            . " FCFA sur les lignes de nomenclature de la régie."
+                    )
+                    ->form(function ($record) {
+                        $regie  = $record->regieAvance;
+                        $lignes = $regie->lignes()->with('nomenclature')->get();
+                        $schema = [];
+
+                        foreach ($lignes as $ligne) {
+                            $schema[] = Forms\Components\TextInput::make("montant_ligne_{$ligne->id}")
+                                ->label(
+                                    "{$ligne->nomenclature->code} — {$ligne->nomenclature->libelle} "
+                                        . "(Alloué: " . number_format($ligne->montant_alloue, 0, ',', ' ') . " FCFA)"
+                                )
+                                ->numeric()->default(0)->prefix('FCFA')
+                                ->helperText(
+                                    'Disponible sur la ligne : '
+                                        . number_format($ligne->montant_disponible, 0, ',', ' ') . ' FCFA'
+                                );
+                        }
+
+                        // Placeholder total
+                        $schema[] = Forms\Components\Placeholder::make('total_reparti')
+                            ->label('⚠️ Le total doit correspondre au montant accordé')
+                            ->content(
+                                fn() =>
+                                "Montant accordé : "
+                                    . number_format($record->montant_accorde, 0, ',', ' ') . " FCFA"
+                            );
+
+                        return $schema;
+                    })
+                    ->action(function ($record, array $data) {
+                        $regie  = $record->regieAvance;
+                        $lignes = $regie->lignes()->with('nomenclature')->get();
+                        $total  = 0;
+
+                        foreach ($lignes as $ligne) {
+                            $montant = (float) ($data["montant_ligne_{$ligne->id}"] ?? 0);
+                            if ($montant <= 0) continue;
+                            $total += $montant;
+
+                            // Créer la provision
+                            ProvisionLigneRegie::create([
+                                'decaissement_regie_id'  => $record->id,
+                                'ligne_regie_avance_id'  => $ligne->id,
+                                'montant_provisionne'    => $montant,
+                                'montant_consomme'       => 0,
+                                'montant_disponible'     => $montant,
+                            ]);
+                        }
+
+                        // Vérification cohérence
+                        $ecart = abs($total - $record->montant_accorde);
+                        if ($ecart > 1) {
+                            Notification::make()
+                                ->title('⚠️ Écart de répartition')
+                                ->warning()
+                                ->body(
+                                    "Total réparti : " . number_format($total, 0, ',', ' ')
+                                        . " FCFA / Accordé : "
+                                        . number_format($record->montant_accorde, 0, ',', ' ') . " FCFA"
+                                        . "\nÉcart : " . number_format($ecart, 0, ',', ' ') . " FCFA"
+                                )
+                                ->send();
+                        } else {
+                            Notification::make()
+                                ->title('✅ Répartition effectuée')
+                                ->success()
+                                ->body("Les provisions ont été créées sur " . $lignes->count() . " ligne(s).")
+                                ->send();
+                        }
+                    }),
                 // ── Accorder ──────────────────────────────────
                 Tables\Actions\Action::make('accorder')
                     ->label('Accorder')

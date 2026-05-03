@@ -295,10 +295,10 @@ $refChemin = "{$sigle}/DG/DRHF/SDFC/SBC/BBE";
     <div class="ligne-info">
         Type d'engagement : <strong>{{ strtoupper($typeLibelle) }}</strong> N°
         <u>{{ $numeroDoc }}</u>
-        &nbsp; {{ $refChemin }} du
-        <u>{{ $engagement->date_engagement
+        &nbsp; {{ $refChemin }} du <span>____________________</span>
+        <!-- <u>{{ $engagement->date_engagement
             ? \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y')
-            : '____________' }}</u>
+            : '____________' }}</u> -->
     </div>
 
     {{-- ── Imputation budgétaire ──────────────────────────────── --}}
