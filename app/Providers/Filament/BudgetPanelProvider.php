@@ -126,6 +126,7 @@ class BudgetPanelProvider extends PanelProvider
 
             ->pages([
                 \App\Filament\Pages\Dashboard::class,
+                \App\Filament\Budget\Pages\DashboardRegie::class,
             ])
 
             // ── Render hooks ─────────────────────────────────────────────

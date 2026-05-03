@@ -118,47 +118,42 @@ class RegieAvanceResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Décision Administrative source')
-                ->description('DA engagée qui alimente cette régie')
+                ->description(
+                    '💡 Après création de la régie, associez la DA source '
+                        . 'depuis l\'onglet "Décision source" de la fiche.'
+                )
                 ->schema([
-                    Forms\Components\Select::make('decision_administrative_id')
-                        ->label('Décision Administrative')
-                        ->options(function () {
-                            return \App\Models\DecisionAdministrative::where('statut', 'engagee')
-                                ->whereDoesntHave('regiesAvances')
-                                ->get()
-                                ->mapWithKeys(fn($da) => [
-                                    $da->id => "{$da->numero} — {$da->objet} "
-                                        . "(" . number_format($da->montant_net, 0, ',', ' ') . " FCFA)"
-                                ]);
-                        })
-                        ->searchable()
-                        ->live()
-                        ->afterStateUpdated(function ($state, Set $set) {
-                            if (!$state) return;
-                            $da = \App\Models\DecisionAdministrative::find($state);
-                            if ($da) {
-                                $set('montant_alloue', $da->montant_net);
-                                $set('budget_id',      $da->budget_id);
-                                $set('exercice_id',    $da->exercice_id);
-                            }
-                        })
-                        ->helperText('Sélectionner la DA engagée source — les montants seront pré-remplis')
-                        ->columnSpanFull(),
-
                     Forms\Components\Grid::make(2)->schema([
                         Forms\Components\TextInput::make('montant_alloue')
-                            ->label('Montant alloué (FCFA)')
-                            ->numeric()
-                            ->required()
-                            ->prefix('FCFA')
-                            ->live(onBlur: true)
-                            ->helperText('Correspond au montant net de la DA'),
+                            ->label('Montant alloué estimé (FCFA)')
+                            ->numeric()->default(0)->prefix('FCFA')
+                            ->helperText(
+                                'Sera mis à jour automatiquement après association de la DA source.'
+                            ),
 
                         Forms\Components\DatePicker::make('date_creation')
                             ->label('Date de création')
-                            ->default(now())
-                            ->required(),
+                            ->default(now())->required(),
                     ]),
+
+                    Forms\Components\Placeholder::make('info_source')
+                        ->label('')
+                        ->content(new \Illuminate\Support\HtmlString(
+                            '<div class="rounded-lg p-3 text-sm '
+                                . 'bg-blue-50 dark:bg-blue-900/30 '
+                                . 'text-blue-800 dark:text-blue-200 '
+                                . 'border border-blue-200 dark:border-blue-700">'
+                                . '<strong>📋 Étapes après création :</strong>'
+                                . '<ol class="mt-2 ml-4 list-decimal leading-loose">'
+                                . '<li>Cliquez <strong>Créer</strong> pour sauvegarder la régie</li>'
+                                . '<li>Dans la fiche → onglet <strong>"Décision source"</strong> '
+                                . '→ <strong>"Associer une DA"</strong></li>'
+                                . '<li>Sélectionnez la DA engagée — montant et ligne budgétaire '
+                                . 'seront récupérés automatiquement</li>'
+                                . '</ol>'
+                                . '</div>'
+                        ))
+                        ->columnSpanFull(),
                 ]),
 
             Forms\Components\Section::make('Observations')
@@ -382,6 +377,7 @@ class RegieAvanceResource extends Resource
     public static function getRelations(): array
     {
         return [
+            RelationManagers\DecisionSourceRavRelationManager::class,
             RelationManagers\LignesRegieRelationManager::class,
             RelationManagers\DecaissementsRelationManager::class,
             RelationManagers\DepensesRelationManager::class,

@@ -4,6 +4,7 @@ namespace App\Filament\Budget\Resources\RegieAvanceResource\Pages;
 
 use App\Filament\Budget\Resources\RegieAvanceResource;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Notifications\Notification;
 
 class CreateRegieAvance extends CreateRecord
 {
@@ -11,8 +12,21 @@ class CreateRegieAvance extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['type'] = 'rav'; // ← forcer le type
+        $data['type'] = 'rav';
         return $data;
+    }
+
+    protected function afterCreate(): void
+    {
+        Notification::make()
+            ->title('✅ Régie d\'Avance créée')
+            ->success()
+            ->body(
+                'Associez maintenant la décision source depuis '
+                    . 'l\'onglet "Décision source" ci-dessous.'
+            )
+            ->persistent()
+            ->send();
     }
 
     protected function getRedirectUrl(): string

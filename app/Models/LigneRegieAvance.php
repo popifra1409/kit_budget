@@ -56,12 +56,20 @@ class LigneRegieAvance extends Model
     // ── Méthodes ──────────────────────────────────────────────
     public function recalculerMontants(): void
     {
-        $consomme = $this->depenses()
+        // ✅ Sommer toutes les dépenses validées/payées + BCR engagés
+        $depenses = $this->depenses()
             ->whereNotIn('statut', ['annule'])
             ->sum('montant_ttc');
 
+        $bonsCommande = \App\Models\BonCommandeRegie::where('ligne_regie_avance_id', $this->id)
+            ->where('engage', true)
+            ->whereNotIn('statut', ['annule'])
+            ->sum('montant_ttc');
+
+        $consomme = $depenses + $bonsCommande;
+
         $this->updateQuietly([
-            'montant_consomme'  => $consomme,
+            'montant_consomme'   => $consomme,
             'montant_disponible' => $this->montant_alloue - $consomme,
         ]);
     }

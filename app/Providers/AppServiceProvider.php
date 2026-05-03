@@ -19,6 +19,10 @@ use App\Models\DecisionAdministrative;
 use App\Observers\BonCommandeObserver;
 use App\Models\PieceDossier;
 use App\Observers\PieceDossierObserver;
+use App\Models\DepenseRegie;
+use App\Observers\DepenseRegieObserver;
+use App\Models\BonCommandeRegie;
+use App\Observers\BonCommandeRegieObserver;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
@@ -92,6 +96,8 @@ class AppServiceProvider extends ServiceProvider
         // Enregistrer l'observer BonCommande
         BonCommande::observe(BonCommandeObserver::class);
         PieceDossier::observe(PieceDossierObserver::class);
+        DepenseRegie::observe(DepenseRegieObserver::class);
+        BonCommandeRegie::observe(BonCommandeRegieObserver::class);
         // Enregistrer le CSS personnalisé
         FilamentAsset::register([
             Css::make('custom-theme', resource_path('css/filament/admin/theme.css')),

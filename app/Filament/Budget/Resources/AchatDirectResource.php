@@ -205,6 +205,85 @@ class AchatDirectResource extends Resource
                             ])
                             ->default('nap')->inline()->live()->dehydrated(false),
 
+                        Forms\Components\Placeholder::make('nap_max_suggere')
+                            ->label('💡 Limites de saisie')
+                            ->content(function (Get $get) {
+                                $seuilAd  = (float) (ParametresStructure::where('actif', true)
+                                    ->value('seuil_achat_direct_regie') ?? 500000);
+                                $seuilBcr = (float) (ParametresStructure::where('actif', true)
+                                    ->value('seuil_bon_commande_regie') ?? 5000000);
+
+                                $tauxTv = (float) ($get('taux_tva') ?? 19.25);
+                                $tauxIr = (float) ($get('taux_ir')  ?? 5.5);
+
+                                // NAP max pour achat direct (TTC doit être STRICTEMENT < 500 000)
+                                // On prend 499 999 comme TTC max effectif
+                                $ttcMaxAd = $seuilAd - 1;
+                                $napMaxAd = $ttcMaxAd
+                                    * (1 - $tauxIr / 100)
+                                    / (1 + $tauxTv / 100);
+
+                                $ttcActuel = (float) ($get('montant_ttc') ?? 0);
+                                $alertHtml = '';
+
+                                if ($ttcActuel > 0) {
+                                    if ($ttcActuel < $seuilAd) {
+                                        $alertHtml = '<div class="mt-2 rounded p-2 text-xs font-semibold '
+                                            . 'bg-green-100 text-green-700 '
+                                            . 'dark:bg-green-900/40 dark:text-green-300">'
+                                            . '✅ Achat direct valide (TTC < ' . number_format($seuilAd, 0, ',', ' ') . ' FCFA)'
+                                            . '</div>';
+                                    } elseif ($ttcActuel < $seuilBcr) {
+                                        $alertHtml = '<div class="mt-2 rounded p-2 text-xs font-semibold '
+                                            . 'bg-yellow-100 text-yellow-700 '
+                                            . 'dark:bg-yellow-900/40 dark:text-yellow-300">'
+                                            . '⚠️ Ce montant nécessite un BCR/BCM (TTC ≥ ' . number_format($seuilAd, 0, ',', ' ') . ' FCFA)'
+                                            . '</div>';
+                                    } else {
+                                        $alertHtml = '<div class="mt-2 rounded p-2 text-xs font-semibold '
+                                            . 'bg-red-100 text-red-700 '
+                                            . 'dark:bg-red-900/40 dark:text-red-300">'
+                                            . '🚫 Dépasse le seuil BCR — procédure marché public requise '
+                                            . '(TTC ≥ ' . number_format($seuilBcr, 0, ',', ' ') . ' FCFA)'
+                                            . '</div>';
+                                    }
+                                }
+
+                                return new \Illuminate\Support\HtmlString(
+                                    '<div class="rounded-lg p-3 text-sm leading-loose '
+                                        . 'bg-blue-50 dark:bg-blue-900/30 '
+                                        . 'text-blue-800 dark:text-blue-200 '
+                                        . 'border border-blue-200 dark:border-blue-700">'
+                                        . '<table class="w-full">'
+                                        . '<tr class="font-semibold border-b border-blue-200 dark:border-blue-700">'
+                                        . '<td>Type de dépense</td>'
+                                        . '<td class="text-right">Seuil TTC</td>'
+                                        . '<td class="text-right">NAP max</td>'
+                                        . '</tr>'
+                                        . '<tr class="text-green-700 dark:text-green-400">'
+                                        . '<td>✅ Achat direct</td>'
+                                        . '<td class="text-right">< ' . number_format($seuilAd, 0, ',', ' ') . ' FCFA</td>'
+                                        . '<td class="text-right font-bold">'
+                                        . '< ' . number_format($napMaxAd, 0, ',', ' ') . ' FCFA</td>'
+                                        . '</tr>'
+                                        . '<tr class="text-yellow-700 dark:text-yellow-400">'
+                                        . '<td>📋 BCR / BCM</td>'
+                                        . '<td class="text-right">≥ ' . number_format($seuilAd, 0, ',', ' ')
+                                        . ' et < ' . number_format($seuilBcr, 0, ',', ' ') . ' FCFA</td>'
+                                        . '<td class="text-right">—</td>'
+                                        . '</tr>'
+                                        . '<tr class="text-red-700 dark:text-red-400">'
+                                        . '<td>🚫 Marché public</td>'
+                                        . '<td class="text-right">≥ ' . number_format($seuilBcr, 0, ',', ' ') . ' FCFA</td>'
+                                        . '<td class="text-right">—</td>'
+                                        . '</tr>'
+                                        . '</table>'
+                                        . $alertHtml
+                                        . '</div>'
+                                );
+                            })
+                            ->columnSpanFull(),
+
                         Forms\Components\TextInput::make('taux_tva')
                             ->label('TVA (%)')->numeric()->default(19.25)->suffix('%')
                             ->live(onBlur: true)

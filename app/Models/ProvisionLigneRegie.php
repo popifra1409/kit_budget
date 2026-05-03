@@ -63,8 +63,8 @@ class ProvisionLigneRegie extends Model
         if (!$this->peutEngager($montant)) {
             throw new \Exception(
                 "Provision insuffisante sur la ligne {$this->ligneRegie->nomenclature->code}.\n"
-                . "Disponible : " . number_format($this->montant_disponible, 0, ',', ' ') . " FCFA\n"
-                . "Demandé : "    . number_format($montant, 0, ',', ' ') . " FCFA"
+                    . "Disponible : " . number_format($this->montant_disponible, 0, ',', ' ') . " FCFA\n"
+                    . "Demandé : "    . number_format($montant, 0, ',', ' ') . " FCFA"
             );
         }
         $this->updateQuietly([
@@ -83,8 +83,18 @@ class ProvisionLigneRegie extends Model
 
     public function recalculer(): void
     {
-        $consomme = $this->bonsCommande()->where('engage', true)->sum('montant_ttc')
-                  + $this->depenses()->whereNotIn('statut', ['annule'])->sum('montant_ttc');
+        // Dépenses validées/payées sur cette provision
+        $depenses = $this->depenses()
+            ->whereNotIn('statut', ['annule'])
+            ->sum('montant_ttc');
+
+        // BCR engagés sur cette provision
+        $bonsCommande = $this->bonsCommande()
+            ->where('engage', true)
+            ->whereNotIn('statut', ['annule'])
+            ->sum('montant_ttc');
+
+        $consomme = $depenses + $bonsCommande;
 
         $this->updateQuietly([
             'montant_consomme'   => $consomme,

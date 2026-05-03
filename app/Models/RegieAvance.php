@@ -107,6 +107,11 @@ class RegieAvance extends Model
         return $this->hasMany(BonCommandeRegie::class, 'regie_avance_id');
     }
 
+    public function decisionsSource(): HasMany
+    {
+        return $this->hasMany(MenuDepenseDecision::class, 'regie_avance_id');
+    }
+
     // =========================================================
     // NUMÉROTATION
     // =========================================================
@@ -156,6 +161,26 @@ class RegieAvance extends Model
             ParametresStructure::where('actif', true)->value('seuil_achat_direct_regie')
             ?? 500000
         );
+    }
+
+    public static function seuilBonCommande(): float
+    {
+        return (float) (
+            ParametresStructure::where('actif', true)->value('seuil_bon_commande_regie')
+            ?? 5000000
+        );
+    }
+
+    public static function determinerTypeDepense(float $montantTtc): string
+    {
+        $seuilAd  = static::seuilAchatDirect();  // 500 000
+        $seuilBcr = static::seuilBonCommande();  // 5 000 000
+
+        return match (true) {
+            $montantTtc < $seuilAd  => 'achat_direct',   // < 500 000
+            $montantTtc < $seuilBcr => 'bon_commande',   // >= 500 000 et < 5 000 000
+            default                 => 'marche_public',  // >= 5 000 000 → hors régie
+        };
     }
 
     /**

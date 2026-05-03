@@ -105,41 +105,47 @@ class MenuDepenseResource extends Resource
 
             // ✅ Menu Dépense : plusieurs DA possibles (multi-lignes)
             Forms\Components\Section::make('Décisions Administratives sources')
-                ->description('Le Menu Dépense peut être alimenté par plusieurs DA sur différentes nomenclatures')
+                ->description(
+                    '💡 Après création du Menu Dépense, ajoutez les décisions sources '
+                        . 'depuis l\'onglet "Décisions sources" de la fiche.'
+                )
                 ->schema([
-                    Forms\Components\Select::make('decision_administrative_id')
-                        ->label('DA principale (approvisionnement initial)')
-                        ->options(function () {
-                            return \App\Models\DecisionAdministrative::where('statut', 'engagee')
-                                ->get()
-                                ->mapWithKeys(fn($da) => [
-                                    $da->id => "{$da->numero} — {$da->objet} "
-                                        . "(" . number_format($da->montant_net, 0, ',', ' ') . " FCFA)"
-                                ]);
-                        })
-                        ->searchable()
-                        ->live()
-                        ->afterStateUpdated(function ($state, Set $set) {
-                            if (!$state) return;
-                            $da = \App\Models\DecisionAdministrative::find($state);
-                            if ($da) {
-                                $set('budget_id',   $da->budget_id);
-                                $set('exercice_id', $da->exercice_id);
-                            }
-                        })
-                        ->helperText('Les montants alloués seront définis ligne par ligne')
-                        ->columnSpanFull(),
-
                     Forms\Components\Grid::make(2)->schema([
                         Forms\Components\TextInput::make('montant_alloue')
-                            ->label('Montant total alloué (FCFA)')
-                            ->numeric()->required()->prefix('FCFA')
-                            ->helperText('Somme de toutes les DA sources'),
+                            ->label('Montant total alloué estimé (FCFA)')
+                            ->numeric()
+                            ->default(0)
+                            ->prefix('FCFA')
+                            ->helperText(
+                                'Saisissez une estimation — sera recalculé automatiquement '
+                                    . 'après ajout des DA sources.'
+                            ),
 
                         Forms\Components\DatePicker::make('date_creation')
                             ->label('Date de création')
-                            ->default(now())->required(),
+                            ->default(now())
+                            ->required(),
                     ]),
+
+                    // ✅ Message informatif
+                    Forms\Components\Placeholder::make('info_sources')
+                        ->label('')
+                        ->content(new \Illuminate\Support\HtmlString(
+                            '<div class="rounded-lg p-3 text-sm '
+                                . 'bg-blue-50 dark:bg-blue-900/30 '
+                                . 'text-blue-800 dark:text-blue-200 '
+                                . 'border border-blue-200 dark:border-blue-700">'
+                                . '<strong>📋 Étapes après création :</strong>'
+                                . '<ol class="mt-2 ml-4 list-decimal leading-loose">'
+                                . '<li>Cliquez <strong>Créer</strong> pour sauvegarder le Menu Dépense</li>'
+                                . '<li>Dans la fiche, onglet <strong>"Décisions sources"</strong> '
+                                . '→ <strong>"Ajouter une DA source"</strong></li>'
+                                . '<li>Pour chaque DA engagée : sélectionner DA + nomenclature + montant</li>'
+                                . '<li>Le montant total sera recalculé automatiquement</li>'
+                                . '</ol>'
+                                . '</div>'
+                        ))
+                        ->columnSpanFull(),
                 ]),
 
             Forms\Components\Section::make('Observations')
@@ -335,6 +341,7 @@ class MenuDepenseResource extends Resource
     public static function getRelations(): array
     {
         return [
+            \App\Filament\Budget\Resources\MenuDepenseResource\RelationManagers\DecisionsSourcesRelationManager::class,
             RelationManagers\LignesRegieRelationManager::class,
             RelationManagers\DecaissementsRelationManager::class,
             RelationManagers\DepensesRelationManager::class,

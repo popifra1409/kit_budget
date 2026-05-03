@@ -91,18 +91,40 @@ class DecaissementRegie extends Model
     // ── Méthodes ──────────────────────────────────────────────
     public function recalculerDepenses(): void
     {
+        // Toutes les dépenses rattachées à ce décaissement
         $totalDepense = $this->depenses()
+            ->whereNotIn('statut', ['annule'])
+            ->sum('montant_ttc');
+
+        // BCR engagés via les provisions de ce décaissement
+        $totalBcr = \App\Models\BonCommandeRegie::whereHas(
+            'provisionLigneRegie',
+            fn($q) =>
+            $q->where('decaissement_regie_id', $this->id)
+        )
+            ->where('engage', true)
             ->whereNotIn('statut', ['annule'])
             ->sum('montant_ttc');
 
         $totalIr = $this->depenses()
             ->whereNotIn('statut', ['annule'])
+            ->sum('montant_ir')
+            +
+            \App\Models\BonCommandeRegie::whereHas(
+                'provisionLigneRegie',
+                fn($q) =>
+                $q->where('decaissement_regie_id', $this->id)
+            )
+            ->where('engage', true)
+            ->whereNotIn('statut', ['annule'])
             ->sum('montant_ir');
 
+        $totalDepenseGlobal = $totalDepense + $totalBcr;
+
         $this->updateQuietly([
-            'montant_depense'     => $totalDepense,
+            'montant_depense'     => $totalDepenseGlobal,
             'montant_ir_collecte' => $totalIr,
-            'montant_solde'       => $this->montant_accorde - $totalDepense,
+            'montant_solde'       => $this->montant_accorde - $totalDepenseGlobal,
         ]);
     }
 }
