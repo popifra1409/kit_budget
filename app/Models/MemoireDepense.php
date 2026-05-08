@@ -42,6 +42,7 @@ class MemoireDepense extends Model
         'lieu_signature',
         'statut',
         'fichier_pdf',
+        'mode_saisie ',
     ];
 
     protected $casts = [
@@ -296,6 +297,15 @@ class MemoireDepense extends Model
     public function getMontantNetFormateAttribute(): string
     {
         return number_format($this->montant_net, 0, ',', ' ') . ' FCFA';
+    }
+
+    public function getModeSaisieLibelleAttribute(): string
+    {
+        return match ($this->mode_saisie ?? 'montant_nap') {
+            'montant_nap'   => '📊 Montant NAP',
+            'prix_unitaire' => '💰 Prix Unitaire HT',
+            default         => 'Non défini',
+        };
     }
 
     // ====================================

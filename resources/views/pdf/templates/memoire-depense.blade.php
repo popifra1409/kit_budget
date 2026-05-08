@@ -2,12 +2,10 @@
 $disableFooter = true;
 
 $memoire = $donnees['_raw'] ?? $memoire ?? null;
-if (!$memoire)
-abort(404);
+if (!$memoire) abort(404);
 
 $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
-// ✅ Charger les relations DA et engagement
 $memoire->load([
 'lignes',
 'decisionAdministrative.typeDecision',
@@ -16,7 +14,6 @@ $memoire->load([
 
 $lignes = $memoire->lignes->sortBy('numero_ligne');
 
-// ── DA et engagement liés ─────────────────────────────────
 $da = $memoire->decisionAdministrative;
 $engagement = $da?->engagement;
 
@@ -45,21 +42,14 @@ $montantLettres = $donnees['montant_lettres']
 ?? $memoire->montant_lettres
 ?? \App\Helpers\NombreEnLettres::montantCFA($memoire->montant_ttc ?? 0);
 
-// ── Taux dynamiques depuis les lignes ─────────────────────
-$tauxTvaLabel = '19,25%';
-$tauxIrLabel = '5,5%';
-
-// APRÈS — simple et fiable : lire le taux stocké directement sur la ligne
+// ── Taux depuis les lignes ────────────────────────────────
 $premiereLigne = $lignes->first();
-
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
 $tauxIrVal = (float) ($premiereLigne?->taux_ir ?? 5.5);
 
-// Formater : supprimer les zéros décimaux inutiles (19.25 → "19,25", 5.00 → "5", 0.00 → "0")
 $tauxTvaLabel = rtrim(rtrim(number_format($tauxTvaVal, 2, ',', ''), '0'), ',') . '%';
 $tauxIrLabel = rtrim(rtrim(number_format($tauxIrVal, 2, ',', ''), '0'), ',') . '%';
 
-// ✅ Fallback depuis le mémoire lui-même si lignes vides
 if ($memoire->montant_ht > 0) {
 if ($memoire->montant_tva > 0 && $tauxTvaLabel === '19,25%') {
 $tauxTvaCalc = round(($memoire->montant_tva / $memoire->montant_ht) * 100, 2);
@@ -140,7 +130,6 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         margin-bottom: 4px;
     }
 
-    /* ── Références ─────────────────────────────────────── */
     .md-refs {
         display: table;
         width: 100%;
@@ -152,29 +141,6 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         padding: 2px 4px;
     }
 
-    /* ── Bandeau DA / Engagement ─────────────────────────── */
-    .md-da-band {
-        display: table;
-        width: 100%;
-        background: #f0f4ff;
-        border: 1px solid #b0c0e8;
-        border-radius: 3px;
-        padding: 4px 8px;
-        font-size: 8pt;
-        margin-bottom: 5px;
-    }
-
-    .md-da-band td {
-        border: none;
-        padding: 2px 6px;
-    }
-
-    .md-da-label {
-        font-weight: bold;
-        color: #1e3a8a;
-    }
-
-    /* ── Tableau lignes ───────────────────────────────────── */
     .md-table {
         width: 100%;
         border-collapse: collapse;
@@ -264,7 +230,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
 
 @if($pageIndex === 0)
 
-{{-- ── Numéro + Exercice ────────────────────────────── --}}
+{{-- ── Numéro + Exercice ────────────────────────── --}}
 <div class="md-header-row">
     <div class="md-header-cell left" style="font-size:8pt;">
         Exercice : <strong>{{ $memoire->exercice }}</strong>
@@ -281,7 +247,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
 <div class="md-titre">MÉMOIRE DE DÉPENSE</div>
 <div class="md-objet">{{ strtoupper($memoire->objet ?? '') }}</div>
 
-{{-- ── Références ──────────────────────────────────── --}}
+{{-- ── Références ──────────────────────────────── --}}
 <table class="md-refs">
     <tr>
         @if($memoire->numero_decision)
@@ -307,40 +273,8 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
     </tr>
 </table>
 
-{{-- ✅ NOUVEAU — Bandeau DA + Engagement (si transformé) ──── --}}
-{{-- @if($da || $engagement)
-            <table class="md-da-band">
-                <tr>
-                    @if($da)
-                    <td>
-                        <span class="md-da-label">N° Décision :</span>
-                        {{ $da->numero }}
-@if($da->typeDecision)
-<span style="color:#475569;">({{ $da->typeDecision->libelle }})</span>
-@endif
-@if($da->date_decision)
-— du {{ \Carbon\Carbon::parse($da->date_decision)->format('d/m/Y') }}
-@endif
-</td>
-@endif
-@if($engagement)
-<td>
-    <span class="md-da-label">N° Engagement :</span>
-    {{ $engagement->numero }}
-    @if($engagement->date_engagement)
-    — du {{ \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') }}
-    @endif
-    <span style="color:#166534;">
-        ({{ number_format((float) $engagement->montant_engage, 0, ',', ' ') }} FCFA)
-    </span>
-</td>
-@endif
-</tr>
-</table>
-@endif --}}
-
 @else
-{{-- ── En-tête pages suivantes ─────────────────────── --}}
+{{-- ── En-tête pages suivantes ─────────────────── --}}
 <div style="margin-bottom:8px; display:table; width:100%;">
     <span style="display:table-cell; font-size:9pt; font-weight:bold; vertical-align:middle;">
         Suite — Page {{ $pageIndex + 1 }}
@@ -351,66 +285,121 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
 </div>
 @endif
 
-{{-- ── Tableau des lignes ───────────────────────────────── --}}
+{{-- ── Tableau des lignes ─────────────────────────── --}}
 <table class="md-table">
     <thead>
         <tr>
-            <th style="width:35%;">NATURE DE LA DÉPENSE</th>
-            <th style="width:6%;">QTÉ</th>
-            <th style="width:9%;">P.U</th>
+            <th style="width:34%;">NATURE DE LA DÉPENSE</th>
+            <th style="width:5%;">QTÉ</th>
+
+            {{-- ✅ P.U NET = NAP unitaire (valeur saisie) --}}
+            <th style="width:9%;">
+                P.U NET
+                <span style="font-size:6.5pt; font-weight:400; display:block;">
+                    (NAP / unité)
+                </span>
+            </th>
+
+            {{-- ✅ NAP total juste après P.U NET --}}
             <th style="width:9%;">NAP</th>
+
             <th style="width:9%;">MHT</th>
             <th style="width:9%;">TVA ({{ $tauxTvaLabel }})</th>
-            <th style="width:8%;">IR ({{ $tauxIrLabel }})</th>
+            <th style="width:7%;">IR ({{ $tauxIrLabel }})</th>
             <th style="width:9%;">MONTANT TTC</th>
         </tr>
     </thead>
     <tbody>
         @forelse($lignesPage as $ligne)
+        @php
+        $qte = max(1, (float) $ligne->quantite);
+        // ✅ P.U NET = montant_net / quantité (NAP unitaire original)
+        $napUnitaire = ($ligne->montant_net ?? $ligne->net_a_payer ?? 0) / $qte;
+        $napTotal = $ligne->montant_net ?? $ligne->net_a_payer ?? 0;
+        @endphp
         <tr>
             <td>{{ $ligne->nature_depense }}</td>
-            <td class="center">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($ligne->prix_unitaire, 0, ',', ' ') }}</td>
-            <td class="num" style="font-weight:600;">{{ number_format($ligne->net_a_payer, 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($ligne->montant_tva, 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($ligne->montant_ir, 0, ',', ' ') }}</td>
-            <td class="num" style="font-weight:600;">{{ number_format($ligne->montant_ttc, 0, ',', ' ') }}</td>
+            <td class="center">
+                {{ number_format($ligne->quantite, 0, ',', ' ') }}
+            </td>
+
+            {{-- ✅ P.U NET = NAP unitaire --}}
+            <td class="num" style="font-weight:600;">
+                {{ number_format($napUnitaire, 0, ',', ' ') }}
+            </td>
+
+            {{-- ✅ NAP Total juste après --}}
+            <td class="num" style="font-weight:600;">
+                {{ number_format($napTotal, 0, ',', ' ') }}
+            </td>
+
+            <td class="num">
+                {{ number_format($ligne->montant_ht,  0, ',', ' ') }}
+            </td>
+            <td class="num">
+                {{ number_format($ligne->montant_tva, 0, ',', ' ') }}
+            </td>
+            <td class="num">
+                {{ number_format($ligne->montant_ir,  0, ',', ' ') }}
+            </td>
+            <td class="num" style="font-weight:600;">
+                {{ number_format($ligne->montant_ttc, 0, ',', ' ') }}
+            </td>
         </tr>
         @empty
         <tr>
-            <td colspan="8" style="text-align:center; font-style:italic; color:#666; height:8mm;">
+            <td colspan="8" style="text-align:center; font-style:italic;
+                        color:#666; height:8mm;">
                 Aucune ligne enregistrée
             </td>
         </tr>
         @endforelse
-
-        {{-- @if($loop->last)
-                @php $nbVides = max(0, 5 - $lignesPage->count()); @endphp
-                @for($v = 0; $v < $nbVides; $v++) <tr style="height:7mm;">
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    </tr>
-                    @endfor
-                    @endif --}}
     </tbody>
 
     @if($loop->last)
     <tfoot>
         <tr class="total-row">
-            <td colspan="2" style="text-align:right; font-size:9pt; text-transform:uppercase;">TOTAL</td>
+            <td colspan="2" style="text-align:right; font-size:9pt; text-transform:uppercase;">
+                TOTAL
+            </td>
+
+            {{-- P.U NET : pas de total pertinent --}}
             <td></td>
-            <td class="num">{{ number_format($memoire->montant_net ?? $lignes->sum('net_a_payer'), 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($memoire->montant_ht ?? $lignes->sum('montant_ht'), 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($memoire->montant_tva ?? $lignes->sum('montant_tva'), 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($memoire->montant_ir ?? $lignes->sum('montant_ir'), 0, ',', ' ') }}</td>
-            <td class="num">{{ number_format($memoire->montant_ttc ?? $lignes->sum('montant_ttc'), 0, ',', ' ') }}</td>
+
+            {{-- ✅ NAP Total = somme des montant_net des lignes --}}
+            <td class="num">
+                {{ number_format(
+                        $lignes->sum('montant_net') ?: $lignes->sum('net_a_payer'),
+                        0, ',', ' '
+                    ) }}
+            </td>
+
+            <td class="num">
+                {{ number_format(
+                        $memoire->montant_ht ?? $lignes->sum('montant_ht'),
+                        0, ',', ' '
+                    ) }}
+            </td>
+            <td class="num">
+                {{ number_format(
+                        $memoire->montant_tva ?? $lignes->sum('montant_tva'),
+                        0, ',', ' '
+                    ) }}
+            </td>
+            <td class="num">
+                {{ number_format(
+                        $memoire->montant_ir ?? $lignes->sum('montant_ir'),
+                        0, ',', ' '
+                    ) }}
+            </td>
+
+            {{-- ✅ TTC = somme des TTC des lignes --}}
+            <td class="num">
+                {{ number_format(
+                        $lignes->sum('montant_ttc') ?: ($memoire->montant_ttc ?? 0),
+                        0, ',', ' '
+                    ) }}
+            </td>
         </tr>
     </tfoot>
     @endif
@@ -426,7 +415,8 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
 <div class="md-signature clearfix" style="page-break-inside:avoid;">
     <div class="md-signature-right">
         <div style="margin-bottom:4px; font-size:8pt;">
-            {{ $memoire->lieu_signature ?? 'Yaoundé' }}, le ________________________________
+            {{ $memoire->lieu_signature ?? 'Yaoundé' }},
+            le ________________________________
         </div>
         <div style="font-weight:bold; font-size:9pt; text-transform:uppercase;">
             {{ $memoire->signataire_fonction
@@ -446,7 +436,9 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
 
 @endif
 
-<div class="page-number">Page {{ $pageIndex + 1 }} / {{ $nombrePages }}</div>
+<div class="page-number">
+    Page {{ $pageIndex + 1 }} / {{ $nombrePages }}
+</div>
 
 @if(!$loop->last)
 <div class="page-break"></div>
