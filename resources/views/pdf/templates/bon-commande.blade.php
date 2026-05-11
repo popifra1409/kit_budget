@@ -5,20 +5,19 @@ $bonCommande = $donnees['_raw'];
 
 $service = $donnees['service'] ?? ($bonCommande->serviceDemandeur->nom ?? 'DIRECTION GENERALE');
 $numeroBca = $donnees['numero_bca'] ?? ($bonCommande->numero ?? '.........');
-$dateImpression = $donnees['date_impression'] ?? date('d/m/Y');
+$dateImpression = $donnees['date_impression'] ?? now()->format('d/m/Y à H:i');
 $prestataireNom = $donnees['prestataire_nom'] ?? ($bonCommande->fournisseur->raison_sociale ?? '');
 $prestataireAdresse = $donnees['prestataire_adresse'] ?? ($bonCommande->fournisseur->adresse ?? '...............');
 $prestataireTel = $donnees['prestataire_tel'] ?? ($bonCommande->fournisseur->telephone ?? '......................');
 $prestataireContribuable = $donnees['prestataire_contribuable'] ?? ($bonCommande->fournisseur->nif ?? '........................');
 
-// ── Taux dynamiques ───────────────────────────────────────
-// Calculer le taux TVA réel depuis les montants
+// ── Montants ──────────────────────────────────────────────
 $montantHt = (float) ($bonCommande->montant_ht ?? 0);
 $montantTva = (float) ($bonCommande->montant_tva ?? 0);
 $montantIr = (float) ($bonCommande->montant_ir ?? 0);
 $montantTtc = (float) ($bonCommande->montant_ttc ?? 0);
 
-// ✅ Taux TVA — depuis le champ du modèle ou calculé
+// ✅ Taux TVA — depuis le modèle ou calculé
 $tauxTva = 0;
 if (isset($bonCommande->taux_tva) && $bonCommande->taux_tva > 0) {
 $tauxTva = (float) $bonCommande->taux_tva;
@@ -26,7 +25,7 @@ $tauxTva = (float) $bonCommande->taux_tva;
 $tauxTva = round(($montantTva / $montantHt) * 100, 2);
 }
 
-// ✅ Taux IR — depuis le champ du modèle ou calculé
+// ✅ Taux IR — depuis le modèle ou calculé
 $tauxIr = 0;
 if (isset($bonCommande->taux_ir) && $bonCommande->taux_ir > 0) {
 $tauxIr = (float) $bonCommande->taux_ir;
@@ -34,14 +33,42 @@ $tauxIr = (float) $bonCommande->taux_ir;
 $tauxIr = round(($montantIr / $montantHt) * 100, 2);
 }
 
-// ✅ Labels dynamiques
-$labelTva = $tauxTva > 0
-? 'MONTANT TVA (' . rtrim(rtrim(number_format($tauxTva, 2, ',', ''), '0'), ',') . '%)'
-: 'MONTANT TVA';
+// ✅ Labels dynamiques — toujours affichés même si taux = 0
+$labelTva = 'MONTANT TVA ('
+. rtrim(rtrim(number_format($tauxTva, 2, ',', ''), '0'), ',')
+. '%)';
 
-$labelIr = $tauxIr > 0
-? 'MONTANT IR (' . rtrim(rtrim(number_format($tauxIr, 2, ',', ''), '0'), ',') . '%)'
-: 'MONTANT IR';
+$labelIr = 'MONTANT IR ('
+. rtrim(rtrim(number_format($tauxIr, 2, ',', ''), '0'), ',')
+. '%)';
+
+// ── Créateur du document ──────────────────────────────────
+// ── Créateur du document ──────────────────────────────────
+$createur = null;
+$initiauxCreateur = '—';
+$dateCreation = '—';
+
+// ✅ Chercher uniquement le créateur réel — PAS l'utilisateur connecté
+if ($bonCommande->created_by ?? null) {
+$createur = \App\Models\User::find($bonCommande->created_by);
+}
+if (!$createur && ($bonCommande->user_id ?? null)) {
+$createur = \App\Models\User::find($bonCommande->user_id);
+}
+// ❌ PAS de fallback auth()->user() — on veut le créateur, pas l'imprimeur
+
+if ($createur) {
+// ✅ Username / login / name dans cet ordre de priorité
+$initiauxCreateur = $createur->username
+?? $createur->login
+?? $createur->name
+?? '—';
+}
+
+if ($bonCommande->created_at) {
+$dateCreation = \Carbon\Carbon::parse($bonCommande->created_at)
+->format('d/m/Y à H:i');
+}
 
 // ── Pagination ────────────────────────────────────────────
 $lignesPage1 = 10;
@@ -81,7 +108,8 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
     @page {
         size: A4 portrait !important;
         margin-top: 2cm;
-        margin-bottom: 2cm;
+        margin-bottom: 2.5cm;
+        /* ✅ Marge basse pour le pied de page */
         margin-left: 1.5cm;
         margin-right: 1.5cm;
     }
@@ -144,14 +172,12 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
         width: 30%;
     }
 
-    /* ✅ Colonnes FIXES — text-wrap au lieu de stretching */
     .articles-table {
         width: 100%;
         border-collapse: collapse;
         margin: 15px 0;
         font-size: 9pt;
         table-layout: fixed;
-        /* ← clé : colonnes fixes */
     }
 
     .articles-table th {
@@ -163,7 +189,6 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
         padding: 6px 4px;
         overflow: hidden;
         word-wrap: break-word;
-        /* ← retour à la ligne si trop long */
     }
 
     .articles-table td {
@@ -173,19 +198,15 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
         padding: 5px 4px;
         overflow: hidden;
         word-wrap: break-word;
-        /* ← retour à la ligne */
         white-space: normal;
-        /* ← autorise le wrap */
         vertical-align: top;
     }
 
     .articles-table td.nombre {
         text-align: right;
         white-space: nowrap;
-        /* montants sur une ligne */
     }
 
-    /* ✅ Largeurs fixes des colonnes */
     .col-reference {
         width: 18%;
     }
@@ -246,6 +267,9 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
     .signature-container {
         margin-top: 50px;
         page-break-inside: avoid;
+        break-inside: avoid;
+        page-break-before: avoid;
+        break-before: avoid;
     }
 
     .clearfix::after {
@@ -264,32 +288,87 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
         break-inside: avoid;
     }
 
-    .signature-container {
-        page-break-inside: avoid;
-        break-inside: avoid;
-        page-break-before: avoid;
-        break-before: avoid;
+    /* ✅ Pied de page fixe sur chaque page */
+    .pdf-footer-custom {
+        position: fixed;
+        bottom: 0;
+        left: 1.5cm;
+        right: 1.5cm;
+        height: 1.8cm;
+        border-top: 1px solid #ccc;
+        padding-top: 4px;
+        font-size: 7pt;
+        color: #000;
+        /* ✅ noir */
     }
+
+    .pdf-footer-custom table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .pdf-footer-custom td {
+        border: none;
+        padding: 0 4px;
+        vertical-align: top;
+        font-size: 7pt;
+        color: #000;
+        /* ✅ noir */
+    }
+
+    /* ✅ Ligne TVA/IR à zéro — grisée mais visible */
+    /* .row-zero td {
+        color: #999;
+        font-style: italic;
+    } */
 </style>
 @endpush
 
 @section('content')
+
+{{-- ✅ Pied de page fixe — s'affiche sur toutes les pages --}}
+<div class="pdf-footer-custom">
+    <table>
+        <tr>
+            {{-- ✅ Colonne gauche : date d'impression --}}
+            <td style="width:30%; text-align:left; color:#000;">
+                <strong>Imprimé le :</strong> {{ $dateImpression }}
+            </td>
+
+            {{-- ✅ Colonne centre : sigle + numéro BCA --}}
+            <td style="width:35%; text-align:center; color:#000; font-weight:bold;">
+                {{ $parametres->sigle ?? '' }}
+                &nbsp;—&nbsp;
+                BCA N° {{ $numeroBca }}
+            </td>
+
+            {{-- ✅ Colonne droite : créé le + par (créateur uniquement) --}}
+            <td style="width:35%; text-align:right; color:#000;">
+                <strong>Créé le :</strong> {{ $dateCreation }}
+                @if($initiauxCreateur !== '—')
+                &nbsp;|&nbsp; <strong>Par :</strong> {{ $initiauxCreateur }}
+                @endif
+            </td>
+        </tr>
+    </table>
+</div>
+
 @foreach ($lignesChunked as $pageIndex => $lignesPage)
 
-{{-- ════ EN-TÊTE DE PAGE ════ --}}
+{{-- ════ EN-TÊTE ════ --}}
 @if ($pageIndex === 0)
 <div class="service-info">
     DEMANDEUR: <span class="font-normal">{{ strtoupper($service) }}</span>
 </div>
 <div class="bca-numero">BCA N°: {{ $numeroBca }}</div>
-<div class="date-impression">Imprimé le {{ $dateImpression }}</div>
+<!-- <div class="date-impression">Imprimé le {{ $dateImpression }}</div> -->
 <div class="text-center font-bold mb-10">BON DE COMMANDE ADMINISTRATIF</div>
-<div class="text-center font-bold mb-15">Pour les objets et matières ci-après:</div>
+<div class="text-center font-bold mb-15">Pour les objets et matières ci-après :</div>
 
 <div class="mb-15">
     <table class="simple">
         <tr>
-            <td><strong>Objet du bon de commande: </strong></td>
+            <td><strong>Objet du bon de commande :</strong></td>
             <td class="font-normal">
                 {{ $bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '') }}
             </td>
@@ -302,7 +381,7 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 </div>
 @else
 <div class="page-header-continue">
-    <div class="bca-box-continue">BCA N°: {{ $numeroBca }}</div>
+    <div class="bca-box-continue">BCA N° : {{ $numeroBca }}</div>
     <div style="font-size: 9pt; margin-top: 3px;">
         <strong>Suite — Page {{ $pageIndex + 1 }}</strong>
     </div>
@@ -349,7 +428,7 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 </div>
 <div class="page-break"></div>
 <div class="page-header-continue">
-    <div class="bca-box-continue">BCA N°: {{ $numeroBca }}</div>
+    <div class="bca-box-continue">BCA N° : {{ $numeroBca }}</div>
     <div style="font-size: 9pt; margin-top: 3px;">
         <strong>Récapitulatif — Page {{ $nombrePages }}</strong>
     </div>
@@ -359,43 +438,48 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 <div class="bloc-recapitulatif">
 
     <div class="totaux">
-        <table style="width:auto; min-width:280px; margin-left:auto; border-collapse:collapse;">
+        <table style="width:auto; min-width:320px; margin-left:auto; border-collapse:collapse;">
+
+            {{-- Montant HT --}}
             <tr>
                 <td style="padding:3px 8px; font-size:9pt;">MONTANT HT</td>
                 <td style="padding:3px 8px; font-size:9pt; text-align:right; font-weight:bold;">
-                    {{ number_format($bonCommande->montant_ht, 0, ',', ' ') }} F
+                    {{ number_format($montantHt, 0, ',', ' ') }} F
                 </td>
             </tr>
-            @if ($montantTva > 0)
-            <tr>
-                {{-- ✅ Label TVA dynamique --}}
+
+            {{-- ✅ TVA — toujours affichée même si 0 --}}
+            <tr class="{{ $montantTva <= 0 ? 'row-zero' : '' }}">
                 <td style="padding:3px 8px; font-size:9pt;">{{ $labelTva }}</td>
                 <td style="padding:3px 8px; font-size:9pt; text-align:right; font-weight:bold;">
                     {{ number_format($montantTva, 0, ',', ' ') }} F
                 </td>
             </tr>
-            @endif
-            @if ($montantIr > 0)
-            <tr>
-                {{-- ✅ Label IR dynamique --}}
+
+            {{-- ✅ IR — toujours affiché même si 0 --}}
+            <tr class="{{ $montantIr <= 0 ? 'row-zero' : '' }}">
                 <td style="padding:3px 8px; font-size:9pt;">{{ $labelIr }}</td>
                 <td style="padding:3px 8px; font-size:9pt; text-align:right; font-weight:bold;">
                     {{ number_format($montantIr, 0, ',', ' ') }} F
                 </td>
             </tr>
-            @endif
+
+            {{-- NET A PAYER --}}
             <tr style="border-top:1px solid #000;">
                 <td style="padding:3px 8px; font-size:9pt; font-weight:bold;">NET A PAYER</td>
                 <td style="padding:3px 8px; font-size:9pt; text-align:right; font-weight:bold;">
-                    {{ number_format($bonCommande->net_a_percevoir, 0, ',', ' ') }} F
+                    {{ number_format($bonCommande->net_a_percevoir ?? ($montantTtc - $montantIr), 0, ',', ' ') }} F
                 </td>
             </tr>
+
+            {{-- MONTANT TOTAL TTC --}}
             <tr style="border-top:2px solid #000; background:#f0f0f0;">
                 <td style="padding:4px 8px; font-size:9.5pt; font-weight:bold;">MONTANT TOTAL TTC</td>
                 <td style="padding:4px 8px; font-size:9.5pt; text-align:right; font-weight:bold;">
                     {{ number_format($montantTtc, 0, ',', ' ') }} F
                 </td>
             </tr>
+
         </table>
     </div>
 
