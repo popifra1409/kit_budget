@@ -1331,39 +1331,6 @@ class BonCommandeResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
-
-                Tables\Filters\Filter::make('date_emission')
-                    ->form([
-                        Forms\Components\DatePicker::make('date_emission_from')
-                            ->label('Date d\'émission du')
-                            ->placeholder('JJ/MM/AAAA'),
-                        Forms\Components\DatePicker::make('date_emission_until')
-                            ->label('Date d\'émission au')
-                            ->placeholder('JJ/MM/AAAA'),
-                    ])
-                    ->query(function ($query, array $data) {
-                        return $query
-                            ->when($data['date_emission_from'], fn($q, $date) =>
-                            $q->whereDate('date_emission', '>=', $date))
-                            ->when($data['date_emission_until'], fn($q, $date) =>
-                            $q->whereDate('date_emission', '<=', $date));
-                    })
-                    ->indicateUsing(function (array $data): array {
-                        $indicators = [];
-
-                        if ($data['date_emission_from'] ?? null) {
-                            $indicators[] = Tables\Filters\Indicator::make('Émis depuis le ' . \Carbon\Carbon::parse($data['date_emission_from'])->format('d/m/Y'))
-                                ->removeField('date_emission_from');
-                        }
-
-                        if ($data['date_emission_until'] ?? null) {
-                            $indicators[] = Tables\Filters\Indicator::make('Émis jusqu\'au ' . \Carbon\Carbon::parse($data['date_emission_until'])->format('d/m/Y'))
-                                ->removeField('date_emission_until');
-                        }
-
-                        return $indicators;
-                    }),
-
                 // FILTRE PAR PÉRIODE PRÉDÉFINIE
                 Tables\Filters\Filter::make('periode')
                     ->form([
@@ -1436,6 +1403,38 @@ class BonCommandeResource extends Resource
                         return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
 
+                Tables\Filters\Filter::make('date_emission')
+                    ->form([
+                        Forms\Components\DatePicker::make('date_emission_from')
+                            ->label('Date d\'émission du')
+                            ->placeholder('JJ/MM/AAAA'),
+                        Forms\Components\DatePicker::make('date_emission_until')
+                            ->label('Date d\'émission au')
+                            ->placeholder('JJ/MM/AAAA'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        return $query
+                            ->when($data['date_emission_from'], fn($q, $date) =>
+                            $q->whereDate('date_emission', '>=', $date))
+                            ->when($data['date_emission_until'], fn($q, $date) =>
+                            $q->whereDate('date_emission', '<=', $date));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['date_emission_from'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Émis depuis le ' . \Carbon\Carbon::parse($data['date_emission_from'])->format('d/m/Y'))
+                                ->removeField('date_emission_from');
+                        }
+
+                        if ($data['date_emission_until'] ?? null) {
+                            $indicators[] = Tables\Filters\Indicator::make('Émis jusqu\'au ' . \Carbon\Carbon::parse($data['date_emission_until'])->format('d/m/Y'))
+                                ->removeField('date_emission_until');
+                        }
+
+                        return $indicators;
+                    }),
+
                 Tables\Filters\Filter::make('mes_bons')
                     ->label('📁 Tous mes bons')
                     ->query(function ($query) {
@@ -1444,6 +1443,18 @@ class BonCommandeResource extends Resource
                     ->toggle()
                     ->default(false)
                     ->indicateUsing(fn() => '📁 Tous les bons (créés par moi)'),
+
+                Tables\Filters\Filter::make('mes_transmissions')
+                    ->label('📤 Mes transmissions envoyées')
+                    ->query(function ($query) {
+                        return $query->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('expediteur_id', auth()->id())
+                                ->where('statut', 'en_attente');
+                        });
+                    })
+                    ->toggle()
+                    ->default(false) // ✅ DÉSACTIVÉ par défaut (cache les transmissions)
+                    ->indicateUsing(fn() => '📤 Transmissions envoyées en attente'),
 
                 Tables\Filters\Filter::make('à_traiter')
                     ->label('📌 A traiter par moi')
@@ -1480,18 +1491,6 @@ class BonCommandeResource extends Resource
                     ->toggle()
                     ->default(true)
                     ->indicateUsing(fn() => '📌 Bons nécessitant mon action'),
-
-                Tables\Filters\Filter::make('mes_transmissions')
-                    ->label('📤 Mes transmissions envoyées')
-                    ->query(function ($query) {
-                        return $query->whereHas('transmissions', function ($transmission) {
-                            $transmission->where('expediteur_id', auth()->id())
-                                ->where('statut', 'en_attente');
-                        });
-                    })
-                    ->toggle()
-                    ->default(false) // ✅ DÉSACTIVÉ par défaut (cache les transmissions)
-                    ->indicateUsing(fn() => '📤 Transmissions envoyées en attente'),
 
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')

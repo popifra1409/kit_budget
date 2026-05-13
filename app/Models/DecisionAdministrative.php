@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DecisionAdministrative extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions, HasWorkflow ;
 
     protected $table = 'decisions_administratives';
 
@@ -72,6 +72,11 @@ class DecisionAdministrative extends Model
         'est_previsionnel',
         'da_reelle_id',
         'statut_avant_annulation',
+        'taux_ir',
+        'montant_ir',
+        'type_irnc',
+        'banque',
+        'billetage',
     ];
 
     protected $casts = [
@@ -242,10 +247,10 @@ class DecisionAdministrative extends Model
         return $this->belongsTo(Fournisseur::class, 'fournisseur_id');
     }
 
-    public function transmissions()
-    {
-        return $this->morphMany(Transmission::class, 'document');
-    }
+    // public function transmissions()
+    // {
+    //     return $this->morphMany(Transmission::class, 'document');
+    // }
 
     public function daReelle(): BelongsTo
     {
@@ -802,16 +807,16 @@ class DecisionAdministrative extends Model
     // =========================================================
     // TRANSMISSIONS
     // =========================================================
-    public function estEnCoursDeTransmission(): bool
-    {
-        return $this->transmissions()->where('statut', 'en_attente')->exists();
-    }
+    // public function estEnCoursDeTransmission(): bool
+    // {
+    //     return $this->transmissions()->where('statut', 'en_attente')->exists();
+    // }
 
-    public function estDestinataireActuel(): bool
-    {
-        $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
-        return $t && $t->destinataire_id === auth()->id();
-    }
+    // public function estDestinataireActuel(): bool
+    // {
+    //     $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
+    //     return $t && $t->destinataire_id === auth()->id();
+    // }
 
     public function peutEtreVuPar(?int $userId = null): bool
     {
@@ -821,43 +826,43 @@ class DecisionAdministrative extends Model
         return $this->estDestinataireActuel();
     }
 
-    public function transmettreA(
-        User $destinataire,
-        string $actionAttendue,
-        ?string $commentaire = null,
-        array $metadata = []
-    ): Transmission {
-        if ($this->estEnCoursDeTransmission()) {
-            throw new \Exception('Cette décision est déjà en cours de transmission.');
-        }
-        $transmission = new Transmission([
-            'document_type'      => static::class,
-            'document_id'        => $this->id,
-            'expediteur_id'      => auth()->id(),
-            'destinataire_id'    => $destinataire->id,
-            'action_attendue'    => $actionAttendue,
-            'commentaire'        => $commentaire,
-            'statut'             => 'en_attente',
-            'priorite'           => $metadata['priorite'] ?? 'normale',
-            'date_limite'        => $metadata['date_limite'] ?? null,
-            'date_transmission'  => now(),
-        ]);
-        $transmission->save();
-        activity()->performedOn($this)->causedBy(auth()->user())
-            ->withProperties(['destinataire' => $destinataire->name])
-            ->log('Décision transmise');
-        return $transmission;
-    }
+    // public function transmettreA(
+    //     User $destinataire,
+    //     string $actionAttendue,
+    //     ?string $commentaire = null,
+    //     array $metadata = []
+    // ): Transmission {
+    //     if ($this->estEnCoursDeTransmission()) {
+    //         throw new \Exception('Cette décision est déjà en cours de transmission.');
+    //     }
+    //     $transmission = new Transmission([
+    //         'document_type'      => static::class,
+    //         'document_id'        => $this->id,
+    //         'expediteur_id'      => auth()->id(),
+    //         'destinataire_id'    => $destinataire->id,
+    //         'action_attendue'    => $actionAttendue,
+    //         'commentaire'        => $commentaire,
+    //         'statut'             => 'en_attente',
+    //         'priorite'           => $metadata['priorite'] ?? 'normale',
+    //         'date_limite'        => $metadata['date_limite'] ?? null,
+    //         'date_transmission'  => now(),
+    //     ]);
+    //     $transmission->save();
+    //     activity()->performedOn($this)->causedBy(auth()->user())
+    //         ->withProperties(['destinataire' => $destinataire->name])
+    //         ->log('Décision transmise');
+    //     return $transmission;
+    // }
 
-    public function cloturerTransmission(?string $reponse = null): void
-    {
-        $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
-        if (!$t || $t->destinataire_id !== auth()->id()) {
-            throw new \Exception("Vous n'êtes pas le destinataire de cette transmission.");
-        }
-        $t->update(['statut' => 'traite', 'date_traitement' => now(), 'reponse' => $reponse]);
-        activity()->performedOn($this)->causedBy(auth()->user())->log('Transmission clôturée');
-    }
+    // public function cloturerTransmission(?string $reponse = null): void
+    // {
+    //     $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
+    //     if (!$t || $t->destinataire_id !== auth()->id()) {
+    //         throw new \Exception("Vous n'êtes pas le destinataire de cette transmission.");
+    //     }
+    //     $t->update(['statut' => 'traite', 'date_traitement' => now(), 'reponse' => $reponse]);
+    //     activity()->performedOn($this)->causedBy(auth()->user())->log('Transmission clôturée');
+    // }
 
     public function peutEtreTransmis(): bool
     {
@@ -865,10 +870,10 @@ class DecisionAdministrative extends Model
         return in_array($this->statut, ['brouillon', 'valide']);
     }
 
-    public function transmissionEnCours(): ?Transmission
-    {
-        return $this->transmissions()->where('statut', 'en_attente')->latest()->first();
-    }
+    // public function transmissionEnCours(): ?Transmission
+    // {
+    //     return $this->transmissions()->where('statut', 'en_attente')->latest()->first();
+    // }
 
     public function aEteTransmis(): bool
     {
@@ -880,6 +885,24 @@ class DecisionAdministrative extends Model
         return $this->transmissions()->with(['expediteur', 'destinataire'])
             ->orderBy('created_at', 'desc')->get();
     }
+
+    // protected function estEnTransmission(): bool
+    // {
+    //     // ✅ Via la méthode du trait HasWorkflow — évite les problèmes de morphMap
+    //     return $this->record->estEnCoursDeTransmission();
+    // }
+
+    // protected function estDestinataire(): bool
+    // {
+    //     // ✅ Via la méthode du trait HasWorkflow
+    //     return $this->record->estDestinataireActuel();
+    // }
+
+    // protected function transmissionEnCours(): ?Transmission
+    // {
+    //     // ✅ Via la relation morphMany du trait
+    //     return $this->record->transmissionEnCours();
+    // }
 
     // =========================================================
     // ACTIVITY LOG

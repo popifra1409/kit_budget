@@ -21,6 +21,7 @@ class Transmission extends Model
         'statut',
         'commentaire',
         'reponse',
+        'motif_retour',      // ✅ AJOUTER
         'priorite',
         'date_limite',
         'date_transmission',
@@ -32,180 +33,161 @@ class Transmission extends Model
 
     protected $casts = [
         'date_transmission' => 'datetime',
-        'date_traitement' => 'datetime',
-        'date_lecture' => 'datetime',
-        'date_limite' => 'date',
-        'documents_joints' => 'array',
-        'metadata' => 'array',
+        'date_traitement'   => 'datetime',
+        'date_lecture'      => 'datetime',
+        'date_limite'       => 'date',
+        'documents_joints'  => 'array',
+        'metadata'          => 'array',
     ];
 
-    public static function booted()
+    // ✅ FIX MAJEUR — booted() ne doit PAS annuler automatiquement
+    // les transmissions précédentes car cela efface l'historique
+    // et empêche le workflow retour/clôture de fonctionner
+    public static function booted(): void
     {
-        static::creating(function ($transmission) {
-            self::where('document_type', $transmission->document_type)
-                ->where('document_id', $transmission->document_id)
-                ->where('statut', 'en_attente')
-                ->update([
-                    'statut' => 'annule',
-                    'date_traitement' => now(),
-                ]);
-        });
+        // ✅ Supprimé : le hook creating() qui annulait les transmissions en_attente
+        // Cette logique est gérée manuellement dans WorkflowActions::transmettre()
+        // pour un contrôle explicite et traçable
     }
 
-    /**
-     * Relation polymorphique : Document transmis
-     */
+    // ── Relations ─────────────────────────────────────────────
     public function document(): MorphTo
     {
         return $this->morphTo();
     }
 
-    /**
-     * Relation : Expéditeur
-     */
     public function expediteur(): BelongsTo
     {
         return $this->belongsTo(User::class, 'expediteur_id');
     }
 
-    /**
-     * Relation : Destinataire
-     */
     public function destinataire(): BelongsTo
     {
         return $this->belongsTo(User::class, 'destinataire_id');
     }
 
-    /**
-     * Scope : Transmissions en attente
-     */
+    // ── Scopes ────────────────────────────────────────────────
     public function scopeEnAttente($query)
     {
         return $query->where('statut', 'en_attente');
     }
 
-    /**
-     * Scope : Transmissions pour un destinataire
-     */
     public function scopePourDestinataire($query, int $userId)
     {
         return $query->where('destinataire_id', $userId);
     }
 
-    /**
-     * Scope : Transmissions d'un expéditeur
-     */
     public function scopeDeExpediteur($query, int $userId)
     {
         return $query->where('expediteur_id', $userId);
     }
 
-    /**
-     * Scope : Transmissions non lues
-     */
     public function scopeNonLues($query)
     {
         return $query->whereNull('date_lecture');
     }
 
-    /**
-     * Scope : Transmissions urgentes
-     */
     public function scopeUrgentes($query)
     {
         return $query->where('priorite', 'urgente');
     }
 
-    /**
-     * Marquer comme lu
-     */
+    // ── Actions ───────────────────────────────────────────────
     public function marquerCommeLu(): void
     {
         if (!$this->date_lecture) {
-            $this->date_lecture = now();
-            $this->save();
+            $this->update(['date_lecture' => now()]);
         }
     }
 
-    /**
-     * Traiter la transmission
-     */
-    public function traiter(string $reponse = null): void
+    // ✅ FIX — nullable explicite (supprime le deprecated PHP 8.4)
+    public function traiter(?string $reponse = null): void
     {
-        $this->statut = 'traite';
-        $this->date_traitement = now();
-        if ($reponse) {
-            $this->reponse = $reponse;
-        }
-        $this->save();
+        $this->update([
+            'statut'          => 'traite',
+            'reponse'         => $reponse,
+            'date_traitement' => now(),
+        ]);
     }
 
-    /**
-     * Rejeter la transmission
-     */
-    public function rejeter(string $motif): void
+    // ✅ FIX — statut 'retourne' au lieu de 'rejete'
+    // et motif stocké dans motif_retour (pas reponse)
+    public function rejeter(?string $motif = null): void
     {
-        $this->statut = 'rejete';
-        $this->date_traitement = now();
-        $this->reponse = $motif;
-        $this->save();
+        $this->update([
+            'statut'          => 'retourne',   // ← était 'rejete'
+            'motif_retour'    => $motif,        // ← champ dédié
+            'reponse'         => $motif,        // ← aussi dans reponse pour compatibilité
+            'date_traitement' => now(),
+        ]);
     }
 
-    /**
-     * Vérifier si en retard
-     */
+    // ✅ Annuler explicitement (appelé manuellement)
+    public function annuler(?string $raison = null): void
+    {
+        $this->update([
+            'statut'          => 'annule',
+            'reponse'         => $raison,
+            'date_traitement' => now(),
+        ]);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────
     public function estEnRetard(): bool
     {
         if (!$this->date_limite || $this->statut !== 'en_attente') {
             return false;
         }
-
         return $this->date_limite->isPast();
     }
 
-    /**
-     * Obtenir le label de l'action
-     */
     public function getActionLabel(): string
     {
         return match ($this->action_attendue) {
-            'validation' => 'Validation requise',
-            'engagement' => 'Engagement requis',
+            'validation'   => 'Validation requise',
+            'engagement'   => 'Engagement requis',
             'verification' => 'Vérification requise',
-            'correction' => 'Correction requise',
-            'signature' => 'Signature requise',
-            'information' => 'Pour information',
-            'liquidation' => 'Liquidation requise',
-            'paiement' => 'Paiement requis',
-            default => $this->action_attendue,
+            'correction'   => 'Correction requise',
+            'signature'    => 'Signature requise',
+            'information'  => 'Pour information',
+            'liquidation'  => 'Liquidation requise',
+            'paiement'     => 'Paiement requis',
+            default        => $this->action_attendue,
         };
     }
 
-    /**
-     * Obtenir la couleur du badge selon statut
-     */
     public function getStatutColor(): string
     {
         return match ($this->statut) {
             'en_attente' => 'warning',
-            'traite' => 'success',
-            'rejete' => 'danger',
-            'annule' => 'gray',
-            default => 'secondary',
+            'traite'     => 'success',
+            'retourne'   => 'warning',   // ✅ ajouté
+            'rejete'     => 'danger',
+            'annule'     => 'gray',
+            default      => 'secondary',
         };
     }
 
-    /**
-     * Obtenir la couleur de la priorité
-     */
+    public function getStatutLabel(): string
+    {
+        return match ($this->statut) {
+            'en_attente' => 'En attente',
+            'traite'     => 'Traité',
+            'retourne'   => 'Retourné',
+            'rejete'     => 'Rejeté',
+            'annule'     => 'Annulé',
+            default      => $this->statut,
+        };
+    }
+
     public function getPrioriteColor(): string
     {
         return match ($this->priorite) {
             'urgente' => 'danger',
-            'haute' => 'warning',
+            'haute'   => 'warning',
             'normale' => 'info',
-            'basse' => 'gray',
-            default => 'secondary',
+            'basse'   => 'gray',
+            default   => 'secondary',
         };
     }
 }
