@@ -1041,7 +1041,6 @@ class DecisionAdministrativeResource extends Resource
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         if (($data['mode_saisie'] ?? 'calcule') === 'forfait') {
-            // Neutraliser tous les taux
             $data['taux_tva']  = 0;
             $data['taux_cnps'] = 0;
             $data['taux_ir']   = 0;
@@ -1052,7 +1051,20 @@ class DecisionAdministrativeResource extends Resource
             return $data;
         }
 
-        // Mode calculé — valeurs par défaut
+        // ✅ Mode calculé — calculer montant_ir depuis taux_ir
+        $brut    = (float) ($data['montant_brut'] ?? 0);
+        $tauxTva = (float) ($data['taux_tva'] ?? 19.25);
+        $montantHT = $tauxTva > 0 ? $brut / (1 + $tauxTva / 100) : $brut;
+
+        // ✅ Calculer montant_ir explicitement
+        $tauxIr            = (float) ($data['taux_ir'] ?? 0);
+        $data['montant_ir'] = round($montantHT * ($tauxIr / 100), 2);
+
+        // Calculer montant_cnps
+        $tauxCnps            = (float) ($data['taux_cnps'] ?? 0);
+        $data['montant_cnps'] = round($montantHT * ($tauxCnps / 100), 2);
+
+        // Valeurs par défaut
         foreach (
             [
                 'taux_cnps',
@@ -1061,8 +1073,6 @@ class DecisionAdministrativeResource extends Resource
                 'taux_tva',
                 'taux_redevance_audiovisuelle',
                 'taux_feicom',
-                'montant_cnps',
-                'montant_ir',
                 'montant_irnc',
                 'montant_tva',
                 'montant_redevance_audiovisuelle',
@@ -1074,9 +1084,6 @@ class DecisionAdministrativeResource extends Resource
         ) {
             $data[$field] = $data[$field] ?? 0;
         }
-        $data['reference_decision'] = $data['reference_decision'] ?? '';
-        $data['signataire']         = $data['signataire']         ?? '';
-        $data['observations']       = $data['observations']       ?? '';
 
         return $data;
     }

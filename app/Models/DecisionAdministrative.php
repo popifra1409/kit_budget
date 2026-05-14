@@ -106,6 +106,10 @@ class DecisionAdministrative extends Model
         'montant_feicom'                   => 'decimal:2',
         'engagee'                          => 'boolean',
         'est_previsionnel'                 => 'boolean',
+        'taux_ir'    => 'decimal:2',
+        'montant_ir' => 'decimal:2',
+        'banque'     => 'decimal:2',
+        'billetage'  => 'decimal:2',
     ];
 
     // =========================================================
@@ -131,26 +135,19 @@ class DecisionAdministrative extends Model
             }
         });
 
-        // // ✅ Respecter le mode_saisie forfait
-        // static::saving(function ($decision) {
-        //     // ✅ Lire depuis attributs ET depuis l'original (DB)
-        //     $mode = $decision->attributes['mode_saisie']
-        //         ?? $decision->getOriginal('mode_saisie')
-        //         ?? 'calcule';
+        static::saving(function ($decision) {
+            $mode = $decision->attributes['mode_saisie']
+                ?? $decision->getOriginal('mode_saisie')
+                ?? $decision->mode_saisie
+                ?? 'calcule';
 
-        //     \Log::info('SAVING DA', [
-        //         'numero'     => $decision->numero ?? 'nouveau',
-        //         'mode_saisie' => $mode,
-        //         'dirty'       => array_keys($decision->getDirty()),
-        //     ]);
+            if ($mode === 'forfait') return; 
 
-        //     if ($mode === 'forfait') {
-        //         \Log::info('FORFAIT — calculerMontants() ignoré');
-        //         return;
-        //     }
-
-        //     $decision->calculerMontants();
-        // });
+            // ✅ Calculer uniquement si montant_brut est présent
+            if ((float) ($decision->montant_brut ?? 0) > 0) {
+                $decision->calculerMontants();
+            }
+        });
 
         static::updating(function ($decision) {
             $decision->updated_by = auth()->id();
@@ -340,6 +337,7 @@ class DecisionAdministrative extends Model
     public function getTotalRetenuesCalculeAttribute(): float
     {
         return $this->montant_cnps_calcule
+            + $this->montant_ir_calcule
             + $this->montant_irnc_calcule
             + $this->montant_tva_calcule
             + $this->montant_redevance_audiovisuelle_calcule
@@ -362,6 +360,13 @@ class DecisionAdministrative extends Model
         return $this->est_previsionnel && !is_null($this->da_reelle_id);
     }
 
+    public function getMontantIrCalculeAttribute(): float
+    {
+        $ht   = (float) ($this->montant_ht ?? 0);
+        $taux = (float) ($this->taux_ir    ?? 0);
+        return $ht * ($taux / 100);
+    }
+    
     // =========================================================
     // MÉTHODES MÉTIER
     // =========================================================
@@ -467,49 +472,60 @@ class DecisionAdministrative extends Model
         if ($brut <= 0) {
             $this->montant_ht   = 0;
             $this->montant_cnps = 0;
+            $this->montant_ir   = 0;   // ✅
             $this->montant_irnc = 0;
             $this->total_taxes  = 0;
             $this->montant_net  = 0;
             return;
         }
 
-        // ── Étape 1 : HT ─────────────────────────────────────
+        // ── HT ────────────────────────────────────────────────────
         $tauxTva = 0;
         if ($this->type_tva === 'taux') {
             $tauxTva = (float) ($this->taux_tva ?? 0);
         }
 
-        $this->montant_ht = $tauxTva > 0
-            ? $brut / (1 + ($tauxTva / 100))
-            : $brut;
+        $montantHT        = $tauxTva > 0 ? $brut / (1 + $tauxTva / 100) : $brut;
+        $this->montant_ht = round($montantHT, 2);
 
-        $montantHT        = round($this->montant_ht, 2);
-        $this->montant_ht = $montantHT;
-
-        // ── Étape 2 : Taxes ───────────────────────────────────
+        // ── Taxes ─────────────────────────────────────────────────
         $tauxCnps         = (float) ($this->taux_cnps ?? 0);
         $this->montant_cnps = round($montantHT * ($tauxCnps / 100), 2);
 
-        $tauxIrnc         = (float) ($this->taux_irnc ?? 0);
-        $this->montant_irnc = round($montantHT * ($tauxIrnc / 100), 2);
+        // ✅ IR standard
+        $tauxIr           = (float) ($this->taux_ir ?? 0);
+        $this->montant_ir = round($montantHT * ($tauxIr / 100), 2);
 
+        // ✅ IRNC (taux ou forfait)
+        if (($this->type_irnc ?? 'taux') === 'forfait') {
+            // Montant IRNC déjà saisi — ne pas recalculer
+            $this->montant_irnc = round((float) ($this->attributes['montant_irnc'] ?? 0), 2);
+        } else {
+            $tauxIrnc           = (float) ($this->taux_irnc ?? 0);
+            $this->montant_irnc = round($montantHT * ($tauxIrnc / 100), 2);
+        }
+
+        // TVA
         if ($this->type_tva === 'taux') {
             $this->attributes['montant_tva'] = round($montantHT * ($tauxTva / 100), 2);
         }
 
+        // Redevance
         if ($this->type_redevance_audiovisuelle === 'taux') {
-            $tauxRedevance = (float) ($this->taux_redevance_audiovisuelle ?? 0);
-            $this->attributes['montant_redevance_audiovisuelle'] = round($montantHT * ($tauxRedevance / 100), 2);
+            $tauxRed = (float) ($this->taux_redevance_audiovisuelle ?? 0);
+            $this->attributes['montant_redevance_audiovisuelle'] = round($montantHT * ($tauxRed / 100), 2);
         }
 
+        // FEICOM
         if ($this->type_feicom === 'taux') {
             $tauxFeicom = (float) ($this->taux_feicom ?? 0);
             $this->attributes['montant_feicom'] = round($montantHT * ($tauxFeicom / 100), 2);
         }
 
-        // ── Étape 3 : Total et net ────────────────────────────
-        $autresRetenues  = (float) ($this->autres_retenues ?? 0);
+        // ── Total et net ───────────────────────────────────────────
+        $autresRetenues    = (float) ($this->autres_retenues ?? 0);
         $this->total_taxes = $this->montant_cnps
+            + $this->montant_ir
             + $this->montant_irnc
             + ((float) ($this->attributes['montant_redevance_audiovisuelle'] ?? 0))
             + ((float) ($this->attributes['montant_feicom'] ?? 0))

@@ -119,7 +119,7 @@ class MemoireDepenseResource extends Resource
                             ->label('Mode de saisie')
                             ->options([
                                 'montant_nap'   => '📊 Montant NAP',
-                                'prix_unitaire' => '💰 Prix Unitaire',
+                                'prix_unitaire' => '💰 Prix Unitaire HT',
                             ])
                             ->default('montant_nap')
                             ->inline()

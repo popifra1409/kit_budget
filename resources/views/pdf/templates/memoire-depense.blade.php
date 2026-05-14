@@ -60,6 +60,30 @@ $tauxIrCalc = round(($memoire->montant_ir / $memoire->montant_ht) * 100, 2);
 $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . '%';
 }
 }
+
+// ── Pied de page : créateur et dates ─────────────────────
+$dateImpression = now()->format('d/m/Y à H:i');
+$dateCreation = '—';
+$nomCreateur = '—';
+$sigle = $parametres->sigle ?? 'CHUY';
+
+// ✅ Créateur du mémoire — PAS l'utilisateur connecté
+$createurId = $memoire->created_by ?? null;
+
+if ($createurId) {
+$createur = \App\Models\User::find($createurId);
+if ($createur) {
+$nomCreateur = $createur->username
+?? $createur->login
+?? $createur->name
+?? '—';
+}
+}
+
+if ($memoire->created_at) {
+$dateCreation = \Carbon\Carbon::parse($memoire->created_at)
+->format('d/m/Y à H:i');
+}
 @endphp
 
 @extends('pdf.layouts.master', ['orientation' => 'landscape'])
@@ -76,6 +100,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         size: A4 landscape;
         margin-top: 2cm;
         margin-bottom: 2cm;
+        /* ✅ Espace pour le pied de page */
         margin-left: 1.5cm;
         margin-right: 1.5cm;
     }
@@ -209,11 +234,10 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
     }
 
     .page-number {
-        position: fixed;
-        bottom: 1cm;
-        right: 1.5cm;
+        text-align: right;
         font-size: 8pt;
         color: #666;
+        margin-top: 4px;
     }
 
     .clearfix::after {
@@ -221,16 +245,63 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         display: table;
         clear: both;
     }
+
+    /* ✅ Pied de page fixe — affiché sur toutes les pages */
+    .pdf-footer-md {
+        position: fixed;
+        bottom: 0;
+        left: 1.5cm;
+        right: 1.5cm;
+        height: 1.5cm;
+        border-top: 1px solid #ccc;
+        padding-top: 4px;
+        font-size: 7pt;
+        color: #000;
+        background: #fff;
+    }
+
+    .pdf-footer-md table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .pdf-footer-md td {
+        border: none;
+        padding: 0 4px;
+        vertical-align: top;
+        font-size: 7pt;
+        color: #000;
+    }
 </style>
 @endpush
 
 @section('content')
 
+{{-- ✅ Pied de page fixe — Imprimé le | N° | Créé le | Par --}}
+<div class="pdf-footer-md">
+    <table>
+        <tr>
+            <td style="width:30%; text-align:left;">
+                <strong>Imprimé le :</strong> {{ $dateImpression }}
+            </td>
+            <td style="width:35%; text-align:center; font-weight:bold;">
+                {{ $sigle }} — N° {{ $memoire->numero }}
+            </td>
+            <td style="width:35%; text-align:right;">
+                <strong>Créé le :</strong> {{ $dateCreation }}
+                @if($nomCreateur !== '—')
+                &nbsp;|&nbsp; <strong>Par :</strong> {{ $nomCreateur }}
+                @endif
+            </td>
+        </tr>
+    </table>
+</div>
+
 @foreach($lignesChunked as $pageIndex => $lignesPage)
 
 @if($pageIndex === 0)
 
-{{-- ── Numéro + Exercice ────────────────────────── --}}
+{{-- ── Numéro + Exercice ──────────────────────── --}}
 <div class="md-header-row">
     <div class="md-header-cell left" style="font-size:8pt;">
         Exercice : <strong>{{ $memoire->exercice }}</strong>
@@ -238,10 +309,6 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
     <div class="md-header-cell right">
         <div class="md-numero-box">N° {{ $memoire->numero }}</div>
     </div>
-</div>
-
-<div style="text-align:right; font-size:7.5pt; color:#666; margin-bottom:4px;">
-    Imprimé le {{ now()->format('d/m/Y à H:i') }}
 </div>
 
 <div class="md-titre">MÉMOIRE DE DÉPENSE</div>
@@ -258,6 +325,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
             @endif
         </td>
         @endif
+
         @if($memoire->numero_ce)
         <td>
             <strong>CE N° :</strong> {{ $memoire->numero_ce }}
@@ -266,6 +334,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
             @endif
         </td>
         @endif
+
         <td style="text-align:right;">
             <strong>Date :</strong>
             {{ $memoire->date_memoire?->format('d/m/Y') ?? now()->format('d/m/Y') }}
@@ -291,18 +360,13 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         <tr>
             <th style="width:34%;">NATURE DE LA DÉPENSE</th>
             <th style="width:5%;">QTÉ</th>
-
-            {{-- ✅ P.U NET = NAP unitaire (valeur saisie) --}}
             <th style="width:9%;">
                 P.U NET
                 <span style="font-size:6.5pt; font-weight:400; display:block;">
                     (NAP / unité)
                 </span>
             </th>
-
-            {{-- ✅ NAP total juste après P.U NET --}}
             <th style="width:9%;">NAP</th>
-
             <th style="width:9%;">MHT</th>
             <th style="width:9%;">TVA ({{ $tauxTvaLabel }})</th>
             <th style="width:7%;">IR ({{ $tauxIrLabel }})</th>
@@ -313,7 +377,6 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         @forelse($lignesPage as $ligne)
         @php
         $qte = max(1, (float) $ligne->quantite);
-        // ✅ P.U NET = montant_net / quantité (NAP unitaire original)
         $napUnitaire = ($ligne->montant_net ?? $ligne->net_a_payer ?? 0) / $qte;
         $napTotal = $ligne->montant_net ?? $ligne->net_a_payer ?? 0;
         @endphp
@@ -322,17 +385,12 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
             <td class="center">
                 {{ number_format($ligne->quantite, 0, ',', ' ') }}
             </td>
-
-            {{-- ✅ P.U NET = NAP unitaire --}}
             <td class="num" style="font-weight:600;">
                 {{ number_format($napUnitaire, 0, ',', ' ') }}
             </td>
-
-            {{-- ✅ NAP Total juste après --}}
             <td class="num" style="font-weight:600;">
                 {{ number_format($napTotal, 0, ',', ' ') }}
             </td>
-
             <td class="num">
                 {{ number_format($ligne->montant_ht,  0, ',', ' ') }}
             </td>
@@ -349,7 +407,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         @empty
         <tr>
             <td colspan="8" style="text-align:center; font-style:italic;
-                        color:#666; height:8mm;">
+                                color:#666; height:8mm;">
                 Aucune ligne enregistrée
             </td>
         </tr>
@@ -359,46 +417,40 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
     @if($loop->last)
     <tfoot>
         <tr class="total-row">
-            <td colspan="2" style="text-align:right; font-size:9pt; text-transform:uppercase;">
+            <td colspan="2" style="text-align:right; font-size:9pt;
+                                text-transform:uppercase;">
                 TOTAL
             </td>
-
-            {{-- P.U NET : pas de total pertinent --}}
             <td></td>
-
-            {{-- ✅ NAP Total = somme des montant_net des lignes --}}
             <td class="num">
                 {{ number_format(
-                        $lignes->sum('montant_net') ?: $lignes->sum('net_a_payer'),
-                        0, ',', ' '
-                    ) }}
-            </td>
-
-            <td class="num">
-                {{ number_format(
-                        $memoire->montant_ht ?? $lignes->sum('montant_ht'),
-                        0, ',', ' '
-                    ) }}
+                            $lignes->sum('montant_net') ?: $lignes->sum('net_a_payer'),
+                            0, ',', ' '
+                        ) }}
             </td>
             <td class="num">
                 {{ number_format(
-                        $memoire->montant_tva ?? $lignes->sum('montant_tva'),
-                        0, ',', ' '
-                    ) }}
+                            $memoire->montant_ht ?? $lignes->sum('montant_ht'),
+                            0, ',', ' '
+                        ) }}
             </td>
             <td class="num">
                 {{ number_format(
-                        $memoire->montant_ir ?? $lignes->sum('montant_ir'),
-                        0, ',', ' '
-                    ) }}
+                            $memoire->montant_tva ?? $lignes->sum('montant_tva'),
+                            0, ',', ' '
+                        ) }}
             </td>
-
-            {{-- ✅ TTC = somme des TTC des lignes --}}
             <td class="num">
                 {{ number_format(
-                        $lignes->sum('montant_ttc') ?: ($memoire->montant_ttc ?? 0),
-                        0, ',', ' '
-                    ) }}
+                            $memoire->montant_ir ?? $lignes->sum('montant_ir'),
+                            0, ',', ' '
+                        ) }}
+            </td>
+            <td class="num">
+                {{ number_format(
+                            $lignes->sum('montant_ttc') ?: ($memoire->montant_ttc ?? 0),
+                            0, ',', ' '
+                        ) }}
             </td>
         </tr>
     </tfoot>
@@ -409,7 +461,9 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
 
 <div class="md-lettres" style="page-break-inside:avoid;">
     Arrêté le présent mémoire de dépense à la somme TTC de :
-    <strong style="text-transform:uppercase;">@yield('montant_lettres')</strong>
+    <strong style="text-transform:uppercase;">
+        @yield('montant_lettres')
+    </strong>
 </div>
 
 <div class="md-signature clearfix" style="page-break-inside:avoid;">
@@ -420,7 +474,7 @@ $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . 
         </div>
         <div style="font-weight:bold; font-size:9pt; text-transform:uppercase;">
             {{ $memoire->signataire_fonction
-                        ?? ($parametres?->fonction_ordonnateur ?? 'LE DIRECTEUR GÉNÉRAL') }}
+                            ?? ($parametres?->fonction_ordonnateur ?? 'LE DIRECTEUR GÉNÉRAL') }}
         </div>
         <div style="margin-top:18mm; font-size:8.5pt;">
             @if($memoire->signataire_nom)
