@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DecisionAdministrative extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions, HasWorkflow ;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions, HasWorkflow;
 
     protected $table = 'decisions_administratives';
 
@@ -115,13 +115,16 @@ class DecisionAdministrative extends Model
     {
         static::creating(function ($decision) {
             if (!$decision->numero) {
-                // ✅ Lire exercice_id depuis les attributs bruts AVANT que HasExercice
-                // ne puisse le remplacer par l'exercice actif
-                $exerciceId = $decision->attributes['exercice_id']
+                $exerciceId     = $decision->attributes['exercice_id']
                     ?? $decision->exercice_id
                     ?? null;
 
-                $decision->numero = static::genererNumero($exerciceId);
+                // ✅ Passer aussi le type_decision_id pour le bon préfixe
+                $typeDecisionId = $decision->attributes['type_decision_id']
+                    ?? $decision->type_decision_id
+                    ?? null;
+
+                $decision->numero = static::genererNumero($exerciceId, $typeDecisionId);
             }
             if (!$decision->created_by) {
                 $decision->created_by = auth()->id();
@@ -368,8 +371,10 @@ class DecisionAdministrative extends Model
      * ✅ Accepte un exercice_id explicite pour les reports (2025 → DA25-XXXXX)
      * Format: DA25-00001 / DA26-00001
      */
-    public static function genererNumero(?int $exerciceId = null): string
-    {
+    public static function genererNumero(
+        ?int $exerciceId    = null,
+        ?int $typeDecisionId = null
+    ): string {
         $exercice = $exerciceId
             ? \App\Models\Exercice::find($exerciceId)
             : \App\Models\Exercice::getActif();
@@ -378,25 +383,51 @@ class DecisionAdministrative extends Model
             throw new \Exception("Aucun exercice disponible pour générer le numéro");
         }
 
-        $annee = substr($exercice->annee, -2);
+        $annee  = substr($exercice->annee, -2);
 
-        return \DB::transaction(function () use ($annee, $exercice) {
-            // ✅ SQL direct — bypass tous les scopes Eloquent
-            // Inclut soft-deleted ET actifs pour éviter les doublons
+        // ✅ Déterminer le préfixe selon le type de décision
+        $prefix = static::getPrefixParType($typeDecisionId);
+
+        return \DB::transaction(function () use ($annee, $exercice, $prefix) {
             $result = \DB::selectOne("
             SELECT COALESCE(MAX(CAST(SPLIT_PART(numero, '-', 2) AS INTEGER)), 0) AS max_seq
             FROM decisions_administratives
-            WHERE exercice_id = :exercice_id
-            AND numero LIKE :pattern
+            WHERE exercice_id  = :exercice_id
+            AND   numero LIKE  :pattern
         ", [
                 'exercice_id' => $exercice->id,
-                'pattern'     => "DA{$annee}-%",
+                'pattern'     => "{$prefix}{$annee}-%",
             ]);
 
             $sequence = ($result->max_seq ?? 0) + 1;
-
-            return sprintf('DA%s-%05d', $annee, $sequence);
+            return sprintf('%s%s-%05d', $prefix, $annee, $sequence);
         });
+    }
+
+    /**
+     * ✅ Préfixe selon le type de décision
+     */
+    public static function getPrefixParType(?int $typeDecisionId): string
+    {
+        if (!$typeDecisionId) return 'DA';
+
+        $type = \App\Models\TypeDecision::find($typeDecisionId);
+        if (!$type) return 'DA';
+
+        $libelle = strtolower(trim($type->libelle ?? ''));
+
+        return match (true) {
+            // ✅ Correspondances exactes depuis votre liste
+            str_contains($libelle, 'ordre de mission')       => 'OM',
+            str_contains($libelle, 'arrêté')                 => 'AR',
+            str_contains($libelle, 'arrete')                 => 'AR',
+            str_contains($libelle, 'note de service')        => 'NS',
+            str_contains($libelle, 'circulaire')             => 'CI',
+            str_contains($libelle, 'contrat')                => 'CT',
+            str_contains($libelle, 'convention')             => 'CP',
+
+            default => 'DA',
+        };
     }
 
     /**
@@ -406,9 +437,13 @@ class DecisionAdministrative extends Model
     protected function genererNumeroEngagement(): string
     {
         if (!$this->numero) {
-            $this->numero = static::genererNumero($this->exercice_id);
-            $this->saveQuietly();
+            $this->numero = static::genererNumero(
+                $this->exercice_id,
+                $this->type_decision_id
+            );
         }
+
+        // ✅ BE-DA26-00001 ou BE-OM26-00001
         return 'BE-' . $this->numero;
     }
 
