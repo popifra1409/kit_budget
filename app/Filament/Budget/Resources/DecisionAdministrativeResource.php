@@ -127,14 +127,20 @@ class DecisionAdministrativeResource extends Resource
         $user = auth()->user();
         if (!$user) return $query->whereRaw('1 = 0');
 
-        // Supervision : voit tout
+        // ✅ Supervision : voit tout
         if ($user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable'])) {
             return $query;
         }
 
+        // ✅ Permission view_any = voit tout (contrôleur, chef de service global, etc.)
+        if ($user->can('view_any_decision_administrative')) {
+            return $query;
+        }
+
+        // ✅ Utilisateur standard : vision restreinte
         return $query->where(function ($q) use ($user) {
 
-            // ✅ Mes documents SANS transmission active (brouillon ou retournés)
+            // Mes documents SANS transmission active (brouillon ou retournés)
             $q->where(function ($s) use ($user) {
                 $s->where('created_by', $user->id)
                     ->whereDoesntHave('transmissions', function ($t) {
@@ -142,13 +148,13 @@ class DecisionAdministrativeResource extends Resource
                     });
             })
 
-                // ✅ Documents transmis À MOI (en_attente)
+                // Documents transmis À MOI (en_attente)
                 ->orWhereHas('transmissions', function ($t) use ($user) {
                     $t->where('destinataire_id', $user->id)
                         ->where('statut', 'en_attente');
                 });
 
-            // ✅ INTENTIONNELLEMENT pas de clause pour les docs transmis par moi
+            // INTENTIONNELLEMENT pas de clause pour les docs transmis par moi
             // → L'émetteur NE VOIT PLUS son document une fois transmis
             // → Il le revoit seulement après retour (statut retourne → plus de en_attente)
         });
