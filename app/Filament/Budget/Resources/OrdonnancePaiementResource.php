@@ -138,9 +138,9 @@ class OrdonnancePaiementResource extends Resource
                             ->label('')
                             ->content(
                                 "**Ce qui sera créé automatiquement :**\n\n" .
-                                "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
-                                "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
-                                "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
+                                    "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
+                                    "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
+                                    "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
                             )
                             ->columnSpanFull(),
                     ])
@@ -513,6 +513,90 @@ class OrdonnancePaiementResource extends Resource
                 // ========================================
                 // 📊 ACTIONS D'EXPORT
                 // ========================================
+
+                Tables\Actions\ActionGroup::make([
+
+                    // ── OP Standard Salaires ─────────────────────────────
+                    Tables\Actions\Action::make('export_excel_salaires_standard')
+                        ->label('Excel OP Standard - Salaires')
+                        ->icon('heroicon-o-table-cells')
+                        ->color('success')
+                        ->form(static::formulaireExportSalaires())
+                        ->action(function (array $data) {
+                            $nomenclatureIds = $data['nomenclature_ids'] ?? [];
+                            [$dateDebut, $dateFin] = static::resoudrePeriode($data);
+
+                            return \Maatwebsite\Excel\Facades\Excel::download(
+                                new \App\Exports\OrdonnancesSalairesExport(
+                                    'standard',
+                                    $nomenclatureIds,
+                                    $dateDebut,
+                                    $dateFin
+                                ),
+                                'OP_Standard_Salaires_' . now()->format('Y-m-d') . '.xlsx'
+                            );
+                        }),
+
+                    Tables\Actions\Action::make('export_pdf_salaires_standard')
+                        ->label('PDF OP Standard - Salaires')
+                        ->icon('heroicon-o-document-text')
+                        ->color('danger')
+                        ->form(static::formulaireExportSalaires())
+                        ->action(function (array $data) {
+                            $nomenclatureIds = $data['nomenclature_ids'] ?? [];
+                            [$dateDebut, $dateFin] = static::resoudrePeriode($data);
+
+                            return static::exportPdfSalaires(
+                                'standard',
+                                $nomenclatureIds,
+                                $dateDebut,
+                                $dateFin
+                            );
+                        }),
+
+                    // ── OPT Impôt Salaires ───────────────────────────────
+                    Tables\Actions\Action::make('export_excel_salaires_impot')
+                        ->label('Excel OPT Impôt - Salaires')
+                        ->icon('heroicon-o-table-cells')
+                        ->color('warning')
+                        ->form(static::formulaireExportSalaires())
+                        ->action(function (array $data) {
+                            $nomenclatureIds = $data['nomenclature_ids'] ?? [];
+                            [$dateDebut, $dateFin] = static::resoudrePeriode($data);
+
+                            return \Maatwebsite\Excel\Facades\Excel::download(
+                                new \App\Exports\OrdonnancesSalairesExport(
+                                    'impot',
+                                    $nomenclatureIds,
+                                    $dateDebut,
+                                    $dateFin
+                                ),
+                                'OPT_Impot_Salaires_' . now()->format('Y-m-d') . '.xlsx'
+                            );
+                        }),
+
+                    Tables\Actions\Action::make('export_pdf_salaires_impot')
+                        ->label('PDF OPT Impôt - Salaires')
+                        ->icon('heroicon-o-document-text')
+                        ->color('gray')
+                        ->form(static::formulaireExportSalaires())
+                        ->action(function (array $data) {
+                            $nomenclatureIds = $data['nomenclature_ids'] ?? [];
+                            [$dateDebut, $dateFin] = static::resoudrePeriode($data);
+
+                            return static::exportPdfSalaires(
+                                'impot',
+                                $nomenclatureIds,
+                                $dateDebut,
+                                $dateFin
+                            );
+                        }),
+                ])
+                    ->label('💼 Rapports Salaires')
+                    ->icon('heroicon-o-banknotes')
+                    ->button()
+                    ->color('info'),
+
                 Tables\Actions\ActionGroup::make([
                     // Export Excel OP Standard
                     Tables\Actions\Action::make('export_excel_standard')
@@ -756,6 +840,214 @@ class OrdonnancePaiementResource extends Resource
         return response()->streamDownload(function () use ($pdf) {
             echo $pdf->output();
         }, $filename);
+    }
+
+    /**
+     * ✅ Export PDF — Ordonnances Salaires
+     */
+    protected static function exportPdfSalaires(
+        string  $typeOrdonnance,
+        array   $nomenclatureIds,
+        ?string $dateDebut,
+        ?string $dateFin
+    ) {
+        $ordonnances = OrdonnancePaiement::with([
+            'engagement.nomenclaturePrincipale',
+            'engagement.engageable',
+        ])
+            ->where('type_ordonnance', $typeOrdonnance)
+            ->whereHas('engagement', function ($q) use ($nomenclatureIds) {
+                $q->whereIn('nomenclature_principale_id', $nomenclatureIds);
+            })
+            ->when($dateDebut, fn($q) => $q->whereDate('date_emission', '>=', $dateDebut))
+            ->when($dateFin,   fn($q) => $q->whereDate('date_emission', '<=', $dateFin))
+            ->orderBy('date_emission')
+            ->orderBy('numero')
+            ->get();
+
+        $total = $ordonnances->sum(
+            fn($op) =>
+            (float) ($op->engagement?->montant_engage ?? 0)
+        );
+
+        $periode = '';
+        if ($dateDebut && $dateFin) {
+            $periode = \Carbon\Carbon::parse($dateDebut)->format('d/m/Y')
+                . ' — '
+                . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
+        } elseif ($dateDebut) {
+            $periode = 'À partir du ' . \Carbon\Carbon::parse($dateDebut)->format('d/m/Y');
+        } elseif ($dateFin) {
+            $periode = "Jusqu'au " . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
+        }
+
+        $titre = $typeOrdonnance === 'standard'
+            ? 'RAPPORT DES ORDONNANCES DE PAIEMENT - SALAIRES'
+            : 'RAPPORT DES ORDONNANCES DE PAIEMENT IMPÔT - SALAIRES';
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.ordonnances-salaires', [
+            'ordonnances'    => $ordonnances,
+            'total'          => $total,
+            'periode'        => $periode,
+            'titre'          => $titre,
+            'typeOrdonnance' => $typeOrdonnance,
+            'utilisateur'    => auth()->user()->name,
+            'dateGeneration' => now()->format('d/m/Y H:i'),
+        ])
+            ->setPaper('a4', 'landscape')
+            ->setOption('margin-top', 10)
+            ->setOption('margin-right', 10)
+            ->setOption('margin-bottom', 10)
+            ->setOption('margin-left', 10);
+
+        $suffix   = $typeOrdonnance === 'standard' ? 'Standard' : 'Impot';
+        $filename = "Rapport_OP_{$suffix}_Salaires_" . now()->format('Y-m-d') . '.pdf';
+
+        return response()->streamDownload(function () use ($pdf) {
+            echo $pdf->output();
+        }, $filename);
+    }
+
+
+    /**
+     * ✅ Formulaire commun pour les exports salaires
+     */
+    protected static function formulaireExportSalaires(): array
+    {
+        return [
+            // ── Sélection des nomenclatures ───────────────────────────
+            Forms\Components\Select::make('nomenclature_ids')
+                ->label('Lignes de nomenclature (Salaires)')
+                ->options(function () {
+
+                    // ✅ Récupérer les nomenclatures utilisées dans des engagements
+                    $nomenclatureIdsUtilisees = \App\Models\Engagement::withoutGlobalScope('exercice')
+                        ->whereIn('statut', ['provisoire', 'definitif'])
+                        ->whereNotNull('nomenclature_principale_id')
+                        ->pluck('nomenclature_principale_id')
+                        ->unique()
+                        ->values();
+
+                    // ✅ Charger les nomenclatures correspondantes
+                    // filtrées par mots-clés salaires (avec ou sans le whereHas)
+                    $query = \App\Models\NomenclatureBudgetaire::query();
+
+                    // ✅ Si on veut restreindre aux nomenclatures ayant des engagements
+                    if ($nomenclatureIdsUtilisees->isNotEmpty()) {
+                        $query->whereIn('id', $nomenclatureIdsUtilisees);
+                    }
+
+                    // ✅ Filtre salaires — mots-clés + codes budgétaires
+                    $query->where(function ($q) {
+                        $q->where('libelle', 'ilike', '%salaire%')
+                            ->orWhere('libelle', 'ilike', '%personnel%')
+                            ->orWhere('libelle', 'ilike', '%rémunération%')
+                            ->orWhere('libelle', 'ilike', '%remuneration%')
+                            ->orWhere('libelle', 'ilike', '%indemnité%')
+                            ->orWhere('libelle', 'ilike', '%indemnite%')
+                            ->orWhere('libelle', 'ilike', '%traitement%')
+                            ->orWhere('libelle', 'ilike', '%prime%')
+                            ->orWhere('code',    'ilike', '611%')
+                            ->orWhere('code',    'ilike', '612%')
+                            ->orWhere('code',    'ilike', '613%')
+                            ->orWhere('code',    'ilike', '621%')
+                            ->orWhere('code',    'ilike', '6611%');
+                    });
+
+                    return $query->orderBy('code')
+                        ->get()
+                        ->mapWithKeys(fn($n) => [
+                            $n->id => "{$n->code} — {$n->libelle}"
+                        ]);
+                })
+                ->multiple()
+                ->required()
+                ->searchable()
+                ->helperText('Sélectionnez une ou plusieurs lignes de nomenclature')
+                ->columnSpanFull(),
+
+            // ── Mode de période ───────────────────────────────────────
+            Forms\Components\Radio::make('mode_periode')
+                ->label('Mode de sélection de la période')
+                ->options([
+                    'mois'   => '📅 Par mois',
+                    'plage'  => '📆 Par plage de dates',
+                ])
+                ->default('mois')
+                ->live()
+                ->columnSpanFull(),
+
+            // ── Mode Mois ─────────────────────────────────────────────
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Select::make('mois')
+                    ->label('Mois')
+                    ->options([
+                        '01' => 'Janvier',
+                        '02' => 'Février',
+                        '03' => 'Mars',
+                        '04' => 'Avril',
+                        '05' => 'Mai',
+                        '06' => 'Juin',
+                        '07' => 'Juillet',
+                        '08' => 'Août',
+                        '09' => 'Septembre',
+                        '10' => 'Octobre',
+                        '11' => 'Novembre',
+                        '12' => 'Décembre',
+                    ])
+                    ->default(date('m'))
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'mois')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
+
+                Forms\Components\Select::make('annee')
+                    ->label('Année')
+                    ->options(function () {
+                        $years = [];
+                        for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
+                            $years[$i] = $i;
+                        }
+                        return $years;
+                    })
+                    ->default(date('Y'))
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'mois')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
+            ]),
+
+            // ── Mode Plage de dates ───────────────────────────────────
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\DatePicker::make('date_debut')
+                    ->label('Date début')
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'plage')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'plage'),
+
+                Forms\Components\DatePicker::make('date_fin')
+                    ->label('Date fin')
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'plage')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'plage'),
+            ]),
+        ];
+    }
+
+    /**
+     * ✅ Résoudre la période selon le mode choisi
+     * Retourne [dateDebut, dateFin]
+     */
+    protected static function resoudrePeriode(array $data): array
+    {
+        if (($data['mode_periode'] ?? 'mois') === 'mois') {
+            $mois  = $data['mois']  ?? date('m');
+            $annee = $data['annee'] ?? date('Y');
+
+            $dateDebut = \Carbon\Carbon::createFromDate($annee, $mois, 1)
+                ->startOfMonth()->toDateString();
+            $dateFin   = \Carbon\Carbon::createFromDate($annee, $mois, 1)
+                ->endOfMonth()->toDateString();
+        } else {
+            $dateDebut = $data['date_debut'] ?? null;
+            $dateFin   = $data['date_fin']   ?? null;
+        }
+
+        return [$dateDebut, $dateFin];
     }
 
     public static function getRelations(): array
