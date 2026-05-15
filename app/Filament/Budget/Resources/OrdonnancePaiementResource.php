@@ -851,7 +851,8 @@ class OrdonnancePaiementResource extends Resource
         ?string $dateDebut,
         ?string $dateFin
     ) {
-        $ordonnances = OrdonnancePaiement::with([
+        // ✅ Grouper par nomenclature
+        $groupes = OrdonnancePaiement::with([
             'engagement.nomenclaturePrincipale',
             'engagement.engageable',
         ])
@@ -861,14 +862,18 @@ class OrdonnancePaiementResource extends Resource
             })
             ->when($dateDebut, fn($q) => $q->whereDate('date_emission', '>=', $dateDebut))
             ->when($dateFin,   fn($q) => $q->whereDate('date_emission', '<=', $dateFin))
-            ->orderBy('date_emission')
-            ->orderBy('numero')
-            ->get();
+            ->get()
+            ->groupBy(fn($op) => $op->engagement?->nomenclature_principale_id ?? 'sans')
+            ->map(fn($ops) => [
+                'nomenclature' => $ops->first()?->engagement?->nomenclaturePrincipale,
+                'ordonnances'  => $ops->sortBy('numero'),
+                'total'        => $ops->sum(
+                    fn($op) =>
+                    (float) ($op->engagement?->montant_engage ?? 0)
+                ),
+            ]);
 
-        $total = $ordonnances->sum(
-            fn($op) =>
-            (float) ($op->engagement?->montant_engage ?? 0)
-        );
+        $grandTotal = $groupes->sum('total');
 
         $periode = '';
         if ($dateDebut && $dateFin) {
@@ -882,12 +887,12 @@ class OrdonnancePaiementResource extends Resource
         }
 
         $titre = $typeOrdonnance === 'standard'
-            ? 'RAPPORT DES ORDONNANCES DE PAIEMENT - SALAIRES'
-            : 'RAPPORT DES ORDONNANCES DE PAIEMENT IMPÔT - SALAIRES';
+            ? 'RAPPORT DES ORDONNANCES DE PAIEMENT — PAR NOMENCLATURE'
+            : 'RAPPORT DES ORDONNANCES DE PAIEMENT IMPÔT — PAR NOMENCLATURE';
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.ordonnances-salaires', [
-            'ordonnances'    => $ordonnances,
-            'total'          => $total,
+            'groupes'        => $groupes,
+            'grandTotal'     => $grandTotal,
             'periode'        => $periode,
             'titre'          => $titre,
             'typeOrdonnance' => $typeOrdonnance,
@@ -901,7 +906,7 @@ class OrdonnancePaiementResource extends Resource
             ->setOption('margin-left', 10);
 
         $suffix   = $typeOrdonnance === 'standard' ? 'Standard' : 'Impot';
-        $filename = "Rapport_OP_{$suffix}_Salaires_" . now()->format('Y-m-d') . '.pdf';
+        $filename = "Rapport_OP_{$suffix}_" . now()->format('Y-m-d') . '.pdf';
 
         return response()->streamDownload(function () use ($pdf) {
             echo $pdf->output();
@@ -915,46 +920,18 @@ class OrdonnancePaiementResource extends Resource
     protected static function formulaireExportSalaires(): array
     {
         return [
-            // ── Sélection des nomenclatures ───────────────────────────
             Forms\Components\Select::make('nomenclature_ids')
-                ->label('Lignes de nomenclature (Salaires)')
+                ->label('Lignes de nomenclature budgétaire')
                 ->options(function () {
-
-                    // ✅ Récupérer les nomenclatures utilisées dans des engagements
-                    $nomenclatureIdsUtilisees = \App\Models\Engagement::withoutGlobalScope('exercice')
+                    // ✅ Toutes les nomenclatures utilisées dans des engagements
+                    $ids = \App\Models\Engagement::withoutGlobalScope('exercice')
                         ->whereIn('statut', ['provisoire', 'definitif'])
                         ->whereNotNull('nomenclature_principale_id')
                         ->pluck('nomenclature_principale_id')
-                        ->unique()
-                        ->values();
+                        ->unique();
 
-                    // ✅ Charger les nomenclatures correspondantes
-                    // filtrées par mots-clés salaires (avec ou sans le whereHas)
-                    $query = \App\Models\NomenclatureBudgetaire::query();
-
-                    // ✅ Si on veut restreindre aux nomenclatures ayant des engagements
-                    if ($nomenclatureIdsUtilisees->isNotEmpty()) {
-                        $query->whereIn('id', $nomenclatureIdsUtilisees);
-                    }
-
-                    // ✅ Filtre salaires — mots-clés + codes budgétaires
-                    $query->where(function ($q) {
-                        $q->where('libelle', 'ilike', '%salaire%')
-                            ->orWhere('libelle', 'ilike', '%personnel%')
-                            ->orWhere('libelle', 'ilike', '%rémunération%')
-                            ->orWhere('libelle', 'ilike', '%remuneration%')
-                            ->orWhere('libelle', 'ilike', '%indemnité%')
-                            ->orWhere('libelle', 'ilike', '%indemnite%')
-                            ->orWhere('libelle', 'ilike', '%traitement%')
-                            ->orWhere('libelle', 'ilike', '%prime%')
-                            ->orWhere('code',    'ilike', '611%')
-                            ->orWhere('code',    'ilike', '612%')
-                            ->orWhere('code',    'ilike', '613%')
-                            ->orWhere('code',    'ilike', '621%')
-                            ->orWhere('code',    'ilike', '6611%');
-                    });
-
-                    return $query->orderBy('code')
+                    return \App\Models\NomenclatureBudgetaire::whereIn('id', $ids)
+                        ->orderBy('code')
                         ->get()
                         ->mapWithKeys(fn($n) => [
                             $n->id => "{$n->code} — {$n->libelle}"
@@ -963,21 +940,19 @@ class OrdonnancePaiementResource extends Resource
                 ->multiple()
                 ->required()
                 ->searchable()
-                ->helperText('Sélectionnez une ou plusieurs lignes de nomenclature')
+                ->helperText('Sélectionnez une ou plusieurs lignes — les OP seront groupées par nomenclature')
                 ->columnSpanFull(),
 
-            // ── Mode de période ───────────────────────────────────────
             Forms\Components\Radio::make('mode_periode')
                 ->label('Mode de sélection de la période')
                 ->options([
-                    'mois'   => '📅 Par mois',
-                    'plage'  => '📆 Par plage de dates',
+                    'mois'  => '📅 Par mois',
+                    'plage' => '📆 Par plage de dates',
                 ])
                 ->default('mois')
                 ->live()
                 ->columnSpanFull(),
 
-            // ── Mode Mois ─────────────────────────────────────────────
             Forms\Components\Grid::make(2)->schema([
                 Forms\Components\Select::make('mois')
                     ->label('Mois')
@@ -1013,7 +988,6 @@ class OrdonnancePaiementResource extends Resource
                     ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
             ]),
 
-            // ── Mode Plage de dates ───────────────────────────────────
             Forms\Components\Grid::make(2)->schema([
                 Forms\Components\DatePicker::make('date_debut')
                     ->label('Date début')

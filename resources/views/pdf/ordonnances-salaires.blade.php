@@ -1,3 +1,4 @@
+{{-- resources/views/pdf/ordonnances-salaires.blade.php --}}
 <!DOCTYPE html>
 <html lang="fr">
 
@@ -18,34 +19,65 @@
 
         .meta {
             text-align: center;
-            font-size: 8pt;
+            font-size: 7.5pt;
             color: #555;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
+        }
+
+        /* ── En-tête groupe ── */
+        .groupe-header {
+            background: #D6E4F0;
+            color: #1F4E79;
+            font-weight: bold;
+            font-size: 8.5pt;
+            padding: 5px 6px;
+            border-left: 3px solid #1F4E79;
+            margin-top: 10px;
+            margin-bottom: 0;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 8px;
             font-size: 7.5pt;
+            margin-bottom: 0;
         }
 
         thead th {
             background: #1F4E79;
             color: #fff;
-            padding: 6px 4px;
+            padding: 5px 4px;
             text-align: center;
             border: 1px solid #ccc;
         }
 
         tbody td {
-            border: 1px solid #ccc;
-            padding: 4px 5px;
+            border: 1px solid #ddd;
+            padding: 3px 5px;
             vertical-align: middle;
         }
 
         tbody tr:nth-child(even) {
-            background: #f5f8ff;
+            background: #f7faff;
+        }
+
+        /* ── Sous-total groupe ── */
+        .sous-total td {
+            background: #EBF5FB;
+            font-weight: bold;
+            font-style: italic;
+            border-top: 2px solid #1F4E79;
+            padding: 4px 5px;
+        }
+
+        /* ── Grand total ── */
+        .grand-total td {
+            background: #1F4E79;
+            color: #fff;
+            font-weight: bold;
+            font-size: 9pt;
+            padding: 6px 5px;
+            border: 1px solid #1F4E79;
         }
 
         .text-right {
@@ -59,23 +91,6 @@
         .font-bold {
             font-weight: bold;
         }
-
-        tfoot td {
-            background: #D9E1F2;
-            font-weight: bold;
-            border: 1px solid #999;
-            padding: 5px 4px;
-        }
-
-        .footer {
-            margin-top: 16px;
-            font-size: 7pt;
-            color: #777;
-            border-top: 1px solid #ccc;
-            padding-top: 4px;
-            display: flex;
-            justify-content: space-between;
-        }
     </style>
 </head>
 
@@ -85,40 +100,60 @@
     <div class="meta">
         @if($periode) Période : <strong>{{ $periode }}</strong> &nbsp;|&nbsp; @endif
         Généré le {{ $dateGeneration }} par {{ $utilisateur }}
-        &nbsp;|&nbsp; {{ $ordonnances->count() }} ordonnance(s)
     </div>
 
+    {{-- ── En-tête des colonnes (une seule fois) ── --}}
     <table>
         <thead>
             <tr>
-                <th style="width:14%;">N° OP</th>
-                <th style="width:14%;">N° BE</th>
-                <th style="width:25%;">Nomenclature</th>
-                <th style="width:22%;">Objet</th>
-                <th style="width:12%;">Montant engagé</th>
-                <th style="width:8%;">Dt. engagement</th>
-                <th style="width:8%;">Dt. paiement</th>
+                <th style="width:13%;">N° OP</th>
+                <th style="width:13%;">N° BE</th>
+                <th style="width:32%;">Objet</th>
+                <th style="width:14%;">Montant engagé</th>
+                <th style="width:10%;">Dt. engagement</th>
+                <th style="width:10%;">Dt. paiement</th>
+                <th style="width:8%;">Statut</th>
             </tr>
         </thead>
+
+        @php $grandTotal = 0; @endphp
+
+        @forelse($groupes as $groupe)
+        @php
+        $nomenclature = $groupe['nomenclature'];
+        $label = $nomenclature
+        ? "{$nomenclature->code} — {$nomenclature->libelle}"
+        : 'Sans nomenclature';
+        $sousTotal = $groupe['total'];
+        $grandTotal += $sousTotal;
+        @endphp
+
+        {{-- ── En-tête du groupe ── --}}
         <tbody>
-            @forelse($ordonnances as $op)
+            <tr>
+                <td colspan="7" style="
+                    background:#D6E4F0;
+                    color:#1F4E79;
+                    font-weight:bold;
+                    font-size:8.5pt;
+                    padding:5px 6px;
+                    border-left:3px solid #1F4E79;
+                ">
+                    📁 {{ $label }}
+                </td>
+            </tr>
+
+            {{-- ── Lignes OP du groupe ── --}}
+            @foreach($groupe['ordonnances'] as $op)
             @php
             $eng = $op->engagement;
-            $nomenclature = $eng?->nomenclaturePrincipale;
             $montant = (float) ($eng?->montant_engage ?? 0);
             @endphp
             <tr>
                 <td class="font-bold">{{ $op->numero }}</td>
                 <td>{{ $eng?->numero ?? '—' }}</td>
                 <td style="font-size:7pt;">
-                    @if($nomenclature)
-                    <strong>{{ $nomenclature->code }}</strong>
-                    — {{ \Str::limit($nomenclature->libelle, 35) }}
-                    @else —
-                    @endif
-                </td>
-                <td style="font-size:7pt;">
-                    {{ \Str::limit($op->objet ?? $eng?->objet ?? '—', 40) }}
+                    {{ \Str::limit($op->objet ?? $eng?->objet ?? '—', 55) }}
                 </td>
                 <td class="text-right font-bold">
                     {{ number_format($montant, 0, ',', ' ') }}
@@ -133,22 +168,46 @@
                         ? \Carbon\Carbon::parse($op->date_paiement)->format('d/m/Y')
                         : '—' }}
                 </td>
+                <td class="text-center">{{ ucfirst($op->statut ?? '—') }}</td>
             </tr>
-            @empty
+            @endforeach
+
+            {{-- ── Sous-total du groupe ── --}}
+            <tr class="sous-total">
+                <td colspan="3" class="text-right">
+                    Sous-total — {{ $label }} :
+                </td>
+                <td class="text-right">
+                    {{ number_format($sousTotal, 0, ',', ' ') }} FCFA
+                </td>
+                <td colspan="3"></td>
+            </tr>
+
+            {{-- Séparateur ── --}}
             <tr>
-                <td colspan="7" class="text-center" style="color:#999; padding:16px;">
+                <td colspan="7" style="padding:3px; border:none;"></td>
+            </tr>
+
+        </tbody>
+        @empty
+        <tbody>
+            <tr>
+                <td colspan="7" class="text-center"
+                    style="color:#999; padding:20px;">
                     Aucune ordonnance pour les critères sélectionnés
                 </td>
             </tr>
-            @endforelse
         </tbody>
+        @endforelse
+
+        {{-- ── GRAND TOTAL ── --}}
         <tfoot>
-            <tr>
-                <td colspan="4" class="text-right">TOTAL :</td>
+            <tr class="grand-total">
+                <td colspan="3" class="text-right">TOTAL GÉNÉRAL :</td>
                 <td class="text-right">
-                    {{ number_format($total, 0, ',', ' ') }} FCFA
+                    {{ number_format($grandTotal, 0, ',', ' ') }} FCFA
                 </td>
-                <td colspan="2"></td>
+                <td colspan="3"></td>
             </tr>
         </tfoot>
     </table>
