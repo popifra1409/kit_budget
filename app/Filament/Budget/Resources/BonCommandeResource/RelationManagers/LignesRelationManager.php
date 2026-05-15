@@ -182,8 +182,8 @@ class LignesRelationManager extends RelationManager
                             ->suffix('%')
                             ->default(function () use ($bc) {
                                 if ($bc->exonere_tva) return 0;
-                                if (!empty($bc->tva_commune) && $bc->tva_commune > 0) {
-                                    return (float) $bc->tva_commune;
+                                if ($bc->tva_commune !== null && $bc->tva_commune !== '') {
+                                    return (float) $bc->tva_commune; 
                                 }
                                 if ($bc->type_engagement_id) {
                                     $type = \App\Models\TypeEngagement::find($bc->type_engagement_id);
