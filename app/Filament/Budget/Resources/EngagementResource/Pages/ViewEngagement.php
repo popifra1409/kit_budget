@@ -164,6 +164,19 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estDecision()
                                 ),
 
+                            // ✅ FIX 1 — montant_ir visible pour DA ET BC
+                            Forms\Components\TextInput::make('montant_ir')
+                                ->label('IR (FCFA)')->numeric()->prefix('FCFA')->default(0)
+                                ->helperText(
+                                    fn() =>
+                                    'Actuel : ' . number_format($this->record->engageable?->montant_ir ?? 0, 0, ',', ' ') . ' FCFA'
+                                )
+                                ->visible(
+                                    fn(Get $get) =>
+                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
+                                        && ($this->record->estDecision() || $this->record->estBonCommande())
+                                ),
+
                             Forms\Components\TextInput::make('montant_irnc')
                                 ->label('IRNC (FCFA)')->numeric()->prefix('FCFA')->default(0)
                                 ->helperText(
@@ -221,18 +234,6 @@ class ViewEngagement extends ViewRecord
                                 ->visible(
                                     fn(Get $get) =>
                                     in_array($get('type_correction'), ['montant', 'mixte', 'complet'])
-                                        && $this->record->estBonCommande()
-                                ),
-
-                            Forms\Components\TextInput::make('montant_ir')
-                                ->label('IR (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(
-                                    fn() =>
-                                    'Actuel : ' . number_format($this->record->engageable?->montant_ir ?? 0, 0, ',', ' ') . ' FCFA'
-                                )
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
                                         && $this->record->estBonCommande()
                                 ),
 
@@ -368,8 +369,9 @@ class ViewEngagement extends ViewRecord
                             // BC
                             'montant_ht'      => $data['montant_ht']      ?? null,
                             'montant_ttc'     => $data['montant_ttc']     ?? null,
-                            'montant_ir'      => $data['montant_ir']      ?? null,
                             'montant_tsr'     => $data['montant_tsr']     ?? null,
+                            // DA + BC
+                            'montant_ir'      => $data['montant_ir']      ?? null,
                         ], fn($v) => $v !== null && $v !== '');
 
                         // ── Créer l'avenant ────────────────────────────
@@ -404,14 +406,16 @@ class ViewEngagement extends ViewRecord
                                 if ($doc instanceof \App\Models\DecisionAdministrative) {
                                     $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
                                     $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps);
+                                    $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir);
                                     $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                     $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                     $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
 
-                                    $totalTaxes = $montantCnps + $montantIrnc + $montantTva + $autresRetenues;
+                                    $totalTaxes = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
                                     $montantNet = $montantBrut - $totalTaxes;
 
                                     $doc->updateQuietly(array_merge($donneesCorrection, [
+                                        'montant_ir'  => $montantIr,
                                         'total_taxes' => $totalTaxes,
                                         'montant_net' => $montantNet,
                                         'mode_saisie' => 'forfait',
@@ -449,15 +453,18 @@ class ViewEngagement extends ViewRecord
                                     if ($doc instanceof \App\Models\DecisionAdministrative) {
                                         $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
                                         $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps);
+                                        $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir);
                                         $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                         $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                         $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
-                                        $totalTaxes     = $montantCnps + $montantIrnc + $montantTva + $autresRetenues;
+                                        // ✅ FIX 2 — montant_ir inclus dans totalTaxes DA
+                                        $totalTaxes     = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
 
                                         $op->updateQuietly([
                                             'montant_net'          => $montantBrut - $totalTaxes,
                                             'montant_brut'         => $montantBrut,
                                             'montant_cnps'         => $montantCnps,
+                                            'montant_ir'           => $montantIr,
                                             'montant_irnc'         => $montantIrnc,
                                             'montant_tva'          => $montantTva,
                                             'montant_autres_taxes' => $autresRetenues,
@@ -479,13 +486,16 @@ class ViewEngagement extends ViewRecord
                                 } elseif ($op->type_ordonnance === 'impot') {
                                     if ($doc instanceof \App\Models\DecisionAdministrative) {
                                         $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps);
+                                        // ✅ FIX 3 — montant_ir inclus dans OPT DA
+                                        $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir);
                                         $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                         $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                         $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
 
                                         $op->updateQuietly([
-                                            'montant_net'          => $montantCnps + $montantIrnc + $montantTva + $autresRetenues,
+                                            'montant_net'          => $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues,
                                             'montant_cnps'         => $montantCnps,
+                                            'montant_ir'           => $montantIr,
                                             'montant_irnc'         => $montantIrnc,
                                             'montant_tva'          => $montantTva,
                                             'montant_autres_taxes' => $autresRetenues,
@@ -519,13 +529,14 @@ class ViewEngagement extends ViewRecord
                                 ->first();
 
                             if ($opImpot) {
-                                // Calculer le total des taxes après correction
                                 $totalTaxesCorrige = 0;
 
                                 if ($engagement->estDecision()) {
                                     $doc = $engagement->engageable;
+                                    // ✅ FIX 4 — montant_ir inclus dans vérification suppression OPT
                                     $totalTaxesCorrige =
                                         (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps    ?? 0)
+                                        + (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir      ?? 0)
                                         + (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc    ?? 0)
                                         + (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva     ?? 0)
                                         + (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues ?? 0);
@@ -538,11 +549,10 @@ class ViewEngagement extends ViewRecord
                                 }
 
                                 if ($totalTaxesCorrige <= 0) {
-                                    // ✅ Toutes les taxes sont nulles → supprimer l'OPT
                                     $opImpot->delete();
                                     \Log::info("OPT supprimée car taxes = 0 après avenant", [
-                                        'op_numero'      => $opImpot->numero,
-                                        'engagement'     => $engagement->numero,
+                                        'op_numero'  => $opImpot->numero,
+                                        'engagement' => $engagement->numero,
                                     ]);
                                     $msg .= "\n🗑️ OP Impôt supprimée (taxes nulles).";
                                 }

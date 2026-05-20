@@ -122,7 +122,12 @@ class DecisionAdministrativeResource extends Resource
     {
         $query = parent::getEloquentQuery()
             ->withoutGlobalScope('exercice')
-            ->with('exercice');
+            ->with('exercice')
+            ->addSelect([
+                'memoire_numero' => \App\Models\MemoireDepense::select('numero')
+                    ->whereColumn('decision_administrative_id', 'decisions_administratives.id')
+                    ->limit(1),
+            ]);
 
         $user = auth()->user();
         if (!$user) return $query->whereRaw('1 = 0');
@@ -153,10 +158,6 @@ class DecisionAdministrativeResource extends Resource
                     $t->where('destinataire_id', $user->id)
                         ->where('statut', 'en_attente');
                 });
-
-            // INTENTIONNELLEMENT pas de clause pour les docs transmis par moi
-            // → L'émetteur NE VOIT PLUS son document une fois transmis
-            // → Il le revoit seulement après retour (statut retourne → plus de en_attente)
         });
     }
 
@@ -666,6 +667,14 @@ class DecisionAdministrativeResource extends Resource
 
                 Tables\Columns\TextColumn::make('typeDecision.libelle')
                     ->label('Type')->searchable()->sortable()->badge()->color('info'),
+
+                Tables\Columns\TextColumn::make('memoire_numero')
+                    ->label("Issu d'un MD")
+                    ->badge()
+                    ->color('info')
+                    ->icon('heroicon-o-document-text')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 Tables\Columns\TextColumn::make('type_beneficiaire')
                     ->label('Bénéficiaire')
