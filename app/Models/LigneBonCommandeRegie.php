@@ -24,6 +24,8 @@ class LigneBonCommandeRegie extends Model
         'montant_ir',
         'net_a_payer',
         'observations',
+        'reference_mercuriale_id',
+        'reference_personnalisee',
     ];
 
     protected $casts = [
@@ -65,5 +67,18 @@ class LigneBonCommandeRegie extends Model
         $this->montant_ttc = round($ht + $tva, 2);
         $this->montant_ir  = $ir;
         $this->net_a_payer = round($ht - $ir, 2);
+    }
+
+    public function referenceMercuriale(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Models\ReferenceMercuriale::class, 'reference_mercuriale_id');
+    }
+
+    // ✅ Accessor pour le template PDF — $ligne->reference
+    public function getReferencAttribute(): string
+    {
+        return $this->referenceMercuriale?->code_reference
+            ?? $this->reference_personnalisee
+            ?? '—';
     }
 }

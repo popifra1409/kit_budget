@@ -940,6 +940,37 @@ class BonCommandeRegieResource extends Resource
                         ]);
                         Notification::make()->title('BCR annulé')->warning()->send();
                     }),
+
+                Tables\Actions\ActionGroup::make([
+                    // Aperçu — visible pour tous
+                    Tables\Actions\Action::make('apercu_bca')
+                        ->label('Aperçu BCA')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->action(function ($record, $livewire) {
+                            $livewire->dispatch(
+                                'open-url-new-tab',
+                                url: route('bcr.pdf.apercu', $record)
+                            );
+                        }),
+
+                    // Télécharger — visible uniquement après validation
+                    Tables\Actions\Action::make('telecharger_bca')
+                        ->label('Télécharger BCA')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut !== 'brouillon')
+                        ->action(function ($record, $livewire) {
+                            $livewire->dispatch(
+                                'open-url-new-tab',
+                                url: route('bcr.pdf.telecharger', $record)
+                            );
+                        }),
+                ])
+                    ->label('📄 BCA')
+                    ->icon('heroicon-o-document-text')
+                    ->size('sm')
+                    ->button(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

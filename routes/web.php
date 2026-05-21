@@ -120,6 +120,15 @@ Route::middleware(['web', 'auth'])->group(function () {
 
     Route::get('/fiche-controle-engagements/{id}/pdf', [FicheControleEngagementsController::class, 'telechargerPdf'])
         ->name('fiche-controle-engagements.pdf');
+
+    // routes/web.php
+    Route::get('/bcr/{bcr}/apercu',      [App\Http\Controllers\BonCommandeRegiePdfController::class, 'apercu'])
+        ->name('bcr.pdf.apercu')
+        ->middleware(['auth']);
+
+    Route::get('/bcr/{bcr}/telecharger', [App\Http\Controllers\BonCommandeRegiePdfController::class, 'telecharger'])
+        ->name('bcr.pdf.telecharger')
+        ->middleware(['auth']);
 });
 
 /*
