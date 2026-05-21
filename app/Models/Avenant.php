@@ -181,36 +181,64 @@ class Avenant extends Model
 
     protected function mettreAJourOrdonnances(): void
     {
-        $engagement = $this->engagementOriginal;
+        $engagement  = $this->engagementOriginal;
         $ordonnances = $engagement->ordonnancesPaiement()->get();
 
         if ($ordonnances->isEmpty()) return;
 
-        $montantTaxesCorrige = (float) ($this->montant_taxes_corrige ?? 0);
+        $doc                 = $engagement->engageable;
+        $corrections         = $this->donnees_correction ?? [];
         $montantBrutCorrige  = (float) $this->montant_corrige;
+        $montantTaxesCorrige = (float) ($this->montant_taxes_corrige ?? 0);
         $montantNetCorrige   = $montantBrutCorrige - $montantTaxesCorrige;
 
         foreach ($ordonnances as $op) {
+
+            // ── OP Standard ───────────────────────────────────────
             if ($op->type_ordonnance === 'standard') {
-                // ✅ OP Standard = montant net (brut - taxes)
-                $op->update([
+                $op->updateQuietly([
                     'montant_net' => max(0, $montantNetCorrige),
                 ]);
 
                 \Log::info("OP Standard {$op->numero} mise à jour", [
-                    'ancien_montant' => $op->getOriginal('montant_net'),
+                    'ancien_montant'  => $op->getOriginal('montant_net'),
                     'nouveau_montant' => $montantNetCorrige,
                 ]);
-            } elseif ($op->type_ordonnance === 'impot') {
-                // ✅ OP Impôt = total taxes
-                $op->update([
-                    'montant_net' => max(0, $montantTaxesCorrige),
-                ]);
 
-                \Log::info("OP Impôt {$op->numero} mise à jour", [
-                    'ancien_montant'  => $op->getOriginal('montant_net'),
-                    'nouveau_montant' => $montantTaxesCorrige,
-                ]);
+                // ── OP Impôt ──────────────────────────────────────────
+            } elseif ($op->type_ordonnance === 'impot') {
+
+                if ($doc instanceof \App\Models\DecisionAdministrative) {
+                    $montantCnps    = (float)($corrections['montant_cnps']    ?? $op->montant_cnps        ?? $doc->montant_cnps    ?? 0);
+                    $montantIr      = (float)($corrections['montant_ir']      ?? $op->montant_ir           ?? $doc->montant_ir      ?? 0);
+                    $montantIrnc    = (float)($corrections['montant_irnc']    ?? $op->montant_irnc         ?? $doc->montant_irnc    ?? 0);
+                    $montantTva     = (float)($corrections['montant_tva']     ?? $op->montant_tva          ?? $doc->montant_tva     ?? 0);
+                    $autresRetenues = (float)($corrections['autres_retenues'] ?? $op->montant_autres_taxes ?? $doc->autres_retenues ?? 0);
+                    $totalTaxes     = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
+
+                    $op->updateQuietly([
+                        'montant_net'          => max(0, $totalTaxes),
+                        'montant_cnps'         => $montantCnps,
+                        'montant_ir'           => $montantIr,
+                        'montant_irnc'         => $montantIrnc,
+                        'montant_tva'          => $montantTva,
+                        'montant_autres_taxes' => $autresRetenues,
+                        // ✅ Plus de reconstruction d'objet
+                    ]);
+                } elseif ($doc instanceof \App\Models\BonCommande) {
+                    $montantIr  = (float)($corrections['montant_ir']  ?? $op->montant_ir  ?? $doc->montant_ir  ?? 0);
+                    $montantTva = (float)($corrections['montant_tva'] ?? $op->montant_tva ?? $doc->montant_tva ?? 0);
+                    $montantTsr = (float)($corrections['montant_tsr'] ?? $op->montant_tsr ?? $doc->montant_tsr ?? 0);
+                    $totalTaxes = $montantIr + $montantTva + $montantTsr;
+
+                    $op->updateQuietly([
+                        'montant_net' => max(0, $totalTaxes),
+                        'montant_ir'  => $montantIr,
+                        'montant_tva' => $montantTva,
+                        'montant_tsr' => $montantTsr,
+                        // ✅ Plus de reconstruction d'objet
+                    ]);
+                }
             }
         }
     }

@@ -124,27 +124,49 @@ class BonCommandeRegie extends Model
     }
 
     // ── Engagement ────────────────────────────────────────────────
-    public function engager(): void
-    {
+    public function engager(
+        ?float  $montantPartiel = null,
+        float   $pourcentage    = 100,
+        ?string $commentaire    = null
+    ): void {
         if ($this->engage) {
-            throw new \Exception("Ce bon de commande est déjà engagé.");
+            throw new \Exception("Ce BCR est déjà engagé.");
         }
-        if ($this->statut !== 'valide') {
-            throw new \Exception("Le BCR doit être validé avant engagement.");
-        }
+
+        $montantAEngager = $montantPartiel ?? (float) $this->montant_ttc;
 
         $provision = $this->provisionLigneRegie;
         if (!$provision) {
-            throw new \Exception("Aucune provision associée à ce bon de commande.");
+            throw new \Exception("Aucune provision associée à ce BCR.");
         }
 
-        // Débiter la provision
-        $provision->debiter($this->montant_ttc);
+        if ($montantAEngager > $provision->montant_disponible) {
+            throw new \Exception(
+                "Provision insuffisante. Disponible : "
+                    . number_format($provision->montant_disponible, 0, ',', ' ')
+                    . " FCFA — Demandé : "
+                    . number_format($montantAEngager, 0, ',', ' ') . " FCFA"
+            );
+        }
 
-        $this->updateQuietly([
-            'engage'          => true,
-            'date_engagement' => now(),
-        ]);
+        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provision) {
+            // ── Débiter la provision ──────────────────────────────
+            $provision->increment('montant_consomme', $montantAEngager);
+
+            // ── Marquer le BCR comme engagé ───────────────────────
+            $this->updateQuietly([
+                'engage'               => true,
+                'montant_engage'       => $montantAEngager,
+                'pourcentage_engage'   => $pourcentage,
+                'reste_a_engager'      => (float) $this->montant_ttc - $montantAEngager,
+                'date_engagement'      => now(),
+                'observations'         => ($this->observations ?? '')
+                    . ($commentaire
+                        ? "\n[Engagement {$pourcentage}% — " . now()->format('d/m/Y') . "] " . $commentaire
+                        : ''
+                    ),
+            ]);
+        });
     }
 
     public function desengager(): void

@@ -113,9 +113,29 @@ $montantIrnc = 0;
 $tauxIr = 0;
 $tauxIrnc = 0;
 
+// ── Détail impôts ─────────────────────────────────────────
+$detailImpots = $ordonnance->getDetailImpots();
+$montantTotalImpots = $detailImpots['total'];
+
+$montantIr = 0;
+$montantIrnc = 0;
+$tauxIr = 0;
+$tauxIrnc = 0;
+
 if ($engagement->estDecision() && $documentSource) {
+// ✅ Priorité 1 : lire depuis l'OPT elle-même
+// → mise à jour par avenant via updateQuietly
+$montantIr = (float) ($ordonnance->montant_ir ?? 0);
+$montantIrnc = (float) ($ordonnance->montant_irnc ?? 0);
+
+// ✅ Priorité 2 : fallback sur le document source (DA)
+// si l'OPT ne stocke pas ces champs individuellement
+if ($montantIr === 0.0 && $montantIrnc === 0.0) {
 $montantIr = (float) ($documentSource->montant_ir ?? 0);
 $montantIrnc = (float) ($documentSource->montant_irnc ?? 0);
+}
+
+// Les taux viennent toujours de la DA (non stockés sur l'OPT)
 $tauxIr = (float) ($documentSource->taux_ir ?? 0);
 $tauxIrnc = (float) ($documentSource->taux_irnc ?? 0);
 }

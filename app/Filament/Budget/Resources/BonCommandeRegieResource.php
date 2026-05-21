@@ -303,12 +303,122 @@ class BonCommandeRegieResource extends Resource
                     Forms\Components\Repeater::make('lignes')
                         ->relationship('lignes')
                         ->schema([
-                            Forms\Components\Grid::make(12)->schema([
 
-                                Forms\Components\TextInput::make('designation')
-                                    ->label('Désignation')
-                                    ->required()
-                                    ->columnSpan(4),
+                            // ✅ NOUVEAU — Référence mercuriale ou personnalisée
+                            Forms\Components\Grid::make(3)->schema([
+                                Forms\Components\Select::make('reference_mercuriale_id')
+                                    ->label('Référence Mercuriale')
+                                    ->searchable()
+                                    ->getSearchResultsUsing(function (string $search) {
+                                        if (strlen($search) < 3) {
+                                            return ['manual' => '➕ Saisie manuelle (tapez au moins 3 caractères)'];
+                                        }
+                                        $exercice = \App\Models\Exercice::getActif();
+                                        if (!$exercice) return ['manual' => '➕ Saisie manuelle'];
+
+                                        $results = \Cache::remember(
+                                            "mercuriale_search_{$exercice->id}_" . md5($search),
+                                            now()->addMinutes(5),
+                                            fn() => \App\Models\ReferenceMercuriale::where('exercice_id', $exercice->id)
+                                                ->where('actif', true)
+                                                ->where(function ($q) use ($search) {
+                                                    $q->where('code_reference', 'LIKE', "%{$search}%")
+                                                        ->orWhere('designation',  'LIKE', "%{$search}%")
+                                                        ->orWhere('rubrique',     'LIKE', "%{$search}%");
+                                                })
+                                                ->limit(50)
+                                                ->get()
+                                                ->mapWithKeys(fn($ref) => [
+                                                    $ref->id => "{$ref->code_reference} — {$ref->designation} ({$ref->unite}) "
+                                                        . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
+                                                ])
+                                        );
+                                        return ['manual' => '➕ Saisie manuelle'] + $results->toArray();
+                                    })
+                                    ->getOptionLabelUsing(function ($value) {
+                                        if (!$value || $value === 'manual') return '➕ Saisie manuelle';
+                                        return \Cache::remember(
+                                            "mercuriale_label_{$value}",
+                                            now()->addMinutes(10),
+                                            function () use ($value) {
+                                                $ref = \App\Models\ReferenceMercuriale::find($value);
+                                                if (!$ref) return "Référence #{$value}";
+                                                return "{$ref->code_reference} — {$ref->designation} ({$ref->unite}) "
+                                                    . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA";
+                                            }
+                                        );
+                                    })
+                                    ->live(debounce: 800)
+                                    ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
+                                        if (!$state || $state === 'manual') {
+                                            $set('reference_personnalisee', null);
+                                            return;
+                                        }
+
+                                        $ref = \Cache::remember(
+                                            "mercuriale_full_{$state}",
+                                            now()->addMinutes(10),
+                                            fn() => \App\Models\ReferenceMercuriale::find($state)
+                                        );
+
+                                        if ($ref) {
+                                            // ✅ Mapping unité mercuriale → options du Select
+                                            $mapUnites = [
+                                                'kg'          => 'kg',
+                                                'kilogramme'  => 'kg',
+                                                'kilo'        => 'kg',
+                                                'l'           => 'litre',
+                                                'litre'       => 'litre',
+                                                'litres'      => 'litre',
+                                                'm'           => 'mètre',
+                                                'mètre'       => 'mètre',
+                                                'metre'       => 'mètre',
+                                                'h'           => 'heure',
+                                                'heure'       => 'heure',
+                                                'heures'      => 'heure',
+                                                'j'           => 'jour',
+                                                'jour'        => 'jour',
+                                                'jours'       => 'jour',
+                                                'lot'         => 'lot',
+                                                'lots'        => 'lot',
+                                                'forfait'     => 'forfait',
+                                            ];
+
+                                            $cleUnite       = strtolower(trim($ref->unite ?? ''));
+                                            $uniteNormalisee = $mapUnites[$cleUnite] ?? 'pièce';
+
+                                            $set('designation',             $ref->designation);
+                                            $set('unite',                   $uniteNormalisee);
+                                            $set('prix_unitaire_ht',        $ref->prix_reference);
+                                            $set('reference_personnalisee', null);
+
+                                            static::recalculerLigneBcr($set, $get);
+                                        }
+                                    })
+                                    ->dehydrateStateUsing(fn($state) => $state === 'manual' ? null : $state)
+                                    ->helperText('Tapez au moins 3 caractères pour rechercher')
+                                    ->columnSpan(2),
+
+                                Forms\Components\TextInput::make('reference_personnalisee')
+                                    ->label('Réf. personnalisée')
+                                    ->maxLength(100)
+                                    ->placeholder('Ex: REF-001')
+                                    ->visible(
+                                        fn(Forms\Get $get) =>
+                                        $get('reference_mercuriale_id') === 'manual'
+                                            || !$get('reference_mercuriale_id')
+                                    )
+                                    ->columnSpan(1),
+                            ])->columnSpanFull(),
+
+                            // ✅ Désignation sur sa propre ligne — pleine largeur
+                            Forms\Components\TextInput::make('designation')
+                                ->label('Désignation')
+                                ->required()
+                                ->columnSpanFull(),
+
+                            // ✅ Champs numériques sur la ligne suivante — mieux espacés
+                            Forms\Components\Grid::make(8)->schema([
 
                                 Forms\Components\TextInput::make('quantite')
                                     ->label('Qté')
@@ -333,7 +443,7 @@ class BonCommandeRegieResource extends Resource
                                         'forfait' => 'Forfait',
                                     ])
                                     ->default('pièce')->required()
-                                    ->columnSpan(1),
+                                    ->columnSpan(2),
 
                                 Forms\Components\TextInput::make('prix_unitaire_ht')
                                     ->label('P.U HT')
@@ -365,7 +475,7 @@ class BonCommandeRegieResource extends Resource
                                     )
                                     ->columnSpan(1),
 
-                                Forms\Components\Placeholder::make('montant_ttc')
+                                Forms\Components\Placeholder::make('montant_ttc_affiche')
                                     ->label('TTC')
                                     ->content(
                                         fn(Forms\Get $get) =>
@@ -373,16 +483,17 @@ class BonCommandeRegieResource extends Resource
                                     )
                                     ->columnSpan(1),
 
-                                Forms\Components\Placeholder::make('net_a_payer')
-                                    ->label('Net')
+                                Forms\Components\Placeholder::make('net_a_payer_affiche')
+                                    ->label('Net à payer')
                                     ->content(
                                         fn(Forms\Get $get) =>
                                         number_format((float) ($get('net_a_payer') ?? 0), 0, ',', ' ') . ' F'
                                     )
-                                    ->columnSpan(1),
+                                    ->columnSpan(1),  // ← retirez ce champ si vous êtes à 9 colonnes,
+                                //   ou ajustez les spans pour rester à 8
                             ]),
 
-                            // Champs cachés calculés
+                            // ✅ EXISTANT — Champs cachés calculés (inchangés)
                             Forms\Components\Hidden::make('montant_ht')->default(0),
                             Forms\Components\Hidden::make('montant_tva')->default(0),
                             Forms\Components\Hidden::make('montant_ttc')->default(0),
@@ -390,11 +501,11 @@ class BonCommandeRegieResource extends Resource
                             Forms\Components\Hidden::make('net_a_payer')->default(0),
                             Forms\Components\Hidden::make('numero_ligne')->default(1),
 
+                            // ✅ EXISTANT — Observations (inchangée)
                             Forms\Components\Textarea::make('observations')
                                 ->label('Observations')->rows(1)->columnSpanFull(),
                         ])
                         ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
-                            // Numérotation automatique
                             static $numero = 0;
                             $numero++;
                             $data['numero_ligne'] = $numero;
@@ -407,15 +518,14 @@ class BonCommandeRegieResource extends Resource
                         ->collapsible()
                         ->itemLabel(
                             fn(array $state): ?string =>
-                            $state['designation']
+                            !empty($state['designation'] ?? null)
                                 ? "{$state['designation']} — "
                                 . number_format((float) ($state['montant_ttc'] ?? 0), 0, ',', ' ')
                                 . ' FCFA TTC'
-                                : null
+                                : 'Nouvelle ligne'
                         )
                         ->live()
                         ->afterStateUpdated(function ($state, Forms\Set $set) {
-                            // Recalculer totaux BCR après chaque changement de ligne
                             $totaux = collect($state ?? [])->reduce(function ($carry, $ligne) {
                                 return [
                                     'montant_ht'  => $carry['montant_ht']  + (float) ($ligne['montant_ht']  ?? 0),
@@ -424,13 +534,7 @@ class BonCommandeRegieResource extends Resource
                                     'montant_ir'  => $carry['montant_ir']  + (float) ($ligne['montant_ir']  ?? 0),
                                     'net_a_payer' => $carry['net_a_payer'] + (float) ($ligne['net_a_payer'] ?? 0),
                                 ];
-                            }, [
-                                'montant_ht' => 0,
-                                'montant_tva' => 0,
-                                'montant_ttc' => 0,
-                                'montant_ir' => 0,
-                                'net_a_payer' => 0
-                            ]);
+                            }, ['montant_ht' => 0, 'montant_tva' => 0, 'montant_ttc' => 0, 'montant_ir' => 0, 'net_a_payer' => 0]);
 
                             $set('montant_ht',  $totaux['montant_ht']);
                             $set('montant_tva', $totaux['montant_tva']);
@@ -608,30 +712,156 @@ class BonCommandeRegieResource extends Resource
                             && !$record->engage
                             && auth()->user()?->can('valider_bon_commande_regie')
                     )
-                    ->requiresConfirmation()
-                    ->modalHeading('Engager le bon de commande')
-                    ->modalDescription(function ($record) {
-                        $prov = $record->provisionLigneRegie;
-                        return new \Illuminate\Support\HtmlString(
-                            "<p>Le montant TTC de <strong>"
-                                . number_format($record->montant_ttc, 0, ',', ' ')
-                                . " FCFA</strong> sera débité sur :</p>"
-                                . "<p>Ligne : <strong>"
-                                . ($prov?->ligneRegie?->nomenclature?->code ?? '—')
-                                . " — "
-                                . ($prov?->ligneRegie?->nomenclature?->libelle ?? '—')
-                                . "</strong></p>"
-                                . "<p>Provision disponible : <strong>"
-                                . number_format($prov?->montant_disponible ?? 0, 0, ',', ' ')
-                                . " FCFA</strong></p>"
-                        );
+                    ->form(function ($record) {
+                        $prov        = $record->provisionLigneRegie;
+                        $montantTtc  = (float) $record->montant_ttc;
+                        $disponible  = (float) ($prov?->montant_disponible ?? 0);
+
+                        return [
+                            Forms\Components\Placeholder::make('info_bcr')
+                                ->label('Bon de commande')
+                                ->content(new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#f1f5f9;padding:.75rem;border-radius:.5rem;font-size:.82rem;line-height:1.8;">'
+                                        . "<strong>Montant TTC total :</strong> " . number_format($montantTtc, 0, ',', ' ') . " FCFA<br>"
+                                        . "<strong>Provision disponible :</strong> " . number_format($disponible, 0, ',', ' ') . " FCFA<br>"
+                                        . "<strong>Ligne :</strong> " . ($prov?->ligneRegie?->nomenclature?->code ?? '—')
+                                        . " — " . ($prov?->ligneRegie?->nomenclature?->libelle ?? '—')
+                                        . '</div>'
+                                ))
+                                ->columnSpanFull(),
+
+                            // ── Mode d'engagement ─────────────────────────────
+                            Forms\Components\Radio::make('mode_engagement')
+                                ->label('Mode d\'engagement')
+                                ->options([
+                                    'total'    => '💯 Total — engager la totalité du TTC',
+                                    'partiel'  => '📊 Partiel — engager un pourcentage ou un montant',
+                                ])
+                                ->default('total')
+                                ->live()
+                                ->columnSpanFull(),
+
+                            // ── Engagement partiel ────────────────────────────
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\Select::make('type_partiel')
+                                    ->label('Calculer par')
+                                    ->options([
+                                        'pourcentage' => '% Pourcentage',
+                                        'montant'     => '💵 Montant fixe',
+                                    ])
+                                    ->default('pourcentage')
+                                    ->live()
+                                    ->required(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
+
+                                Forms\Components\TextInput::make('pourcentage')
+                                    ->label('Pourcentage (%)')
+                                    ->numeric()->suffix('%')->default(40)
+                                    ->minValue(1)->maxValue(100)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
+                                        $montantCalc = round($montantTtc * ((float) $state / 100), 2);
+                                        $set('montant_a_engager', $montantCalc);
+                                    })
+                                    ->visible(
+                                        fn(Forms\Get $get) =>
+                                        $get('mode_engagement') === 'partiel'
+                                            && $get('type_partiel') === 'pourcentage'
+                                    ),
+
+                                Forms\Components\TextInput::make('montant_fixe')
+                                    ->label('Montant à engager (FCFA)')
+                                    ->numeric()->prefix('FCFA')
+                                    ->minValue(1)->maxValue($montantTtc)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
+                                        $pct = $montantTtc > 0 ? round(((float) $state / $montantTtc) * 100, 2) : 0;
+                                        $set('montant_a_engager', (float) $state);
+                                        $set('pourcentage', $pct);
+                                    })
+                                    ->visible(
+                                        fn(Forms\Get $get) =>
+                                        $get('mode_engagement') === 'partiel'
+                                            && $get('type_partiel') === 'montant'
+                                    ),
+                            ])
+                                ->visible(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
+
+                            // ── Résumé montant calculé ────────────────────────
+                            Forms\Components\Placeholder::make('resume_engagement')
+                                ->label('Montant qui sera engagé')
+                                ->content(function (Forms\Get $get) use ($montantTtc, $disponible) {
+                                    if ($get('mode_engagement') === 'total') {
+                                        $montant = $montantTtc;
+                                        $pct     = 100;
+                                    } elseif ($get('type_partiel') === 'pourcentage') {
+                                        $pct     = (float) ($get('pourcentage') ?? 40);
+                                        $montant = round($montantTtc * ($pct / 100), 2);
+                                    } else {
+                                        $montant = (float) ($get('montant_fixe') ?? 0);
+                                        $pct     = $montantTtc > 0
+                                            ? round(($montant / $montantTtc) * 100, 2)
+                                            : 0;
+                                    }
+
+                                    $reste      = $montantTtc - $montant;
+                                    $suffisant  = $montant <= $disponible;
+                                    $couleur    = $suffisant ? 'green' : 'red';
+                                    $alerte     = $suffisant ? '' : ' ⚠️ Insuffisant !';
+
+                                    return new \Illuminate\Support\HtmlString(
+                                        '<div style="background:#f8fafc;padding:.75rem;border-radius:.5rem;font-size:.85rem;line-height:2;">'
+                                            . "<strong style='color:{$couleur};font-size:1rem;'>"
+                                            . number_format($montant, 0, ',', ' ') . " FCFA ({$pct}%)</strong>{$alerte}<br>"
+                                            . "<strong>Reste à engager après :</strong> "
+                                            . number_format($reste, 0, ',', ' ') . " FCFA<br>"
+                                            . "<strong>Provision disponible :</strong> "
+                                            . number_format($disponible, 0, ',', ' ') . " FCFA"
+                                            . '</div>'
+                                    );
+                                })
+                                ->columnSpanFull(),
+
+                            Forms\Components\Textarea::make('commentaire')
+                                ->label('Commentaire (optionnel)')
+                                ->rows(2)->columnSpanFull(),
+                        ];
                     })
-                    ->action(function ($record) {
+                    ->modalHeading('Engager le bon de commande')
+                    ->modalWidth('xl')
+                    ->action(function ($record, array $data) {
                         try {
-                            $record->engager();
-                            Notification::make()
-                                ->title('✅ BCR engagé — provision débitée')
-                                ->success()->send();
+                            $montantTtc = (float) $record->montant_ttc;
+
+                            // ── Calculer le montant à engager ─────────────────
+                            if ($data['mode_engagement'] === 'total') {
+                                $montantAEngager = $montantTtc;
+                            } elseif (($data['type_partiel'] ?? 'pourcentage') === 'pourcentage') {
+                                $montantAEngager = round(
+                                    $montantTtc * ((float) ($data['pourcentage'] ?? 100) / 100),
+                                    2
+                                );
+                            } else {
+                                $montantAEngager = (float) ($data['montant_fixe'] ?? $montantTtc);
+                            }
+
+                            $pourcentage = $montantTtc > 0
+                                ? round(($montantAEngager / $montantTtc) * 100, 2)
+                                : 100;
+
+                            // ── Engager ───────────────────────────────────────
+                            $record->engager(
+                                montantPartiel: $montantAEngager,
+                                pourcentage: $pourcentage,
+                                commentaire: $data['commentaire'] ?? null
+                            );
+
+                            $msg = $pourcentage === 100.0
+                                ? '✅ BCR engagé totalement — provision débitée'
+                                : "✅ BCR engagé à {$pourcentage}% ("
+                                . number_format($montantAEngager, 0, ',', ' ')
+                                . " FCFA) — provision débitée";
+
+                            Notification::make()->title($msg)->success()->send();
                         } catch (\Exception $e) {
                             Notification::make()
                                 ->title('❌ Erreur engagement')

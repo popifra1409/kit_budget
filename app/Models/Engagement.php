@@ -409,7 +409,6 @@ class Engagement extends Model
             $this->forceDelete();
 
             \DB::commit();
-
         } catch (\Exception $e) {
             \DB::rollBack();
             \Log::error("Erreur annulation engagement", [
@@ -630,27 +629,41 @@ class Engagement extends Model
                     ]
                 );
 
-                $objetImpot = "Retenues et Impôts - {$this->objet}";
-                if (!empty($detailsRetenues)) {
-                    $objetImpot .= " (" . implode(", ", $detailsRetenues) . ")";
-                }
+                // $objetImpot = "Retenues et Impôts - {$this->objet}";
+                // if (!empty($detailsRetenues)) {
+                //     $objetImpot .= " (" . implode(", ", $detailsRetenues) . ")";
+                // }
+                $objetImpot = $this->objet;
 
                 $opImpot = \App\Models\OrdonnancePaiement::create([
-                    'numero' => \App\Models\OrdonnancePaiement::genererNumero($this, 'impot'),
-                    'numero_emission' => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
-                    'type_ordonnance' => 'impot',
-                    'engagement_id' => $this->id,
+                    'numero'               => \App\Models\OrdonnancePaiement::genererNumero($this, 'impot'),
+                    'numero_emission'      => \App\Models\OrdonnancePaiement::genererNumeroEmission(),
+                    'type_ordonnance'      => 'impot',
+                    'engagement_id'        => $this->id,
                     'ordonnance_parent_id' => $opStandard->id,
-                    'exercice_id' => $this->exercice_id,
-                    'budget_id' => $this->budget_id,
-                    'beneficiaire_type' => 'App\Models\Fournisseur',
-                    'beneficiaire_id' => $tresorPublic->id,
-                    'date_emission' => now(),
-                    'montant_net' => round($totalRetenues, 2),
-                    'objet' => $objetImpot,
+                    'exercice_id'          => $this->exercice_id,
+                    'budget_id'            => $this->budget_id,
+                    'beneficiaire_type'    => 'App\Models\Fournisseur',
+                    'beneficiaire_id'      => $tresorPublic->id,
+                    'date_emission'        => now(),
+                    'montant_net'          => round($totalRetenues, 2),
+                    'objet'                => $objetImpot,
                     'reference_engagement' => $this->numero,
-                    'statut' => 'emise',
-                    'created_by' => auth()->id(),
+                    'statut'               => 'emise',
+                    'created_by'           => auth()->id(),
+
+                    // ✅ Stocker les montants individuels pour les avenants futurs
+                    'montant_ir'           => round($donnees['montant_ir']   ?? 0, 2),
+                    'montant_irnc'         => round($donnees['montant_irnc'] ?? 0, 2),
+                    'montant_cnps'         => round($donnees['montant_cnps'] ?? 0, 2),
+                    'montant_tva'          => round($donnees['montant_tva']  ?? 0, 2),
+                    'montant_tsr'          => round($donnees['montant_tsr']  ?? 0, 2),
+                    'montant_autres_taxes' => round(
+                        ($donnees['montant_redevance'] ?? 0)
+                            + ($donnees['montant_feicom']  ?? 0)
+                            + ($donnees['autres_retenues'] ?? 0),
+                        2
+                    ),
                 ]);
 
                 $ordonnances['impot'] = $opImpot;
