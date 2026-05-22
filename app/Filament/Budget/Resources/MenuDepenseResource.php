@@ -365,10 +365,20 @@ class MenuDepenseResource extends Resource
             ->with(['exercice', 'responsable', 'budget', 'lignes']);
 
         $user = auth()->user();
-        if ($user && !$user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable'])) {
-            $query->where('responsable_id', $user->id);
+
+        if (!$user) return $query->whereRaw('1 = 0');
+
+        // ✅ Supervision : voit tout
+        if ($user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable'])) {
+            return $query;
         }
 
-        return $query;
+        // ✅ Permission view_any = voit tous les menus dépense
+        if ($user->can('view_any_menu_depense')) {
+            return $query;
+        }
+
+        // ✅ Autres : uniquement ses menus (responsable)
+        return $query->where('responsable_id', $user->id);
     }
 }

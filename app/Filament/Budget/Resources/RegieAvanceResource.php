@@ -397,16 +397,24 @@ class RegieAvanceResource extends Resource
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
         $query = parent::getEloquentQuery()
-            ->where('type', 'rav') // ← RAV uniquement (MD a sa propre resource)
+            ->where('type', 'rav')
             ->with(['exercice', 'responsable', 'budget']);
 
         $user = auth()->user();
 
-        // Responsable régie : ne voit que ses régies
-        if ($user && !$user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agent_comptable'])) {
-            $query->where('responsable_id', $user->id);
+        if (!$user) return $query->whereRaw('1 = 0');
+
+        // ✅ Supervision : voit tout
+        if ($user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agent_comptable'])) {
+            return $query;
         }
 
-        return $query;
+        // ✅ Permission view_any = voit toutes les régies
+        if ($user->can('view_any_regie_avance')) {
+            return $query;
+        }
+
+        // ✅ Autres : uniquement ses régies (responsable)
+        return $query->where('responsable_id', $user->id);
     }
 }
