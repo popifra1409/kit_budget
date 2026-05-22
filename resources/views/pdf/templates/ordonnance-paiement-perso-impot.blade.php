@@ -93,6 +93,10 @@ $objet = $ordonnance->objet
 ?? 'Reversement des impôts et taxes' . $opPrincipaleNumero;
 
 $montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
+
+// ✅ Variables de détection du type de document source
+$sourceEstDecision    = $engagement?->estDecision()    ?? false;
+$sourceEstBonCommande = $engagement?->estBonCommande() ?? false;
 @endphp
 <!DOCTYPE html>
 <html lang="fr">
