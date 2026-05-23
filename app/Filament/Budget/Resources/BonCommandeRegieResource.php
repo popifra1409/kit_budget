@@ -255,30 +255,68 @@ class BonCommandeRegieResource extends Resource
                 ->schema([
 
                     // ── Taux communs applicables à toutes les lignes ──
-                    Forms\Components\Grid::make(3)->schema([
+                    // ── Taux communs + Exonérations ──────────────────────────
+                    Forms\Components\Grid::make(4)->schema([
+
                         Forms\Components\TextInput::make('tva_commune')
                             ->label('TVA commune (%)')
-                            ->numeric()->default(19.25)->suffix('%')
+                            ->numeric()->default(0)->suffix('%')
                             ->live(debounce: 500)
                             ->dehydrated(false)
+                            ->disabled(fn(Forms\Get $get) => (bool) $get('exonere_tva'))
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                if ($get('exonere_tva')) return;
                                 $lignes = $get('lignes') ?? [];
                                 foreach ($lignes as $index => $ligne) {
-                                    $set("lignes.{$index}.taux_tva", (float) ($state ?? 19.25));
+                                    $set("lignes.{$index}.taux_tva", (float) ($state ?? 0));
                                     static::recalculerLigneBcr(
                                         fn($k, $v) => $set("lignes.{$index}.{$k}", $v),
                                         fn($k)    => $get("lignes.{$index}.{$k}")
                                     );
                                 }
                             })
-                            ->helperText('Appliquée à toutes les lignes'),
+                            ->helperText('0 = Sans TVA | 19,25 = Standard'),
+
+                        // ✅ Toggle exonération TVA — par défaut ON (exonéré)
+                        Forms\Components\Toggle::make('exonere_tva')
+                            ->label('Exonération TVA')
+                            ->default(true)
+                            ->live(debounce: 300)
+                            ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                if ($state) {
+                                    $set('tva_commune', 0);
+                                    $lignes = $get('lignes') ?? [];
+                                    foreach ($lignes as $index => $ligne) {
+                                        $set("lignes.{$index}.taux_tva", 0);
+                                    }
+                                }
+                            })
+                            ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                $lignes = $get('lignes') ?? [];
+                                foreach ($lignes as $index => $ligne) {
+                                    if ($state) {
+                                        $set('tva_commune', 0);
+                                        $set("lignes.{$index}.taux_tva", 0);
+                                    } else {
+                                        $tvaCommune = (float) ($get('tva_commune') ?? 0);
+                                        $set("lignes.{$index}.taux_tva", $tvaCommune);
+                                    }
+                                    static::recalculerLigneBcr(
+                                        fn($k, $v) => $set("lignes.{$index}.{$k}", $v),
+                                        fn($k)    => $get("lignes.{$index}.{$k}")
+                                    );
+                                }
+                            })
+                            ->helperText('Forcer TVA à 0%'),
 
                         Forms\Components\TextInput::make('ir_commun')
                             ->label('IR commun (%)')
                             ->numeric()->default(0)->suffix('%')
                             ->live(debounce: 500)
                             ->dehydrated(false)
+                            ->disabled(fn(Forms\Get $get) => (bool) $get('exonere_ir'))
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                if ($get('exonere_ir')) return;
                                 $lignes = $get('lignes') ?? [];
                                 foreach ($lignes as $index => $ligne) {
                                     $set("lignes.{$index}.taux_ir", (float) ($state ?? 0));
@@ -288,16 +326,49 @@ class BonCommandeRegieResource extends Resource
                                     );
                                 }
                             })
-                            ->helperText('Appliqué à toutes les lignes'),
+                            ->helperText('0 = Aucun IR | 5,5 = Standard'),
 
-                        Forms\Components\Placeholder::make('total_commande')
-                            ->label('Total TTC commande')
-                            ->content(function (Forms\Get $get) {
-                                $total = collect($get('lignes') ?? [])
-                                    ->sum(fn($l) => (float) ($l['montant_ttc'] ?? 0));
-                                return number_format($total, 0, ',', ' ') . ' FCFA';
-                            }),
+                        // ✅ Toggle exonération IR — par défaut ON (exonéré)
+                        Forms\Components\Toggle::make('exonere_ir')
+                            ->label('Exonération IR')
+                            ->default(true)
+                            ->live(debounce: 300)
+                            ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                if ($state) {
+                                    $set('ir_commun', 0);
+                                    $lignes = $get('lignes') ?? [];
+                                    foreach ($lignes as $index => $ligne) {
+                                        $set("lignes.{$index}.taux_ir", 0);
+                                    }
+                                }
+                            })
+                            ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                $lignes = $get('lignes') ?? [];
+                                foreach ($lignes as $index => $ligne) {
+                                    if ($state) {
+                                        $set('ir_commun', 0);
+                                        $set("lignes.{$index}.taux_ir", 0);
+                                    } else {
+                                        $irCommun = (float) ($get('ir_commun') ?? 0);
+                                        $set("lignes.{$index}.taux_ir", $irCommun);
+                                    }
+                                    static::recalculerLigneBcr(
+                                        fn($k, $v) => $set("lignes.{$index}.{$k}", $v),
+                                        fn($k)    => $get("lignes.{$index}.{$k}")
+                                    );
+                                }
+                            })
+                            ->helperText('Forcer IR à 0%'),
                     ]),
+
+                    // Total TTC séparé
+                    Forms\Components\Placeholder::make('total_commande')
+                        ->label('Total TTC commande')
+                        ->content(function (Forms\Get $get) {
+                            $total = collect($get('lignes') ?? [])
+                                ->sum(fn($l) => (float) ($l['montant_ttc'] ?? 0));
+                            return number_format($total, 0, ',', ' ') . ' FCFA';
+                        }),
 
                     // ── Repeater lignes ───────────────────────────────
                     Forms\Components\Repeater::make('lignes')
@@ -454,15 +525,21 @@ class BonCommandeRegieResource extends Resource
                                         static::recalculerLigneBcr($set, $get)
                                     )
                                     ->columnSpan(2),
-
                                 Forms\Components\TextInput::make('taux_tva')
                                     ->label('TVA %')
-                                    ->numeric()->default(19.25)->suffix('%')
+                                    ->numeric()->default(0)->suffix('%') 
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(
                                         fn(Forms\Get $get, Forms\Set $set) =>
                                         static::recalculerLigneBcr($set, $get)
                                     )
+                                    ->disabled(fn(Forms\Get $get) => (bool) $get('../../exonere_tva'))
+                                    ->dehydrated(true)
+                                    ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                        if ($get('../../exonere_tva')) {
+                                            $set('taux_tva', 0);
+                                        }
+                                    })
                                     ->columnSpan(1),
 
                                 Forms\Components\TextInput::make('taux_ir')
@@ -473,8 +550,14 @@ class BonCommandeRegieResource extends Resource
                                         fn(Forms\Get $get, Forms\Set $set) =>
                                         static::recalculerLigneBcr($set, $get)
                                     )
+                                    ->disabled(fn(Forms\Get $get) => (bool) $get('../../exonere_ir'))
+                                    ->dehydrated(true)
+                                    ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                        if ($get('../../exonere_ir')) {
+                                            $set('taux_ir', 0);
+                                        }
+                                    })
                                     ->columnSpan(1),
-
                                 Forms\Components\Placeholder::make('montant_ttc_affiche')
                                     ->label('TTC')
                                     ->content(

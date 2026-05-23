@@ -25,6 +25,8 @@ class BonCommandeRegie extends Model
         'montant_ttc',
         'montant_ir',
         'net_a_payer',
+        'exonere_tva' => 'boolean',
+        'exonere_ir'  => 'boolean',
         'statut',
         'observations',
         'created_by',
