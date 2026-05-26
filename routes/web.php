@@ -129,6 +129,19 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/bcr/{bcr}/telecharger', [App\Http\Controllers\BonCommandeRegiePdfController::class, 'telecharger'])
         ->name('bcr.pdf.telecharger')
         ->middleware(['auth']);
+
+    // décaissements régie d'avance
+    Route::middleware(['auth'])->group(function () {
+        Route::get(
+            '/regie/{regie}/decaissement/{decaissement}/mandat/apercu',
+            [App\Http\Controllers\MandatDecaissementPdfController::class, 'apercu']
+        )->name('mandat.decaissement.apercu');
+
+        Route::get(
+            '/regie/{regie}/decaissement/{decaissement}/mandat/telecharger',
+            [App\Http\Controllers\MandatDecaissementPdfController::class, 'telecharger']
+        )->name('mandat.decaissement.telecharger');
+    });
 });
 
 /*

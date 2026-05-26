@@ -349,6 +349,42 @@ class DecaissementsRelationManager extends RelationManager
 
                 Tables\Actions\EditAction::make()
                     ->visible(fn($record) => $record?->statut === 'demande'),
+
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('apercu_mandat')
+                        ->label('Aperçu Mandat')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->visible(fn($record) => $record->statut === 'verse')
+                        ->action(function ($record, $livewire) {
+                            $livewire->dispatch('open-url-new-tab', url: route(
+                                'mandat.decaissement.apercu',
+                                [
+                                    'regie'         => $record->regie_avance_id,
+                                    'decaissement'  => $record->id, // ✅ DecaissementRegie id
+                                ]
+                            ));
+                        }),
+
+                    Tables\Actions\Action::make('telecharger_mandat')
+                        ->label('Télécharger Mandat')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut === 'verse')
+                        ->action(function ($record, $livewire) {
+                            $livewire->dispatch('open-url-new-tab', url: route(
+                                'mandat.decaissement.telecharger',
+                                [
+                                    'regie'        => $record->regie_avance_id,
+                                    'decaissement' => $record->id,
+                                ]
+                            ));
+                        }),
+                ])
+                    ->label('📄 Mandat')
+                    ->icon('heroicon-o-document-text')
+                    ->size('sm')
+                    ->button(),
             ])
             ->defaultSort('created_at', 'desc');
     }
