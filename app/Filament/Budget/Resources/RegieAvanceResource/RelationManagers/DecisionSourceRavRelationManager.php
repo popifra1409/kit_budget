@@ -1,18 +1,19 @@
 <?php
-// app/Filament/Budget/Resources/RegieAvanceResource/RelationManagers/DecisionSourceRavRelationManager.php
 
 namespace App\Filament\Budget\Resources\RegieAvanceResource\RelationManagers;
 
-use Filament\Forms;
-use Filament\Forms\Get;
-use Filament\Forms\Set;
-use Filament\Tables;
-use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Notifications\Notification;
 use App\Models\DecisionAdministrative;
 use App\Models\LigneBudgetaire;
 use App\Models\LigneRegieAvance;
 use App\Models\MenuDepenseDecision;
+use Filament\Forms;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
+use Filament\Notifications\Notification;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class DecisionSourceRavRelationManager extends RelationManager
 {
@@ -28,7 +29,6 @@ class DecisionSourceRavRelationManager extends RelationManager
             Forms\Components\Select::make('decision_administrative_id')
                 ->label('Décision Administrative engagée')
                 ->options(function () use ($regie) {
-                    // Pour RAV : une seule DA possible
                     $daDejaLiee = MenuDepenseDecision::where('regie_avance_id', $regie->id)
                         ->pluck('decision_administrative_id')
                         ->toArray();
@@ -57,9 +57,10 @@ class DecisionSourceRavRelationManager extends RelationManager
                     $da = DecisionAdministrative::find($state);
                     if (!$da) return;
 
+                    // ✅ Toujours depuis la DA
                     $set('montant_da', $da->montant_net);
 
-                    // Résoudre nomenclature via engagement
+                    // ── Résoudre nomenclature via engagement ──────
                     $engagement = \App\Models\Engagement::where('engageable_id', $state)
                         ->where(function ($q) {
                             $q->where('engageable_type', 'App\\Models\\DecisionAdministrative')
@@ -76,7 +77,8 @@ class DecisionSourceRavRelationManager extends RelationManager
 
                     if ($nomId && $da->budget_id) {
                         $lb = LigneBudgetaire::where('budget_id', $da->budget_id)
-                            ->where('nomenclature_id', $nomId)->first();
+                            ->where('nomenclature_id', $nomId)
+                            ->first();
                         $set('ligne_budgetaire_id', $lb?->id);
                     }
                 })
@@ -87,11 +89,11 @@ class DecisionSourceRavRelationManager extends RelationManager
             Forms\Components\Hidden::make('ligne_budgetaire_id'),
 
             Forms\Components\TextInput::make('montant_da')
-                ->label('Montant alloué (FCFA)')
+                ->label('Montant net à décaisser (FCFA)')
                 ->numeric()->required()->prefix('FCFA')
-                ->helperText('Pré-rempli depuis le montant net de la DA.'),
+                ->helperText('Pré-rempli depuis le montant net de la DA — modifiable.'),
 
-            // Aperçu automatique
+            // ── Aperçu automatique ────────────────────────────
             Forms\Components\Placeholder::make('apercu')
                 ->label('📋 Récapitulatif')
                 ->content(function (Get $get) {
@@ -168,18 +170,29 @@ class DecisionSourceRavRelationManager extends RelationManager
             ->recordTitleAttribute('montant_da')
             ->columns([
                 Tables\Columns\TextColumn::make('decisionAdministrative.numero')
-                    ->label('N° DA')->weight('bold')->badge()->color('primary'),
+                    ->label('N° DA')
+                    ->weight('bold')->badge()->color('primary'),
+
                 Tables\Columns\TextColumn::make('decisionAdministrative.objet')
-                    ->label('Objet DA')->limit(40),
+                    ->label('Objet DA')
+                    ->limit(40),
+
                 Tables\Columns\TextColumn::make('nomenclature.code')
-                    ->label('Nomenclature')->badge()->color('gray'),
+                    ->label('Nomenclature')
+                    ->badge()->color('gray'),
+
                 Tables\Columns\TextColumn::make('nomenclature.libelle')
-                    ->label('Libellé')->limit(35),
+                    ->label('Libellé')
+                    ->limit(35),
+
                 Tables\Columns\TextColumn::make('montant_da')
-                    ->label('Montant alloué')->money('XAF')
+                    ->label('Montant alloué')
+                    ->money('XAF')
                     ->weight('bold')->color('success'),
+
                 Tables\Columns\TextColumn::make('decisionAdministrative.statut')
-                    ->label('Statut DA')->badge()
+                    ->label('Statut DA')
+                    ->badge()
                     ->color(fn($state) => match ($state) {
                         'engagee' => 'success',
                         'validee' => 'warning',
@@ -189,7 +202,6 @@ class DecisionSourceRavRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\CreateAction::make()
                     ->label('➕ Associer la DA source')
-                    // ✅ Une seule DA pour RAV
                     ->visible(
                         fn() =>
                         $this->getOwnerRecord()?->statut === 'actif'
@@ -200,27 +212,35 @@ class DecisionSourceRavRelationManager extends RelationManager
                             && auth()->user()?->can('update_regie_avance')
                     )
                     ->using(function (array $data): MenuDepenseDecision {
-                        $regie   = $this->getOwnerRecord();
-                        $daId    = $data['decision_administrative_id'];
-                        $montant = (float) ($data['montant_da'] ?? 0);
+                        $regie = $this->getOwnerRecord();
+                        $daId  = $data['decision_administrative_id'];
 
                         $da = DecisionAdministrative::find($daId);
+                        if (!$da) throw new \Exception("DA introuvable (id={$daId}).");
 
-                        // Résoudre nomenclature directement
+                        // ✅ Lire le montant depuis la DA — priorité sur le formulaire
+                        $montant = (float) ($da->montant_net ?? $data['montant_da'] ?? 0);
+                        if ($montant <= 0) {
+                            $montant = (float) ($data['montant_da'] ?? 0);
+                        }
+
+                        // ── Résoudre nomenclature ─────────────────
                         $engagement = \App\Models\Engagement::where('engageable_id', $daId)
                             ->where(function ($q) {
                                 $q->where('engageable_type', 'App\\Models\\DecisionAdministrative')
                                     ->orWhere('engageable_type', 'decision_administrative');
                             })->first();
 
-                        $nomId = $engagement?->nomenclature_principale_id;
+                        $nomId = $data['nomenclature_id']
+                            ?? $engagement?->nomenclature_principale_id;
+
                         if (!$nomId && $engagement) {
                             $nomId = \App\Models\LigneEngagement::where('engagement_id', $engagement->id)
                                 ->value('nomenclature_id');
                         }
 
-                        $lbId = null;
-                        if ($nomId && $da?->budget_id) {
+                        $lbId = $data['ligne_budgetaire_id'] ?? null;
+                        if (!$lbId && $nomId && $da->budget_id) {
                             $lb   = LigneBudgetaire::where('budget_id', $da->budget_id)
                                 ->where('nomenclature_id', $nomId)->first();
                             $lbId = $lb?->id;
@@ -228,7 +248,7 @@ class DecisionSourceRavRelationManager extends RelationManager
 
                         // ── 1. Créer la liaison ───────────────────
                         $liaison = MenuDepenseDecision::create([
-                            'regie_avance_id'           => $regie->id,
+                            'regie_avance_id'            => $regie->id,
                             'decision_administrative_id' => $daId,
                             'nomenclature_id'            => $nomId,
                             'ligne_budgetaire_id'        => $lbId,
@@ -244,18 +264,36 @@ class DecisionSourceRavRelationManager extends RelationManager
                                 ],
                                 [
                                     'ligne_budgetaire_id' => $lbId,
-                                    'montant_alloue'     => $montant,
-                                    'montant_consomme'   => 0,
-                                    'montant_disponible' => $montant,
+                                    'montant_alloue'      => $montant,
+                                    'montant_consomme'    => 0,
+                                    'montant_disponible'  => $montant,
                                 ]
                             );
                         }
 
-                        // ── 3. Mettre à jour la régie ─────────────
-                        $regie->updateQuietly([
-                            'decision_administrative_id' => $daId,
-                            'montant_alloue'             => $montant,
-                            'montant_disponible'         => $montant,
+                        // ── 3. ✅ Mettre à jour la régie via DB::table
+                        // pour contourner tout observer/global scope
+                        DB::table('regies_avances')
+                            ->where('id', $regie->id)
+                            ->update([
+                                'decision_administrative_id' => $daId,
+                                'montant_alloue'             => $montant,
+                                'montant_disponible'         => $montant,
+                                // Sync encaisse_annuelle si pas encore renseignée
+                                'encaisse_annuelle'          => $regie->encaisse_annuelle > 0
+                                    ? $regie->encaisse_annuelle
+                                    : $montant,
+                                'updated_at'                 => now(),
+                            ]);
+
+                        Log::info('✅ DA source associée à la RAV', [
+                            'regie_id'    => $regie->id,
+                            'regie_num'   => $regie->numero,
+                            'da_id'       => $daId,
+                            'da_num'      => $da->numero,
+                            'montant'     => $montant,
+                            'nomenclature_id' => $nomId,
+                            'lb_id'       => $lbId,
                         ]);
 
                         return $liaison;
@@ -264,7 +302,7 @@ class DecisionSourceRavRelationManager extends RelationManager
                         Notification::make()
                             ->title('✅ DA source associée')
                             ->success()
-                            ->body('La ligne de mini-budget a été créée automatiquement.')
+                            ->body('La ligne de mini-budget et les montants ont été mis à jour.')
                     ),
             ])
             ->actions([
@@ -277,7 +315,7 @@ class DecisionSourceRavRelationManager extends RelationManager
                     ->using(function (MenuDepenseDecision $record): void {
                         $regie = $this->getOwnerRecord();
 
-                        // Supprimer la ligne mini-budget
+                        // ── Supprimer la ligne mini-budget ────────
                         LigneRegieAvance::where([
                             'regie_avance_id' => $regie->id,
                             'nomenclature_id' => $record->nomenclature_id,
@@ -285,15 +323,25 @@ class DecisionSourceRavRelationManager extends RelationManager
 
                         $record->delete();
 
-                        // Réinitialiser la régie
-                        $regie->updateQuietly([
-                            'decision_administrative_id' => null,
-                            'montant_alloue'             => 0,
-                            'montant_disponible'         => 0,
+                        // ── Réinitialiser la régie via DB::table ──
+                        DB::table('regies_avances')
+                            ->where('id', $regie->id)
+                            ->update([
+                                'decision_administrative_id' => null,
+                                'montant_alloue'             => 0,
+                                'montant_disponible'         => 0,
+                                'updated_at'                 => now(),
+                            ]);
+
+                        Log::info('DA source dissociée de la RAV', [
+                            'regie_id' => $regie->id,
+                            'da_id'    => $record->decision_administrative_id,
                         ]);
                     })
                     ->successNotification(
-                        Notification::make()->title('DA source supprimée')->warning()
+                        Notification::make()
+                            ->title('DA source supprimée')
+                            ->warning()
                     ),
             ]);
     }

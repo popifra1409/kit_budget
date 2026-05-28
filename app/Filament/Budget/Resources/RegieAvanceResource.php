@@ -19,8 +19,7 @@ use App\Models\Exercice;
 
 class RegieAvanceResource extends Resource
 {
-    protected static ?string $model = RegieAvance::class;
-
+    protected static ?string $model           = RegieAvance::class;
     protected static ?string $navigationIcon  = 'heroicon-o-banknotes';
     protected static ?string $navigationLabel = 'Régies d\'Avance';
     protected static ?string $modelLabel      = 'Régie d\'Avance';
@@ -67,6 +66,7 @@ class RegieAvanceResource extends Resource
     {
         return $form->schema([
 
+            // ── Section 1 : Identification ────────────────────
             Forms\Components\Section::make('Identification')
                 ->schema([
                     Forms\Components\Grid::make(3)->schema([
@@ -77,17 +77,23 @@ class RegieAvanceResource extends Resource
                             ->dehydrated()
                             ->placeholder('Généré automatiquement'),
 
+                        // ✅ Live + afterStateUpdated → sync objet si vide
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé / Désignation')
                             ->required()
                             ->maxLength(255)
                             ->placeholder('Ex: Régie d\'avance principale DAAF')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                if (empty($get('objet'))) {
+                                    $set('objet', $state);
+                                }
+                            })
                             ->columnSpan(2),
                     ]),
 
                     Forms\Components\Grid::make(3)->schema([
 
-                        // ✅ Exercice
                         Forms\Components\Select::make('exercice_id')
                             ->label('Exercice')
                             ->options(fn() => Exercice::orderByDesc('annee')
@@ -97,7 +103,6 @@ class RegieAvanceResource extends Resource
                             ->searchable()
                             ->preload(),
 
-                        // ✅ Budget
                         Forms\Components\Select::make('budget_id')
                             ->label('Budget')
                             ->options(Budget::where('actif', true)->pluck('libelle', 'id'))
@@ -106,7 +111,6 @@ class RegieAvanceResource extends Resource
                             ->preload()
                             ->live(),
 
-                        // ✅ Responsable
                         Forms\Components\Select::make('responsable_id')
                             ->label('Responsable')
                             ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
@@ -117,24 +121,125 @@ class RegieAvanceResource extends Resource
                     ]),
                 ]),
 
-            Forms\Components\Section::make('Décision Administrative source')
+            // ── Section 2 : Décision Administrative source ────
+            Forms\Components\Section::make('Dotation et décision administrative source')
                 ->description(
                     '💡 Après création de la régie, associez la DA source '
                         . 'depuis l\'onglet "Décision source" de la fiche.'
                 )
                 ->schema([
-                    Forms\Components\Grid::make(2)->schema([
+
+                    // ── Ligne 1 : Encaisse + Net à décaisser + Restant ──
+                    Forms\Components\Grid::make(3)->schema([
+
+                        // ✅ Encaisse annuelle — nouveau champ
+                        Forms\Components\TextInput::make('encaisse_annuelle')
+                            ->label('Encaisse annuelle (FCFA)')
+                            ->numeric()
+                            ->default(0)
+                            ->prefix('FCFA')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                $encaisse = (float) ($state ?? 0);
+                                $net      = (float) ($get('montant_alloue') ?? 0);
+                                $set('montant_encaisse_restant', max(0, $encaisse - $net));
+                            })
+                            ->helperText('Montant total alloué annuellement à la régie'),
+
+
+                        Forms\Components\Actions::make([
+                            Forms\Components\Actions\Action::make('sync_depuis_da')
+                                ->label('↺ Sync montant net depuis DA associée')
+                                ->icon('heroicon-o-arrow-path')
+                                ->color('info')
+                                ->size('sm')
+                                ->visible(
+                                    fn(Get $get, $record) =>
+                                    $record?->decision_administrative_id !== null
+                                )
+                                ->action(function (Set $set, $record) {
+                                    $da = \App\Models\DecisionAdministrative::find(
+                                        $record?->decision_administrative_id
+                                    );
+                                    if (!$da) return;
+
+                                    // ✅ Uniquement montant_alloue
+                                    $set('montant_alloue', $da->montant_net);
+                                    // ❌ encaisse_annuelle non touchée
+
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('✅ Montant net syncé depuis ' . $da->numero)
+                                        ->body(number_format($da->montant_net, 0, ',', ' ') . ' FCFA')
+                                        ->success()->send();
+                                }),
+                        ])->columnSpanFull(),
+
+                        // ✅ Montant net à décaisser (anciennement "Montant alloué")
                         Forms\Components\TextInput::make('montant_alloue')
-                            ->label('Montant alloué estimé (FCFA)')
-                            ->numeric()->default(0)->prefix('FCFA')
-                            ->helperText(
-                                'Sera mis à jour automatiquement après association de la DA source.'
-                            ),
+                            ->label('Montant net à décaisser (FCFA)')
+                            ->numeric()
+                            ->default(0)
+                            ->prefix('FCFA')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                $encaisse = (float) ($get('encaisse_annuelle') ?? 0);
+                                $net      = (float) ($state ?? 0);
+                                $set('montant_encaisse_restant', max(0, $encaisse - $net));
+                            })
+                            ->helperText('Sera mis à jour après association de la DA source.'),
+
+                        // ✅ Montant encaisse restant — calculé, lecture seule
+                        Forms\Components\Placeholder::make('montant_encaisse_restant_affiche')
+                            ->label('Montant encaisse restant (FCFA)')
+                            ->content(function (Get $get, $record) {
+                                $encaisse = (float) ($get('encaisse_annuelle')
+                                    ?? $record?->encaisse_annuelle ?? 0);
+                                $net = (float) ($get('montant_alloue')
+                                    ?? $record?->montant_alloue ?? 0);
+                                $restant = max(0, $encaisse - $net);
+                                $style = $restant <= 0
+                                    ? 'color:red; font-weight:bold;'
+                                    : 'color:green; font-weight:bold;';
+                                return new \Illuminate\Support\HtmlString(
+                                    "<span style='{$style}'>"
+                                        . number_format($restant, 0, ',', ' ')
+                                        . ' FCFA</span>'
+                                );
+                            }),
+                    ]),
+
+                    // ── Ligne 2 : Date + Objet ──────────────────────────
+                    Forms\Components\Grid::make(2)->schema([
 
                         Forms\Components\DatePicker::make('date_creation')
                             ->label('Date de création')
-                            ->default(now())->required(),
+                            ->default(now())
+                            ->required(),
+
+                        // ✅ Objet — auto-rempli depuis libelle, modifiable
+                        Forms\Components\Textarea::make('objet')
+                            ->label('Objet de la régie')
+                            ->rows(2)
+                            ->placeholder('Rempli automatiquement depuis le libellé')
+                            ->helperText('Récupéré depuis le libellé — modifiable')
+                            ->afterStateHydrated(function ($state, Set $set, Get $get) {
+                                if (empty($state) && !empty($get('libelle'))) {
+                                    $set('objet', $get('libelle'));
+                                }
+                            }),
                     ]),
+
+                    // ✅ Bouton sync objet ← libellé
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('sync_objet')
+                            ->label('↺ Synchroniser objet depuis libellé')
+                            ->icon('heroicon-o-arrow-path')
+                            ->color('gray')
+                            ->size('sm')
+                            ->action(function (Set $set, Get $get) {
+                                $set('objet', $get('libelle'));
+                            }),
+                    ])->columnSpanFull(),
 
                     Forms\Components\Placeholder::make('info_source')
                         ->label('')
@@ -156,6 +261,7 @@ class RegieAvanceResource extends Resource
                         ->columnSpanFull(),
                 ]),
 
+            // ── Section 3 : Observations ──────────────────────
             Forms\Components\Section::make('Observations')
                 ->schema([
                     Forms\Components\Textarea::make('observations')
@@ -193,8 +299,15 @@ class RegieAvanceResource extends Resource
                     ->label('Exercice')
                     ->badge()->color('info'),
 
+                // ✅ Encaisse annuelle
+                Tables\Columns\TextColumn::make('encaisse_annuelle')
+                    ->label('Encaisse annuelle')
+                    ->money('XAF')->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                // ✅ Label changé
                 Tables\Columns\TextColumn::make('montant_alloue')
-                    ->label('Alloué')
+                    ->label('Net à décaisser')
                     ->money('XAF')->sortable(),
 
                 Tables\Columns\TextColumn::make('montant_decaisse')
@@ -274,7 +387,9 @@ class RegieAvanceResource extends Resource
                     )
                     ->requiresConfirmation()
                     ->modalHeading('Suspendre la régie')
-                    ->modalDescription('La régie sera suspendue — aucune dépense ne pourra être enregistrée.')
+                    ->modalDescription(
+                        'La régie sera suspendue — aucune dépense ne pourra être enregistrée.'
+                    )
                     ->action(function ($record) {
                         $record->update(['statut' => 'suspendu']);
                         Notification::make()->title('Régie suspendue')->warning()->send();
@@ -308,7 +423,9 @@ class RegieAvanceResource extends Resource
                     )
                     ->requiresConfirmation()
                     ->modalHeading('Clôturer la régie')
-                    ->modalDescription('La régie sera définitivement clôturée. Cette action est irréversible.')
+                    ->modalDescription(
+                        'La régie sera définitivement clôturée. Cette action est irréversible.'
+                    )
                     ->form([
                         Forms\Components\DatePicker::make('date_cloture')
                             ->label('Date de clôture')

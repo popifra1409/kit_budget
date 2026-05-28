@@ -27,6 +27,8 @@ class RegieAvance extends Model
         'montant_decaisse',
         'montant_depense',
         'montant_disponible',
+        'encaisse_annuelle',
+        'objet',
         'statut',
         'date_creation',
         'date_cloture',
@@ -57,6 +59,21 @@ class RegieAvance extends Model
             $regie->montant_disponible = $regie->montant_alloue;
         });
 
+        static::saving(function (RegieAvance $regie) {
+            if (
+                $regie->decision_administrative_id
+                && ($regie->montant_alloue === null || $regie->montant_alloue == 0)
+            ) {
+                $da = \App\Models\DecisionAdministrative::find(
+                    $regie->decision_administrative_id
+                );
+                if ($da) {
+                    // ✅ Uniquement montant_alloue
+                    $regie->montant_alloue = (float) ($da->montant_net ?? 0);
+                    // ❌ encaisse_annuelle non touchée
+                }
+            }
+        });
         static::updating(function ($regie) {
             $regie->updated_by = auth()->id();
             // Recalculer disponible à chaque mise à jour
