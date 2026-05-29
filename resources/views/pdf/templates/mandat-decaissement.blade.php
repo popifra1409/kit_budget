@@ -11,30 +11,42 @@ $daSource = $donnees['da_source'];
 $responsable = $regie->responsable;
 $exercice = $regie->exercice;
 
-// ── Montants ─────────────────────────────────────────
-$encaisseAnnuelle = (float) ($regie->montant_alloue ?? 0);
-$montantDecaisse = (float) ($decaissement->montant ?? 0);
+// ── Montants ──────────────────────────────────────────
+// ✅ FIX 2 — encaisse_annuelle depuis le champ dédié de la RAV
+$encaisseAnnuelle = (float) ($regie->encaisse_annuelle ?? 0);
+
+// ✅ montant accordé = montant_accorde du décaissement
+$montantDecaisse = (float) ($decaissement->montant_accorde
+?? $decaissement->montant ?? 0);
 $montantDecaisseTotal = (float) ($regie->montant_decaisse ?? 0);
 $montantRestant = max(0, $encaisseAnnuelle - $montantDecaisseTotal);
 
-$numeroEncaisse = $decaissement->numero_encaisse
-?? $decaissement->libelle_tranche ?? '01';
+$numeroEncaisse = $decaissement->libelle_tranche ?? $decaissement->numero ?? '01';
 $dateDecaissement = $decaissement->date_decaissement
 ? \Carbon\Carbon::parse($decaissement->date_decaissement)->format('d/m/Y')
 : now()->format('d/m/Y');
 
 // ── DA Source ─────────────────────────────────────────
 $imputation = $donnees['imputation'] ?? '—';
-$numeroCE = $daSource?->numero ?? '—';
-$dateCE = $daSource?->date_decision
-? \Carbon\Carbon::parse($daSource->date_decision)->format('d/m/Y')
-: '—';
-$numDecision = $donnees['num_decision'] ?? '—';
-$dateDecision = $donnees['date_decision'] ?? '—';
+$numeroCE = $donnees['numero_ce'] ?? $daSource?->numero ?? '—';
+$dateCE   = '____________________';
+
+$numDecision = '_______________';
+$dateDecision = '____________________';
 $montantAE = (float) ($daSource?->montant_net ?? $encaisseAnnuelle);
 $montantCredPaie = $montantDecaisse;
 
+// ✅ FIX 4 — TVA et IR depuis la DA source
+$tauxTva = (float) ($daSource?->taux_tva ?? 0);
+$tauxIr = (float) ($daSource?->taux_ir ?? 0);
+
+// Si le taux IR est dans donnees (calculé en controller)
+if (isset($donnees['taux_ir_float'])) {
+$tauxIr = (float) $donnees['taux_ir_float'];
+}
+
 // ── Régisseur ─────────────────────────────────────────
+// ✅ FIX 3 — matricule et nom depuis Personnel (passés par le contrôleur)
 $matricule = $donnees['matricule'] ?? '—';
 $nomRegisseur = $donnees['nom_regisseur'] ?? strtoupper($responsable?->name ?? '—');
 
@@ -45,14 +57,6 @@ $sigle = $params?->sigle ?? 'CHUY';
 $nomStructure = $params?->nom_complet ?? 'CENTRE HOSPITALIER ET UNIVERSITAIRE DE YAOUNDE';
 $nomStructureEn = $params?->nom_structure_en ?? 'YAOUNDE UNIVERSITY TEACHING HOSPITAL';
 $ville = $params?->ville ?? 'Yaoundé';
-
-// ── Logo ──────────────────────────────────────────────
-$logoPath = null;
-$logoExists = false;
-if ($params?->logo) {
-$logoPath = public_path('storage/' . ltrim($params->logo, '/'));
-$logoExists = file_exists($logoPath);
-}
 
 // ── Montant en lettres ────────────────────────────────
 $montantLettres = \App\Helpers\NombreEnLettres::montantCFA($montantDecaisse);
@@ -84,29 +88,6 @@ $dateImpression = now()->format('d/m/Y à H:i');
         font-family: Arial, sans-serif;
         font-size: 8.5pt;
         color: #000;
-    }
-
-    .header-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 4px;
-    }
-
-    .header-table td {
-        vertical-align: top;
-        font-size: 7.5pt;
-        padding: 0 4px;
-    }
-
-    .institution {
-        font-size: 10pt;
-        font-weight: bold;
-        text-transform: uppercase;
-    }
-
-    .institution-en {
-        font-size: 8.5pt;
-        font-style: italic;
     }
 
     .titre-mandat {
@@ -234,7 +215,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
         margin-top: 4px;
     }
 
-    /* ✅ Pied de page fixe — initiales créateur */
+    /* ✅ Pied de page fixe */
     .pdf-footer-mandat {
         position: fixed;
         bottom: 0;
@@ -272,7 +253,9 @@ $dateImpression = now()->format('d/m/Y à H:i');
 
 @section('content')
 
-{{-- ✅ Pied de page fixe avec initiales créateur --}}
+{{-- ✅ FIX 1 — EN-TÊTE SUPPRIMÉ (fourni par master) --}}
+
+{{-- ✅ Pied de page fixe --}}
 <div class="pdf-footer-mandat">
     <table>
         <tr>
@@ -290,39 +273,6 @@ $dateImpression = now()->format('d/m/Y à H:i');
         </tr>
     </table>
 </div>
-
-{{-- ══ EN-TÊTE ══ --}}
-<table class="header-table">
-    <tr>
-        <td style="width:22%; text-align:center; font-size:7pt;">
-            <strong>REPUBLIQUE DU CAMEROUN</strong><br>
-            <em>Paix - Travail - Patrie</em><br>
-            <span style="font-size:6.5pt;">MINISTERE DE LA SANTE PUBLIQUE</span><br>
-            <span style="font-size:6.5pt;">DIRECTION DU BUDGET</span>
-        </td>
-        <td style="width:56%; text-align:center;">
-            @if($logoExists)
-            <img src="{{ $logoPath }}" style="height:42px; margin-bottom:3px;"><br>
-            @endif
-            <div class="institution">{{ $nomStructure }}</div>
-            <div class="institution-en">{{ $nomStructureEn }}</div>
-            <div style="font-size:8pt; font-weight:bold; margin-top:2px;">DIRECTION GENERALE</div>
-            <div style="font-size:7pt;">DIRECTION DES RESSOURCES HUMAINES ET FINANCIERES</div>
-            <div style="font-size:7pt;">SOUS-DIRECTION DES FINANCES ET DE LA COMPTABILITE</div>
-            <div style="font-size:7pt;">SERVICE DU BUDGET ET DE LA COMPTABILITE</div>
-            <div style="font-size:7pt; font-weight:bold;">BUREAU DU BUDGET ET DES ENGAGEMENTS</div>
-        </td>
-        <td style="width:22%; text-align:center; font-size:7pt;">
-            <strong>REPUBLIC OF CAMEROON</strong><br>
-            <em>Peace - Work - Fatherland</em><br>
-            <span style="font-size:6.5pt;">MINISTRY OF PUBLIC HEALTH</span><br>
-            <div style="border:1px solid #000; padding:3px; font-size:7pt;
-                        text-align:left; margin-top:8px;">
-                {{ $ville }}, le {{ $dateDecaissement }}
-            </div>
-        </td>
-    </tr>
-</table>
 
 <div class="separator"></div>
 
@@ -343,11 +293,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
     Je soussigné <strong>{{ $nomOrdonnateur }}</strong>,
     Ordonnateur des crédits du {{ $nomStructure }},
     donne ordre au comptable assignataire de payer
-    @if($decaissement->numero_encaisse ?? null)
-    la <strong>{{ $numeroEncaisse }}</strong> encaisse relative à
-    @else
     la présente encaisse relative à
-    @endif
     la Régie d'Avance N° <strong>{{ $regie->numero }}</strong>
     pour {{ strtolower($regie->objet ?? $regie->libelle) }} :
 </div>
@@ -360,6 +306,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
         </tr>
         <tr>
             <td class="bold">Matricule</td>
+            {{-- ✅ FIX 3 — depuis Personnel --}}
             <td>{{ $matricule }}</td>
         </tr>
         <tr>
@@ -383,6 +330,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
         </tr>
         <tr>
             <td class="label">Encaisse annuelle :</td>
+            {{-- ✅ FIX 2 — depuis $regie->encaisse_annuelle --}}
             <td class="bold">{{ number_format($encaisseAnnuelle, 0, ',', ' ') }} FCFA</td>
         </tr>
         <tr>
@@ -414,9 +362,8 @@ $dateImpression = now()->format('d/m/Y à H:i');
     <tr>
         <td class="label">Certificat d'Engagement :</td>
         <td>
-            N° <strong>{{ $numeroCE }}</strong>
-            du <strong>{{ $dateCE }}</strong>
-            &nbsp; Décision de déblocage N° <strong>{{ $numDecision }}</strong>
+            N° <strong>{{ $numeroCE }}</strong> du <strong>{{ $dateCE }}</strong>
+            &nbsp; Décision de <br>déblocage N° <strong>{{ $numDecision }}</strong>
             du <strong>{{ $dateDecision }}</strong>
         </td>
     </tr>
@@ -440,11 +387,12 @@ $dateImpression = now()->format('d/m/Y à H:i');
         <tr>
             <th style="width:5%;">N°</th>
             <th style="width:10%;">Code</th>
-            <th style="width:35%;">Libellé Dépenses</th>
+            <th style="width:33%;">Libellé Dépenses</th>
             <th style="width:12%;">Montant TTC</th>
             <th style="width:10%;">Montant HT</th>
-            <th style="width:8%;">TVA</th>
-            <th style="width:10%;">AC/IR ({{ $donnees['taux_ir'] ?? '5,5' }}%)</th>
+            {{-- ✅ FIX 4 — taux depuis DA source --}}
+            <th style="width:8%;">TVA ({{ number_format($tauxTva, 1) }}%)</th>
+            <th style="width:10%;">AC/IR ({{ number_format($tauxIr, 1) }}%)</th>
             <th style="width:10%;">NAP</th>
         </tr>
     </thead>
@@ -452,35 +400,43 @@ $dateImpression = now()->format('d/m/Y à H:i');
         @forelse($lignes as $index => $ligne)
         @php
         $ttc = (float) ($ligne['montant_ttc'] ?? 0);
-        $ht = (float) ($ligne['montant_ht'] ?? $ttc);
-        $tva = (float) ($ligne['montant_tva'] ?? 0);
-        $ir = (float) ($ligne['montant_ir'] ?? 0);
+        $ht = $tauxTva > 0
+        ? round($ttc / (1 + $tauxTva / 100), 2)
+        : $ttc;
+        // ✅ TVA et IR calculés depuis taux DA source
+        $tva = round($ht * $tauxTva / 100, 2);
+        $ir = round($ht * $tauxIr / 100, 2);
         $nap = $ttc - $ir;
         @endphp
         <tr>
             <td class="centre">{{ str_pad($index + 1, 2, '0', STR_PAD_LEFT) }}</td>
             <td class="centre">{{ $ligne['code'] ?? '—' }}</td>
             <td>{{ $ligne['libelle'] ?? '—' }}</td>
-            <td class="nombre">{{ number_format($ttc,  0, ',', ' ') }}</td>
-            <td class="nombre">{{ number_format($ht,   0, ',', ' ') }}</td>
-            <td class="nombre">{{ number_format($tva,  0, ',', ' ') }}</td>
-            <td class="nombre">{{ number_format($ir,   0, ',', ' ') }}</td>
+            <td class="nombre">{{ number_format($ttc, 0, ',', ' ') }}</td>
+            <td class="nombre">{{ number_format($ht,  0, ',', ' ') }}</td>
+            <td class="nombre">{{ number_format($tva, 0, ',', ' ') }}</td>
+            <td class="nombre">{{ number_format($ir,  0, ',', ' ') }}</td>
             <td class="nombre bold">{{ number_format($nap, 0, ',', ' ') }}</td>
         </tr>
         @empty
+        {{-- ✅ Ligne par défaut avec taux DA --}}
+        @php
+        $ht0 = $tauxTva > 0
+        ? round($montantDecaisse / (1 + $tauxTva / 100), 2)
+        : $montantDecaisse;
+        $tva0 = round($ht0 * $tauxTva / 100, 2);
+        $ir0 = round($ht0 * $tauxIr / 100, 2);
+        $nap0 = $montantDecaisse - $ir0;
+        @endphp
         <tr>
             <td class="centre">01</td>
-            <td class="centre">{{ substr($imputation, -6) }}</td>
+            <td class="centre">{{ $codeNomenclature ?? substr($imputation, -6) }}</td>
             <td>{{ $regie->objet ?? $regie->libelle }}</td>
             <td class="nombre">{{ number_format($montantDecaisse, 0, ',', ' ') }}</td>
-            <td class="nombre">{{ number_format($montantDecaisse, 0, ',', ' ') }}</td>
-            <td class="nombre">0</td>
-            <td class="nombre">
-                {{ number_format($montantDecaisse * ((float)($donnees['taux_ir'] ?? 5.5) / 100), 0, ',', ' ') }}
-            </td>
-            <td class="nombre bold">
-                {{ number_format($montantDecaisse * (1 - (float)($donnees['taux_ir'] ?? 5.5) / 100), 0, ',', ' ') }}
-            </td>
+            <td class="nombre">{{ number_format($ht0,  0, ',', ' ') }}</td>
+            <td class="nombre">{{ number_format($tva0, 0, ',', ' ') }}</td>
+            <td class="nombre">{{ number_format($ir0,  0, ',', ' ') }}</td>
+            <td class="nombre bold">{{ number_format($nap0, 0, ',', ' ') }}</td>
         </tr>
         @endforelse
     </tbody>
@@ -501,25 +457,17 @@ $dateImpression = now()->format('d/m/Y à H:i');
             <div class="sig-box"></div>
         </td>
         <td>
-            <div class="bold">Signature de l'Ordonnateur</div>
+            <div class="bold">Signature <br>de l'Ordonnateur</div>
             <div class="sig-box"></div>
-            <div style="margin-top:4px; font-size:7.5pt; font-weight:bold;">
+            <!-- <div style="margin-top:4px; font-size:7.5pt; font-weight:bold;">
                 {{ $fonctionOrdo }}<br>{{ $nomOrdonnateur }}
-            </div>
+            </div> -->
         </td>
         <td>
-            <div class="bold">Visa de l'Agent Comptable</div>
+            <div class="bold">Visa de <br>l'Agent Comptable</div>
             <div class="sig-box"></div>
         </td>
     </tr>
 </table>
-
-{{-- ✅ Initiales créateur en bas --}}
-<div style="margin-top: 15px; font-size: 7pt; color: #555; text-align: left;
-            border-top: 1px dashed #ccc; padding-top: 4px;">
-    Établi par : <strong>{{ $nomCreateur }}</strong>
-    &nbsp;|&nbsp; Initiales : <strong>{{ $initiales }}</strong>
-    &nbsp;|&nbsp; Le {{ $dateImpression }}
-</div>
 
 @endsection

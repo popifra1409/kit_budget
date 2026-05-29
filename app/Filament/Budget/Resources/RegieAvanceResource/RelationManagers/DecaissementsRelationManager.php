@@ -140,19 +140,26 @@ class DecaissementsRelationManager extends RelationManager
                             && auth()->user()?->can('valider_decaissement_regie')
                     )
                     ->modalHeading('Accorder et verser la tranche')
-                    ->form([
-                        Forms\Components\TextInput::make('montant_accorde')
-                            ->label('Montant accordé (FCFA)')
-                            ->numeric()->required()->prefix('FCFA'),
+                    ->form(function ($record) {  // ✅ closure pour accéder à $record
+                        return [
+                            Forms\Components\TextInput::make('montant_accorde')
+                                ->label('Montant accordé (FCFA)')
+                                ->numeric()->required()->prefix('FCFA')
+                                // ✅ Par défaut = montant demandé
+                                ->default(fn() => $record->montant_demande)
+                                ->helperText(
+                                    'Montant demandé : '
+                                        . number_format($record->montant_demande, 0, ',', ' ')
+                                        . ' FCFA'
+                                ),
 
-                        Forms\Components\DatePicker::make('date_decaissement')
-                            ->label('Date de versement')
-                            ->default(now())->required(),
+                            Forms\Components\DatePicker::make('date_decaissement')
+                                ->label('Date de versement')
+                                ->default(now())->required(),
 
-                        Forms\Components\TextInput::make('certificat_numero')
-                            ->label('N° Certificat de décaissement')
-                            ->required(),
-                    ])
+                            // ❌ certificat_numero supprimé
+                        ];
+                    })
                     ->action(function ($record, array $data) {
                         $regie = $this->getOwnerRecord();
 
@@ -160,7 +167,7 @@ class DecaissementsRelationManager extends RelationManager
                             'statut'            => 'verse',
                             'montant_accorde'   => $data['montant_accorde'],
                             'date_decaissement' => $data['date_decaissement'],
-                            'certificat_numero' => $data['certificat_numero'],
+                            // ❌ certificat_numero supprimé
                         ]);
 
                         // Mettre à jour montant_decaisse de la régie
