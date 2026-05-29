@@ -142,6 +142,187 @@ class UserResource extends Resource
                             ->required(),
                     ]),
 
+                Forms\Components\Section::make('Personnel associé')
+                    ->description('Lier cet utilisateur à un dossier personnel')
+                    ->schema([
+
+                        Forms\Components\Select::make('personnel_id')
+                            ->label('Dossier Personnel')
+                            ->relationship('personnel', 'matricule')
+                            ->getOptionLabelFromRecordUsing(
+                                fn(\App\Models\Personnel $p) =>
+                                "{$p->matricule} — {$p->nom} {$p->prenoms}"
+                            )
+                            ->searchable()->preload()
+                            ->live()
+                            ->hint(function ($record) {
+                                if (!$record) return null;
+                                $p = $record->personnel;
+                                if (!$p) return '⚠️ Aucun dossier personnel lié';
+                                return "✅ {$p->matricule} — {$p->nom} {$p->prenoms}";
+                            })
+                            ->hintColor(fn($record) => $record?->personnel ? 'success' : 'warning')
+                            ->columnSpanFull(),
+
+                        // ✅ Bouton de création avec pré-remplissage garanti
+                        Forms\Components\Actions::make([
+                            Forms\Components\Actions\Action::make('creer_personnel')
+                                ->label('➕ Créer le dossier personnel')
+                                ->icon('heroicon-o-user-plus')
+                                ->color('info')
+                                ->visible(fn(Forms\Get $get) => !$get('personnel_id'))
+                                ->modalHeading('Créer un dossier personnel')
+                                ->modalWidth('3xl')
+                                ->modalSubmitActionLabel('Créer et lier')
+
+                                // ✅ Pré-remplir depuis les champs User AVANT ouverture du modal
+                                ->fillForm(function (Forms\Get $get): array {
+                                    $userName  = $get('name')  ?? '';
+                                    $userEmail = $get('email') ?? '';
+
+                                    $parts   = explode(' ', trim($userName), 2);
+                                    $nom     = strtoupper($parts[0] ?? '');
+                                    $prenoms = ucwords(strtolower($parts[1] ?? ''));
+
+                                    return [
+                                        'nom'     => $nom,
+                                        'prenoms' => $prenoms,
+                                        'email'   => $userEmail,
+                                        'statut'  => 'actif',
+                                        'actif'   => true,
+                                    ];
+                                })
+
+                                ->form([
+                                    Forms\Components\Placeholder::make('info')
+                                        ->label('')
+                                        ->content(new \Illuminate\Support\HtmlString(
+                                            '<div class="rounded p-2 text-xs '
+                                                . 'bg-blue-50 dark:bg-blue-900/30 '
+                                                . 'text-blue-700 dark:text-blue-300 '
+                                                . 'border border-blue-200 dark:border-blue-700">'
+                                                . '💡 Champs pré-remplis depuis le compte utilisateur.'
+                                                . '</div>'
+                                        ))
+                                        ->columnSpanFull(),
+
+                                    Forms\Components\Grid::make(3)->schema([
+                                        Forms\Components\TextInput::make('matricule')
+                                            ->label('Matricule')
+                                            ->unique(\App\Models\Personnel::class, 'matricule')
+                                            ->maxLength(50)
+                                            ->placeholder('Laissez vide → génération auto'),
+
+                                        Forms\Components\Select::make('civilite')
+                                            ->label('Civilité')
+                                            ->options([
+                                                'M.'   => 'M.',
+                                                'Mme'  => 'Mme',
+                                                'Mlle' => 'Mlle',
+                                            ]),
+
+                                        Forms\Components\Select::make('sexe')
+                                            ->label('Sexe')
+                                            ->options(['M' => 'Masculin', 'F' => 'Féminin'])
+                                            ->required(),
+                                    ]),
+
+                                    Forms\Components\Grid::make(2)->schema([
+                                        // ✅ Pré-rempli via fillForm
+                                        Forms\Components\TextInput::make('nom')
+                                            ->label('Nom')
+                                            ->required()->maxLength(255),
+
+                                        Forms\Components\TextInput::make('prenoms')
+                                            ->label('Prénoms')
+                                            ->required()->maxLength(255),
+                                    ]),
+
+                                    Forms\Components\Grid::make(2)->schema([
+                                        Forms\Components\Select::make('service_id')
+                                            ->label('Service')
+                                            ->options(
+                                                \App\Models\Service::where('actif', true)
+                                                    ->pluck('nom', 'id')
+                                            )
+                                            ->searchable()->preload()->required(),
+
+                                        Forms\Components\TextInput::make('fonction')
+                                            ->label('Fonction')
+                                            ->required()->maxLength(255),
+                                    ]),
+
+                                    Forms\Components\Grid::make(3)->schema([
+                                        Forms\Components\TextInput::make('grade')
+                                            ->label('Grade')->maxLength(255),
+
+                                        Forms\Components\Select::make('categorie')
+                                            ->label('Catégorie')
+                                            ->options([
+                                                'A' => 'Catégorie A',
+                                                'B' => 'Catégorie B',
+                                                'C' => 'Catégorie C',
+                                                'D' => 'Catégorie D',
+                                            ]),
+
+                                        Forms\Components\TextInput::make('echelon')
+                                            ->label('Échelon')->maxLength(255),
+                                    ]),
+
+                                    Forms\Components\Grid::make(2)->schema([
+                                        Forms\Components\TextInput::make('telephone')
+                                            ->label('Téléphone')->tel()->maxLength(255),
+
+                                        // ✅ Pré-rempli via fillForm
+                                        Forms\Components\TextInput::make('email')
+                                            ->label('Email')->email()->maxLength(255),
+                                    ]),
+
+                                    Forms\Components\Grid::make(2)->schema([
+                                        Forms\Components\Select::make('statut')
+                                            ->label('Statut')
+                                            ->options([
+                                                'actif'          => 'Actif',
+                                                'conge'          => 'En congé',
+                                                'detache'        => 'Détaché',
+                                                'disponibilite'  => 'En disponibilité',
+                                                'suspendu'       => 'Suspendu',
+                                                'retraite'       => 'Retraité',
+                                                'demissionnaire' => 'Démissionnaire',
+                                            ])
+                                            ->required()->default('actif'),
+
+                                        Forms\Components\Toggle::make('actif')
+                                            ->label('Actif')
+                                            ->default(true)
+                                            ->inline(false),
+                                    ]),
+                                ])
+
+                                ->action(function (array $data, Forms\Set $set, Forms\Get $get) {
+                                    // ✅ Générer matricule si vide
+                                    if (empty($data['matricule'])) {
+                                        $data['matricule'] = \App\Models\Personnel::genererMatricule();
+                                    }
+
+                                    $data['statut'] = $data['statut'] ?? 'actif';
+                                    $data['actif']  = $data['actif']  ?? true;
+
+                                    $personnel = \App\Models\Personnel::create($data);
+
+                                    // ✅ Injecter l'id dans le Select du formulaire parent
+                                    $set('personnel_id', $personnel->id);
+
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('✅ Personnel créé et lié')
+                                        ->success()
+                                        ->body("{$personnel->matricule} — {$personnel->nom} {$personnel->prenoms}")
+                                        ->send();
+                                }),
+                        ])->columnSpanFull(),
+                    ])
+                    ->collapsible(),
+
                 Forms\Components\Section::make('Statut du Compte')
                     ->description('Activer ou désactiver l\'accès de l\'utilisateur à l\'application')
                     ->schema([
@@ -222,6 +403,14 @@ class UserResource extends Resource
 
                         return $translations[$state] ?? ucfirst(str_replace('_', ' ', $state));
                     }),
+
+                Tables\Columns\TextColumn::make('personnel.matricule')
+                    ->label('Matricule')
+                    ->placeholder('—')
+                    ->badge()
+                    ->color('gray')
+                    ->searchable()
+                    ->toggleable(),
 
                 Tables\Columns\ToggleColumn::make('actif')
                     ->label('Actif')

@@ -42,26 +42,16 @@ class MandatDecaissementPdfController extends Controller
         $nomRegisseur = $regie->responsable?->name ?? '—';
 
         if ($regie->responsable_id) {
-            $user = $regie->responsable;
-
-            // Approche 1 : user_id (confirmé dans fillable)
-            $personnel = \App\Models\Personnel::where('user_id', $regie->responsable_id)
-                ->first();
-
-            // Approche 2 : email si user_id ne donne rien
-            if (!$personnel && $user?->email) {
-                $personnel = \App\Models\Personnel::where('email', $user->email)
-                    ->first();
-            }
+            $user      = $regie->responsable()->with('personnel')->first();
+            $personnel = $user?->personnel;
 
             if ($personnel) {
-                $matricule = $personnel->matricule ?? '—';
-                $nomPrenom = trim(
+                $matricule    = $personnel->matricule ?? '—';
+                $nomRegisseur = trim(
                     ($personnel->nom     ?? '')
                         . ' '
-                        . ($personnel->prenoms ?? $personnel->prenom ?? '')
-                );
-                $nomRegisseur = $nomPrenom ?: ($user?->name ?? '—');
+                        . ($personnel->prenoms ?? '')
+                ) ?: ($user?->name ?? '—');
             }
         }
 

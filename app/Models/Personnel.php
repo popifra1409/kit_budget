@@ -64,12 +64,11 @@ class Personnel extends Model
     {
         return $this->belongsTo(Service::class);
     }
-
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(\App\Models\User::class, 'user_id');
     }
-
+    
     public function decisionsAdministratives(): HasMany
     {
         return $this->hasMany(DecisionAdministrative::class);
