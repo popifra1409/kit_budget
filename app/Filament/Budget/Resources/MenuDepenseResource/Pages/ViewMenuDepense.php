@@ -1,5 +1,4 @@
 <?php
-// app/Filament/Budget/Resources/MenuDepenseResource/Pages/ViewMenuDepense.php
 
 namespace App\Filament\Budget\Resources\MenuDepenseResource\Pages;
 
@@ -8,6 +7,7 @@ use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
+use Filament\Support\Enums\FontWeight;
 use Filament\Notifications\Notification;
 use Filament\Forms;
 
@@ -24,12 +24,12 @@ class ViewMenuDepense extends ViewRecord
             Actions\Action::make('suspendre')
                 ->label('Suspendre')
                 ->icon('heroicon-o-pause-circle')->color('warning')
+                ->requiresConfirmation()
                 ->visible(
                     fn($record) =>
                     $record->statut === 'actif'
                         && auth()->user()?->can('suspendre_menu_depense')
                 )
-                ->requiresConfirmation()
                 ->action(function ($record) {
                     $record->update(['statut' => 'suspendu']);
                     Notification::make()->title('Menu Dépense suspendu')->warning()->send();
@@ -39,15 +39,15 @@ class ViewMenuDepense extends ViewRecord
             Actions\Action::make('reactiver')
                 ->label('Réactiver')
                 ->icon('heroicon-o-play-circle')->color('success')
+                ->requiresConfirmation()
                 ->visible(
                     fn($record) =>
                     $record->statut === 'suspendu'
                         && auth()->user()?->can('suspendre_menu_depense')
                 )
-                ->requiresConfirmation()
                 ->action(function ($record) {
                     $record->update(['statut' => 'actif']);
-                    Notification::make()->title('Menu Dépense réactivé')->success()->send();
+                    Notification::make()->title('✅ Réactivé')->success()->send();
                     $this->refreshFormData(['statut']);
                 }),
 
@@ -59,12 +59,11 @@ class ViewMenuDepense extends ViewRecord
                     in_array($record->statut, ['actif', 'suspendu'])
                         && auth()->user()?->can('cloturer_menu_depense')
                 )
-                ->requiresConfirmation()
                 ->form([
                     Forms\Components\DatePicker::make('date_cloture')
                         ->label('Date de clôture')->default(now())->required(),
                     Forms\Components\Textarea::make('observations')
-                        ->label('Observations')->rows(2),
+                        ->label('Observations de clôture')->rows(2),
                 ])
                 ->action(function ($record, array $data) {
                     $record->update([
@@ -74,45 +73,17 @@ class ViewMenuDepense extends ViewRecord
                             . "\n\n--- CLÔTURÉ LE " . now()->format('d/m/Y') . " ---\n"
                             . ($data['observations'] ?? ''),
                     ]);
-                    Notification::make()->title('✅ Menu Dépense clôturé')->success()->send();
+                    Notification::make()->title('✅ Clôturé')->success()->send();
                     $this->refreshFormData(['statut']);
                 }),
 
-            Actions\Action::make('reapprovisionner')
-                ->label('Réapprovisionner')
-                ->icon('heroicon-o-arrow-path')->color('primary')
+            Actions\DeleteAction::make()
                 ->visible(
                     fn($record) =>
                     $record->statut === 'actif'
-                        && auth()->user()?->can('reapprovisionner_menu_depense')
-                )
-                ->modalHeading('Réapprovisionner le Menu Dépense')
-                ->form([
-                    Forms\Components\Select::make('decision_administrative_id')
-                        ->label('Nouvelle DA engagée')
-                        ->options(function ($record) {
-                            return \App\Models\DecisionAdministrative::where('statut', 'engagee')
-                                ->get()
-                                ->mapWithKeys(fn($da) => [
-                                    $da->id => "{$da->numero} — {$da->objet} — "
-                                        . number_format($da->montant_net, 0, ',', ' ')
-                                        . " FCFA"
-                                ]);
-                        })
-                        ->required()->searchable(),
-                ])
-                ->action(function ($record, array $data) {
-                    $da = \App\Models\DecisionAdministrative::findOrFail(
-                        $data['decision_administrative_id']
-                    );
-                    $record->reapprovisionner($da);
-                    Notification::make()
-                        ->title('✅ Menu Dépense réapprovisionné')
-                        ->success()
-                        ->body("+ " . number_format($da->montant_net, 0, ',', ' ') . " FCFA")
-                        ->send();
-                    $this->refreshFormData(['montant_alloue', 'montant_disponible']);
-                }),
+                        && ($record->montant_depense ?? 0) == 0
+                        && auth()->user()->hasRole('super_admin')
+                ),
         ];
     }
 
@@ -120,148 +91,187 @@ class ViewMenuDepense extends ViewRecord
     {
         return $infolist->schema([
 
+            // ══ Situation générale ════════════════════════════
+            Infolists\Components\Section::make('Situation générale')
+                ->schema([
+                    Infolists\Components\Grid::make(3)->schema([
+
+                        Infolists\Components\TextEntry::make('montant_disponible')
+                            ->label('Montant disponible')
+                            ->money('XAF')->weight(FontWeight::Bold)->size('xl')
+                            ->color(
+                                fn($record) => ($record->montant_disponible ?? 0) < 0 ? 'danger' : 'success'
+                            ),
+
+                        Infolists\Components\TextEntry::make('statut')
+                            ->label('Statut')
+                            ->badge()->size('xl')
+                            ->color(fn($state) => match ($state) {
+                                'actif'    => 'success',
+                                'suspendu' => 'warning',
+                                'cloture'  => 'danger',
+                                default    => 'gray',
+                            })
+                            ->formatStateUsing(fn($state) => match ($state) {
+                                'actif'    => '🟢 Actif',
+                                'suspendu' => '⏸️ Suspendu',
+                                'cloture'  => '🔒 Clôturé',
+                                default    => $state,
+                            }),
+
+                        Infolists\Components\TextEntry::make('taux_consommation')
+                            ->label('Taux de consommation')
+                            ->getStateUsing(
+                                fn($record) =>
+                                number_format($record->taux_consommation, 1) . '%'
+                            )
+                            ->badge()->size('xl')
+                            ->color(fn($record) => match (true) {
+                                $record->taux_consommation >= 90 => 'danger',
+                                $record->taux_consommation >= 70 => 'warning',
+                                default                          => 'success',
+                            }),
+                    ]),
+                ])
+                ->columnSpanFull()
+                ->icon('heroicon-o-chart-bar'),
+
+            // ══ Identification ════════════════════════════════
             Infolists\Components\Section::make('Identification')
                 ->schema([
-                    Infolists\Components\TextEntry::make('numero')
-                        ->label('N° MDE')->copyable()->weight('bold'),
+                    Infolists\Components\Grid::make(3)->schema([
+
+                        Infolists\Components\TextEntry::make('numero')
+                            ->label('Numéro MDE')
+                            ->weight(FontWeight::Bold)->copyable()
+                            ->icon('heroicon-o-hashtag'),
+
+                        Infolists\Components\TextEntry::make('exercice.annee')
+                            ->label('Exercice')->badge()->color('info')
+                            ->icon('heroicon-o-calendar'),
+
+                        Infolists\Components\TextEntry::make('date_creation')
+                            ->label('Date de création')->date('d/m/Y')
+                            ->icon('heroicon-o-calendar-days'),
+                    ]),
 
                     Infolists\Components\TextEntry::make('libelle')
-                        ->label('Désignation')->columnSpan(2),
+                        ->label('Désignation')
+                        ->weight(FontWeight::Medium)->size('lg')
+                        ->columnSpanFull(),
 
-                    Infolists\Components\TextEntry::make('statut')
-                        ->label('Statut')->badge()
-                        ->color(fn($state) => match ($state) {
-                            'actif'    => 'success',
-                            'suspendu' => 'warning',
-                            'cloture'  => 'danger',
-                            default    => 'gray',
-                        })
-                        ->formatStateUsing(fn($state) => match ($state) {
-                            'actif'    => 'Actif',
-                            'suspendu' => 'Suspendu',
-                            'cloture'  => 'Clôturé',
-                            default    => $state,
-                        }),
+                    Infolists\Components\TextEntry::make('objet')
+                        ->label('Objet du Menu Dépense')
+                        ->placeholder('Non renseigné')->columnSpanFull(),
 
-                    Infolists\Components\TextEntry::make('responsable.name')
-                        ->label('Responsable'),
+                    Infolists\Components\Grid::make(2)->schema([
+                        Infolists\Components\TextEntry::make('responsable.name')
+                            ->label('Responsable')
+                            ->weight(FontWeight::Bold)
+                            ->icon('heroicon-o-user'),
 
-                    Infolists\Components\TextEntry::make('exercice.annee')
-                        ->label('Exercice')->badge()->color('info'),
-
-                    Infolists\Components\TextEntry::make('date_creation')
-                        ->label('Date de création')->date('d/m/Y'),
+                        Infolists\Components\TextEntry::make('budget.libelle')
+                            ->label('Budget')->badge()->color('primary'),
+                    ]),
                 ])
-                ->columns(3),
+                ->columns(3)->icon('heroicon-o-identification'),
 
-            // ✅ Situation financière
-            Infolists\Components\Section::make('Situation financière')
+            // ══ Dotation ══════════════════════════════════════
+            Infolists\Components\Section::make('Dotation et état financier')
                 ->schema([
-                    Infolists\Components\TextEntry::make('montant_alloue')
-                        ->label('💰 Montant total alloué')
-                        ->formatStateUsing(
-                            fn($state) =>
-                            number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                        )
-                        ->color('info')->weight('bold'),
+                    Infolists\Components\Grid::make(3)->schema([
 
-                    Infolists\Components\TextEntry::make('montant_decaisse')
-                        ->label('🏦 Total décaissé')
-                        ->formatStateUsing(
-                            fn($state) =>
-                            number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                        )
-                        ->color('warning'),
+                        // ✅ Encaisse annuelle
+                        Infolists\Components\TextEntry::make('encaisse_annuelle')
+                            ->label('Encaisse annuelle')
+                            ->money('XAF')->weight(FontWeight::Bold)->color('primary'),
 
-                    Infolists\Components\TextEntry::make('montant_depense')
-                        ->label('💸 Total dépensé')
-                        ->formatStateUsing(
-                            fn($state) =>
-                            number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                        )
-                        ->color('danger'),
+                        // ✅ Net à décaisser = cumul DA sources
+                        Infolists\Components\TextEntry::make('montant_alloue')
+                            ->label('Net à décaisser (cumul DA)')
+                            ->money('XAF')->weight(FontWeight::Bold),
 
-                    Infolists\Components\TextEntry::make('montant_disponible')
-                        ->label('✅ Disponible')
-                        ->formatStateUsing(
-                            fn($state) =>
-                            number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                        )
-                        ->color(
-                            fn($record) =>
-                            $record->montant_disponible < 0 ? 'danger' : 'success'
-                        )
-                        ->weight('bold'),
+                        // ✅ Encaisse restante calculée
+                        Infolists\Components\TextEntry::make('encaisse_restante')
+                            ->label('Encaisse restante')
+                            ->getStateUsing(
+                                fn($record) =>
+                                max(0, ($record->encaisse_annuelle ?? 0)
+                                    - ($record->montant_alloue ?? 0))
+                            )
+                            ->money('XAF')->weight(FontWeight::Bold)
+                            ->color(
+                                fn($record) =>
+                                max(0, ($record->encaisse_annuelle ?? 0)
+                                    - ($record->montant_alloue ?? 0)) <= 0
+                                    ? 'danger' : 'success'
+                            ),
+                    ]),
 
-                    Infolists\Components\TextEntry::make('taux_consommation')
-                        ->label('📊 Taux consommation')
+                    Infolists\Components\Grid::make(3)->schema([
+
+                        Infolists\Components\TextEntry::make('montant_decaisse')
+                            ->label('Montant décaissé')
+                            ->money('XAF')->color('warning'),
+
+                        Infolists\Components\TextEntry::make('montant_depense')
+                            ->label('Montant dépensé')
+                            ->money('XAF')->color('danger'),
+
+                        Infolists\Components\TextEntry::make('montant_disponible')
+                            ->label('💰 Disponible')
+                            ->money('XAF')->weight(FontWeight::Bold)
+                            ->color(
+                                fn($record) => ($record->montant_disponible ?? 0) < 0 ? 'danger' : 'success'
+                            ),
+                    ]),
+
+                    // ✅ Nombre de DA sources
+                    Infolists\Components\TextEntry::make('decisionsSource_count')
+                        ->label('Décisions sources liées')
                         ->getStateUsing(
                             fn($record) =>
-                            number_format($record->taux_consommation, 1) . '%'
+                            $record->decisionsSource()->count() . ' DA(s)'
                         )
-                        ->badge()
-                        ->color(fn($record) => match (true) {
-                            $record->taux_consommation >= 90 => 'danger',
-                            $record->taux_consommation >= 70 => 'warning',
-                            default                          => 'success',
-                        }),
+                        ->badge()->color('info'),
                 ])
-                ->columns(4),
+                ->icon('heroicon-o-banknotes'),
 
-            // ✅ Décisions sources (NOUVEAU — spécifique Menu Dépense)
-            Infolists\Components\Section::make('Décisions Administratives sources')
-                ->description(
-                    'Chaque décision correspond à une ligne d\'engagement '
-                        . 'différente qui alimente ce Menu Dépense.'
-                )
+            // ══ Clôture ───────────────────────────────────────
+            Infolists\Components\Section::make('Clôture')
                 ->schema([
-                    Infolists\Components\RepeatableEntry::make('decisionsSource')
-                        ->label('')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('decisionAdministrative.numero')
-                                ->label('N° DA')
-                                ->badge()->color('primary')
-                                ->copyable(),
-
-                            Infolists\Components\TextEntry::make('nomenclature.code')
-                                ->label('Nomenclature')
-                                ->badge()->color('gray'),
-
-                            Infolists\Components\TextEntry::make('nomenclature.libelle')
-                                ->label('Libellé nomenclature'),
-
-                            Infolists\Components\TextEntry::make('montant_da')
-                                ->label('Montant')
-                                ->formatStateUsing(
-                                    fn($state) =>
-                                    number_format((float) $state, 0, ',', ' ') . ' FCFA'
-                                )
-                                ->color('success')->weight('bold'),
-
-                            Infolists\Components\TextEntry::make('decisionAdministrative.statut')
-                                ->label('Statut DA')
-                                ->badge()
-                                ->color(fn($state) => match ($state) {
-                                    'engagee' => 'success',
-                                    'validee' => 'warning',
-                                    default   => 'gray',
-                                }),
-                        ])
-                        ->columns(5)
-                        ->columnSpanFull(),
+                    Infolists\Components\TextEntry::make('date_cloture')
+                        ->label('Date de clôture')->date('d/m/Y')
+                        ->icon('heroicon-o-lock-closed'),
                 ])
-                ->visible(fn($record) => $record->decisionsSource()->count() > 0)
-                ->collapsible(),
+                ->visible(fn($record) => $record->statut === 'cloture')
+                ->icon('heroicon-o-lock-closed'),
 
+            // ══ Observations ──────────────────────────────────
             Infolists\Components\Section::make('Observations')
                 ->schema([
                     Infolists\Components\TextEntry::make('observations')
-                        ->label('')
-                        ->placeholder('Aucune observation')
+                        ->label('')->placeholder('Aucune observation')
                         ->columnSpanFull(),
                 ])
-                ->collapsible()
-                ->collapsed(),
+                ->collapsible()->collapsed()
+                ->visible(fn($record) => !empty($record->observations))
+                ->icon('heroicon-o-chat-bubble-left-right'),
+
+            // ══ Métadonnées ───────────────────────────────────
+            Infolists\Components\Section::make('Métadonnées')
+                ->schema([
+                    Infolists\Components\Grid::make(2)->schema([
+                        Infolists\Components\TextEntry::make('created_at')
+                            ->label('Créé le')->dateTime('d/m/Y à H:i')
+                            ->icon('heroicon-o-clock'),
+                        Infolists\Components\TextEntry::make('updated_at')
+                            ->label('Modifié le')->dateTime('d/m/Y à H:i')
+                            ->since()->icon('heroicon-o-clock'),
+                    ]),
+                ])
+                ->collapsible()->collapsed()
+                ->icon('heroicon-o-information-circle'),
         ]);
     }
 }

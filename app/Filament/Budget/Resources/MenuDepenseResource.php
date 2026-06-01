@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Exercice;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -18,15 +19,14 @@ use Filament\Notifications\Notification;
 
 class MenuDepenseResource extends Resource
 {
-    protected static ?string $model = RegieAvance::class;
-
-    protected static ?string $navigationIcon   = 'heroicon-o-clipboard-document-list';
-    protected static ?string $navigationLabel  = 'Menus Dépenses';
-    protected static ?string $modelLabel       = 'Menu Dépense';
+    protected static ?string $model           = RegieAvance::class;
+    protected static ?string $navigationIcon  = 'heroicon-o-clipboard-document-list';
+    protected static ?string $navigationLabel = 'Menus Dépenses';
+    protected static ?string $modelLabel      = 'Menu Dépense';
     protected static ?string $pluralModelLabel = 'Menus Dépenses';
-    protected static ?string $navigationGroup  = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort   = 2;
-    protected static ?string $slug             = 'menus-depenses';
+    protected static ?string $navigationGroup = 'Régies & Menu Dépenses';
+    protected static ?int    $navigationSort  = 2;
+    protected static ?string $slug            = 'menus-depenses';
 
     // =========================================================
     // PERMISSIONS
@@ -66,6 +66,7 @@ class MenuDepenseResource extends Resource
     {
         return $form->schema([
 
+            // ── Section 1 : Identification ────────────────────
             Forms\Components\Section::make('Identification')
                 ->schema([
                     Forms\Components\Grid::make(3)->schema([
@@ -75,14 +76,22 @@ class MenuDepenseResource extends Resource
                             ->disabled()->dehydrated()
                             ->placeholder('Généré automatiquement'),
 
+                        // ✅ Live pour sync objet
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé / Désignation')
                             ->required()->maxLength(255)
                             ->placeholder('Ex: Menu Dépense Fonctionnement T1')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                if (empty($get('objet'))) {
+                                    $set('objet', $state);
+                                }
+                            })
                             ->columnSpan(2),
                     ]),
 
                     Forms\Components\Grid::make(3)->schema([
+
                         Forms\Components\Select::make('exercice_id')
                             ->label('Exercice')
                             ->options(fn() => Exercice::orderByDesc('annee')
@@ -103,31 +112,94 @@ class MenuDepenseResource extends Resource
                     ]),
                 ]),
 
-            // ✅ Menu Dépense : plusieurs DA possibles (multi-lignes)
-            Forms\Components\Section::make('Décisions Administratives sources')
+            // ── Section 2 : Dotation ──────────────────────────
+            // ✅ Même logique RAV mais montant_alloue = cumul des DA sources
+            Forms\Components\Section::make('Dotation et décisions administratives sources')
                 ->description(
-                    '💡 Après création du Menu Dépense, ajoutez les décisions sources '
-                        . 'depuis l\'onglet "Décisions sources" de la fiche.'
+                    '💡 Le montant net à décaisser est la somme de toutes les DA sources. '
+                        . 'Il sera recalculé automatiquement après ajout des DA sources.'
                 )
                 ->schema([
-                    Forms\Components\Grid::make(2)->schema([
+
+                    // ── Ligne 1 : Encaisse + Net + Restant ───────
+                    Forms\Components\Grid::make(3)->schema([
+
+                        // ✅ Encaisse annuelle — saisie manuelle
+                        Forms\Components\TextInput::make('encaisse_annuelle')
+                            ->label('Encaisse annuelle (FCFA)')
+                            ->numeric()->default(0)->prefix('FCFA')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                $encaisse = (float) ($state ?? 0);
+                                $net      = (float) ($get('montant_alloue') ?? 0);
+                                $set('montant_encaisse_restant', max(0, $encaisse - $net));
+                            })
+                            ->helperText('Montant total alloué annuellement au Menu Dépense'),
+
+                        // ✅ Montant net à décaisser = cumul DA sources (lecture seule en édition)
                         Forms\Components\TextInput::make('montant_alloue')
-                            ->label('Montant total alloué estimé (FCFA)')
-                            ->numeric()
-                            ->default(0)
-                            ->prefix('FCFA')
-                            ->helperText(
-                                'Saisissez une estimation — sera recalculé automatiquement '
-                                    . 'après ajout des DA sources.'
-                            ),
+                            ->label('Montant net à décaisser (FCFA)')
+                            ->numeric()->default(0)->prefix('FCFA')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                $encaisse = (float) ($get('encaisse_annuelle') ?? 0);
+                                $net      = (float) ($state ?? 0);
+                                $set('montant_encaisse_restant', max(0, $encaisse - $net));
+                            })
+                            ->helperText('Recalculé automatiquement depuis les DA sources'),
+
+                        // ✅ Encaisse restante — calculée
+                        Forms\Components\Placeholder::make('montant_encaisse_restant_affiche')
+                            ->label('Montant encaisse restant (FCFA)')
+                            ->content(function (Get $get, $record) {
+                                $encaisse = (float) ($get('encaisse_annuelle')
+                                    ?? $record?->encaisse_annuelle ?? 0);
+                                $net = (float) ($get('montant_alloue')
+                                    ?? $record?->montant_alloue ?? 0);
+                                $restant = max(0, $encaisse - $net);
+                                $style = $restant <= 0
+                                    ? 'color:red; font-weight:bold;'
+                                    : 'color:green; font-weight:bold;';
+                                return new \Illuminate\Support\HtmlString(
+                                    "<span style='{$style}'>"
+                                        . number_format($restant, 0, ',', ' ')
+                                        . ' FCFA</span>'
+                                );
+                            }),
+                    ]),
+
+                    // ── Ligne 2 : Date + Objet ───────────────────
+                    Forms\Components\Grid::make(2)->schema([
 
                         Forms\Components\DatePicker::make('date_creation')
                             ->label('Date de création')
-                            ->default(now())
-                            ->required(),
+                            ->default(now())->required(),
+
+                        // ✅ Objet auto-rempli depuis libelle, modifiable
+                        Forms\Components\Textarea::make('objet')
+                            ->label('Objet du Menu Dépense')
+                            ->rows(2)
+                            ->placeholder('Rempli automatiquement depuis le libellé')
+                            ->helperText('Récupéré depuis le libellé — modifiable')
+                            ->afterStateHydrated(function ($state, Set $set, Get $get) {
+                                if (empty($state) && !empty($get('libelle'))) {
+                                    $set('objet', $get('libelle'));
+                                }
+                            }),
                     ]),
 
-                    // ✅ Message informatif
+                    // ✅ Bouton sync objet ← libellé
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('sync_objet')
+                            ->label('↺ Synchroniser objet depuis libellé')
+                            ->icon('heroicon-o-arrow-path')
+                            ->color('gray')->size('sm')
+                            ->action(function (Set $set, Get $get) {
+                                $set('objet', $get('libelle'));
+                            }),
+                    ])->columnSpanFull(),
+
+                    // ✅ Message informatif multi-DA
                     Forms\Components\Placeholder::make('info_sources')
                         ->label('')
                         ->content(new \Illuminate\Support\HtmlString(
@@ -137,17 +209,20 @@ class MenuDepenseResource extends Resource
                                 . 'border border-blue-200 dark:border-blue-700">'
                                 . '<strong>📋 Étapes après création :</strong>'
                                 . '<ol class="mt-2 ml-4 list-decimal leading-loose">'
-                                . '<li>Cliquez <strong>Créer</strong> pour sauvegarder le Menu Dépense</li>'
-                                . '<li>Dans la fiche, onglet <strong>"Décisions sources"</strong> '
+                                . '<li>Cliquez <strong>Créer</strong> pour sauvegarder</li>'
+                                . '<li>Onglet <strong>"Décisions sources"</strong> '
                                 . '→ <strong>"Ajouter une DA source"</strong></li>'
-                                . '<li>Pour chaque DA engagée : sélectionner DA + nomenclature + montant</li>'
-                                . '<li>Le montant total sera recalculé automatiquement</li>'
+                                . '<li>Ajoutez <strong>autant de DA</strong> que nécessaire — '
+                                . 'chaque DA crée une ligne de nomenclature</li>'
+                                . '<li>Le <strong>montant net à décaisser</strong> '
+                                . 'sera recalculé automatiquement</li>'
                                 . '</ol>'
                                 . '</div>'
                         ))
                         ->columnSpanFull(),
                 ]),
 
+            // ── Section 3 : Observations ──────────────────────
             Forms\Components\Section::make('Observations')
                 ->schema([
                     Forms\Components\Textarea::make('observations')
@@ -188,8 +263,15 @@ class MenuDepenseResource extends Resource
                     ->badge()->color('gray')
                     ->tooltip('Nombre de nomenclatures'),
 
+                // ✅ Encaisse annuelle
+                Tables\Columns\TextColumn::make('encaisse_annuelle')
+                    ->label('Encaisse annuelle')
+                    ->money('XAF')->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                // ✅ Label changé
                 Tables\Columns\TextColumn::make('montant_alloue')
-                    ->label('Alloué')
+                    ->label('Net à décaisser')
                     ->money('XAF')->sortable(),
 
                 Tables\Columns\TextColumn::make('montant_depense')
@@ -239,10 +321,12 @@ class MenuDepenseResource extends Resource
                         'suspendu' => 'Suspendu',
                         'cloture'  => 'Clôturé',
                     ]),
+
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
                     ->default(fn() => Exercice::getActif()?->id),
+
                 Tables\Filters\SelectFilter::make('responsable_id')
                     ->label('Responsable')
                     ->relationship('responsable', 'name')
@@ -252,6 +336,7 @@ class MenuDepenseResource extends Resource
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
 
+                // ── Suspendre ────────────────────────────────
                 Tables\Actions\Action::make('suspendre')
                     ->label('Suspendre')
                     ->icon('heroicon-o-pause-circle')->color('warning')
@@ -261,8 +346,12 @@ class MenuDepenseResource extends Resource
                             && auth()->user()?->can('suspendre_menu_depense')
                     )
                     ->requiresConfirmation()
-                    ->action(fn($record) => $record->update(['statut' => 'suspendu'])),
+                    ->action(function ($record) {
+                        $record->update(['statut' => 'suspendu']);
+                        Notification::make()->title('Menu Dépense suspendu')->warning()->send();
+                    }),
 
+                // ── Réactiver ────────────────────────────────
                 Tables\Actions\Action::make('reactiver')
                     ->label('Réactiver')
                     ->icon('heroicon-o-play-circle')->color('success')
@@ -272,8 +361,12 @@ class MenuDepenseResource extends Resource
                             && auth()->user()?->can('suspendre_menu_depense')
                     )
                     ->requiresConfirmation()
-                    ->action(fn($record) => $record->update(['statut' => 'actif'])),
+                    ->action(function ($record) {
+                        $record->update(['statut' => 'actif']);
+                        Notification::make()->title('✅ Menu Dépense réactivé')->success()->send();
+                    }),
 
+                // ── Clôturer ─────────────────────────────────
                 Tables\Actions\Action::make('cloturer')
                     ->label('Clôturer')
                     ->icon('heroicon-o-lock-closed')->color('danger')
@@ -283,12 +376,14 @@ class MenuDepenseResource extends Resource
                             && auth()->user()?->can('cloturer_menu_depense')
                     )
                     ->requiresConfirmation()
+                    ->modalHeading('Clôturer le Menu Dépense')
+                    ->modalDescription('Cette action est irréversible.')
                     ->form([
                         Forms\Components\DatePicker::make('date_cloture')
                             ->label('Date de clôture')
                             ->default(now())->required(),
                         Forms\Components\Textarea::make('observations')
-                            ->label('Observations')->rows(2),
+                            ->label('Observations de clôture')->rows(2),
                     ])
                     ->action(function ($record, array $data) {
                         $record->update([
@@ -301,6 +396,8 @@ class MenuDepenseResource extends Resource
                         Notification::make()->title('✅ Menu Dépense clôturé')->success()->send();
                     }),
 
+                // ── Réapprovisionner ──────────────────────────
+                // ✅ Multi-DA : chaque ajout incrémente montant_alloue
                 Tables\Actions\Action::make('reapprovisionner')
                     ->label('Réapprovisionner')
                     ->icon('heroicon-o-arrow-path')->color('primary')
@@ -309,6 +406,7 @@ class MenuDepenseResource extends Resource
                         $record->statut === 'actif'
                             && auth()->user()?->can('reapprovisionner_menu_depense')
                     )
+                    ->modalHeading('Réapprovisionner le Menu Dépense')
                     ->form([
                         Forms\Components\Select::make('decision_administrative_id')
                             ->label('Nouvelle DA engagée')
@@ -317,12 +415,13 @@ class MenuDepenseResource extends Resource
                                     ->where('budget_id', $record->budget_id)
                                     ->get()
                                     ->mapWithKeys(fn($da) => [
-                                        $da->id => "{$da->numero} — "
-                                            . number_format($da->montant_net, 0, ',', ' ')
-                                            . " FCFA"
+                                        $da->id => "{$da->numero} — {$da->objet} "
+                                            . "(" . number_format($da->montant_net, 0, ',', ' ')
+                                            . " FCFA)"
                                     ]);
                             })
-                            ->required()->searchable(),
+                            ->required()->searchable()
+                            ->helperText('Chaque DA ajoutée incrémente le montant net à décaisser'),
                     ])
                     ->action(function ($record, array $data) {
                         $da = \App\Models\DecisionAdministrative::findOrFail(
@@ -368,17 +467,14 @@ class MenuDepenseResource extends Resource
 
         if (!$user) return $query->whereRaw('1 = 0');
 
-        // ✅ Supervision : voit tout
         if ($user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable'])) {
             return $query;
         }
 
-        // ✅ Permission view_any = voit tous les menus dépense
         if ($user->can('view_any_menu_depense')) {
             return $query;
         }
 
-        // ✅ Autres : uniquement ses menus (responsable)
         return $query->where('responsable_id', $user->id);
     }
 }
