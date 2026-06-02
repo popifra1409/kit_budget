@@ -13,13 +13,28 @@ class DepenseRegie extends Model
     protected $table = 'depenses_regies';
 
     protected $fillable = [
-        'regie_avance_id', 'decaissement_regie_id', 'ligne_regie_avance_id',
-        'numero', 'date_depense', 'objet', 'type_depense',
-        'fournisseur_id', 'fournisseur_libre',
-        'montant_ht', 'taux_tva', 'montant_tva', 'montant_ttc',
-        'taux_ir', 'montant_ir', 'net_a_payer',
-        'statut', 'justificatif_fichier', 'observations',
-        'created_by', 'updated_by',
+        'regie_avance_id',
+        'decaissement_regie_id',
+        'ligne_regie_avance_id',
+        'numero',
+        'date_depense',
+        'objet',
+        'type_depense',
+        'fournisseur_id',
+        'fournisseur_libre',
+        'montant_ht',
+        'taux_tva',
+        'montant_tva',
+        'montant_ttc',
+        'taux_ir',
+        'montant_ir',
+        'net_a_payer',
+        'statut',
+        'justificatif_fichier',
+        'observations',
+        'created_by',
+        'updated_by',
+        'mode_saisie',
     ];
 
     protected $casts = [
@@ -81,6 +96,11 @@ class DepenseRegie extends Model
         return $this->belongsTo(BonCommandeRegie::class, 'bon_commande_regie_id');
     }
 
+    public function lignes(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(LigneDepenseRegie::class)->orderBy('numero_ligne');
+    }
+    
     // ── Numérotation ──────────────────────────────────────────
     public static function genererNumero(RegieAvance $regie): string
     {

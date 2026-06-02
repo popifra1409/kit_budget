@@ -18,14 +18,14 @@ use Filament\Notifications\Notification;
 
 class AchatDirectResource extends Resource
 {
-    protected static ?string $model           = DepenseRegie::class;
-    protected static ?string $navigationIcon  = 'heroicon-o-shopping-bag';
-    protected static ?string $navigationLabel = 'Achats Directs';
-    protected static ?string $modelLabel      = 'Achat Direct';
+    protected static ?string $model            = DepenseRegie::class;
+    protected static ?string $navigationIcon   = 'heroicon-o-shopping-bag';
+    protected static ?string $navigationLabel  = 'Achats Directs';
+    protected static ?string $modelLabel       = 'Achat Direct';
     protected static ?string $pluralModelLabel = 'Achats Directs';
-    protected static ?string $navigationGroup = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort  = 4;
-    protected static ?string $slug            = 'achats-directs';
+    protected static ?string $navigationGroup  = 'Régies & Menu Dépenses';
+    protected static ?int    $navigationSort   = 4;
+    protected static ?string $slug             = 'achats-directs';
     protected static ?string $recordTitleAttribute = 'numero';
 
     // =========================================================
@@ -45,17 +45,112 @@ class AchatDirectResource extends Resource
     }
     public static function canEdit($record): bool
     {
-        return auth()->user()?->can('update_depense_regie')
-            && $record->statut === 'brouillon';
+        return auth()->user()?->can('update_depense_regie') && $record->statut === 'brouillon';
     }
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_depense_regie')
-            && $record->statut === 'brouillon';
+        return auth()->user()?->can('delete_depense_regie') && $record->statut === 'brouillon';
     }
 
     // =========================================================
-    // FORMULAIRE — identique au RelationManager
+    // ✅ RECALCUL LIGNE — appelé depuis afterStateUpdated
+    // Met à jour les champs d'affichage via $set
+    // =========================================================
+    protected static function recalculerLigne(Get $get, Set $set): void
+    {
+        $mode   = $get('../../mode_saisie_global')       ?? 'montant_nap';
+        $qte    = floatval($get('quantite')              ?? 1);
+        $tauxTv = floatval($get('../../taux_tva_global') ?? 19.25);
+        $tauxIr = floatval($get('../../taux_ir_global')  ?? 5.5);
+
+        if ($qte <= 0) return;
+
+        if ($mode === 'montant_nap') {
+            $napUnit = floatval($get('montant_nap_input') ?? 0);
+            if ($napUnit <= 0 || $tauxIr >= 100) return;
+
+            $napTotal = $napUnit * $qte;
+            $mht      = $napTotal / (1 - ($tauxIr / 100));
+            $tva      = $mht * ($tauxTv / 100);
+            $ttc      = $mht + $tva;
+            $ir       = $mht * ($tauxIr / 100);
+            $nap      = $napTotal;
+
+            // ✅ Persist prix_unitaire pour la sauvegarde
+            $set('prix_unitaire', round($mht / $qte, 4));
+        } else {
+            $pu = floatval($get('prix_unitaire') ?? 0);
+            if ($pu <= 0) return;
+
+            $mht = $qte * $pu;
+            $tva = $mht * ($tauxTv / 100);
+            $ttc = $mht + $tva;
+            $ir  = $mht * ($tauxIr / 100);
+            $nap = $mht - $ir;
+        }
+
+        // ✅ Mettre à jour les champs d'affichage via $set
+        $set('_affiche_mht', number_format(round($mht, 0), 0, ',', ' ') . ' F');
+        $set('_affiche_tva', number_format(round($tva, 0), 0, ',', ' ') . ' F');
+        $set('_affiche_ttc', number_format(round($ttc, 0), 0, ',', ' ') . ' F');
+        $set('_affiche_ir',  number_format(round($ir, 0),  0, ',', ' ') . ' F');
+        $set('_affiche_nap', number_format(round($nap, 0), 0, ',', ' ') . ' F');
+    }
+
+    // =========================================================
+    // PRÉPARER DONNÉES LIGNE — persistence avant save
+    // =========================================================
+    protected static function preparerDonneesLigne(array $data, Get $get): array
+    {
+        $tauxTva = floatval($get('taux_tva_global') ?? 19.25);
+        $tauxIr  = floatval($get('taux_ir_global')  ?? 5.5);
+
+        $data['taux_tva'] = $tauxTva;
+        $data['taux_ir']  = $tauxIr;
+
+        $qte = floatval($data['quantite']          ?? 1);
+        $nap = floatval($data['montant_nap_input'] ?? 0);
+        $pu  = floatval($data['prix_unitaire']     ?? 0);
+
+        if ($nap > 0 && $qte > 0 && $tauxIr < 100) {
+            $napTotal              = $nap * $qte;
+            $mht                   = $napTotal / (1 - ($tauxIr / 100));
+            $data['prix_unitaire'] = round($mht / $qte, 4);
+            $pu                    = $data['prix_unitaire'];
+        } elseif ($pu <= 0) {
+            $data['prix_unitaire'] = 0;
+            $pu = 0;
+        }
+
+        $mht = $qte * $pu;
+        $tva = round($mht * ($tauxTva / 100), 2);
+        $ttc = round($mht + $tva, 2);
+        $ir  = round($mht * ($tauxIr / 100), 2);
+
+        $data['montant_ht']  = round($mht, 2);
+        $data['montant_tva'] = $tva;
+        $data['montant_ttc'] = $ttc;
+        $data['montant_ir']  = $ir;
+        $data['montant_net'] = ($nap > 0)
+            ? round($nap * $qte, 2)
+            : round($mht - $ir, 2);
+
+        // ✅ montant_nap_input N'EST PLUS unset — stocké en DB pour l'édition
+
+        // ✅ Nettoyer uniquement les champs d'affichage temporaires
+        unset(
+            $data['_affiche_mht'],
+            $data['_affiche_tva'],
+            $data['_affiche_ttc'],
+            $data['_affiche_ir'],
+            $data['_affiche_nap'],
+        );
+
+        return $data;
+    }
+
+    // =========================================================
+    // FORMULAIRE
     // =========================================================
     public static function form(Form $form): Form
     {
@@ -64,12 +159,12 @@ class AchatDirectResource extends Resource
 
         return $form->schema([
 
+            // ── Section 1 : Identification ────────────────────
             Forms\Components\Section::make('Identification')
                 ->schema([
                     Forms\Components\Grid::make(3)->schema([
                         Forms\Components\TextInput::make('numero')
-                            ->label('Numéro')
-                            ->disabled()->dehydrated()
+                            ->label('Numéro')->disabled()->dehydrated()
                             ->placeholder('Généré automatiquement'),
 
                         Forms\Components\DatePicker::make('date_depense')
@@ -84,6 +179,7 @@ class AchatDirectResource extends Resource
                         ->required()->maxLength(255)->columnSpanFull(),
                 ]),
 
+            // ── Section 2 : Régie et ligne budgétaire ─────────
             Forms\Components\Section::make('Régie et ligne budgétaire')
                 ->schema([
                     Forms\Components\Select::make('regie_avance_id')
@@ -95,7 +191,7 @@ class AchatDirectResource extends Resource
                                         'super_admin',
                                         'admin',
                                         'daaf',
-                                        'agence_comptable'
+                                        'agence_comptable',
                                     ]),
                                     fn($q) => $q->where('responsable_id', auth()->id())
                                 )
@@ -112,18 +208,26 @@ class AchatDirectResource extends Resource
                         ->columnSpanFull(),
 
                     Forms\Components\Select::make('provision_ligne_regie_id')
-                        ->label('Provision disponible (ligne dérivée)')
-                        ->options(function (Get $get) {
-                            $regieId = $get('regie_avance_id');
+                        ->label('Provision disponible')
+                        ->options(function (Get $get, $record) {
+                            // ✅ Fallback sur $record si $get retourne null (cas édition)
+                            $regieId = $get('regie_avance_id')
+                                ?? $record?->regie_avance_id;
+
                             if (!$regieId) return [];
 
                             return ProvisionLigneRegie::whereHas(
                                 'decaissement',
-                                fn($q) =>
-                                $q->where('regie_avance_id', $regieId)
+                                fn($q) => $q->where('regie_avance_id', $regieId)
                                     ->where('statut', 'verse')
                             )
-                                ->where('montant_disponible', '>', 0)
+                                ->where(function ($q) use ($record) {
+                                    // ✅ Toujours inclure la provision actuelle même si montant = 0
+                                    $q->where('montant_disponible', '>', 0);
+                                    if ($record?->provision_ligne_regie_id) {
+                                        $q->orWhere('id', $record->provision_ligne_regie_id);
+                                    }
+                                })
                                 ->with(['ligneRegie.nomenclature', 'decaissement'])
                                 ->get()
                                 ->mapWithKeys(fn($p) => [
@@ -136,7 +240,24 @@ class AchatDirectResource extends Resource
                                         . " FCFA"
                                 ]);
                         })
-                        ->required()->searchable()->live()
+                        // ✅ Afficher le libellé de la valeur sélectionnée même si pas dans les options
+                        ->getOptionLabelUsing(function ($value) {
+                            if (!$value) return null;
+                            $p = ProvisionLigneRegie::with([
+                                'ligneRegie.nomenclature',
+                                'decaissement',
+                            ])->find($value);
+                            if (!$p) return "Provision #{$value}";
+                            return "{$p->ligneRegie->nomenclature->code} — "
+                                . "{$p->ligneRegie->nomenclature->libelle} "
+                                . "| {$p->decaissement->libelle_tranche} "
+                                . "| Dispo: "
+                                . number_format($p->montant_disponible, 0, ',', ' ')
+                                . " FCFA";
+                        })
+                        ->required()
+                        ->searchable()
+                        ->live()
                         ->afterStateUpdated(function ($state, Set $set) {
                             if (!$state) return;
                             $prov = ProvisionLigneRegie::find($state);
@@ -146,19 +267,16 @@ class AchatDirectResource extends Resource
 
                     Forms\Components\Hidden::make('ligne_regie_avance_id'),
 
-                    // ✅ Aperçu dark-mode compatible
                     Forms\Components\Placeholder::make('apercu_provision')
                         ->label('Situation de la provision')
                         ->content(function (Get $get) {
                             $provId = $get('provision_ligne_regie_id');
                             if (!$provId) return '← Sélectionnez une provision';
-
                             $prov = ProvisionLigneRegie::with([
                                 'ligneRegie.nomenclature',
                                 'decaissement',
                             ])->find($provId);
                             if (!$prov) return '—';
-
                             return new \Illuminate\Support\HtmlString(
                                 '<div class="rounded-lg p-3 text-sm leading-loose '
                                     . 'bg-slate-100 dark:bg-slate-800 '
@@ -179,13 +297,13 @@ class AchatDirectResource extends Resource
                         ->columnSpanFull(),
                 ]),
 
+            // ── Section 3 : Fournisseur ───────────────────────
             Forms\Components\Section::make('Fournisseur')
                 ->schema([
                     Forms\Components\Select::make('fournisseur_id')
                         ->label('Fournisseur référencé')
                         ->relationship('fournisseur', 'raison_sociale')
-                        ->searchable()->preload()->nullable()
-                        ->columnSpan(2),
+                        ->searchable()->preload()->nullable()->columnSpan(2),
 
                     Forms\Components\TextInput::make('fournisseur_libre')
                         ->label('Ou fournisseur libre')
@@ -193,247 +311,297 @@ class AchatDirectResource extends Resource
                 ])
                 ->columns(3),
 
-            Forms\Components\Section::make('Montants')
-                ->description('Saisissez le Net à Payer — les autres montants sont calculés automatiquement.')
+            // ── Section 4 : Lignes de dépenses ────────────────
+            Forms\Components\Section::make('Lignes de dépenses')
+                ->description('Choisissez le mode de saisie pour toutes les lignes.')
                 ->schema([
-                    Forms\Components\Grid::make(3)->schema([
-                        Forms\Components\ToggleButtons::make('mode_saisie_montant')
+
+                    Forms\Components\Grid::make(6)->schema([
+
+                        Forms\Components\ToggleButtons::make('mode_saisie_global')
                             ->label('Mode de saisie')
                             ->options([
-                                'nap'  => '📊 Net à Payer (NAP)',
-                                'brut' => '💰 Montant HT',
+                                'montant_nap'   => '📊 Montant NAP',
+                                'prix_unitaire' => '💰 Prix Unitaire HT',
                             ])
-                            ->default('nap')->inline()->live()->dehydrated(false),
-
-                        Forms\Components\Placeholder::make('nap_max_suggere')
-                            ->label('💡 Limites de saisie')
-                            ->content(function (Get $get) {
-                                $seuilAd  = (float) (ParametresStructure::where('actif', true)
-                                    ->value('seuil_achat_direct_regie') ?? 500000);
-                                $seuilBcr = (float) (ParametresStructure::where('actif', true)
-                                    ->value('seuil_bon_commande_regie') ?? 5000000);
-
-                                $tauxTv = (float) ($get('taux_tva') ?? 19.25);
-                                $tauxIr = (float) ($get('taux_ir')  ?? 5.5);
-
-                                // NAP max pour achat direct (TTC doit être STRICTEMENT < 500 000)
-                                // On prend 499 999 comme TTC max effectif
-                                $ttcMaxAd = $seuilAd - 1;
-                                $napMaxAd = $ttcMaxAd
-                                    * (1 - $tauxIr / 100)
-                                    / (1 + $tauxTv / 100);
-
-                                $ttcActuel = (float) ($get('montant_ttc') ?? 0);
-                                $alertHtml = '';
-
-                                if ($ttcActuel > 0) {
-                                    if ($ttcActuel < $seuilAd) {
-                                        $alertHtml = '<div class="mt-2 rounded p-2 text-xs font-semibold '
-                                            . 'bg-green-100 text-green-700 '
-                                            . 'dark:bg-green-900/40 dark:text-green-300">'
-                                            . '✅ Achat direct valide (TTC < ' . number_format($seuilAd, 0, ',', ' ') . ' FCFA)'
-                                            . '</div>';
-                                    } elseif ($ttcActuel < $seuilBcr) {
-                                        $alertHtml = '<div class="mt-2 rounded p-2 text-xs font-semibold '
-                                            . 'bg-yellow-100 text-yellow-700 '
-                                            . 'dark:bg-yellow-900/40 dark:text-yellow-300">'
-                                            . '⚠️ Ce montant nécessite un BCR/BCM (TTC ≥ ' . number_format($seuilAd, 0, ',', ' ') . ' FCFA)'
-                                            . '</div>';
-                                    } else {
-                                        $alertHtml = '<div class="mt-2 rounded p-2 text-xs font-semibold '
-                                            . 'bg-red-100 text-red-700 '
-                                            . 'dark:bg-red-900/40 dark:text-red-300">'
-                                            . '🚫 Dépasse le seuil BCR — procédure marché public requise '
-                                            . '(TTC ≥ ' . number_format($seuilBcr, 0, ',', ' ') . ' FCFA)'
-                                            . '</div>';
-                                    }
-                                }
-
-                                return new \Illuminate\Support\HtmlString(
-                                    '<div class="rounded-lg p-3 text-sm leading-loose '
-                                        . 'bg-blue-50 dark:bg-blue-900/30 '
-                                        . 'text-blue-800 dark:text-blue-200 '
-                                        . 'border border-blue-200 dark:border-blue-700">'
-                                        . '<table class="w-full">'
-                                        . '<tr class="font-semibold border-b border-blue-200 dark:border-blue-700">'
-                                        . '<td>Type de dépense</td>'
-                                        . '<td class="text-right">Seuil TTC</td>'
-                                        . '<td class="text-right">NAP max</td>'
-                                        . '</tr>'
-                                        . '<tr class="text-green-700 dark:text-green-400">'
-                                        . '<td>✅ Achat direct</td>'
-                                        . '<td class="text-right">< ' . number_format($seuilAd, 0, ',', ' ') . ' FCFA</td>'
-                                        . '<td class="text-right font-bold">'
-                                        . '< ' . number_format($napMaxAd, 0, ',', ' ') . ' FCFA</td>'
-                                        . '</tr>'
-                                        . '<tr class="text-yellow-700 dark:text-yellow-400">'
-                                        . '<td>📋 BCR / BCM</td>'
-                                        . '<td class="text-right">≥ ' . number_format($seuilAd, 0, ',', ' ')
-                                        . ' et < ' . number_format($seuilBcr, 0, ',', ' ') . ' FCFA</td>'
-                                        . '<td class="text-right">—</td>'
-                                        . '</tr>'
-                                        . '<tr class="text-red-700 dark:text-red-400">'
-                                        . '<td>🚫 Marché public</td>'
-                                        . '<td class="text-right">≥ ' . number_format($seuilBcr, 0, ',', ' ') . ' FCFA</td>'
-                                        . '<td class="text-right">—</td>'
-                                        . '</tr>'
-                                        . '</table>'
-                                        . $alertHtml
-                                        . '</div>'
-                                );
+                            ->default('montant_nap')
+                            ->inline()->live()->dehydrated(false)
+                            ->afterStateHydrated(function ($component, $record) {
+                                $component->state($record?->mode_saisie ?? 'montant_nap');
                             })
-                            ->columnSpanFull(),
+                            ->afterStateUpdated(function ($state, Set $set) {
+                                $set('mode_saisie', $state);
+                            })
+                            ->columnSpan(4),
 
-                        Forms\Components\TextInput::make('taux_tva')
-                            ->label('TVA (%)')->numeric()->default(19.25)->suffix('%')
-                            ->live(onBlur: true)
-                            ->afterStateUpdated(
-                                fn(Get $get, Set $set) =>
-                                static::recalculer($get, $set)
-                            ),
+                        Forms\Components\TextInput::make('taux_tva_global')
+                            ->label('TVA globale (%)')->numeric()->default(19.25)->suffix('%')
+                            ->required()->live()->dehydrated(false)
+                            ->afterStateHydrated(function ($component, $record) {
+                                if ($record && $record->lignes->isNotEmpty()) {
+                                    $component->state($record->lignes->first()->taux_tva ?? 19.25);
+                                }
+                            })
+                            ->columnSpan(1),
 
-                        Forms\Components\TextInput::make('taux_ir')
-                            ->label('IR (%)')->numeric()->default(5.5)->suffix('%')
-                            ->live(onBlur: true)
-                            ->afterStateUpdated(
-                                fn(Get $get, Set $set) =>
-                                static::recalculer($get, $set)
-                            ),
-                    ]),
+                        Forms\Components\TextInput::make('taux_ir_global')
+                            ->label('IR global (%)')->numeric()->default(5.5)->suffix('%')
+                            ->required()->live()->dehydrated(false)
+                            ->afterStateHydrated(function ($component, $record) {
+                                if ($record && $record->lignes->isNotEmpty()) {
+                                    $component->state($record->lignes->first()->taux_ir ?? 5.5);
+                                }
+                            })
+                            ->columnSpan(1),
+                    ])->columnSpanFull(),
 
-                    Forms\Components\Grid::make(2)->schema([
-                        Forms\Components\TextInput::make('net_a_payer_input')
-                            ->label('Net à Payer (FCFA)')
-                            ->numeric()->prefix('FCFA')
-                            ->required(fn(Get $get) => $get('mode_saisie_montant') !== 'brut')
-                            ->hidden(fn(Get $get) => $get('mode_saisie_montant') === 'brut')
-                            ->live(onBlur: true)->dehydrated(false)
-                            ->afterStateUpdated(
-                                fn(Get $get, Set $set) =>
-                                static::recalculer($get, $set)
-                            ),
+                    Forms\Components\Hidden::make('mode_saisie')
+                        ->default('montant_nap')->dehydrated(true),
 
-                        Forms\Components\TextInput::make('montant_ht_input')
-                            ->label('Montant HT (FCFA)')
-                            ->numeric()->prefix('FCFA')
-                            ->required(fn(Get $get) => $get('mode_saisie_montant') === 'brut')
-                            ->hidden(fn(Get $get) => $get('mode_saisie_montant') !== 'brut')
-                            ->live(onBlur: true)->dehydrated(false)
-                            ->afterStateUpdated(
-                                fn(Get $get, Set $set) =>
-                                static::recalculer($get, $set)
-                            ),
-                    ]),
+                    // ── Repeater lignes ───────────────────────
+                    Forms\Components\Repeater::make('lignes')
+                        ->relationship('lignes')
+                        ->mutateRelationshipDataBeforeFillUsing(function (array $data): array {
 
-                    // ✅ Résumé dark-mode
-                    Forms\Components\Placeholder::make('resume_calcul')
-                        ->label('📊 Détail calculé')
-                        ->content(function (Get $get) use ($seuil) {
-                            $ht  = (float) ($get('montant_ht')  ?? 0);
-                            $tva = (float) ($get('montant_tva') ?? 0);
-                            $ttc = (float) ($get('montant_ttc') ?? 0);
-                            $ir  = (float) ($get('montant_ir')  ?? 0);
-                            $net = (float) ($get('net_a_payer') ?? 0);
-
-                            if ($ht <= 0 && $net <= 0) {
-                                return '← Saisissez un montant';
+                            // ✅ montant_nap_input déjà en DB maintenant — pas besoin de recalculer
+                            // Mais on garde un fallback au cas où de vieilles lignes n'auraient pas la valeur
+                            if (empty($data['montant_nap_input']) || $data['montant_nap_input'] == 0) {
+                                $qte = floatval($data['quantite'] ?? 1);
+                                $nap = floatval($data['montant_net'] ?? 0);
+                                if ($qte > 0 && $nap > 0) {
+                                    $data['montant_nap_input'] = round($nap / $qte, 2);
+                                }
                             }
 
-                            $depasseSeuil = $ttc > $seuil;
-                            $alertHtml = $depasseSeuil
+                            // ✅ Pré-remplir les champs _affiche_* depuis les valeurs stockées
+                            $data['_affiche_mht'] = number_format(
+                                floatval($data['montant_ht']  ?? 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' F';
+                            $data['_affiche_tva'] = number_format(
+                                floatval($data['montant_tva'] ?? 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' F';
+                            $data['_affiche_ttc'] = number_format(
+                                floatval($data['montant_ttc'] ?? 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' F';
+                            $data['_affiche_ir']  = number_format(
+                                floatval($data['montant_ir']  ?? 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' F';
+                            $data['_affiche_nap'] = number_format(
+                                floatval($data['montant_net'] ?? 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' F';
+
+                            return $data;
+                        })
+                        ->schema([
+                            // ── Ligne 1 : Désignation ─────────
+                            Forms\Components\TextInput::make('nature_depense')
+                                ->label('Désignation / Nature de la dépense')
+                                ->required()->columnSpanFull(),
+
+                            // ── Ligne 2 : Saisie des montants ─
+                            Forms\Components\Grid::make(5)->schema([
+
+                                Forms\Components\TextInput::make('quantite')
+                                    ->label('Quantité')
+                                    ->numeric()->default(1)->required()
+                                    ->live(onBlur: true)
+                                    // ✅ afterStateUpdated sur quantite
+                                    ->afterStateUpdated(
+                                        fn(Get $get, Set $set) =>
+                                        static::recalculerLigne($get, $set)
+                                    )
+                                    ->columnSpan(1),
+
+                                // Mode Prix Unitaire HT
+                                Forms\Components\TextInput::make('prix_unitaire')
+                                    ->label('Prix Unitaire HT (FCFA)')
+                                    ->numeric()->suffix('FCFA')->default(0)
+                                    ->hidden(
+                                        fn(Get $get) =>
+                                        $get('../../mode_saisie_global') === 'montant_nap'
+                                    )
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(
+                                        fn(Get $get, Set $set) =>
+                                        static::recalculerLigne($get, $set)
+                                    )
+                                    ->columnSpan(2),
+
+                                // Mode NAP unitaire
+                                Forms\Components\TextInput::make('montant_nap_input')
+                                    ->label('NAP unitaire (FCFA)')
+                                    ->numeric()->suffix('FCFA')
+                                    ->required(
+                                        fn(Get $get) =>
+                                        $get('../../mode_saisie_global') === 'montant_nap'
+                                    )
+                                    ->hidden(
+                                        fn(Get $get) =>
+                                        $get('../../mode_saisie_global') !== 'montant_nap'
+                                    )
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(
+                                        fn(Get $get, Set $set) =>
+                                        static::recalculerLigne($get, $set)
+                                    )
+                                    ->dehydrated(true)
+                                    ->helperText('Net à payer par unité — base du calcul')
+                                    ->columnSpan(2),
+
+                                Forms\Components\Textarea::make('observations')
+                                    ->label('Obs.')->rows(1)->columnSpan(1),
+                            ]),
+
+                            // ── Ligne 3 : Résultats calculés ──
+                            // ✅ TextInput désactivés mis à jour via $set dans recalculerLigne
+                            Forms\Components\Grid::make(5)->schema([
+
+                                Forms\Components\TextInput::make('_affiche_mht')
+                                    ->label('Montant HT')
+                                    ->disabled()->dehydrated(false)
+                                    ->default('0 F')
+                                    ->extraInputAttributes(['class' => 'text-right font-mono'])
+                                    ->columnSpan(1),
+
+                                Forms\Components\TextInput::make('_affiche_tva')
+                                    ->label('TVA')
+                                    ->disabled()->dehydrated(false)
+                                    ->default('0 F')
+                                    ->extraInputAttributes(['class' => 'text-right font-mono'])
+                                    ->columnSpan(1),
+
+                                Forms\Components\TextInput::make('_affiche_ttc')
+                                    ->label('Montant TTC')
+                                    ->disabled()->dehydrated(false)
+                                    ->default('0 F')
+                                    ->extraInputAttributes([
+                                        'class' => 'text-right font-mono font-bold',
+                                    ])
+                                    ->columnSpan(1),
+
+                                Forms\Components\TextInput::make('_affiche_ir')
+                                    ->label('IR / AC')
+                                    ->disabled()->dehydrated(false)
+                                    ->default('0 F')
+                                    ->extraInputAttributes([
+                                        'class' => 'text-right font-mono text-red-600',
+                                    ])
+                                    ->columnSpan(1),
+
+                                Forms\Components\TextInput::make('_affiche_nap')
+                                    ->label('✅ NAP Total')
+                                    ->disabled()->dehydrated(false)
+                                    ->default('0 F')
+                                    ->extraInputAttributes([
+                                        'class' =>
+                                        'text-right font-mono font-bold text-green-700',
+                                    ])
+                                    ->columnSpan(1),
+                            ]),
+                        ])
+                        ->mutateRelationshipDataBeforeCreateUsing(
+                            fn(array $data, Get $get) =>
+                            static::preparerDonneesLigne($data, $get)
+                        )
+                        ->mutateRelationshipDataBeforeSaveUsing(
+                            fn(array $data, Get $get) =>
+                            static::preparerDonneesLigne($data, $get)
+                        )
+                        ->orderColumn('numero_ligne')
+                        ->defaultItems(1)
+                        ->addActionLabel('➕ Ajouter une ligne')
+                        ->reorderable()->collapsible()
+                        ->itemLabel(
+                            fn(array $state): ?string =>
+                            !empty($state['nature_depense'])
+                                ? $state['nature_depense']
+                                : 'Nouvelle ligne'
+                        ),
+
+                    // ── Totaux après sauvegarde ───────────────
+                    Forms\Components\Placeholder::make('totaux_apercu')
+                        ->label('📊 Totaux')
+                        ->content(function ($record) use ($seuil) {
+                            if (!$record || !$record->exists) {
+                                return 'Totaux affichés après la première sauvegarde.';
+                            }
+                            $lignes = $record->lignes;
+                            $ttc    = $lignes->sum('montant_ttc');
+                            $ht     = $lignes->sum('montant_ht');
+                            $tva    = $lignes->sum('montant_tva');
+                            $ir     = $lignes->sum('montant_ir');
+                            $nap    = $lignes->sum('montant_net');
+
+                            $alerte = $ttc > $seuil
                                 ? '<div class="mt-2 rounded p-2 text-xs font-semibold '
                                 . 'bg-red-100 text-red-700 '
                                 . 'dark:bg-red-900/40 dark:text-red-300">'
-                                . '⚠️ Montant TTC dépasse le seuil achat direct ('
+                                . '⚠️ TTC dépasse le seuil achat direct ('
                                 . number_format($seuil, 0, ',', ' ')
-                                . ' FCFA) — utilisez un BCR'
-                                . '</div>'
-                                : '<div class="mt-2 rounded p-2 text-xs font-semibold '
+                                . ' FCFA) — utilisez un BCR</div>'
+                                : '<div class="mt-1 rounded p-1 text-xs font-semibold '
                                 . 'bg-green-100 text-green-700 '
                                 . 'dark:bg-green-900/40 dark:text-green-300">'
                                 . '✅ Dans la limite achat direct</div>';
 
                             return new \Illuminate\Support\HtmlString(
-                                '<div class="rounded-lg p-3 text-sm '
+                                '<div class="rounded-lg p-3 text-sm leading-loose '
                                     . 'bg-slate-50 dark:bg-slate-900 '
                                     . 'text-slate-800 dark:text-slate-200 '
                                     . 'border border-slate-200 dark:border-slate-700">'
-                                    . '<table class="w-full leading-loose">'
-                                    . '<tr><td>Montant HT :</td>'
-                                    . '<td class="text-right font-semibold">'
+                                    . '<table class="w-full">'
+                                    . '<tr><td>Total HT :</td><td class="text-right">'
                                     . number_format($ht, 0, ',', ' ') . ' FCFA</td></tr>'
-                                    . '<tr><td>TVA (' . ($get('taux_tva') ?? 19.25) . '%) :</td>'
-                                    . '<td class="text-right">'
+                                    . '<tr><td>Total TVA :</td><td class="text-right">'
                                     . number_format($tva, 0, ',', ' ') . ' FCFA</td></tr>'
                                     . '<tr class="border-t border-slate-300 dark:border-slate-600">'
-                                    . '<td class="font-semibold">TTC :</td>'
+                                    . '<td class="font-semibold">Total TTC :</td>'
                                     . '<td class="text-right font-bold">'
                                     . number_format($ttc, 0, ',', ' ') . ' FCFA</td></tr>'
-                                    . '<tr><td>IR (' . ($get('taux_ir') ?? 5.5) . '%) :</td>'
-                                    . '<td class="text-right '
-                                    . 'text-red-600 dark:text-red-400">'
+                                    . '<tr><td>Total IR :</td>'
+                                    . '<td class="text-right text-red-600 dark:text-red-400">'
                                     . number_format($ir, 0, ',', ' ') . ' FCFA</td></tr>'
-                                    . '<tr class="border-t-2 border-green-500 dark:border-green-400">'
-                                    . '<td class="font-bold '
-                                    . 'text-green-700 dark:text-green-400">Net à Payer :</td>'
+                                    . '<tr class="border-t-2 border-green-500">'
+                                    . '<td class="font-bold text-green-700 dark:text-green-400">'
+                                    . 'Total NAP :</td>'
                                     . '<td class="text-right font-bold text-base '
                                     . 'text-green-700 dark:text-green-400">'
-                                    . number_format($net, 0, ',', ' ') . ' FCFA</td></tr>'
-                                    . '</table>'
-                                    . $alertHtml
-                                    . '</div>'
+                                    . number_format($nap, 0, ',', ' ') . ' FCFA</td></tr>'
+                                    . '</table>' . $alerte . '</div>'
                             );
                         })
                         ->columnSpanFull(),
+                ])
+                ->columns(1),
 
-                    Forms\Components\Hidden::make('montant_ht')->default(0),
-                    Forms\Components\Hidden::make('montant_tva')->default(0),
-                    Forms\Components\Hidden::make('montant_ttc')->default(0),
-                    Forms\Components\Hidden::make('montant_ir')->default(0),
-                    Forms\Components\Hidden::make('net_a_payer')->default(0),
-                ]),
-
+            // ── Section 5 : Justificatif ──────────────────────
             Forms\Components\Section::make('Justificatif')
                 ->schema([
                     Forms\Components\FileUpload::make('justificatif_fichier')
                         ->label('Pièce justificative')
-                        ->disk('public')
-                        ->directory('justificatifs-regies')
-                        ->acceptedFileTypes(['application/pdf', 'image/*'])
-                        ->nullable(),
+                        ->disk('public')->directory('justificatifs-regies')
+                        ->acceptedFileTypes(['application/pdf', 'image/*'])->nullable(),
+
                     Forms\Components\Textarea::make('observations')
                         ->label('Observations')->rows(2),
                 ])
                 ->columns(2)->collapsible()->collapsed(),
         ]);
-    }
-
-    // ── Calcul depuis NAP ou HT ────────────────────────────────
-    protected static function recalculer(Get $get, Set $set): void
-    {
-        $mode   = $get('mode_saisie_montant') ?? 'nap';
-        $tauxTv = (float) ($get('taux_tva') ?? 19.25);
-        $tauxIr = (float) ($get('taux_ir')  ?? 5.5);
-
-        if ($mode === 'nap') {
-            $nap = (float) ($get('net_a_payer_input') ?? 0);
-            if ($nap <= 0) return;
-            $mht = $tauxIr > 0 ? round($nap / (1 - $tauxIr / 100), 2) : $nap;
-        } else {
-            $mht = (float) ($get('montant_ht_input') ?? 0);
-            if ($mht <= 0) return;
-        }
-
-        $tva = round($mht * ($tauxTv / 100), 2);
-        $ttc = round($mht + $tva, 2);
-        $ir  = round($mht * ($tauxIr / 100), 2);
-        $net = round($mht - $ir, 2);
-
-        $set('montant_ht',  $mht);
-        $set('montant_tva', $tva);
-        $set('montant_ttc', $ttc);
-        $set('montant_ir',  $ir);
-        $set('net_a_payer', $net);
     }
 
     // =========================================================
@@ -477,32 +645,30 @@ class AchatDirectResource extends Resource
                     ->getStateUsing(
                         fn($record) =>
                         $record->fournisseur?->raison_sociale
-                            ?? $record->fournisseur_libre
-                            ?? '—'
+                            ?? $record->fournisseur_libre ?? '—'
                     )->limit(20),
 
-                Tables\Columns\TextColumn::make('montant_ttc')
-                    ->label('TTC')->money('XAF')->weight('bold')
+                Tables\Columns\TextColumn::make('lignes_count')
+                    ->label('Lignes')->counts('lignes')->badge()->color('gray'),
+
+                Tables\Columns\TextColumn::make('montant_ttc_total')
+                    ->label('TTC')
+                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_ttc'))
+                    ->money('XAF')->weight('bold')
                     ->color(
                         fn($record) =>
-                        $record->montant_ttc > $seuil ? 'danger' : 'success'
-                    )
-                    ->summarize([
-                        Tables\Columns\Summarizers\Sum::make()->money('XAF'),
-                    ]),
+                        $record->lignes->sum('montant_ttc') > $seuil ? 'danger' : 'success'
+                    ),
 
-                Tables\Columns\TextColumn::make('montant_ir')
-                    ->label('IR')->money('XAF')->color('warning')
-                    ->summarize([
-                        Tables\Columns\Summarizers\Sum::make()->money('XAF'),
-                    ]),
+                Tables\Columns\TextColumn::make('montant_ir_total')
+                    ->label('IR')
+                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_ir'))
+                    ->money('XAF')->color('warning'),
 
-                Tables\Columns\TextColumn::make('net_a_payer')
-                    ->label('Net à Payer')->money('XAF')
-                    ->color('success')->weight('bold')
-                    ->summarize([
-                        Tables\Columns\Summarizers\Sum::make()->money('XAF'),
-                    ]),
+                Tables\Columns\TextColumn::make('net_a_payer_total')
+                    ->label('Net à Payer')
+                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_net'))
+                    ->money('XAF')->color('success')->weight('bold'),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->colors([
@@ -541,25 +707,15 @@ class AchatDirectResource extends Resource
                     ])
                     ->query(
                         fn($query, array $data) => $query
-                            ->when(
-                                $data['du'],
-                                fn($q, $v) =>
-                                $q->whereDate('date_depense', '>=', $v)
-                            )
-                            ->when(
-                                $data['au'],
-                                fn($q, $v) =>
-                                $q->whereDate('date_depense', '<=', $v)
-                            )
+                            ->when($data['du'], fn($q, $v) =>
+                            $q->whereDate('date_depense', '>=', $v))
+                            ->when($data['au'], fn($q, $v) =>
+                            $q->whereDate('date_depense', '<=', $v))
                     ),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->mutateFormDataUsing(function (array $data): array {
-                        unset($data['net_a_payer_input'], $data['mode_saisie_montant']);
-                        return $data;
-                    }),
+                Tables\Actions\EditAction::make(),
 
                 Tables\Actions\Action::make('valider')
                     ->label('Valider')
@@ -572,19 +728,34 @@ class AchatDirectResource extends Resource
                     ->requiresConfirmation()
                     ->action(function ($record) {
                         try {
+                            $record->load('lignes');
+                            $totalTtc = $record->lignes->sum('montant_ttc');
+                            $totalNap = $record->lignes->sum('montant_net');
+                            $totalIr  = $record->lignes->sum('montant_ir');
+                            $totalTva = $record->lignes->sum('montant_tva');
+                            $totalHt  = $record->lignes->sum('montant_ht');
+
                             if ($record->provision_ligne_regie_id) {
                                 ProvisionLigneRegie::findOrFail(
                                     $record->provision_ligne_regie_id
-                                )->debiter($record->montant_ttc);
+                                )->debiter($totalTtc);
                             }
-                            $record->update(['statut' => 'valide']);
+
+                            $record->update([
+                                'statut'      => 'valide',
+                                'montant_ht'  => $totalHt,
+                                'montant_tva' => $totalTva,
+                                'montant_ttc' => $totalTtc,
+                                'montant_ir'  => $totalIr,
+                                'net_a_payer' => $totalNap,
+                            ]);
+
                             Notification::make()
-                                ->title('✅ Achat direct validé')
-                                ->success()
+                                ->title('✅ Achat direct validé')->success()
                                 ->body(
-                                    "Net : " . number_format($record->net_a_payer, 0, ',', ' ')
-                                        . " FCFA | IR : "
-                                        . number_format($record->montant_ir, 0, ',', ' ') . " FCFA"
+                                    "TTC : " . number_format($totalTtc, 0, ',', ' ')
+                                        . " | NAP : " . number_format($totalNap, 0, ',', ' ')
+                                        . " FCFA"
                                 )->send();
                         } catch (\Exception $e) {
                             Notification::make()->title('❌ Erreur')
@@ -593,7 +764,8 @@ class AchatDirectResource extends Resource
                     }),
 
                 Tables\Actions\Action::make('annuler')
-                    ->label('Annuler')->icon('heroicon-o-x-circle')->color('danger')
+                    ->label('Annuler')
+                    ->icon('heroicon-o-x-circle')->color('danger')
                     ->visible(
                         fn($record) =>
                         in_array($record?->statut, ['brouillon', 'valide'])
@@ -601,8 +773,8 @@ class AchatDirectResource extends Resource
                     )
                     ->requiresConfirmation()
                     ->form([
-                        Forms\Components\Textarea::make('motif')
-                            ->label('Motif')->rows(2)->required(),
+                        Forms\Components\Textarea::make('motif')->label('Motif')
+                            ->rows(2)->required(),
                     ])
                     ->action(function ($record, array $data) {
                         if ($record->statut === 'valide' && $record->provision_ligne_regie_id) {
@@ -629,7 +801,12 @@ class AchatDirectResource extends Resource
     {
         $query = parent::getEloquentQuery()
             ->where('type_depense', 'achat_direct')
-            ->with(['regieAvance', 'fournisseur', 'ligneRegieAvance.nomenclature']);
+            ->with([
+                'regieAvance',
+                'fournisseur',
+                'ligneRegieAvance.nomenclature',
+                'lignes'
+            ]);
 
         $user = auth()->user();
         if ($user && !$user->hasAnyRole([
@@ -637,12 +814,11 @@ class AchatDirectResource extends Resource
             'admin',
             'daaf',
             'agence_comptable',
-            'controleur_financier'
+            'controleur_financier',
         ])) {
             $query->whereHas(
                 'regieAvance',
-                fn($q) =>
-                $q->where('responsable_id', $user->id)
+                fn($q) => $q->where('responsable_id', $user->id)
             );
         }
 
