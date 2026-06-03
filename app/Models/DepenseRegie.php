@@ -35,6 +35,7 @@ class DepenseRegie extends Model
         'created_by',
         'updated_by',
         'mode_saisie',
+        'provision_ligne_regie_id',
     ];
 
     protected $casts = [
@@ -100,7 +101,15 @@ class DepenseRegie extends Model
     {
         return $this->hasMany(LigneDepenseRegie::class)->orderBy('numero_ligne');
     }
-    
+
+    public function provisionLigneRegie(): BelongsTo
+    {
+        return $this->belongsTo(
+            \App\Models\ProvisionLigneRegie::class,
+            'provision_ligne_regie_id'
+        );
+    }
+
     // ── Numérotation ──────────────────────────────────────────
     public static function genererNumero(RegieAvance $regie): string
     {

@@ -58,6 +58,9 @@ class AchatDirectResource extends Resource
     // =========================================================
     protected static function recalculerLigne(Get $get, Set $set): void
     {
+        $seuil  = (float) (ParametresStructure::where('actif', true)
+            ->value('seuil_achat_direct_regie') ?? 500000);
+
         $mode   = $get('../../mode_saisie_global')       ?? 'montant_nap';
         $qte    = floatval($get('quantite')              ?? 1);
         $tauxTv = floatval($get('../../taux_tva_global') ?? 19.25);
@@ -76,7 +79,6 @@ class AchatDirectResource extends Resource
             $ir       = $mht * ($tauxIr / 100);
             $nap      = $napTotal;
 
-            // ✅ Persist prix_unitaire pour la sauvegarde
             $set('prix_unitaire', round($mht / $qte, 4));
         } else {
             $pu = floatval($get('prix_unitaire') ?? 0);
@@ -89,12 +91,18 @@ class AchatDirectResource extends Resource
             $nap = $mht - $ir;
         }
 
-        // ✅ Mettre à jour les champs d'affichage via $set
         $set('_affiche_mht', number_format(round($mht, 0), 0, ',', ' ') . ' F');
         $set('_affiche_tva', number_format(round($tva, 0), 0, ',', ' ') . ' F');
-        $set('_affiche_ttc', number_format(round($ttc, 0), 0, ',', ' ') . ' F');
         $set('_affiche_ir',  number_format(round($ir, 0),  0, ',', ' ') . ' F');
         $set('_affiche_nap', number_format(round($nap, 0), 0, ',', ' ') . ' F');
+
+        // ✅ TTC avec alerte si seuil dépassé
+        $depasse = $ttc >= $seuil;
+        $set(
+            '_affiche_ttc',
+            number_format(round($ttc, 0), 0, ',', ' ') . ' F'
+                . ($depasse ? ' ⚠️' : '')
+        );
     }
 
     // =========================================================
@@ -333,6 +341,45 @@ class AchatDirectResource extends Resource
                                 $set('mode_saisie', $state);
                             })
                             ->columnSpan(4),
+
+                        // ✅ Indicateur NAP max — affiché au-dessus du repeater
+                        Forms\Components\Placeholder::make('info_nap_max')
+                            ->label('')
+                            ->content(function (Get $get) {
+                                $seuil  = (float) (ParametresStructure::where('actif', true)
+                                    ->value('seuil_achat_direct_regie') ?? 500000);
+                                $tauxTv = floatval($get('taux_tva_global') ?? 19.25);
+                                $tauxIr = floatval($get('taux_ir_global')  ?? 5.5);
+
+                                // NAP_max = (seuil - 1) × (1 - IR/100) / (1 + TVA/100)
+                                $napMax = ($seuil - 1) * (1 - $tauxIr / 100) / (1 + $tauxTv / 100);
+
+                                return new \Illuminate\Support\HtmlString(
+                                    '<div class="rounded-lg p-3 text-sm leading-loose '
+                                        . 'bg-amber-50 dark:bg-amber-900/30 '
+                                        . 'text-amber-800 dark:text-amber-200 '
+                                        . 'border border-amber-300 dark:border-amber-700">'
+                                        . '<div class="font-bold mb-1">⚠️ Limites Achat Direct</div>'
+                                        . '<table class="w-full text-xs">'
+                                        . '<tr>'
+                                        . '<td class="pr-4">Seuil TTC maximum :</td>'
+                                        . '<td class="font-bold text-red-600 dark:text-red-400">'
+                                        . '< ' . number_format($seuil, 0, ',', ' ') . ' FCFA (strictement)</td>'
+                                        . '</tr>'
+                                        . '<tr>'
+                                        . '<td class="pr-4">NAP unitaire maximum :</td>'
+                                        . '<td class="font-bold text-green-700 dark:text-green-400">'
+                                        . '< ' . number_format($napMax, 0, ',', ' ') . ' FCFA</td>'
+                                        . '</tr>'
+                                        . '<tr>'
+                                        . '<td class="pr-4">Taux appliqués :</td>'
+                                        . '<td>TVA ' . $tauxTv . '% | IR ' . $tauxIr . '%</td>'
+                                        . '</tr>'
+                                        . '</table>'
+                                        . '</div>'
+                                );
+                            })
+                            ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('taux_tva_global')
                             ->label('TVA globale (%)')->numeric()->default(19.25)->suffix('%')
@@ -678,10 +725,10 @@ class AchatDirectResource extends Resource
                         'danger'  => 'annule',
                     ])
                     ->formatStateUsing(fn($state) => match ($state) {
-                        'brouillon' => 'Brouillon',
-                        'valide'    => 'Validé',
-                        'paye'      => 'Payé',
-                        'annule'    => 'Annulé',
+                        'brouillon' => '🔵 Brouillon',
+                        'valide'    => '🟡 Validé',
+                        'paye'      => '✅ Payé',
+                        'annule'    => '🔴 Annulé',
                         default     => $state,
                     }),
             ])
@@ -715,17 +762,48 @@ class AchatDirectResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn($record) => $record->statut === 'brouillon'),
 
+                // ── Aperçu ───────────────────────────────────
+                Tables\Actions\Action::make('apercu')
+                    ->label('Aperçu')
+                    ->icon('heroicon-o-eye')->color('info')
+                    ->modalHeading(fn($record) => 'Aperçu — ' . $record->numero)
+                    ->modalWidth('7xl')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Fermer')
+                    ->modalContent(function ($record) {
+                        $record->load([
+                            'lignes',
+                            'regieAvance.responsable',
+                            'fournisseur',
+                            'ligneRegieAvance.nomenclature',
+                            'provisionLigneRegie.decaissement',
+                        ]);
+                        return view('filament.modals.apercu-achat-direct', [
+                            'depense' => $record,
+                        ]);
+                    }),
+
+                // ── Valider : brouillon → valide ─────────────
                 Tables\Actions\Action::make('valider')
                     ->label('Valider')
                     ->icon('heroicon-o-check-circle')->color('success')
                     ->visible(
                         fn($record) =>
-                        $record?->statut === 'brouillon'
+                        $record->statut === 'brouillon'
                             && auth()->user()?->can('valider_depense_regie')
                     )
                     ->requiresConfirmation()
+                    ->modalHeading('Valider l\'achat direct')
+                    ->modalDescription(function ($record) {
+                        $record->load('lignes');
+                        $ttc = $record->lignes->sum('montant_ttc');
+                        $nap = $record->lignes->sum('montant_net');
+                        return "TTC : " . number_format($ttc, 0, ',', ' ')
+                            . " FCFA | NAP : " . number_format($nap, 0, ',', ' ') . " FCFA";
+                    })
                     ->action(function ($record) {
                         try {
                             $record->load('lignes');
@@ -752,42 +830,119 @@ class AchatDirectResource extends Resource
 
                             Notification::make()
                                 ->title('✅ Achat direct validé')->success()
-                                ->body(
-                                    "TTC : " . number_format($totalTtc, 0, ',', ' ')
-                                        . " | NAP : " . number_format($totalNap, 0, ',', ' ')
-                                        . " FCFA"
-                                )->send();
+                                ->body("TTC : " . number_format($totalTtc, 0, ',', ' ')
+                                    . " | NAP : " . number_format($totalNap, 0, ',', ' ') . " FCFA")
+                                ->send();
                         } catch (\Exception $e) {
                             Notification::make()->title('❌ Erreur')
                                 ->danger()->body($e->getMessage())->persistent()->send();
                         }
                     }),
 
+                // ── Retour brouillon : valide → brouillon ────
+                Tables\Actions\Action::make('retour_brouillon')
+                    ->label('Retour brouillon')
+                    ->icon('heroicon-o-arrow-uturn-left')->color('warning')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'valide'
+                            && auth()->user()?->can('valider_depense_regie')
+                    )
+                    ->requiresConfirmation()
+                    ->modalHeading('Retourner en brouillon')
+                    ->modalDescription('La provision sera créditée et l\'achat repassera en brouillon pour correction.')
+                    ->form([
+                        Forms\Components\Textarea::make('motif_retour')
+                            ->label('Motif du retour')->rows(2)->required(),
+                    ])
+                    ->action(function ($record, array $data) {
+                        try {
+                            // ✅ Créditer la provision
+                            if ($record->provision_ligne_regie_id) {
+                                ProvisionLigneRegie::find($record->provision_ligne_regie_id)
+                                    ?->crediter($record->montant_ttc);
+                            }
+
+                            $record->update([
+                                'statut'       => 'brouillon',
+                                'montant_ht'   => 0,
+                                'montant_tva'  => 0,
+                                'montant_ttc'  => 0,
+                                'montant_ir'   => 0,
+                                'net_a_payer'  => 0,
+                                'observations' => ($record->observations ?? '')
+                                    . "\n--- RETOUR BROUILLON LE " . now()->format('d/m/Y H:i')
+                                    . " par " . auth()->user()->name . " ---\n"
+                                    . $data['motif_retour'],
+                            ]);
+
+                            Notification::make()
+                                ->title('↩ Retourné en brouillon')
+                                ->warning()
+                                ->body('La provision a été créditée — corrigez et revalidez.')
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()->title('❌ Erreur')
+                                ->danger()->body($e->getMessage())->send();
+                        }
+                    }),
+
+                // ── Payer : valide → paye ────────────────────
+                Tables\Actions\Action::make('payer')
+                    ->label('Marquer payé')
+                    ->icon('heroicon-o-banknotes')->color('success')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'valide'
+                            && auth()->user()?->can('valider_depense_regie')
+                    )
+                    ->requiresConfirmation()
+                    ->modalHeading('Confirmer le paiement')
+                    ->modalDescription(
+                        fn($record) =>
+                        "NAP : " . number_format($record->net_a_payer, 0, ',', ' ') . " FCFA"
+                    )
+                    ->form([
+                        Forms\Components\DatePicker::make('date_paiement')
+                            ->label('Date de paiement')->default(now())->required(),
+                        Forms\Components\TextInput::make('reference_paiement')
+                            ->label('Référence paiement')->maxLength(100),
+                    ])
+                    ->action(function ($record, array $data) {
+                        $record->update([
+                            'statut'       => 'paye',
+                            'observations' => ($record->observations ?? '')
+                                . "\n--- PAYÉ LE " . now()->format('d/m/Y')
+                                . " (réf: " . ($data['reference_paiement'] ?? '—') . ") ---",
+                        ]);
+                        Notification::make()->title('✅ Marqué comme payé')->success()->send();
+                    }),
+
+                // ── Annuler : brouillon → annule (définitif) ─
                 Tables\Actions\Action::make('annuler')
-                    ->label('Annuler')
+                    ->label('Annuler définitivement')
                     ->icon('heroicon-o-x-circle')->color('danger')
                     ->visible(
                         fn($record) =>
-                        in_array($record?->statut, ['brouillon', 'valide'])
+                        $record->statut === 'brouillon'
                             && auth()->user()?->can('annuler_depense_regie')
                     )
                     ->requiresConfirmation()
+                    ->modalHeading('Annuler définitivement')
+                    ->modalDescription('⚠️ Cette action est irréversible. L\'achat sera annulé.')
                     ->form([
-                        Forms\Components\Textarea::make('motif')->label('Motif')
-                            ->rows(2)->required(),
+                        Forms\Components\Textarea::make('motif')
+                            ->label('Motif d\'annulation')->rows(2)->required(),
                     ])
                     ->action(function ($record, array $data) {
-                        if ($record->statut === 'valide' && $record->provision_ligne_regie_id) {
-                            ProvisionLigneRegie::find($record->provision_ligne_regie_id)
-                                ?->crediter($record->montant_ttc);
-                        }
                         $record->update([
                             'statut'       => 'annule',
                             'observations' => ($record->observations ?? '')
-                                . "\n--- ANNULÉ " . now()->format('d/m/Y') . " ---\n"
+                                . "\n--- ANNULÉ LE " . now()->format('d/m/Y')
+                                . " par " . auth()->user()->name . " ---\n"
                                 . $data['motif'],
                         ]);
-                        Notification::make()->title('Annulé')->warning()->send();
+                        Notification::make()->title('🔴 Achat annulé')->warning()->send();
                     }),
             ])
             ->bulkActions([
