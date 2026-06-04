@@ -17,6 +17,8 @@ use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;  
+use Illuminate\Support\Facades\DB;   
 
 class EngagementResource extends Resource
 {
@@ -538,9 +540,15 @@ class EngagementResource extends Resource
                     ->modalHeading('Annuler l\'engagement')
                     ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
                         "<div style='color:#dc2626;font-weight:600;'>
-                        L'engagement <strong>{$record->numero}</strong> sera supprimé définitivement.<br>
-                        Les crédits seront libérés sur la ligne budgétaire.
-                        </div>"
+            L'engagement <strong>{$record->numero}</strong> sera annulé.<br>
+            Les crédits seront libérés sur la ligne budgétaire.<br>"
+                            . ($record->engageable
+                                ? "<span style='color:#92400e;'>Le document source ("
+                                . ($record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative')
+                                . " <strong>{$record->engageable->numero}</strong>) "
+                                . "reviendra à l'état <strong>Validé</strong>.</span>"
+                                : "")
+                            . "</div>"
                     ))
                     ->form([
                         Forms\Components\Textarea::make('motif')
@@ -548,16 +556,62 @@ class EngagementResource extends Resource
                     ])
                     ->action(function ($record, array $data) {
                         if ($record->ordonnancesPaiement()->exists()) {
-                            Notification::make()->title('❌ Impossible — des OP existent')
+                            Notification::make()
+                                ->title('❌ Impossible — des ordonnances de paiement existent')
                                 ->danger()->persistent()->send();
                             return;
                         }
+
                         try {
-                            $record->annuler(force: true);
-                            Notification::make()->title('✅ Engagement annulé et crédits libérés')
-                                ->warning()->send();
+                            \Illuminate\Support\Facades\DB::transaction(function () use ($record, $data) {
+
+                                // ── 1. Annuler l'engagement ───────────────────
+                                $record->annuler(force: true);
+
+                                // ── ✅ Remettre le document source à son état pré-engagement
+                                if ($record->engageable) {
+
+                                    if ($record->estBonCommande()) {
+                                        // ✅ BC : statut autorisé = 'valide' | engage = false
+                                        $record->engageable->updateQuietly([
+                                            'statut' => 'valide',
+                                            'engage' => false,
+                                        ]);
+
+                                        Log::info('BC remis à valide après annulation engagement', [
+                                            'engagement' => $record->numero,
+                                            'bc'         => $record->engageable->numero,
+                                        ]);
+                                    } elseif ($record->estDecision()) {
+                                        // ✅ DA : statut autorisé = 'validee' (avec e final)
+                                        $record->engageable->updateQuietly([
+                                            'statut' => 'validee',
+                                        ]);
+
+                                        Log::info('DA remise à validee après annulation engagement', [
+                                            'engagement' => $record->numero,
+                                            'da'         => $record->engageable->numero,
+                                        ]);
+                                    }
+                                }
+                            });
+
+                            $msgSource = $record->engageable
+                                ? " | " . ($record->estBonCommande() ? 'BC' : 'DA')
+                                . " {$record->engageable->numero} → Validé"
+                                : "";
+
+                            Notification::make()
+                                ->title('✅ Engagement annulé')
+                                ->warning()
+                                ->body("Crédits libérés{$msgSource}")
+                                ->send();
                         } catch (\Exception $e) {
-                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
+                            Notification::make()
+                                ->title('❌ Erreur')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->send();
                         }
                     }),
 
