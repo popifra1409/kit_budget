@@ -6,8 +6,8 @@ use App\Filament\Budget\Resources\DecisionAdministrativeResource;
 use App\Models\Transmission;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Infolists;                       
-use Filament\Infolists\Infolist; 
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Forms;
 
@@ -451,13 +451,16 @@ class ViewDecisionAdministrative extends ViewRecord
                 }),
 
             // ── Désengager ────────────────────────────────────
+            // ── Désengager ────────────────────────────────────────
             Actions\Action::make('desengager')
                 ->label("Annuler l'engagement")
                 ->icon('heroicon-o-arrow-uturn-left')->color('warning')
                 ->visible(
                     fn() =>
                     $this->record->engagee
-                        && !$this->estEnTransmission()          // ✅
+                        && !$this->estEnTransmission()
+                        // ✅ Vérification permission ajoutée
+                        && auth()->user()?->can('annuler_engagement')
                 )
                 ->requiresConfirmation()
                 ->modalHeading("Annuler l'engagement")
@@ -470,7 +473,8 @@ class ViewDecisionAdministrative extends ViewRecord
                         ->value('numero') ?? '—';
                     return new \Illuminate\Support\HtmlString(
                         "<div class='text-red-600 font-semibold'>"
-                            . "L'engagement N° <strong>{$num}</strong> sera supprimé définitivement."
+                            . "L'engagement N° <strong>{$num}</strong> sera supprimé définitivement.<br>"
+                            . "La DA reviendra à l'état <strong>Validée</strong>."
                             . "</div>"
                     );
                 })
