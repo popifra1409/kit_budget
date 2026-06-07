@@ -43,10 +43,11 @@
                         : 'bg-orange-50 dark:bg-orange-900/10' }}">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
+
                         {{-- Icône --}}
                         @if ($ordonnance->type_ordonnance === 'standard')
                         <div class="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900
-                                            flex items-center justify-center">
+                                    flex items-center justify-center">
                             <svg class="w-6 h-6 text-green-600 dark:text-green-400"
                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -55,7 +56,7 @@
                         </div>
                         @else
                         <div class="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900
-                                            flex items-center justify-center">
+                                    flex items-center justify-center">
                             <svg class="w-6 h-6 text-orange-600 dark:text-orange-400"
                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -93,9 +94,9 @@
                         <span class="text-gray-600 dark:text-gray-400">Bénéficiaire :</span>
                         <p class="font-medium text-gray-900 dark:text-white">
                             {{ $ordonnance->beneficiaire?->raison_sociale
-                                    ?? $ordonnance->beneficiaire?->nom_complet
-                                    ?? $ordonnance->beneficiaire?->name
-                                    ?? 'N/A' }}
+                                ?? $ordonnance->beneficiaire?->nom_complet
+                                ?? $ordonnance->beneficiaire?->name
+                                ?? 'N/A' }}
                         </p>
                     </div>
 
@@ -120,7 +121,7 @@
                         </span>
                     </div>
 
-                    @if($ordonnance->periode)
+                    @if ($ordonnance->periode)
                     <div>
                         <span class="text-gray-600 dark:text-gray-400">Période :</span>
                         <p class="font-medium text-gray-900 dark:text-white">
@@ -139,48 +140,62 @@
                 </div>
                 @endif
 
-                {{-- Détail impôts (OP Impôt uniquement — sans debug) --}}
+                {{-- ✅ Détail impôts (OP Impôt uniquement) --}}
                 @if ($ordonnance->type_ordonnance === 'impot')
                 @php
-                $detailImpots = $ordonnance->getDetailImpots();
+                    $detailImpots = $ordonnance->getDetailImpots();
+
+                    // ✅ Définition des lignes à afficher
+                    $lignesImpots = [
+                        'ir'        => 'IR',
+                        'tva'       => 'TVA',
+                        'tsr'       => 'TSR',
+                        'cnps'      => 'CNPS',
+                        'irnc'      => 'IRNC',
+                        'redevance' => 'Redevance audiovisuelle',
+                        'feicom'    => 'FEICOM',
+                        'autres'    => 'Autres retenues',
+                    ];
+
+                    // ✅ Total exact = somme des lignes affichées (sans arrondi ni approximation)
+                    $totalExact = 0;
+                    foreach ($lignesImpots as $key => $label) {
+                        $totalExact += (float) ($detailImpots[$key] ?? 0);
+                    }
                 @endphp
+
                 <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
                     <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         Détail des retenues et impôts
                     </p>
                     <div class="space-y-1.5 text-sm">
 
-                        @foreach ([
-                        'ir' => 'IR',
-                        'tva' => 'TVA',
-                        'tsr' => 'TSR',
-                        'cnps' => 'CNPS',
-                        'irnc' => 'IRNC',
-                        'redevance' => 'Redevance audiovisuelle',
-                        'feicom' => 'FEICOM',
-                        'autres' => 'Autres retenues',
-                        ] as $key => $label)
+                        {{-- ✅ Lignes affichées uniquement si > 0 --}}
+                        @foreach ($lignesImpots as $key => $label)
                         @if (($detailImpots[$key] ?? 0) > 0)
                         <div class="flex justify-between">
-                            <span class="text-gray-600 dark:text-gray-400">{{ $label }} :</span>
+                            <span class="text-gray-600 dark:text-gray-400">
+                                {{ $label }} :
+                            </span>
                             <span class="font-medium text-gray-900 dark:text-white">
-                                {{ number_format($detailImpots[$key], 0, ',', ' ') }} FCFA
+                                {{ number_format((float) ($detailImpots[$key]), 0, ',', ' ') }} FCFA
                             </span>
                         </div>
                         @endif
                         @endforeach
 
-                        {{-- Total --}}
+                        {{-- ✅ Total = somme exacte des lignes affichées --}}
                         <div class="flex justify-between pt-2 border-t border-gray-200
-                                            dark:border-gray-700 font-semibold">
+                                    dark:border-gray-700 font-semibold">
                             <span class="text-gray-900 dark:text-white">Total :</span>
                             <span class="text-orange-600 dark:text-orange-400">
-                                {{ number_format($detailImpots['total'] ?? 0, 0, ',', ' ') }} FCFA
+                                {{ number_format($totalExact, 0, ',', ' ') }} FCFA
                             </span>
                         </div>
                     </div>
                 </div>
                 @endif
+
             </div>
         </div>
         @empty
@@ -195,12 +210,14 @@
         @endforelse
     </div>
 
-    {{-- Récapitulatif --}}
+    {{-- Récapitulatif global --}}
     @if ($ordonnances->count() > 0)
     <div class="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4
-                    border border-gray-200 dark:border-gray-700">
+                border border-gray-200 dark:border-gray-700">
         <div class="flex items-center justify-between">
-            <span class="font-semibold text-gray-900 dark:text-white">Total des ordonnances :</span>
+            <span class="font-semibold text-gray-900 dark:text-white">
+                Total des ordonnances :
+            </span>
             <span class="text-xl font-bold text-blue-600 dark:text-blue-400">
                 {{ number_format($ordonnances->sum('montant_net'), 0, ',', ' ') }} FCFA
             </span>
