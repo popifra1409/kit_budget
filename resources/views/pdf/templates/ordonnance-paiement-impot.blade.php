@@ -4,17 +4,17 @@
 $ordonnance = $donnees['_raw'];
 
 if (!$ordonnance->relationLoaded('engagement')) {
-$ordonnance->load('engagement.engageable');
+    $ordonnance->load('engagement.engageable');
 }
 
-$engagement = $ordonnance->engagement;
+$engagement     = $ordonnance->engagement;
 $documentSource = $engagement?->engageable;
 
 // ── Nomenclature ──────────────────────────────────────────
 $nomenclature = null;
 if ($engagement) {
-$engagement->load('nomenclaturePrincipale');
-$nomenclature = $engagement->nomenclaturePrincipale;
+    $engagement->load('nomenclaturePrincipale');
+    $nomenclature = $engagement->nomenclaturePrincipale;
 }
 
 // ── Hiérarchie budgétaire ─────────────────────────────────
@@ -23,155 +23,163 @@ $codeProgramme = $codeSousProgramme = $codeAction = $codeActivite = '';
 $codeTache = $codeArticle = $codeParagraphe = $codeChapitre = '';
 
 if ($nomenclature) {
-$tache = $nomenclature->tache ?? $nomenclature->taches()->first();
-if ($tache) {
-$tache->load('activite.action.programme.parent');
-$activite = $tache->activite;
-$action = $activite?->action;
-$programme = $action?->programme;
+    $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
+    if ($tache) {
+        $tache->load('activite.action.programme.parent');
+        $activite = $tache->activite;
+        $action   = $activite?->action;
+        $programme = $action?->programme;
 
-if ($programme) {
-if ($programme->estSousProgramme()) {
-$sousProgramme = $programme;
-$programme = $programme->parent;
-} else {
-$sousProgramme = null;
-}
+        if ($programme) {
+            if ($programme->estSousProgramme()) {
+                $sousProgramme = $programme;
+                $programme     = $programme->parent;
+            } else {
+                $sousProgramme = null;
+            }
 
-if ($sousProgramme) {
-$codeSousProgrammeBrut = $sousProgramme->code ?? '';
-$chiffres = preg_replace('/[^0-9]/', '', $codeSousProgrammeBrut);
-$codeSousProgramme = $chiffres !== ''
-? '(' . (int) $chiffres . ')'
-: $codeSousProgrammeBrut;
-}
+            if ($sousProgramme) {
+                $codeSousProgrammeBrut = $sousProgramme->code ?? '';
+                $chiffres              = preg_replace('/[^0-9]/', '', $codeSousProgrammeBrut);
+                $codeSousProgramme     = $chiffres !== ''
+                    ? '(' . (int) $chiffres . ')'
+                    : $codeSousProgrammeBrut;
+            }
 
-if ($programme) {
-$codeProgrammeBrut = $programme->code ?? '';
-$chiffresProg = preg_replace('/[^0-9]/', '', $codeProgrammeBrut);
-$codeProgramme = $chiffresProg !== ''
-? '(' . (int) $chiffresProg . ')'
-: $codeProgrammeBrut;
-}
+            if ($programme) {
+                $codeProgrammeBrut = $programme->code ?? '';
+                $chiffresProg      = preg_replace('/[^0-9]/', '', $codeProgrammeBrut);
+                $codeProgramme     = $chiffresProg !== ''
+                    ? '(' . (int) $chiffresProg . ')'
+                    : $codeProgrammeBrut;
+            }
 
-try {
-if (method_exists($programme, 'objectifPrincipal')) {
-$objectif = $programme->objectifPrincipal;
-} elseif (method_exists($programme, 'objectifsPrincipaux')) {
-$objectifs = $programme->objectifsPrincipaux;
-$objectif = $objectifs instanceof \Illuminate\Support\Collection
-? $objectifs->first() : $objectifs;
-}
-} catch (\Exception $e) {
-\Log::warning('Erreur objectif', [
-'programme_id' => $programme->id,
-'error' => $e->getMessage(),
-]);
-$objectif = null;
-}
-}
+            try {
+                if (method_exists($programme, 'objectifPrincipal')) {
+                    $objectif = $programme->objectifPrincipal;
+                } elseif (method_exists($programme, 'objectifsPrincipaux')) {
+                    $objectifs = $programme->objectifsPrincipaux;
+                    $objectif  = $objectifs instanceof \Illuminate\Support\Collection
+                        ? $objectifs->first() : $objectifs;
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erreur objectif', [
+                    'programme_id' => $programme->id,
+                    'error'        => $e->getMessage(),
+                ]);
+                $objectif = null;
+            }
+        }
 
-$codeTache = $tache->code ?? '';
-$codeActivite = $activite->code ?? '';
-$codeAction = $action->code ?? '';
+        $codeTache    = $tache->code    ?? '';
+        $codeActivite = $activite->code ?? '';
+        $codeAction   = $action->code   ?? '';
 
-if ($sousProgramme) $codeSousProgramme = $sousProgramme->code ?? '';
-if ($programme) $codeProgramme = $programme->code ?? '';
-}
+        if ($sousProgramme) $codeSousProgramme = $sousProgramme->code ?? '';
+        if ($programme)     $codeProgramme     = $programme->code     ?? '';
+    }
 
-$codeChapitre = substr($nomenclature->code, 0, 2);
-$codeParagraphe = $nomenclature->code;
-$codeArticle = method_exists($nomenclature, 'getCodeArticle')
-? $nomenclature->getCodeArticle()
-: substr($nomenclature->code, 0, 4);
+    $codeChapitre  = substr($nomenclature->code, 0, 2);
+    $codeParagraphe = $nomenclature->code;
+    $codeArticle   = method_exists($nomenclature, 'getCodeArticle')
+        ? $nomenclature->getCodeArticle()
+        : substr($nomenclature->code, 0, 4);
 }
 
 // ── Réverseur ─────────────────────────────────────────────
 $reverseur = null;
 if ($engagement && $documentSource) {
-if ($engagement->estBonCommande()) {
-$reverseur = $documentSource->fournisseur;
-} elseif ($engagement->estDecision()) {
-$reverseur = $documentSource->personnel;
-}
+    if ($engagement->estBonCommande()) {
+        $reverseur = $documentSource->fournisseur;
+    } elseif ($engagement->estDecision()) {
+        $reverseur = $documentSource->personnel;
+    }
 }
 if (!$reverseur && $ordonnance->beneficiaire) {
-$reverseur = $ordonnance->beneficiaire;
+    $reverseur = $ordonnance->beneficiaire;
 }
 
-$nomReverseur = $reverseur->raison_sociale
-?? ($reverseur->nom_complet ?? ($reverseur->name ?? 'N/A'));
+$nomReverseur    = $reverseur->raison_sociale
+    ?? ($reverseur->nom_complet ?? ($reverseur->name ?? 'N/A'));
 $nomBeneficiaire = 'LE RECEVEUR';
 
 // ── Détail impôts ─────────────────────────────────────────
-$detailImpots = $ordonnance->getDetailImpots();
+$detailImpots       = $ordonnance->getDetailImpots();
 $montantTotalImpots = $detailImpots['total'];
 
-// ✅ Séparer IR et IRNC explicitement depuis le document source (DA)
-$montantIr = 0;
+$montantIr   = 0;
 $montantIrnc = 0;
-$tauxIr = 0;
-$tauxIrnc = 0;
-
-// ── Détail impôts ─────────────────────────────────────────
-$detailImpots = $ordonnance->getDetailImpots();
-$montantTotalImpots = $detailImpots['total'];
-
-$montantIr = 0;
-$montantIrnc = 0;
-$tauxIr = 0;
-$tauxIrnc = 0;
+$montantTsr  = 0;   // ✅ TSR pour BC
+$tauxIr      = 0;
+$tauxIrnc    = 0;
+$tauxTsr     = 0;   // ✅ TSR pour BC
 
 if ($engagement->estDecision() && $documentSource) {
-// ✅ Priorité 1 : lire depuis l'OPT elle-même
-// → mise à jour par avenant via updateQuietly
-$montantIr = (float) ($ordonnance->montant_ir ?? 0);
-$montantIrnc = (float) ($ordonnance->montant_irnc ?? 0);
+    // ✅ Priorité 1 : depuis l'OPT elle-même
+    $montantIr   = (float) ($ordonnance->montant_ir   ?? 0);
+    $montantIrnc = (float) ($ordonnance->montant_irnc ?? 0);
 
-// ✅ Priorité 2 : fallback sur le document source (DA)
-// si l'OPT ne stocke pas ces champs individuellement
-if ($montantIr === 0.0 && $montantIrnc === 0.0) {
-$montantIr = (float) ($documentSource->montant_ir ?? 0);
-$montantIrnc = (float) ($documentSource->montant_irnc ?? 0);
-}
+    // ✅ Priorité 2 : fallback sur la DA
+    if ($montantIr === 0.0 && $montantIrnc === 0.0) {
+        $montantIr   = (float) ($documentSource->montant_ir   ?? 0);
+        $montantIrnc = (float) ($documentSource->montant_irnc ?? 0);
+    }
 
-// Les taux viennent toujours de la DA (non stockés sur l'OPT)
-$tauxIr = (float) ($documentSource->taux_ir ?? 0);
-$tauxIrnc = (float) ($documentSource->taux_irnc ?? 0);
+    $tauxIr   = (float) ($documentSource->taux_ir   ?? 0);
+    $tauxIrnc = (float) ($documentSource->taux_irnc ?? 0);
+
+} elseif ($engagement->estBonCommande() && $documentSource) {
+    // ✅ BC — Priorité 1 : depuis l'OPT
+    $montantIr  = (float) ($ordonnance->montant_ir  ?? 0);
+    $montantTsr = (float) ($ordonnance->montant_tsr ?? 0);
+
+    // ✅ BC — Priorité 2 : fallback sur le BC source
+    if ($montantIr === 0.0) {
+        $montantIr = (float) ($documentSource->montant_ir ?? 0);
+    }
+    if ($montantTsr === 0.0) {
+        $montantTsr = (float) ($documentSource->montant_tsr ?? 0);
+    }
+
+    $tauxIr  = (float) ($documentSource->taux_ir  ?? 0);
+    $tauxTsr = (float) ($documentSource->taux_tsr ?? 0);
 }
 
 // ✅ Labels avec taux
 $labelIr = $tauxIr > 0
-? 'IR (' . rtrim(rtrim(number_format($tauxIr, 2, ',', ''), '0'), ',') . '%)'
-: 'IR';
+    ? 'IR (' . rtrim(rtrim(number_format($tauxIr, 2, ',', ''), '0'), ',') . '%)'
+    : 'IR';
 $labelIrnc = $tauxIrnc > 0
-? 'IR(NC) (' . rtrim(rtrim(number_format($tauxIrnc, 2, ',', ''), '0'), ',') . '%)'
-: 'IR(NC)';
+    ? 'IR(NC) (' . rtrim(rtrim(number_format($tauxIrnc, 2, ',', ''), '0'), ',') . '%)'
+    : 'IR(NC)';
+$labelTsr = $tauxTsr > 0
+    ? 'TSR (' . rtrim(rtrim(number_format($tauxTsr, 2, ',', ''), '0'), ',') . '%)'
+    : 'TSR';
 
 $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
 // ── Pied de page ──────────────────────────────────────────
 $dateImpression = now()->format('d/m/Y à H:i');
-$dateCreation = '—';
-$nomCreateur = '—';
-$sigle = $parametres->sigle ?? 'CHUY';
+$dateCreation   = '—';
+$nomCreateur    = '—';
+$sigle          = $parametres->sigle ?? 'CHUY';
 $numeroDocument = $documentSource?->numero ?? $engagement->numero ?? '—';
 
 $createurId = $documentSource?->created_by ?? $ordonnance->created_by ?? null;
 
 if ($createurId) {
-$createur = \App\Models\User::find($createurId);
-if ($createur) {
-$nomCreateur = $createur->username
-?? $createur->login
-?? $createur->name
-?? '—';
-}
+    $createur = \App\Models\User::find($createurId);
+    if ($createur) {
+        $nomCreateur = $createur->username
+            ?? $createur->login
+            ?? $createur->name
+            ?? '—';
+    }
 }
 
 $createdAt = $documentSource?->created_at ?? $ordonnance->created_at;
 if ($createdAt) {
-$dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
+    $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
 }
 @endphp
 
@@ -186,7 +194,6 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
     @page {
         size: A4 landscape;
         margin: 8mm 8mm 16mm 8mm;
-        /* ✅ Marge basse pour le pied de page */
     }
 
     body {
@@ -200,29 +207,12 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
         border-collapse: collapse;
     }
 
-    .border-all {
-        border: 1px solid #000;
-    }
-
-    .border-right {
-        border-right: 1px solid #000;
-    }
-
-    .text-center {
-        text-align: center;
-    }
-
-    .font-bold {
-        font-weight: bold;
-    }
-
-    .font-tiny {
-        font-size: 7pt;
-    }
-
-    .padding-3 {
-        padding: 3px;
-    }
+    .border-all  { border: 1px solid #000; }
+    .border-right { border-right: 1px solid #000; }
+    .text-center  { text-align: center; }
+    .font-bold    { font-weight: bold; }
+    .font-tiny    { font-size: 7pt; }
+    .padding-3    { padding: 3px; }
 
     .watermark {
         position: absolute;
@@ -233,14 +223,10 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
         font-size: 16px;
     }
 
-    /* ✅ Ligne IR — distinct de IRNC */
-    .row-ir {
-        background: #fff8e1;
-    }
-
-    .row-irnc {
-        background: #fce4ec;
-    }
+    /* ✅ Lignes colorées par type de taxe */
+    .row-ir   { background: #fff8e1; }
+    .row-irnc { background: #fce4ec; }
+    .row-tsr  { background: #e8f5e9; }
 
     /* ✅ Pied de page fixe */
     .pdf-footer-impot {
@@ -256,11 +242,7 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
         background: #fff;
     }
 
-    .pdf-footer-impot table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
+    .pdf-footer-impot table { width: 100%; border-collapse: collapse; }
     .pdf-footer-impot td {
         border: none;
         padding: 0 3px;
@@ -355,48 +337,48 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
                 Reversement Impôts et Taxes
             </div>
 
-            {{-- ✅ DETAIL IMPOTS — IR et IRNC séparés --}}
+            {{-- ✅ DETAIL IMPÔTS — IR/IRNC (DA) + IR/TSR (BC) séparés --}}
             <div style="margin-top:8px;">
                 <div class="font-bold" style="font-size:8pt;">DETAIL IMPÔTS ET TAXES</div>
 
                 <table class="border-all" style="margin-top:3px;">
 
-                    {{-- ✅ IR standard — affiché séparément si > 0 --}}
-                    @if ($montantIr > 0)
-                    <tr class="row-ir">
-                        <td class="border-right padding-3" style="font-size:8pt;">
-                            {{ $labelIr }}
-                            <span style="font-size:6.5pt; font-style:italic; color:#555;">
-                                — Impôt sur le Revenu
-                            </span>
-                        </td>
-                        <td class="padding-3 text-center" style="font-weight:bold;">
-                            {{ number_format($montantIr, 0, ',', ' ') }}
-                        </td>
-                    </tr>
-                    @endif
+                {{-- ✅ IR — DA et BC --}}
+@if ($montantIr > 0)
+<tr class="row-ir">
+    <td class="border-right padding-3" style="font-size:8pt;">IR</td>
+    <td class="padding-3 text-center" style="font-weight:bold;">
+        {{ number_format($montantIr, 0, ',', ' ') }}
+    </td>
+</tr>
+@endif
 
-                    {{-- ✅ IRNC — affiché séparément si > 0 --}}
-                    @if ($montantIrnc > 0)
-                    <tr class="row-irnc">
-                        <td class="border-right padding-3" style="font-size:8pt;">
-                            {{ $labelIrnc }}
-                            <span style="font-size:6.5pt; font-style:italic; color:#555;">
-                                — IR Non Commercial
-                            </span>
-                        </td>
-                        <td class="padding-3 text-center" style="font-weight:bold;">
-                            {{ number_format($montantIrnc, 0, ',', ' ') }}
-                        </td>
-                    </tr>
-                    @endif
+{{-- ✅ IRNC — DA uniquement --}}
+@if ($montantIrnc > 0)
+<tr class="row-irnc">
+    <td class="border-right padding-3" style="font-size:8pt;">IR(NC)</td>
+    <td class="padding-3 text-center" style="font-weight:bold;">
+        {{ number_format($montantIrnc, 0, ',', ' ') }}
+    </td>
+</tr>
+@endif
+
+{{-- ✅ TSR — BC uniquement --}}
+@if ($montantTsr > 0)
+<tr class="row-tsr">
+    <td class="border-right padding-3" style="font-size:8pt;">TSR</td>
+    <td class="padding-3 text-center" style="font-weight:bold;">
+        {{ number_format($montantTsr, 0, ',', ' ') }}
+    </td>
+</tr>
+@endif
 
                     {{-- Autres impôts depuis getDetailImpots() --}}
                     @foreach ($detailImpots as $key => $val)
                     @if (
-                    $key !== 'total'
-                    && $val > 0
-                    && !in_array(strtolower($key), ['ir', 'irnc', 'ir(nc)'])
+                        $key !== 'total'
+                        && $val > 0
+                        && !in_array(strtolower($key), ['ir', 'irnc', 'ir(nc)', 'tsr'])
                     )
                     <tr>
                         <td class="border-right padding-3" style="font-size:8pt;">
@@ -480,8 +462,12 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
                 </tr>
                 <tr>
                     <td style="padding:0;">
-                        <div class="font-bold" style="font-size:8pt; margin:0;">A PRECOMPTER</div>
-                        <div class="font-tiny" style="font-style:italic; margin:0;">TO BE DEDUCTED</div>
+                        <div class="font-bold" style="font-size:8pt; margin:0;">
+                            A PRECOMPTER
+                        </div>
+                        <div class="font-tiny" style="font-style:italic; margin:0;">
+                            TO BE DEDUCTED
+                        </div>
                     </td>
                     <td style="padding:0;">
                         <div class="border-all text-center padding-3">
@@ -491,12 +477,16 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
                 </tr>
                 <tr>
                     <td style="padding:0;">
-                        <div class="font-bold" style="font-size:8pt; margin:0;">Net à payer</div>
-                        <div class="font-tiny" style="font-style:italic; margin:0;">Net amount</div>
+                        <div class="font-bold" style="font-size:8pt; margin:0;">
+                            Net à payer
+                        </div>
+                        <div class="font-tiny" style="font-style:italic; margin:0;">
+                            Net amount
+                        </div>
                     </td>
                     <td style="padding:0;">
                         <div class="border-all text-center padding-3"
-                            style="background:#f0f0f0;">
+                             style="background:#f0f0f0;">
                             {{ number_format($montantTotalImpots, 0, ',', ' ') }}
                         </div>
                     </td>
@@ -527,7 +517,9 @@ $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
             </div>
 
             <div style="margin-top:60px;">
-                <div class="font-bold" style="font-size:8pt;">Yaoundé, le _____________</div>
+                <div class="font-bold" style="font-size:8pt;">
+                    Yaoundé, le _____________
+                </div>
                 <div class="font-tiny" style="font-style:italic;">Yaounde, the</div>
                 <div style="margin-top:15px; text-align:right;">
                     <div class="font-bold" style="font-size:7.5pt;">
