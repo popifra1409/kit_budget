@@ -54,11 +54,13 @@ $totalIr  = 0;
 $totalTtc = 0;
 
 foreach ($lignes as $l) {
-    $totalNap = $lignes->sum(fn($l) => (float)($l->montant_net ?? $l->net_a_payer ?? 0));
-$totalHt  = $lignes->sum(fn($l) => (float)($l->montant_ht  ?? 0));
-$totalTva = $lignes->sum(fn($l) => (float)($l->montant_tva ?? 0));
-$totalIr  = $lignes->sum(fn($l) => (float)($l->montant_ir  ?? 0));
-$totalTtc = $lignes->sum(fn($l) => (float)($l->montant_ttc ?? 0));
+    $totalNap += (int) number_format(
+        (float)($l->montant_net ?? $l->net_a_payer ?? 0), 0, '.', ''
+    );
+    $totalHt  += (int) number_format((float)($l->montant_ht  ?? 0), 0, '.', '');
+    $totalTva += (int) number_format((float)($l->montant_tva ?? 0), 0, '.', '');
+    $totalIr  += (int) number_format((float)($l->montant_ir  ?? 0), 0, '.', '');
+    $totalTtc += (int) number_format((float)($l->montant_ttc ?? 0), 0, '.', '');
 }
 
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);

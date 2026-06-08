@@ -239,17 +239,35 @@ class MemoireDepense extends Model
             $this->load('lignes');
         }
 
-        // ✅ Somme brute sans arrondi intermédiaire
-        $this->montant_ht  = $this->lignes->sum(fn($l) => (float)($l->montant_ht  ?? 0));
-        $this->montant_tva = $this->lignes->sum(fn($l) => (float)($l->montant_tva ?? 0));
-        $this->montant_ir  = $this->lignes->sum(fn($l) => (float)($l->montant_ir  ?? 0));
-        $this->montant_ttc = $this->lignes->sum(fn($l) => (float)($l->montant_ttc ?? 0));
-        $this->montant_net = $this->lignes->sum(
-            fn($l) => (float)($l->montant_net ?? $l->net_a_payer ?? 0)
-        );
+        // ✅ Même arrondi que number_format(..., 0) utilisé dans les vues
+        $totalHt  = 0;
+        $totalTva = 0;
+        $totalIr  = 0;
+        $totalTtc = 0;
+        $totalNap = 0;
+
+        foreach ($this->lignes as $l) {
+            $totalHt  += (int) number_format((float)($l->montant_ht  ?? 0), 0, '.', '');
+            $totalTva += (int) number_format((float)($l->montant_tva ?? 0), 0, '.', '');
+            $totalIr  += (int) number_format((float)($l->montant_ir  ?? 0), 0, '.', '');
+            $totalTtc += (int) number_format((float)($l->montant_ttc ?? 0), 0, '.', '');
+            $totalNap += (int) number_format(
+                (float)($l->montant_net ?? $l->net_a_payer ?? 0),
+                0,
+                '.',
+                ''
+            );
+        }
+
+        $this->montant_ht  = $totalHt;
+        $this->montant_tva = $totalTva;
+        $this->montant_ir  = $totalIr;
+        $this->montant_ttc = $totalTtc;
+        $this->montant_net = $totalNap;
 
         $this->montant_lettres = NombreEnLettres::convertir($this->montant_ttc);
     }
+    
     public function recalculerTotaux(): void
     {
         $this->calculerTotaux();
