@@ -174,7 +174,6 @@
             color: #1e40af;
         }
 
-        /* ✅ Indicateur mode saisie par ligne */
         .mode-badge {
             display: inline-block;
             font-size: .6rem;
@@ -212,13 +211,13 @@
             <div style="display:flex; align-items:center; gap:.75rem; flex-shrink:0;">
                 <span class="badge-statut bs-{{ $memoire->statut }}">
                     {{ match ($memoire->statut) {
-                        'brouillon' => '✏️ Brouillon',
-                        'valide'    => '✅ Validé',
-                        'transmis'  => '📤 Transmis',
-                        'approuve'  => '🏆 Approuvé',
-                        'annule'    => '❌ Annulé',
-                        default     => ucfirst($memoire->statut),
-                    } }}
+    'brouillon' => '✏️ Brouillon',
+    'valide' => '✅ Validé',
+    'transmis' => '📤 Transmis',
+    'approuve' => '🏆 Approuvé',
+    'annule' => '❌ Annulé',
+    default => ucfirst($memoire->statut),
+} }}
                 </span>
                 <span style="font-size:.75rem; color:var(--color-text-secondary);">
                     {{ $memoire->date_memoire?->format('d/m/Y') }}
@@ -268,124 +267,145 @@
         </div>
 
         @if($memoire->lignes->isEmpty())
-        <div style="text-align:center; padding:2rem;
-                color:var(--color-text-tertiary); font-size:.82rem;
-                border:1px dashed var(--color-border-tertiary); border-radius:.5rem;">
-            ⚠️ Aucune ligne enregistrée — sauvegardez le mémoire d'abord
-        </div>
+            <div style="text-align:center; padding:2rem;
+                        color:var(--color-text-tertiary); font-size:.82rem;
+                        border:1px dashed var(--color-border-tertiary); border-radius:.5rem;">
+                ⚠️ Aucune ligne enregistrée — sauvegardez le mémoire d'abord
+            </div>
         @else
-        @php
-        // ✅ Récupérer les taux depuis la première ligne
-        $premiereLigne = $memoire->lignes->first();
-        $tauxTva = $premiereLigne?->taux_tva ?? 19.25;
-        $tauxIr = $premiereLigne?->taux_ir ?? 5.5;
-        @endphp
+            @php
+                $premiereLigne = $memoire->lignes->first();
+                $tauxTva = $premiereLigne?->taux_tva ?? 19.25;
+                $tauxIr = $premiereLigne?->taux_ir ?? 5.5;
 
-        <div style="overflow-x:auto;">
-            <table class="md-table">
-                {{-- Dans le thead --}}
-                <thead>
-                    <tr>
-                        <th style="width:36px;">#</th>
-                        <th>Nature de la dépense</th>
-                        <th style="text-align:center;">Qté</th>
+                // ✅ Sommer les valeurs DÉJÀ ARRONDIES (comme affichées dans chaque colonne)
+                // → total = somme exacte des valeurs visibles dans le tableau
+                $totalNap = 0;
+                $totalHt = 0;
+                $totalTva = 0;
+                $totalIr = 0;
+                $totalTtc = 0;
 
-                        {{-- ✅ P.U NET = NAP unitaire (valeur saisie) --}}
-                        <th style="text-align:right;">
-                            P.U NET
-                            <span style="font-size:.58rem; opacity:.7; display:block; font-weight:400;">
-                                (Net à Payer / unité)
-                            </span>
-                        </th>
+                foreach ($memoire->lignes as $l) {
+                    $qte = max(1, (float) $l->quantite);
+                    $napTotal = (float) ($l->montant_net ?? $l->net_a_payer ?? 0);
 
-                        {{-- ✅ NAP = NAP total juste après P.U NET --}}
-                        <th style="text-align:right; color:#166534;">NAP</th>
+                    // ✅ round() à 0 = même valeur que number_format(..., 0)
+                    $totalNap += (int) round($napTotal, 0);
+                    $totalHt += (int) round((float) ($l->montant_ht ?? 0), 0);
+                    $totalTva += (int) round((float) ($l->montant_tva ?? 0), 0);
+                    $totalIr += (int) round((float) ($l->montant_ir ?? 0), 0);
+                    $totalTtc += (int) round((float) ($l->montant_ttc ?? 0), 0);
+                }
+            @endphp
 
-                        <th style="text-align:right;">MHT</th>
-                        <th style="text-align:right;">TVA ({{ $tauxTva }}%)</th>
-                        <th style="text-align:right;">IR ({{ $tauxIr }}%)</th>
-                        <th style="text-align:right;">TTC</th>
-                    </tr>
-                </thead>
-                {{-- Dans le tbody --}}
-                <tbody>
-                    @foreach($memoire->lignes->sortBy('numero_ligne') as $ligne)
-                    @php
-                    $qte = max(1, (float) $ligne->quantite);
-                    $napUnitaire = ($ligne->montant_net ?? $ligne->net_a_payer ?? 0) / $qte;
-                    $napTotal = $ligne->montant_net ?? $ligne->net_a_payer ?? 0;
-                    $estModeNap = $tauxIr > 0 && $ligne->prix_unitaire > $napUnitaire;
-                    @endphp
-                    <tr>
-                        <td style="text-align:center; color:var(--color-text-tertiary); font-size:.72rem;">
-                            {{ $ligne->numero_ligne }}
-                        </td>
-                        <td style="font-weight:500; font-size:.82rem;">
-                            {{ $ligne->nature_depense }}
-                            @if($estModeNap)
-                            <span class="mode-badge mode-nap">NAP</span>
-                            @else
-                            <span class="mode-badge mode-pu">P.U</span>
-                            @endif
-                        </td>
-                        <td style="text-align:center;">
-                            {{ number_format($ligne->quantite, 0, ',', ' ') }}
-                        </td>
+            <div style="overflow-x:auto;">
+                <table class="md-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;">#</th>
+                            <th>Nature de la dépense</th>
+                            <th style="text-align:center;">Qté</th>
+                            <th style="text-align:right;">
+                                P.U NET
+                                <span style="font-size:.58rem; opacity:.7;
+                                                 display:block; font-weight:400;">
+                                    (Net à Payer / unité)
+                                </span>
+                            </th>
+                            <th style="text-align:right; color:#166634;">NAP</th>
+                            <th style="text-align:right;">MHT</th>
+                            <th style="text-align:right;">TVA ({{ $tauxTva }}%)</th>
+                            <th style="text-align:right;">IR ({{ $tauxIr }}%)</th>
+                            <th style="text-align:right;">TTC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($memoire->lignes->sortBy('numero_ligne') as $ligne)
+                            @php
+                                $qte = max(1, (float) $ligne->quantite);
+                                $napTotal = (float) ($ligne->montant_net ?? $ligne->net_a_payer ?? 0);
+                                $napUnitaire = $napTotal / $qte;
+                                $estModeNap = $tauxIr > 0 && (float) $ligne->prix_unitaire > $napUnitaire;
+                            @endphp
+                            <tr>
+                                <td style="text-align:center;
+                                                   color:var(--color-text-tertiary); font-size:.72rem;">
+                                    {{ $ligne->numero_ligne }}
+                                </td>
+                                <td style="font-weight:500; font-size:.82rem;">
+                                    {{ $ligne->nature_depense }}
+                                    @if($estModeNap)
+                                        <span class="mode-badge mode-nap">NAP</span>
+                                    @else
+                                        <span class="mode-badge mode-pu">P.U</span>
+                                    @endif
+                                </td>
+                                <td style="text-align:center;">
+                                    {{ number_format($ligne->quantite, 0, ',', ' ') }}
+                                </td>
+                                {{-- P.U NET --}}
+                                <td class="num" style="color:#166534; font-weight:600;">
+                                    {{ number_format($napUnitaire, 0, ',', ' ') }}
+                                </td>
+                                {{-- NAP total ligne --}}
+                                <td class="num" style="color:#166534; font-weight:700;">
+                                    {{ number_format($napTotal, 0, ',', ' ') }}
+                                </td>
+                                {{-- MHT --}}
+                                <td class="num">
+                                    {{ number_format((float) $ligne->montant_ht, 0, ',', ' ') }}
+                                </td>
+                                {{-- TVA --}}
+                                <td class="num" style="color:#854d0e;">
+                                    {{ number_format((float) $ligne->montant_tva, 0, ',', ' ') }}
+                                </td>
+                                {{-- IR --}}
+                                <td class="num" style="color:#9f1239;">
+                                    {{ number_format((float) $ligne->montant_ir, 0, ',', ' ') }}
+                                </td>
+                                {{-- TTC --}}
+                                <td class="num" style="color:#1e40af; font-weight:600;">
+                                    {{ number_format((float) $ligne->montant_ttc, 0, ',', ' ') }}
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
 
-                        {{-- ✅ P.U NET = NAP unitaire --}}
-                        <td class="num" style="color:#166534; font-weight:600;">
-                            {{ number_format($napUnitaire, 0, ',', ' ') }}
-                        </td>
-
-                        {{-- ✅ NAP Total juste après P.U NET --}}
-                        <td class="num" style="color:#166534; font-weight:700;">
-                            {{ number_format($napTotal, 0, ',', ' ') }}
-                        </td>
-
-                        <td class="num">{{ number_format($ligne->montant_ht,  0, ',', ' ') }}</td>
-                        <td class="num" style="color:#854d0e;">
-                            {{ number_format($ligne->montant_tva, 0, ',', ' ') }}
-                        </td>
-                        <td class="num" style="color:#9f1239;">
-                            {{ number_format($ligne->montant_ir,  0, ',', ' ') }}
-                        </td>
-                        <td class="num" style="color:#1e40af; font-weight:600;">
-                            {{ number_format($ligne->montant_ttc, 0, ',', ' ') }}
-                        </td>
-                    </tr>
-                    @endforeach
-                </tbody>
-                {{-- Dans le tfoot --}}
-                <tfoot>
-                    <tr>
-                        <td colspan="3" style="font-size:.7rem; color:var(--color-text-secondary);">
-                            TOTAUX ({{ $memoire->lignes->count() }} ligne{{ $memoire->lignes->count() > 1 ? 's' : '' }})
-                        </td>
-                        {{-- P.U NET total = — (pas de somme pertinente) --}}
-                        <td class="num" style="color:var(--color-text-secondary); font-size:.7rem; font-style:italic;">—</td>
-                        {{-- NAP Total --}}
-                        <td class="num" style="color:#166534;">
-                            {{ number_format(
-                $memoire->lignes->sum('montant_net') ?: $memoire->lignes->sum('net_a_payer'),
-                0, ',', ' '
-            ) }}
-                        </td>
-                        <td class="num">
-                            {{ number_format($memoire->lignes->sum('montant_ht'),  0, ',', ' ') }}
-                        </td>
-                        <td class="num" style="color:#854d0e;">
-                            {{ number_format($memoire->lignes->sum('montant_tva'), 0, ',', ' ') }}
-                        </td>
-                        <td class="num" style="color:#9f1239;">
-                            {{ number_format($memoire->lignes->sum('montant_ir'),  0, ',', ' ') }}
-                        </td>
-                        <td class="num" style="color:#1e40af;">
-                            {{ number_format($memoire->lignes->sum('montant_ttc'), 0, ',', ' ') }}
-                        </td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
+                    {{-- ✅ TOTAUX = sommes exactes des colonnes (un seul arrondi final) --}}
+                    <tfoot>
+                        <tr>
+                            <td colspan="3" style="font-size:.7rem; color:var(--color-text-secondary);">
+                                TOTAUX ({{ $memoire->lignes->count() }}
+                                ligne{{ $memoire->lignes->count() > 1 ? 's' : '' }})
+                            </td>
+                            {{-- P.U NET : pas de somme pertinente --}}
+                            <td class="num" style="color:var(--color-text-secondary);
+                                           font-size:.7rem; font-style:italic;">—</td>
+                            {{-- ✅ NAP exact --}}
+                            <td class="num" style="color:#166534;">
+                                {{ number_format($totalNap, 0, ',', ' ') }}
+                            </td>
+                            {{-- ✅ MHT exact --}}
+                            <td class="num">
+                                {{ number_format($totalHt, 0, ',', ' ') }}
+                            </td>
+                            {{-- ✅ TVA exact = somme des TVA brutes --}}
+                            <td class="num" style="color:#854d0e;">
+                                {{ number_format($totalTva, 0, ',', ' ') }}
+                            </td>
+                            {{-- ✅ IR exact = somme des IR bruts --}}
+                            <td class="num" style="color:#9f1239;">
+                                {{ number_format($totalIr, 0, ',', ' ') }}
+                            </td>
+                            {{-- ✅ TTC exact --}}
+                            <td class="num" style="color:#1e40af;">
+                                {{ number_format($totalTtc, 0, ',', ' ') }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
         @endif
 
         {{-- Récapitulatif financier --}}
@@ -396,68 +416,45 @@
                 <div class="total-row t-ht">
                     <span>Montant HT</span>
                     <span class="num-val">
-                        {{ number_format(
-                            $memoire->lignes->sum('montant_ht')
-                            ?: ($memoire->montant_ht ?? 0),
-                            0, ',', ' '
-                        ) }} FCFA
+                        {{ number_format($totalHt, 0, ',', ' ') }} FCFA
                     </span>
                 </div>
 
                 <div class="total-row t-tva">
                     <span>TVA ({{ $tauxTva ?? 19.25 }}%)</span>
                     <span class="num-val">
-                        + {{ number_format(
-                            $memoire->lignes->sum('montant_tva')
-                            ?: ($memoire->montant_tva ?? 0),
-                            0, ',', ' '
-                        ) }} FCFA
+                        + {{ number_format($totalTva, 0, ',', ' ') }} FCFA
                     </span>
                 </div>
 
-                {{-- ✅ TTC = somme des lignes --}}
                 <div class="total-row t-ttc">
                     <span>Montant TTC</span>
                     <span class="num-val">
-                        {{ number_format(
-                            $memoire->lignes->sum('montant_ttc')
-                            ?: ($memoire->montant_ttc ?? 0),
-                            0, ',', ' '
-                        ) }} FCFA
+                        {{ number_format($totalTtc, 0, ',', ' ') }} FCFA
                     </span>
                 </div>
 
                 <div class="total-row t-ir">
                     <span>Retenue IR ({{ $tauxIr ?? 5.5 }}%)</span>
                     <span class="num-val">
-                        − {{ number_format(
-                            $memoire->lignes->sum('montant_ir')
-                            ?: ($memoire->montant_ir ?? 0),
-                            0, ',', ' '
-                        ) }} FCFA
+                        − {{ number_format($totalIr, 0, ',', ' ') }} FCFA
                     </span>
                 </div>
 
-                {{-- ✅ NAP = somme des montant_net des lignes --}}
                 <div class="total-row t-nap">
                     <span>💰 Net à Payer (NAP)</span>
                     <span class="num-val">
-                        {{ number_format(
-                            $memoire->lignes->sum('montant_net')
-                            ?: ($memoire->lignes->sum('net_a_payer')
-                            ?: ($memoire->montant_net ?? 0)),
-                            0, ',', ' '
-                        ) }} FCFA
+                        {{ number_format($totalNap, 0, ',', ' ') }} FCFA
                     </span>
                 </div>
 
                 @if($memoire->montant_lettres)
-                <div style="margin-top:.5rem; padding:.4rem .7rem;
-                        background:var(--color-background-tertiary);
-                        border-radius:.4rem; font-size:.72rem;
-                        color:var(--color-text-secondary); font-style:italic;">
-                    {{ $memoire->montant_lettres }}
-                </div>
+                    <div style="margin-top:.5rem; padding:.4rem .7rem;
+                                background:var(--color-background-tertiary);
+                                border-radius:.4rem; font-size:.72rem;
+                                color:var(--color-text-secondary); font-style:italic;">
+                        {{ $memoire->montant_lettres }}
+                    </div>
                 @endif
             </div>
         </div>

@@ -239,14 +239,17 @@ class MemoireDepense extends Model
             $this->load('lignes');
         }
 
-        $this->montant_ht  = $this->lignes->sum('montant_ht');
-        $this->montant_tva = $this->lignes->sum('montant_tva');
-        $this->montant_ir  = $this->lignes->sum('montant_ir');
-        $this->montant_ttc = $this->lignes->sum('montant_ttc');
-        $this->montant_net = $this->lignes->sum('net_a_payer');
+        // ✅ Somme brute sans arrondi intermédiaire
+        $this->montant_ht  = $this->lignes->sum(fn($l) => (float)($l->montant_ht  ?? 0));
+        $this->montant_tva = $this->lignes->sum(fn($l) => (float)($l->montant_tva ?? 0));
+        $this->montant_ir  = $this->lignes->sum(fn($l) => (float)($l->montant_ir  ?? 0));
+        $this->montant_ttc = $this->lignes->sum(fn($l) => (float)($l->montant_ttc ?? 0));
+        $this->montant_net = $this->lignes->sum(
+            fn($l) => (float)($l->montant_net ?? $l->net_a_payer ?? 0)
+        );
+
         $this->montant_lettres = NombreEnLettres::convertir($this->montant_ttc);
     }
-
     public function recalculerTotaux(): void
     {
         $this->calculerTotaux();

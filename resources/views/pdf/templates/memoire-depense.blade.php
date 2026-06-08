@@ -44,6 +44,23 @@ $montantLettres = $donnees['montant_lettres']
 
 // ── Taux depuis les lignes ────────────────────────────────
 $premiereLigne = $lignes->first();
+
+// ✅ Totaux = somme des valeurs telles qu'affichées (number_format 0 décimale)
+// → même arrondi que dans chaque cellule du tableau
+$totalNap = 0;
+$totalHt  = 0;
+$totalTva = 0;
+$totalIr  = 0;
+$totalTtc = 0;
+
+foreach ($lignes as $l) {
+    $totalNap = $lignes->sum(fn($l) => (float)($l->montant_net ?? $l->net_a_payer ?? 0));
+$totalHt  = $lignes->sum(fn($l) => (float)($l->montant_ht  ?? 0));
+$totalTva = $lignes->sum(fn($l) => (float)($l->montant_tva ?? 0));
+$totalIr  = $lignes->sum(fn($l) => (float)($l->montant_ir  ?? 0));
+$totalTtc = $lignes->sum(fn($l) => (float)($l->montant_ttc ?? 0));
+}
+
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
 $tauxIrVal = (float) ($premiereLigne?->taux_ir ?? 5.5);
 
@@ -415,46 +432,21 @@ $dateCreation = \Carbon\Carbon::parse($memoire->created_at)
     </tbody>
 
     @if($loop->last)
-    <tfoot>
-        <tr class="total-row">
-            <td colspan="2" style="text-align:right; font-size:9pt;
-                                text-transform:uppercase;">
-                TOTAL
-            </td>
-            <td></td>
-            <td class="num">
-                {{ number_format(
-                            $lignes->sum('montant_net') ?: $lignes->sum('net_a_payer'),
-                            0, ',', ' '
-                        ) }}
-            </td>
-            <td class="num">
-                {{ number_format(
-                            $memoire->montant_ht ?? $lignes->sum('montant_ht'),
-                            0, ',', ' '
-                        ) }}
-            </td>
-            <td class="num">
-                {{ number_format(
-                            $memoire->montant_tva ?? $lignes->sum('montant_tva'),
-                            0, ',', ' '
-                        ) }}
-            </td>
-            <td class="num">
-                {{ number_format(
-                            $memoire->montant_ir ?? $lignes->sum('montant_ir'),
-                            0, ',', ' '
-                        ) }}
-            </td>
-            <td class="num">
-                {{ number_format(
-                            $lignes->sum('montant_ttc') ?: ($memoire->montant_ttc ?? 0),
-                            0, ',', ' '
-                        ) }}
-            </td>
-        </tr>
-    </tfoot>
-    @endif
+<tfoot>
+    <tr class="total-row">
+        <td colspan="2" style="text-align:right; font-size:9pt;
+                               text-transform:uppercase;">
+            TOTAL
+        </td>
+        <td></td>
+        <td class="num">{{ number_format($totalNap, 0, ',', ' ') }}</td>
+        <td class="num">{{ number_format($totalHt,  0, ',', ' ') }}</td>
+        <td class="num">{{ number_format($totalTva, 0, ',', ' ') }}</td>
+        <td class="num">{{ number_format($totalIr,  0, ',', ' ') }}</td>
+        <td class="num">{{ number_format($totalTtc, 0, ',', ' ') }}</td>
+    </tr>
+</tfoot>
+@endif
 </table>
 
 @if($loop->last)

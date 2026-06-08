@@ -1,10 +1,20 @@
 @php
     $lignes = $depense->lignes;
-    $totalHt = $lignes->sum('montant_ht');
-    $totalTva = $lignes->sum('montant_tva');
-    $totalTtc = $lignes->sum('montant_ttc');
-    $totalIr = $lignes->sum('montant_ir');
-    $totalNap = $lignes->sum('montant_net');
+
+    // ✅ Totaux = somme des valeurs déjà arrondies (comme affichées dans chaque colonne)
+    $totalHt = 0;
+    $totalTva = 0;
+    $totalTtc = 0;
+    $totalIr = 0;
+    $totalNap = 0;
+
+    foreach ($lignes as $ligne) {
+        $totalHt += (int) round((float) ($ligne->montant_ht ?? 0), 0);
+        $totalTva += (int) round((float) ($ligne->montant_tva ?? 0), 0);
+        $totalTtc += (int) round((float) ($ligne->montant_ttc ?? 0), 0);
+        $totalIr += (int) round((float) ($ligne->montant_ir ?? 0), 0);
+        $totalNap += (int) round((float) ($ligne->montant_net ?? 0), 0);
+    }
 
     $statut = match ($depense->statut) {
         'brouillon' => ['label' => 'Brouillon', 'color' => '#6b7280'],
@@ -176,14 +186,14 @@
                         {{ number_format($ligne->montant_ir, 0, ',', ' ') }}
                     </td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right;
-                                            font-weight:bold; color:#047857;">
+                                                font-weight:bold; color:#047857;">
                         {{ number_format($ligne->montant_net, 0, ',', ' ') }}
                     </td>
                 </tr>
             @empty
                 <tr>
                     <td colspan="10" style="border:1px solid #cbd5e1; padding:8px;
-                                                        text-align:center; color:#94a3b8;">
+                                                            text-align:center; color:#94a3b8;">
                         Aucune ligne de dépense
                     </td>
                 </tr>
@@ -196,33 +206,33 @@
         @endphp
 
         @if($depasse)
-                    <div style="
-                background:#fef2f2;
-                border:2px solid #ef4444;
-                border-radius:6px;
-                padding:10px 14px;
-                margin:10px 0;
-                color:#991b1b;
-                font-weight:bold;
-                font-size:9pt;
-            ">
-                        🚫 ATTENTION : Le montant TTC ({{ number_format($totalTtc, 0, ',', ' ') }} FCFA)
-                        dépasse le seuil achat direct ({{ number_format($seuil, 0, ',', ' ') }} FCFA).
-                        Cet achat ne peut pas être validé — utilisez un BCR/BCM.
-                    </div>
+            <div style="
+                    background:#fef2f2;
+                    border:2px solid #ef4444;
+                    border-radius:6px;
+                    padding:10px 14px;
+                    margin:10px 0;
+                    color:#991b1b;
+                    font-weight:bold;
+                    font-size:9pt;
+                ">
+                🚫 ATTENTION : Le montant TTC ({{ number_format($totalTtc, 0, ',', ' ') }} FCFA)
+                dépasse le seuil achat direct ({{ number_format($seuil, 0, ',', ' ') }} FCFA).
+                Cet achat ne peut pas être validé — utilisez un BCR/BCM.
+            </div>
         @else
-                    <div style="
-                background:#f0fdf4;
-                border:1px solid #86efac;
-                border-radius:6px;
-                padding:8px 14px;
-                margin:10px 0;
-                color:#166534;
-                font-size:8.5pt;
-            ">
-                        ✅ Montant conforme au seuil achat direct
-                        (&lt; {{ number_format($seuil, 0, ',', ' ') }} FCFA TTC)
-                    </div>
+            <div style="
+                    background:#f0fdf4;
+                    border:1px solid #86efac;
+                    border-radius:6px;
+                    padding:8px 14px;
+                    margin:10px 0;
+                    color:#166534;
+                    font-size:8.5pt;
+                ">
+                ✅ Montant conforme au seuil achat direct
+                (&lt; {{ number_format($seuil, 0, ',', ' ') }} FCFA TTC)
+            </div>
         @endif
 
         {{-- Ligne totaux --}}
