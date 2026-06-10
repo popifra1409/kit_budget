@@ -1,8 +1,8 @@
 <x-filament-panels::page>
     @php
-    $stats = $this->getStats();
-    $regies = $stats['regies'];
-    $journal = $this->getLivreJournal();
+        $stats = $this->getStats();
+        $regies = $stats['regies'];
+        $journal = $this->getLivreJournal();
     @endphp
 
     {{-- ══ STATISTIQUES GLOBALES ══════════════════════════════════ --}}
@@ -40,7 +40,8 @@
             </div>
         </div>
 
-        <div class="rounded-xl p-4 shadow
+        <div
+            class="rounded-xl p-4 shadow
             bg-{{ $stats['taux_moyen'] >= 90 ? 'red' : ($stats['taux_moyen'] >= 70 ? 'yellow' : 'emerald') }}-50
             dark:bg-{{ $stats['taux_moyen'] >= 90 ? 'red' : ($stats['taux_moyen'] >= 70 ? 'yellow' : 'emerald') }}-900/30
             border border-{{ $stats['taux_moyen'] >= 90 ? 'red' : ($stats['taux_moyen'] >= 70 ? 'yellow' : 'emerald') }}-200
@@ -60,8 +61,7 @@
         border border-gray-200 dark:border-gray-700">
 
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 class="text-base font-semibold
-                text-gray-800 dark:text-gray-200">
+            <h2 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                 📊 Situation par Régie / Menu Dépense
             </h2>
         </div>
@@ -83,72 +83,78 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($regies as $regie)
-                    @php
-                    $taux = $regie->taux_consommation;
-                    $color = $taux >= 90 ? 'red' : ($taux >= 70 ? 'yellow' : 'green');
-                    @endphp
-                    <tr class="border-t border-gray-100 dark:border-gray-800
-                        hover:bg-gray-50 dark:hover:bg-gray-800/50
-                        text-gray-800 dark:text-gray-200">
-                        <td class="px-4 py-3">
-                            <div class="font-semibold">{{ $regie->numero }}</div>
-                            <div class="text-xs text-gray-500 dark:text-gray-400">
-                                {{ $regie->libelle }}
-                            </div>
-                        </td>
-                        <td class="px-4 py-3">
-                            <span class="px-2 py-1 rounded text-xs font-semibold
-                                {{ $regie->type === 'rav'
-                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-                                }}">
-                                {{ $regie->type === 'rav' ? 'RAV' : 'MD' }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-sm">
-                            {{ $regie->responsable?->name ?? '—' }}
-                        </td>
-                        <td class="px-4 py-3 text-right font-mono">
-                            {{ number_format($regie->montant_alloue, 0, ',', ' ') }}
-                        </td>
-                        <td class="px-4 py-3 text-right font-mono
-                            text-yellow-600 dark:text-yellow-400">
-                            {{ number_format($regie->montant_decaisse, 0, ',', ' ') }}
-                        </td>
-                        <td class="px-4 py-3 text-right font-mono
-                            text-red-600 dark:text-red-400">
-                            {{ number_format($regie->montant_depense, 0, ',', ' ') }}
-                        </td>
-                        <td class="px-4 py-3 text-right font-mono font-bold
-                            {{ $regie->montant_disponible < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-green-600 dark:text-green-400'
-                            }}">
-                            {{ number_format($regie->montant_disponible, 0, ',', ' ') }}
-                        </td>
-                        <td class="px-4 py-3">
-                            <div class="flex items-center gap-2">
-                                <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                                    <div class="h-2 rounded-full
-                                        bg-{{ $color }}-500 dark:bg-{{ $color }}-400"
-                                        style="width: {{ min(100, $taux) }}%">
-                                    </div>
-                                </div>
-                                <span class="text-xs font-semibold w-12 text-right
-                                    text-{{ $color }}-600 dark:text-{{ $color }}-400">
-                                    {{ $taux }}%
-                                </span>
-                            </div>
-                        </td>
-                    </tr>
+                    @forelse($regies as $index => $regie)
+                                    @php
+                                        // ✅ Compatibilité array ET modèle Eloquent
+                                        $r = is_array($regie) ? (object) $regie : $regie;
+                                        $taux = $r->taux_consommation ?? 0;
+                                        $color = $taux >= 90 ? 'red' : ($taux >= 70 ? 'yellow' : 'green');
+                                        // ✅ Clé unique pour Livewire
+                                        $key = is_array($regie)
+                                            ? ($regie['id'] ?? $index)
+                                            : ($regie->id ?? $index);
+                                    @endphp
+                                    {{-- ✅ wire:key explicite — évite getKey() sur array --}}
+                                    <tr wire:key="regie-{{ $key }}" class="border-t border-gray-100 dark:border-gray-800
+                                        hover:bg-gray-50 dark:hover:bg-gray-800/50
+                                        text-gray-800 dark:text-gray-200">
+                                        <td class="px-4 py-3">
+                                            <div class="font-semibold">{{ $r->numero }}</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                                {{ $r->libelle }}
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <span class="px-2 py-1 rounded text-xs font-semibold
+                                                {{ ($r->type ?? '') === 'rav'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                        : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                                                }}">
+                                                {{ ($r->type ?? '') === 'rav' ? 'RAV' : 'MD' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 text-sm">
+                                            {{ $r->responsable?->name ?? '—' }}
+                                        </td>
+                                        <td class="px-4 py-3 text-right font-mono">
+                                            {{ number_format($r->montant_alloue ?? 0, 0, ',', ' ') }}
+                                        </td>
+                                        <td class="px-4 py-3 text-right font-mono
+                                            text-yellow-600 dark:text-yellow-400">
+                                            {{ number_format($r->montant_decaisse ?? 0, 0, ',', ' ') }}
+                                        </td>
+                                        <td class="px-4 py-3 text-right font-mono
+                                            text-red-600 dark:text-red-400">
+                                            {{ number_format($r->montant_depense ?? 0, 0, ',', ' ') }}
+                                        </td>
+                                        <td class="px-4 py-3 text-right font-mono font-bold
+                                            {{ ($r->montant_disponible ?? 0) < 0
+                        ? 'text-red-600 dark:text-red-400'
+                        : 'text-green-600 dark:text-green-400'
+                                            }}">
+                                            {{ number_format($r->montant_disponible ?? 0, 0, ',', ' ') }}
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <div class="flex items-center gap-2">
+                                                <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                                    <div class="h-2 rounded-full
+                                                        bg-{{ $color }}-500 dark:bg-{{ $color }}-400"
+                                                        style="width: {{ min(100, $taux) }}%">
+                                                    </div>
+                                                </div>
+                                                <span class="text-xs font-semibold w-12 text-right
+                                                    text-{{ $color }}-600 dark:text-{{ $color }}-400">
+                                                    {{ $taux }}%
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
                     @empty
-                    <tr>
-                        <td colspan="8"
-                            class="px-4 py-8 text-center text-gray-400 dark:text-gray-600">
-                            Aucune régie active
-                        </td>
-                    </tr>
+                        <tr wire:key="regie-empty">
+                            <td colspan="8" class="px-4 py-8 text-center text-gray-400 dark:text-gray-600">
+                                Aucune régie active
+                            </td>
+                        </tr>
                     @endforelse
                 </tbody>
                 <tfoot>
@@ -185,8 +191,7 @@
 
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700
             flex items-center justify-between">
-            <h2 class="text-base font-semibold
-                text-gray-800 dark:text-gray-200">
+            <h2 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                 📒 Livre Journal des Dépenses
             </h2>
             <span class="text-sm text-gray-500 dark:text-gray-400">
@@ -217,83 +222,83 @@
                 </thead>
                 <tbody>
                     @php $totalMht = $totalTva = $totalTtc = $totalIr = $totalNap = 0; @endphp
-                    @forelse($journal as $op)
-                    @php
-                    $totalMht += $op['montant_ht'];
-                    $totalTva += $op['montant_tva'];
-                    $totalTtc += $op['montant_ttc'];
-                    $totalIr += $op['montant_ir'];
-                    $totalNap += $op['net_a_payer'];
-                    @endphp
-                    <tr class="border-t border-gray-100 dark:border-gray-800
-                        hover:bg-gray-50 dark:hover:bg-gray-800/50
-                        text-gray-800 dark:text-gray-200">
-                        <td class="px-3 py-2 whitespace-nowrap">
-                            {{ \Carbon\Carbon::parse($op['date'])->format('d/m/Y') }}
-                        </td>
-                        <td class="px-3 py-2 font-mono text-xs font-semibold">
-                            {{ $op['numero'] }}
-                        </td>
-                        <td class="px-3 py-2">
-                            <span class="px-2 py-0.5 rounded text-xs
-                                {{ $op['type'] === 'Achat Direct'
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                                }}">
-                                {{ $op['type'] }}
-                            </span>
-                        </td>
-                        <td class="px-3 py-2 text-xs">{{ $op['regie'] }}</td>
-                        <td class="px-3 py-2">
-                            <span class="px-2 py-0.5 rounded text-xs
-                                bg-gray-100 dark:bg-gray-700
-                                text-gray-700 dark:text-gray-300">
-                                {{ $op['nomenclature'] ?? '—' }}
-                            </span>
-                        </td>
-                        <td class="px-3 py-2 text-xs">
-                            {{ $op['fournisseur'] ?? '—' }}
-                        </td>
-                        <td class="px-3 py-2 text-xs max-w-32 truncate"
-                            title="{{ $op['objet'] }}">
-                            {{ $op['objet'] }}
-                        </td>
-                        <td class="px-3 py-2 text-right font-mono text-xs">
-                            {{ number_format($op['montant_ht'], 0, ',', ' ') }}
-                        </td>
-                        <td class="px-3 py-2 text-right font-mono text-xs">
-                            {{ number_format($op['montant_tva'], 0, ',', ' ') }}
-                        </td>
-                        <td class="px-3 py-2 text-right font-mono text-xs font-semibold">
-                            {{ number_format($op['montant_ttc'], 0, ',', ' ') }}
-                        </td>
-                        <td class="px-3 py-2 text-right font-mono text-xs
-                            text-red-600 dark:text-red-400">
-                            {{ number_format($op['montant_ir'], 0, ',', ' ') }}
-                        </td>
-                        <td class="px-3 py-2 text-right font-mono text-xs font-bold
-                            text-green-600 dark:text-green-400">
-                            {{ number_format($op['net_a_payer'], 0, ',', ' ') }}
-                        </td>
-                        <td class="px-3 py-2 text-center">
-                            <span class="px-2 py-0.5 rounded text-xs
-                                {{ match($op['statut']) {
-                                    'valide' => 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
-                                    'paye', 'livre' => 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-                                    default => 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-                                } }}">
-                                {{ ucfirst($op['statut']) }}
-                            </span>
-                        </td>
-                    </tr>
+
+                    @forelse($journal as $jIndex => $op)
+                                        @php
+                                            $totalMht += $op['montant_ht'] ?? 0;
+                                            $totalTva += $op['montant_tva'] ?? 0;
+                                            $totalTtc += $op['montant_ttc'] ?? 0;
+                                            $totalIr += $op['montant_ir'] ?? 0;
+                                            $totalNap += $op['net_a_payer'] ?? 0;
+                                        @endphp
+                                        {{-- ✅ wire:key explicite sur chaque ligne journal --}}
+                                        <tr wire:key="journal-{{ $jIndex }}-{{ $op['numero'] ?? $jIndex }}" class="border-t border-gray-100 dark:border-gray-800
+                                            hover:bg-gray-50 dark:hover:bg-gray-800/50
+                                            text-gray-800 dark:text-gray-200">
+                                            <td class="px-3 py-2 whitespace-nowrap">
+                                                {{ \Carbon\Carbon::parse($op['date'])->format('d/m/Y') }}
+                                            </td>
+                                            <td class="px-3 py-2 font-mono text-xs font-semibold">
+                                                {{ $op['numero'] }}
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                <span class="px-2 py-0.5 rounded text-xs
+                                                    {{ ($op['type'] ?? '') === 'Achat Direct'
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                                    }}">
+                                                    {{ $op['type'] ?? '—' }}
+                                                </span>
+                                            </td>
+                                            <td class="px-3 py-2 text-xs">{{ $op['regie'] ?? '—' }}</td>
+                                            <td class="px-3 py-2">
+                                                <span class="px-2 py-0.5 rounded text-xs
+                                                    bg-gray-100 dark:bg-gray-700
+                                                    text-gray-700 dark:text-gray-300">
+                                                    {{ $op['nomenclature'] ?? '—' }}
+                                                </span>
+                                            </td>
+                                            <td class="px-3 py-2 text-xs">
+                                                {{ $op['fournisseur'] ?? '—' }}
+                                            </td>
+                                            <td class="px-3 py-2 text-xs max-w-32 truncate" title="{{ $op['objet'] ?? '' }}">
+                                                {{ $op['objet'] ?? '—' }}
+                                            </td>
+                                            <td class="px-3 py-2 text-right font-mono text-xs">
+                                                {{ number_format($op['montant_ht'] ?? 0, 0, ',', ' ') }}
+                                            </td>
+                                            <td class="px-3 py-2 text-right font-mono text-xs">
+                                                {{ number_format($op['montant_tva'] ?? 0, 0, ',', ' ') }}
+                                            </td>
+                                            <td class="px-3 py-2 text-right font-mono text-xs font-semibold">
+                                                {{ number_format($op['montant_ttc'] ?? 0, 0, ',', ' ') }}
+                                            </td>
+                                            <td class="px-3 py-2 text-right font-mono text-xs
+                                                text-red-600 dark:text-red-400">
+                                                {{ number_format($op['montant_ir'] ?? 0, 0, ',', ' ') }}
+                                            </td>
+                                            <td class="px-3 py-2 text-right font-mono text-xs font-bold
+                                                text-green-600 dark:text-green-400">
+                                                {{ number_format($op['net_a_payer'] ?? 0, 0, ',', ' ') }}
+                                            </td>
+                                            <td class="px-3 py-2 text-center">
+                                                <span class="px-2 py-0.5 rounded text-xs
+                                                    {{ match ($op['statut'] ?? '') {
+                            'valide' => 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+                            'paye', 'livre' => 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+                            default => 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+                        } }}">
+                                                    {{ ucfirst($op['statut'] ?? '') }}
+                                                </span>
+                                            </td>
+                                        </tr>
                     @empty
-                    <tr>
-                        <td colspan="13"
-                            class="px-4 py-8 text-center
-                            text-gray-400 dark:text-gray-600">
-                            Aucune dépense enregistrée
-                        </td>
-                    </tr>
+                        <tr wire:key="journal-empty">
+                            <td colspan="13" class="px-4 py-8 text-center
+                                text-gray-400 dark:text-gray-600">
+                                Aucune dépense enregistrée
+                            </td>
+                        </tr>
                     @endforelse
                 </tbody>
                 <tfoot>

@@ -46,7 +46,6 @@ $montantLettres = $donnees['montant_lettres']
 $premiereLigne = $lignes->first();
 
 // ✅ Totaux = somme des valeurs telles qu'affichées (number_format 0 décimale)
-// → même arrondi que dans chaque cellule du tableau
 $totalNap = 0;
 $totalHt  = 0;
 $totalTva = 0;
@@ -54,14 +53,15 @@ $totalIr  = 0;
 $totalTtc = 0;
 
 foreach ($lignes as $l) {
-    $totalNap += (int) number_format(
-        (float)($l->montant_net ?? $l->net_a_payer ?? 0), 0, '.', ''
-    );
     $totalHt  += (int) number_format((float)($l->montant_ht  ?? 0), 0, '.', '');
     $totalTva += (int) number_format((float)($l->montant_tva ?? 0), 0, '.', '');
     $totalIr  += (int) number_format((float)($l->montant_ir  ?? 0), 0, '.', '');
     $totalTtc += (int) number_format((float)($l->montant_ttc ?? 0), 0, '.', '');
 }
+
+// ✅ NAP total = HT arrondi - IR arrondi (comme pour le BCA)
+// évite la majoration +1 due aux arrondis intermédiaires
+$totalNap = $totalHt - $totalIr;
 
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
 $tauxIrVal = (float) ($premiereLigne?->taux_ir ?? 5.5);

@@ -17,6 +17,11 @@ $montantTva = (float) ($bonCommande->montant_tva ?? 0);
 $montantIr  = (float) ($bonCommande->montant_ir  ?? 0);
 $montantTtc = (float) ($bonCommande->montant_ttc ?? 0);
 
+// ✅ NET A PAYER = MHT arrondi - IR arrondi (valeurs telles qu'affichées)
+$montantHtArrondi = (int) number_format($montantHt, 0, '.', '');
+$montantIrArrondi = (int) number_format($montantIr, 0, '.', '');
+$netAPayer        = $montantHtArrondi - $montantIrArrondi;
+
 // ✅ Taux TVA
 $tauxTva = 0;
 if (isset($bonCommande->taux_tva) && $bonCommande->taux_tva > 0) {
@@ -443,14 +448,11 @@ $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
                 </td>
             </tr>
 
-            {{-- NET A PAYER --}}
+            {{-- ✅ NET A PAYER = MHT arrondi - IR arrondi --}}
             <tr style="border-top:1px solid #000;">
                 <td style="padding:3px 8px; font-size:9pt; font-weight:bold;">NET A PAYER</td>
                 <td style="padding:3px 8px; font-size:9pt; text-align:right; font-weight:bold;">
-                    {{ number_format(
-                        $bonCommande->net_a_percevoir ?? ($montantTtc - $montantIr),
-                        0, ',', ' '
-                    ) }} F
+                    {{ number_format($netAPayer, 0, ',', ' ') }} F
                 </td>
             </tr>
 

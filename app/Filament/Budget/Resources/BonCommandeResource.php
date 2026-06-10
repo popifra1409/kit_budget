@@ -1059,48 +1059,41 @@ class BonCommandeResource extends Resource
      */
     protected static function recalculerLigne(callable $set, callable $get): void
     {
-        $quantite = (float) ($get('quantite') ?? 0);
+        $quantite       = (float) ($get('quantite')        ?? 0);
         $prixUnitaireHT = (float) ($get('prix_unitaire_ht') ?? 0);
-        $tauxTVA = (float) ($get('taux_tva') ?? 19.25);
-        $tauxIR = (float) ($get('taux_ir') ?? 0);
+        $tauxTVA        = (float) ($get('taux_tva')         ?? 19.25);
+        $tauxIR         = (float) ($get('taux_ir')          ?? 0);
 
-        // 1. Calcul du montant HT
-        $montantHT = $quantite * $prixUnitaireHT;
+        // 1. MHT
+        $montantHT  = $quantite * $prixUnitaireHT;
         $set('montant_ht', round($montantHT, 2));
 
-        // 2. Calcul du montant TVA
+        // 2. TVA
         $montantTVA = ($montantHT * $tauxTVA) / 100;
         $set('montant_tva', round($montantTVA, 2));
 
-        // 3. Calcul du montant TTC
+        // 3. TTC
         $montantTTC = $montantHT + $montantTVA;
         $set('montant_ttc', round($montantTTC, 2));
 
-        // 4. Calcul de l'IR
+        // 4. IR
         $montantIR = 0;
-
-        // ✅ Vérifier d'abord si IR est exonéré au niveau du BC
         $exonereIR = $get('../../exonere_ir') ?? false;
 
         if ($exonereIR) {
-            // Si exonéré au niveau du BC, IR = 0
             $montantIR = 0;
             $set('taux_ir', 0);
         } elseif ($tauxIR > 0) {
-            // IR manuel spécifié
             $montantIR = ($montantHT * $tauxIR) / 100;
         } else {
-            // IR automatique basé sur le type d'engagement et le régime fiscal
             $typeEngagementId = $get('../../type_engagement_id');
-            $fournisseurId = $get('../../fournisseur_id');
-
+            $fournisseurId    = $get('../../fournisseur_id');
             if ($typeEngagementId && $fournisseurId && $montantHT > 0) {
                 $typeEngagement = \App\Models\TypeEngagement::find($typeEngagementId);
-                $fournisseur = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
-
+                $fournisseur    = \App\Models\Fournisseur::with('regimeFiscal')->find($fournisseurId);
                 if ($typeEngagement && $fournisseur && $fournisseur->regimeFiscal) {
                     $tauxIRAuto = $typeEngagement->calculerTauxIR($fournisseur->regimeFiscal);
-                    $montantIR = ($montantHT * $tauxIRAuto) / 100;
+                    $montantIR  = ($montantHT * $tauxIRAuto) / 100;
                     $set('taux_ir', $tauxIRAuto);
                 }
             }
@@ -1108,15 +1101,17 @@ class BonCommandeResource extends Resource
 
         $set('montant_ir', round($montantIR, 2));
 
-        // 5. Calcul du net à payer
-        $netAPayer = $montantHT - $montantIR;
-        $set('net_a_payer', round($netAPayer, 2));
+        // ✅ 5. NET A PAYER = MHT arrondi - IR arrondi (valeurs telles qu'affichées)
+        $montantHTArrondi = (int) number_format($montantHT,  0, '.', '');
+        $montantIRArrondi = (int) number_format($montantIR,  0, '.', '');
+        $netAPayer        = $montantHTArrondi - $montantIRArrondi;
+        $set('net_a_payer', $netAPayer);
 
-        // 6. Mettre à jour quantite_restante
+        // 6. Quantité restante
         $quantiteLivree = (float) ($get('quantite_livree') ?? 0);
         $set('quantite_restante', max(0, $quantite - $quantiteLivree));
 
-        // 7. Déclencher le recalcul des totaux du BC
+        // 7. Recalcul totaux BC
         $lignes = $get('../../lignes') ?? [];
         static::recalculerTotaux($lignes, function ($key, $value) use ($set) {
             $set("../../{$key}", $value);
@@ -1128,34 +1123,30 @@ class BonCommandeResource extends Resource
      */
     protected static function recalculerTotaux(?array $lignes, callable $set): void
     {
-        if (!$lignes) {
-            return;
-        }
+        if (!$lignes) return;
 
-        $totalHT = 0;
-        $totalTVA = 0;
-        $totalIR = 0;
-        $totalTTC = 0;
+        $totalHT        = 0;
+        $totalTVA       = 0;
+        $totalIR        = 0;
+        $totalTTC       = 0;
         $totalNetAPayer = 0;
 
+        // ✅ Sommer les valeurs déjà arrondies (comme affichées dans chaque ligne)
         foreach ($lignes as $ligne) {
-            $totalHT += (float) ($ligne['montant_ht'] ?? 0);
-            $totalTVA += (float) ($ligne['montant_tva'] ?? 0);
-            $totalIR += (float) ($ligne['montant_ir'] ?? 0);
-            $totalTTC += (float) ($ligne['montant_ttc'] ?? 0);
-            $totalNetAPayer += (float) ($ligne['net_a_payer'] ?? 0);
+            $totalHT  += (int) number_format((float)($ligne['montant_ht']  ?? 0), 0, '.', '');
+            $totalTVA += (int) number_format((float)($ligne['montant_tva'] ?? 0), 0, '.', '');
+            $totalIR  += (int) number_format((float)($ligne['montant_ir']  ?? 0), 0, '.', '');
+            $totalTTC += (int) number_format((float)($ligne['montant_ttc'] ?? 0), 0, '.', '');
         }
 
-        // Mise à jour des totaux du BC
-        $set('montant_ht', round($totalHT, 2));
-        $set('montant_tva', round($totalTVA, 2));
-        $set('montant_ir', round($totalIR, 2));
-        $set('montant_ttc', round($totalTTC, 2));
+        // ✅ NET A PAYER = Total HT arrondi - Total IR arrondi
+        $totalNetAPayer = $totalHT - $totalIR;
 
-        // Net à payer du BC = somme des nets à payer des lignes
-        // OU si vous préférez : HT total - IR total
-        $set('net_a_payer', round($totalNetAPayer, 2));
-        // Alternative : $set('net_a_payer', round($totalHT - $totalIR, 2));
+        $set('montant_ht',  $totalHT);
+        $set('montant_tva', $totalTVA);
+        $set('montant_ir',  $totalIR);
+        $set('montant_ttc', $totalTTC);
+        $set('net_a_payer', $totalNetAPayer);
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
