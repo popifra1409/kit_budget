@@ -120,9 +120,9 @@ class ViewEngagement extends ViewRecord
                         ->label('')
                         ->content(new \Illuminate\Support\HtmlString(
                             '<div style="background:#fef9c3;border:1px solid #ca8a04;border-radius:.5rem;padding:.75rem;">
-                            ⚠️ <strong>Avenant</strong> — Rectification d\'un engagement définitif.<br>
-                            La ligne budgétaire et les ordonnances seront mises à jour selon vos corrections.
-                            </div>'
+                ⚠️ <strong>Avenant</strong> — Rectification d\'un engagement définitif.<br>
+                La ligne budgétaire et les ordonnances seront mises à jour selon vos corrections.
+                </div>'
                         ))
                         ->columnSpanFull(),
 
@@ -138,6 +138,18 @@ class ViewEngagement extends ViewRecord
                         ])
                         ->required()->live()
                         ->helperText('Choisissez ce qui doit être corrigé'),
+
+                    // ✅ Champ objet
+                    Forms\Components\Textarea::make('nouvel_objet')
+                        ->label('Nouvel objet')
+                        ->rows(2)
+                        ->placeholder('Nouveau libellé de l\'objet...')
+                        ->helperText(fn() => 'Actuel : ' . ($this->record->objet ?? '—'))
+                        ->visible(
+                            fn(Get $get) =>
+                            in_array($get('type_correction'), ['objet', 'complet'])
+                        )
+                        ->columnSpanFull(),
 
                     Forms\Components\Section::make('Nouveaux montants du document')
                         ->schema([
@@ -293,7 +305,9 @@ class ViewEngagement extends ViewRecord
                             fn(Get $get) =>
                             in_array($get('type_correction'), ['nomenclature', 'mixte', 'complet'])
                         )
-                        ->helperText(fn() => 'Actuelle : ' . ($this->record->nomenclaturePrincipale?->code ?? '—')),
+                        ->helperText(
+                            fn() => 'Actuelle : ' . ($this->record->nomenclaturePrincipale?->code ?? '—')
+                        ),
 
                     Forms\Components\Section::make('Ordonnance impôt existante')
                         ->schema([
@@ -303,13 +317,16 @@ class ViewEngagement extends ViewRecord
                                     $op = $this->record->ordonnancesPaiement()
                                         ->where('type_ordonnance', 'impot')->first();
                                     if (!$op) return new \Illuminate\Support\HtmlString(
-                                        '<span style="color:#6b7280;">Aucune OP impôt associée.</span>'
+                                        '<span style="color:#6b7280;">
+                                Aucune OP impôt — sera créée si des taxes sont renseignées.
+                            </span>'
                                     );
                                     return new \Illuminate\Support\HtmlString(
-                                        "<div style='background:#f0fdf4;border:1px solid #86efac;border-radius:.375rem;padding:.5rem .75rem;'>
-                                        OP Impôt : <strong>{$op->numero}</strong> — " .
+                                        "<div style='background:#f0fdf4;border:1px solid #86efac;
+                                border-radius:.375rem;padding:.5rem .75rem;'>
+                                OP Impôt : <strong>{$op->numero}</strong> — " .
                                             number_format($op->montant_net, 0, ',', ' ') . " FCFA
-                                        </div>"
+                            </div>"
                                     );
                                 })
                                 ->columnSpanFull(),
@@ -317,15 +334,16 @@ class ViewEngagement extends ViewRecord
                         ->visible(
                             fn(Get $get) =>
                             in_array($get('type_correction'), ['taxes', 'complet'])
-                                && $this->record->ordonnancesPaiement()
-                                ->where('type_ordonnance', 'impot')->exists()
                         )
                         ->collapsed(false),
 
                     Forms\Components\Toggle::make('corriger_ordonnances')
                         ->label('Mettre à jour les ordonnances de paiement existantes')
                         ->default(true)
-                        ->helperText('Recalcule les montants des OP Standard et OP Impôt')
+                        ->helperText(
+                            'Recalcule les montants des OP Standard et OP Impôt '
+                                . '(ou crée l\'OPT si absente)'
+                        )
                         ->visible(fn() => $this->record->ordonnancesPaiement()->exists())
                         ->inline(false),
 
@@ -338,10 +356,11 @@ class ViewEngagement extends ViewRecord
                 ->modalWidth('2xl')
                 ->action(function (array $data) {
                     try {
-                        $engagement     = $this->record;
-                        $typeCorrection = $data['type_correction'];
+                        $engagement      = $this->record;
+                        $typeCorrection  = $data['type_correction'];
                         $montantOriginal = (float) $engagement->montant_engage;
 
+                        // ── Montant corrigé ───────────────────────────────────
                         if ($engagement->estDecision()) {
                             $montantCorrige = isset($data['montant_brut'])
                                 ? (float) $data['montant_brut'] : $montantOriginal;
@@ -357,9 +376,10 @@ class ViewEngagement extends ViewRecord
                         }
 
                         $nomenclatureOriginaleId = $engagement->nomenclature_principale_id;
-                        $nomenclatureCorrigeeId  = $data['nomenclature_corrigee_id'] ?? $nomenclatureOriginaleId;
+                        $nomenclatureCorrigeeId  = $data['nomenclature_corrigee_id']
+                            ?? $nomenclatureOriginaleId;
                         $delta      = $montantCorrige - $montantOriginal;
-                        $corrigerOp = (bool) ($data['corriger_ordonnances'] ?? false);
+                        $corrigerOp = (bool) ($data['corriger_ordonnances'] ?? true);
 
                         $donneesCorrection = array_filter([
                             'montant_brut'    => $data['montant_brut']    ?? null,
@@ -371,8 +391,11 @@ class ViewEngagement extends ViewRecord
                             'montant_ttc'     => $data['montant_ttc']     ?? null,
                             'montant_tsr'     => $data['montant_tsr']     ?? null,
                             'montant_ir'      => $data['montant_ir']      ?? null,
+                            'objet'           => !empty($data['nouvel_objet'])
+                                ? trim($data['nouvel_objet']) : null,
                         ], fn($v) => $v !== null && $v !== '');
 
+                        // ── Créer l'avenant ───────────────────────────────────
                         $avenant = Avenant::create([
                             'document_source_type'      => $engagement->engageable_type,
                             'document_source_id'        => $engagement->engageable_id,
@@ -389,49 +412,227 @@ class ViewEngagement extends ViewRecord
                             'nomenclature_corrigee_id'  => $nomenclatureCorrigeeId,
                             'statut'                    => 'brouillon',
                             'created_by'                => auth()->id(),
-                            'donnees_correction'        => !empty($donneesCorrection) ? $donneesCorrection : null,
+                            'donnees_correction'        => !empty($donneesCorrection)
+                                ? $donneesCorrection : null,
                         ]);
 
                         $avenant->appliquer();
 
+                        // ── Mettre à jour le document source ──────────────────
                         if (!empty($donneesCorrection) && $engagement->engageable_id) {
                             $doc = $engagement->engageable;
-                            \Illuminate\Database\Eloquent\Model::withoutEvents(function () use ($doc, $donneesCorrection) {
-                                if ($doc instanceof \App\Models\DecisionAdministrative) {
-                                    $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
-                                    $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps);
-                                    $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir);
-                                    $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
-                                    $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
-                                    $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
-                                    $totalTaxes     = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
-                                    $montantNet     = $montantBrut - $totalTaxes;
-                                    $doc->updateQuietly(array_merge($donneesCorrection, [
-                                        'montant_ir'  => $montantIr,
-                                        'total_taxes' => $totalTaxes,
-                                        'montant_net' => $montantNet,
-                                        'mode_saisie' => 'forfait',
-                                    ]));
-                                } elseif ($doc instanceof \App\Models\BonCommande) {
-                                    $montantTtc = (float)($donneesCorrection['montant_ttc'] ?? $doc->montant_ttc);
-                                    $montantIr  = (float)($donneesCorrection['montant_ir']  ?? $doc->montant_ir);
-                                    $montantTva = (float)($donneesCorrection['montant_tva'] ?? $doc->montant_tva);
-                                    $montantTsr = (float)($donneesCorrection['montant_tsr'] ?? $doc->montant_tsr);
-                                    $doc->updateQuietly(array_merge($donneesCorrection, [
-                                        'net_a_percevoir' => $montantTtc - ($montantIr + $montantTva + $montantTsr),
-                                    ]));
+
+                            \Illuminate\Database\Eloquent\Model::withoutEvents(
+                                function () use ($doc, $donneesCorrection) {
+                                    if ($doc instanceof \App\Models\DecisionAdministrative) {
+                                        $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
+                                        $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps);
+                                        $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir);
+                                        $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
+                                        $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
+                                        $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
+                                        $totalTaxes     = $montantCnps + $montantIr + $montantIrnc
+                                            + $montantTva + $autresRetenues;
+
+                                        $updateData = array_merge(
+                                            array_diff_key($donneesCorrection, ['objet' => null]),
+                                            [
+                                                'montant_ir'  => $montantIr,
+                                                'total_taxes' => $totalTaxes,
+                                                'montant_net' => $montantBrut - $totalTaxes,
+                                                'mode_saisie' => 'forfait',
+                                            ]
+                                        );
+                                        if (!empty($donneesCorrection['objet'])) {
+                                            $updateData['objet'] = $donneesCorrection['objet'];
+                                        }
+                                        unset($updateData['autres_retenues']);
+                                        $doc->updateQuietly($updateData);
+                                    } elseif ($doc instanceof \App\Models\BonCommande) {
+                                        $montantTtc = (float)($donneesCorrection['montant_ttc'] ?? $doc->montant_ttc);
+                                        $montantIr  = (float)($donneesCorrection['montant_ir']  ?? $doc->montant_ir);
+                                        $montantTva = (float)($donneesCorrection['montant_tva'] ?? $doc->montant_tva);
+                                        $montantTsr = (float)($donneesCorrection['montant_tsr'] ?? $doc->montant_tsr);
+
+                                        $updateData = array_merge(
+                                            array_diff_key($donneesCorrection, ['objet' => null]),
+                                            [
+                                                'net_a_percevoir' => $montantTtc
+                                                    - ($montantIr + $montantTva + $montantTsr),
+                                            ]
+                                        );
+                                        if (!empty($donneesCorrection['objet'])) {
+                                            $updateData['objet'] = $donneesCorrection['objet'];
+                                        }
+                                        $doc->updateQuietly($updateData);
+                                    }
+
+                                    Log::info('Document source mis à jour par avenant', [
+                                        'type'        => get_class($doc),
+                                        'id'          => $doc->id,
+                                        'corrections' => $donneesCorrection,
+                                    ]);
                                 }
-                                Log::info("Document source mis à jour par avenant", [
-                                    'type' => get_class($doc),
-                                    'id' => $doc->id,
-                                    'corrections' => $donneesCorrection,
-                                ]);
-                            });
+                            );
                         }
 
-                        if ($corrigerOp && $engagement->ordonnancesPaiement()->exists() && !empty($donneesCorrection)) {
-                            $doc = $engagement->engageable;
+                        // ✅ Objet sur l'engagement lui-même
+                        if (!empty($donneesCorrection['objet'])) {
+                            $engagement->updateQuietly(['objet' => $donneesCorrection['objet']]);
+                        }
+
+                        // ── Rafraîchir depuis la DB ───────────────────────────
+                        $engagement->refresh();
+                        $engagement->load('engageable');
+                        $doc = $engagement->engageable;
+
+                        // ── Calculer les nouvelles taxes ──────────────────────
+                        $nouvellesTaxes = 0;
+                        if ($engagement->estDecision()) {
+                            $nouvellesTaxes =
+                                (float)($donneesCorrection['montant_cnps']    ?? $doc?->montant_cnps    ?? 0)
+                                + (float)($donneesCorrection['montant_ir']      ?? $doc?->montant_ir      ?? 0)
+                                + (float)($donneesCorrection['montant_irnc']    ?? $doc?->montant_irnc    ?? 0)
+                                + (float)($donneesCorrection['montant_tva']     ?? $doc?->montant_tva     ?? 0)
+                                + (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0);
+                        } elseif ($engagement->estBonCommande()) {
+                            $nouvellesTaxes =
+                                (float)($donneesCorrection['montant_ir']  ?? $doc?->montant_ir  ?? 0)
+                                + (float)($donneesCorrection['montant_tva'] ?? $doc?->montant_tva ?? 0)
+                                + (float)($donneesCorrection['montant_tsr'] ?? $doc?->montant_tsr ?? 0);
+                        }
+
+                        $opImpotExiste    = $engagement->ordonnancesPaiement()
+                            ->where('type_ordonnance', 'impot')->exists();
+                        $opStandardExiste = $engagement->ordonnancesPaiement()
+                            ->where('type_ordonnance', 'standard')->exists();
+
+                        $msg = "Avenant #{$avenant->numero_avenant} appliqué.";
+
+                        // ════ CAS 1 : OPT absente + taxes > 0 → créer l'OPT ══
+                        if (
+                            !$opImpotExiste
+                            && $nouvellesTaxes > 0
+                            && in_array($typeCorrection, ['taxes', 'mixte', 'complet'])
+                        ) {
+                            $exerciceId = $engagement->exercice_id;
+                            $annee      = $engagement->exercice?->annee ?? now()->year;
+
+                            // ✅ Générer le numéro — signatures multiples testées
+                            $numeroOpt = null;
+
+                            if ($opStandardExiste) {
+                                $opStdPourNumero = $engagement->ordonnancesPaiement()
+                                    ->where('type_ordonnance', 'standard')->first();
+
+                                if ($opStdPourNumero?->numero) {
+                                    $numeroOpt = preg_replace('/^OP-/', 'OPT-', $opStdPourNumero->numero);
+                                }
+                            }
+
+                            // Fallback si pas d'OP standard ou numéro vide
+                            if (!$numeroOpt) {
+                                $seq       = \App\Models\OrdonnancePaiement::whereYear('created_at', $annee)
+                                    ->where('type_ordonnance', 'impot')
+                                    ->withTrashed()
+                                    ->count() + 1;
+                                $numeroOpt = 'OPT-' . $annee . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $donneesOpt = [
+                                'numero'               => $numeroOpt,
+                                'engagement_id'        => $engagement->id,
+                                'exercice_id'          => $exerciceId,
+                                'type_ordonnance'      => 'impot',
+                                'date_emission'        => now(),
+                                'mois_emission'        => now()->month,
+                                'statut'               => 'emise',
+                                'montant_brut'         => $nouvellesTaxes,
+                                'montant_impot'        => $nouvellesTaxes,
+                                'montant_net'          => $nouvellesTaxes,
+                                'objet'                => 'Reversement impôts et taxes — '
+                                    . ($engagement->objet ?? ''),
+                                'created_by'           => auth()->id(),
+                                'montant_tva'          => 0,
+                                'montant_ir'           => 0,
+                                'montant_tsr'          => 0,
+                                'montant_cnps'         => 0,
+                                'montant_irnc'         => 0,
+                                'montant_autres_taxes' => 0,
+                            ];
+
+                            if ($engagement->estDecision()) {
+                                $donneesOpt = array_merge($donneesOpt, [
+                                    'montant_cnps'         => (float)($donneesCorrection['montant_cnps']    ?? $doc?->montant_cnps    ?? 0),
+                                    'montant_ir'           => (float)($donneesCorrection['montant_ir']      ?? $doc?->montant_ir      ?? 0),
+                                    'montant_irnc'         => (float)($donneesCorrection['montant_irnc']    ?? $doc?->montant_irnc    ?? 0),
+                                    'montant_tva'          => (float)($donneesCorrection['montant_tva']     ?? $doc?->montant_tva     ?? 0),
+                                    'montant_autres_taxes' => (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0),
+                                ]);
+                            }
+
+                            if ($engagement->estBonCommande()) {
+                                $donneesOpt = array_merge($donneesOpt, [
+                                    'montant_ir'  => (float)($donneesCorrection['montant_ir']  ?? $doc?->montant_ir  ?? 0),
+                                    'montant_tva' => (float)($donneesCorrection['montant_tva'] ?? $doc?->montant_tva ?? 0),
+                                    'montant_tsr' => (float)($donneesCorrection['montant_tsr'] ?? $doc?->montant_tsr ?? 0),
+                                ]);
+                            }
+
+                            $opt = \App\Models\OrdonnancePaiement::create($donneesOpt);
+
+                            // ✅ Recalculer l'OP standard (montant_net = brut - taxes)
+                            if ($opStandardExiste) {
+                                $opStd = $engagement->ordonnancesPaiement()
+                                    ->where('type_ordonnance', 'standard')->first();
+
+                                if ($opStd && $engagement->estDecision()) {
+                                    $mb = (float)($donneesCorrection['montant_brut'] ?? $doc?->montant_brut ?? 0);
+                                    $tc = (float)($donneesCorrection['montant_cnps']    ?? $doc?->montant_cnps    ?? 0)
+                                        + (float)($donneesCorrection['montant_ir']      ?? $doc?->montant_ir      ?? 0)
+                                        + (float)($donneesCorrection['montant_irnc']    ?? $doc?->montant_irnc    ?? 0)
+                                        + (float)($donneesCorrection['montant_tva']     ?? $doc?->montant_tva     ?? 0)
+                                        + (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0);
+                                    $opStd->updateQuietly([
+                                        'montant_net'          => $mb - $tc,
+                                        'montant_brut'         => $mb,
+                                        'montant_cnps'         => (float)($donneesCorrection['montant_cnps']    ?? $doc?->montant_cnps    ?? 0),
+                                        'montant_ir'           => (float)($donneesCorrection['montant_ir']      ?? $doc?->montant_ir      ?? 0),
+                                        'montant_irnc'         => (float)($donneesCorrection['montant_irnc']    ?? $doc?->montant_irnc    ?? 0),
+                                        'montant_tva'          => (float)($donneesCorrection['montant_tva']     ?? $doc?->montant_tva     ?? 0),
+                                        'montant_autres_taxes' => (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0),
+                                    ]);
+                                }
+
+                                if ($opStd && $engagement->estBonCommande()) {
+                                    $ttc = (float)($donneesCorrection['montant_ttc'] ?? $doc?->montant_ttc ?? 0);
+                                    $ir  = (float)($donneesCorrection['montant_ir']  ?? $doc?->montant_ir  ?? 0);
+                                    $tva = (float)($donneesCorrection['montant_tva'] ?? $doc?->montant_tva ?? 0);
+                                    $tsr = (float)($donneesCorrection['montant_tsr'] ?? $doc?->montant_tsr ?? 0);
+                                    $opStd->updateQuietly([
+                                        'montant_net'  => $ttc - ($ir + $tva + $tsr),
+                                        'montant_brut' => $ttc,
+                                        'montant_ir'   => $ir,
+                                        'montant_tva'  => $tva,
+                                        'montant_tsr'  => $tsr,
+                                    ]);
+                                }
+                            }
+
+                            Log::info('OPT créée via avenant', [
+                                'engagement' => $engagement->numero,
+                                'opt'        => $opt->numero,
+                                'taxes'      => $nouvellesTaxes,
+                            ]);
+
+                            $msg .= "\n✅ OPT créée : N° {$opt->numero}"
+                                . " — " . number_format($nouvellesTaxes, 0, ',', ' ') . " FCFA";
+
+                            // ════ CAS 2 : OPT existante → mettre à jour ══════════
+                        } elseif ($opImpotExiste && $corrigerOp && !empty($donneesCorrection)) {
+
                             foreach ($engagement->ordonnancesPaiement()->get() as $op) {
+
                                 if ($op->type_ordonnance === 'standard') {
                                     if ($doc instanceof \App\Models\DecisionAdministrative) {
                                         $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
@@ -440,7 +641,8 @@ class ViewEngagement extends ViewRecord
                                         $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                         $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                         $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
-                                        $totalTaxes     = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
+                                        $totalTaxes     = $montantCnps + $montantIr + $montantIrnc
+                                            + $montantTva + $autresRetenues;
                                         $op->updateQuietly([
                                             'montant_net'          => $montantBrut - $totalTaxes,
                                             'montant_brut'         => $montantBrut,
@@ -470,8 +672,12 @@ class ViewEngagement extends ViewRecord
                                         $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                         $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                         $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
+                                        $total          = $montantCnps + $montantIr + $montantIrnc
+                                            + $montantTva + $autresRetenues;
                                         $op->updateQuietly([
-                                            'montant_net'          => $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues,
+                                            'montant_net'          => $total,
+                                            'montant_impot'        => $total,
+                                            'montant_brut'         => $total,
                                             'montant_cnps'         => $montantCnps,
                                             'montant_ir'           => $montantIr,
                                             'montant_irnc'         => $montantIrnc,
@@ -482,62 +688,51 @@ class ViewEngagement extends ViewRecord
                                         $montantIr  = (float)($donneesCorrection['montant_ir']  ?? $doc->montant_ir);
                                         $montantTva = (float)($donneesCorrection['montant_tva'] ?? $doc->montant_tva);
                                         $montantTsr = (float)($donneesCorrection['montant_tsr'] ?? $doc->montant_tsr);
+                                        $total      = $montantIr + $montantTva + $montantTsr;
                                         $op->updateQuietly([
-                                            'montant_net' => $montantIr + $montantTva + $montantTsr,
-                                            'montant_ir'  => $montantIr,
-                                            'montant_tva' => $montantTva,
-                                            'montant_tsr' => $montantTsr,
+                                            'montant_net'   => $total,
+                                            'montant_impot' => $total,
+                                            'montant_brut'  => $total,
+                                            'montant_ir'    => $montantIr,
+                                            'montant_tva'   => $montantTva,
+                                            'montant_tsr'   => $montantTsr,
                                         ]);
                                     }
                                 }
-                                Log::info("OP mise à jour par avenant", [
+
+                                Log::info('OP mise à jour par avenant', [
                                     'op_numero'           => $op->numero,
                                     'type'                => $op->type_ordonnance,
                                     'nouveau_montant_net' => $op->fresh()->montant_net,
                                 ]);
                             }
-                        }
 
-                        if ($corrigerOp) {
+                            // ✅ Supprimer l'OPT si taxes devenues nulles
                             $opImpot = $engagement->ordonnancesPaiement()
                                 ->where('type_ordonnance', 'impot')->first();
-                            if ($opImpot) {
-                                $totalTaxesCorrige = 0;
-                                if ($engagement->estDecision()) {
-                                    $doc = $engagement->engageable;
-                                    $totalTaxesCorrige =
-                                        (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps    ?? 0)
-                                        + (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir      ?? 0)
-                                        + (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc    ?? 0)
-                                        + (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva     ?? 0)
-                                        + (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues ?? 0);
-                                } elseif ($engagement->estBonCommande()) {
-                                    $doc = $engagement->engageable;
-                                    $totalTaxesCorrige =
-                                        (float)($donneesCorrection['montant_ir']  ?? $doc->montant_ir  ?? 0)
-                                        + (float)($donneesCorrection['montant_tva'] ?? $doc->montant_tva ?? 0)
-                                        + (float)($donneesCorrection['montant_tsr'] ?? $doc->montant_tsr ?? 0);
-                                }
-                                if ($totalTaxesCorrige <= 0) {
-                                    $opImpot->delete();
-                                }
+                            if ($opImpot && $nouvellesTaxes <= 0) {
+                                $opImpot->delete();
+                                $msg .= "\n🗑️ OPT supprimée (taxes = 0).";
+                            } else {
+                                $msg .= "\n✅ Ordonnances mises à jour.";
                             }
                         }
 
-                        $msg = "Avenant #{$avenant->numero_avenant} appliqué.\n";
+                        // ── Message résumé ────────────────────────────────────
                         if ($typeCorrection === 'objet') {
-                            $msg .= "Aucun impact budgétaire.";
+                            $msg .= "\n📝 Objet mis à jour.";
                         } elseif ($delta > 0) {
-                            $msg .= "Augmentation : +" . number_format($delta, 0, ',', ' ') . " FCFA engagés.";
+                            $msg .= "\nAugmentation : +" . number_format($delta, 0, ',', ' ') . " FCFA.";
                         } elseif ($delta < 0) {
-                            $msg .= "Réduction : " . number_format(abs($delta), 0, ',', ' ') . " FCFA libérés.";
+                            $msg .= "\nRéduction : " . number_format(abs($delta), 0, ',', ' ') . " FCFA libérés.";
                         }
-                        if ($corrigerOp && $engagement->ordonnancesPaiement()->exists()) {
-                            $msg .= "\n✅ Ordonnances mises à jour.";
+                        if (!empty($donneesCorrection['objet'])) {
+                            $msg .= "\n📝 Objet mis à jour.";
                         }
 
                         Notification::make()->title('✅ Avenant appliqué')
                             ->success()->body($msg)->duration(8000)->send();
+
                         return redirect()->route(
                             'filament.budget.resources.engagements.view',
                             ['record' => $this->record]
