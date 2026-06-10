@@ -59,11 +59,10 @@ class DashboardRegie extends Page
     {
         $exercice = $this->getExerciceActif();
 
-        // Construire le journal unifié (dépenses + BCR)
         $depenses = DepenseRegie::with([
             'regieAvance',
             'ligneRegieAvance.nomenclature',
-            'fournisseur'
+            'fournisseur',
         ])
             ->when(
                 !auth()->user()?->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable']),
@@ -80,25 +79,26 @@ class DashboardRegie extends Page
             ->orderBy('date_depense')
             ->get()
             ->map(fn($d) => [
-                'date'          => $d->date_depense,
-                'numero'        => $d->numero,
-                'type'          => 'Achat Direct',
-                'objet'         => $d->objet,
-                'fournisseur'   => $d->fournisseur?->raison_sociale ?? $d->fournisseur_libre,
-                'nomenclature'  => $d->ligneRegieAvance?->nomenclature?->code,
-                'regie'         => $d->regieAvance?->numero,
-                'montant_ht'    => $d->montant_ht,
-                'montant_tva'   => $d->montant_tva,
-                'montant_ttc'   => $d->montant_ttc,
-                'montant_ir'    => $d->montant_ir,
-                'net_a_payer'   => $d->net_a_payer,
-                'statut'        => $d->statut,
-            ]);
+                'date'         => $d->date_depense,
+                'numero'       => $d->numero,
+                'type'         => 'Achat Direct',
+                'objet'        => $d->objet,
+                'fournisseur'  => $d->fournisseur?->raison_sociale ?? $d->fournisseur_libre,
+                'nomenclature' => $d->ligneRegieAvance?->nomenclature?->code,
+                'regie'        => $d->regieAvance?->numero,
+                'montant_ht'   => $d->montant_ht  ?? 0,
+                'montant_tva'  => $d->montant_tva ?? 0,
+                'montant_ttc'  => $d->montant_ttc ?? 0,
+                'montant_ir'   => $d->montant_ir  ?? 0,
+                'net_a_payer'  => $d->net_a_payer ?? 0,
+                'statut'       => $d->statut,
+            ])
+            ->toBase(); // ✅ Eloquent Collection → Support Collection
 
         $bcrs = BonCommandeRegie::with([
             'regieAvance',
             'ligneRegieAvance.nomenclature',
-            'fournisseur'
+            'fournisseur',
         ])
             ->where('engage', true)
             ->whereNotIn('statut', ['annule'])
@@ -116,21 +116,23 @@ class DashboardRegie extends Page
             ->orderBy('date_emission')
             ->get()
             ->map(fn($b) => [
-                'date'          => $b->date_emission,
-                'numero'        => $b->numero,
-                'type'          => 'BCR/BCM',
-                'objet'         => $b->objet,
-                'fournisseur'   => $b->fournisseur?->raison_sociale,
-                'nomenclature'  => $b->ligneRegieAvance?->nomenclature?->code,
-                'regie'         => $b->regieAvance?->numero,
-                'montant_ht'    => $b->montant_ht,
-                'montant_tva'   => $b->montant_tva,
-                'montant_ttc'   => $b->montant_ttc,
-                'montant_ir'    => $b->montant_ir,
-                'net_a_payer'   => $b->net_a_payer,
-                'statut'        => $b->statut,
-            ]);
+                'date'         => $b->date_emission,
+                'numero'       => $b->numero,
+                'type'         => 'BCR/BCM',
+                'objet'        => $b->objet,
+                'fournisseur'  => $b->fournisseur?->raison_sociale,
+                'nomenclature' => $b->ligneRegieAvance?->nomenclature?->code,
+                'regie'        => $b->regieAvance?->numero,
+                'montant_ht'   => $b->montant_ht  ?? 0,
+                'montant_tva'  => $b->montant_tva ?? 0,
+                'montant_ttc'  => $b->montant_ttc ?? 0,
+                'montant_ir'   => $b->montant_ir  ?? 0,
+                'net_a_payer'  => $b->net_a_payer ?? 0,
+                'statut'       => $b->statut,
+            ])
+            ->toBase(); // ✅ Eloquent Collection → Support Collection
 
+        // ✅ Support Collection::merge() accepte les arrays sans getKey()
         return $depenses->merge($bcrs)->sortBy('date')->values();
     }
 }
