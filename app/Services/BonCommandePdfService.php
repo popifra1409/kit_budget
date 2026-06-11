@@ -10,28 +10,37 @@ class BonCommandePdfService
 {
     public static function genererPdf(BonCommande $bonCommande, string $typeEtat = 'simple')
     {
-        // ✅ DEBUG 1 : Voir ce qui arrive
         \Log::info('=== DEBUT genererPdf ===');
         \Log::info('Type État reçu', ['typeEtat' => $typeEtat]);
 
-        // Déterminer le code d'état
         $codeEtat = match ($typeEtat) {
-            'simple' => 'bon-commande-simple',
-            'simple_preimprime' => 'bon-commande-simple-2',
-            'complet' => 'bon-commande',
-            default => 'bon-commande-simple',
+            'simple'             => 'bon-commande-simple',
+            'simple_preimprime'  => 'bon-commande-simple-2',
+            'complet'            => 'bon-commande',
+            default              => 'bon-commande-simple',
         };
 
         \Log::info('Code État calculé', ['codeEtat' => $codeEtat]);
 
-        // Récupérer la configuration
         $etatConfig = EtatConfig::where('code', $codeEtat)
             ->where('actif', true)
             ->first();
 
+        // ✅ Si pas trouvé par code, chercher par type_document (pour 'complet')
+        if (!$etatConfig && $typeEtat === 'complet') {
+            $etatConfig = EtatConfig::where('type_document', 'bon_commande')
+                ->where('actif', true)
+                ->where('est_defaut', true)
+                ->first()
+                ?? EtatConfig::where('type_document', 'bon_commande')
+                ->where('actif', true)
+                ->first();
+        }
+
         \Log::info('EtatConfig trouvé', [
-            'found' => $etatConfig ? 'OUI' : 'NON',
+            'found'       => $etatConfig ? 'OUI' : 'NON',
             'template_db' => $etatConfig?->template,
+            'entete'      => $etatConfig?->entete_config,
         ]);
 
         // ✅ Déterminer le template
@@ -40,15 +49,14 @@ class BonCommandePdfService
             \Log::info('Template depuis DB', ['template' => $template]);
         } else {
             $template = match ($typeEtat) {
-                'simple' => 'pdf.templates.bon-commande-simple',
+                'simple'            => 'pdf.templates.bon-commande-simple',
                 'simple_preimprime' => 'pdf.templates.bon-commande-simple2',
-                'complet' => 'pdf.templates.bon-commande',
-                default => 'pdf.templates.bon-commande-simple',
+                'complet'           => 'pdf.templates.bon-commande',
+                default             => 'pdf.templates.bon-commande-simple',
             };
             \Log::info('Template FALLBACK', ['template' => $template]);
         }
 
-        // ✅ Vérifier si le template existe
         $templateExists = view()->exists($template);
         \Log::info('Template existe ?', ['exists' => $templateExists, 'template' => $template]);
 
@@ -57,10 +65,7 @@ class BonCommandePdfService
             throw new \Exception("Template introuvable : {$template}");
         }
 
-        \Log::info('Template final utilisé', ['template' => $template]);
-
-        // Charger les relations
-        //if (!$bonCommande->relationLoaded('fournisseur')) {
+        // ✅ Charger les relations
         $bonCommande->load([
             'exercice',
             'budget',
@@ -70,31 +75,30 @@ class BonCommandePdfService
             'engagement.nomenclaturePrincipale',
             'typeEngagement',
         ]);
-        //}
 
-        // Préparer les données
+        // ✅ Préparer les données — _etat_config transmis au blade
         $donnees = [
-            '_raw' => $bonCommande,
+            '_raw'         => $bonCommande,
+            '_etat_config' => $etatConfig,  
             'bon_commande' => $bonCommande,
-            'fournisseur' => $bonCommande->fournisseur,
-            'lignes' => $bonCommande->lignes,
-            'exercice' => $bonCommande->exercice,
+            'fournisseur'  => $bonCommande->fournisseur,
+            'lignes'       => $bonCommande->lignes,
+            'exercice'     => $bonCommande->exercice,
         ];
 
-        // Générer le PDF
+        // ✅ Générer le PDF
         $pdf = Pdf::loadView($template, compact('donnees'));
-        //$pdf = Pdf::loadView($template, $donnees);
 
         $pdf->setOptions([
             'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled' => false,
-            'defaultFont' => 'DejaVu Sans',
+            'isRemoteEnabled'      => false,
+            'defaultFont'          => 'DejaVu Sans',
         ]);
 
         if ($etatConfig && $etatConfig->options_pdf) {
             $pdf->setPaper(
                 $etatConfig->options_pdf['format_papier'] ?? 'A4',
-                $etatConfig->options_pdf['orientation'] ?? 'portrait'
+                $etatConfig->options_pdf['orientation']   ?? 'portrait'
             );
         } else {
             $pdf->setPaper('A4', 'portrait');

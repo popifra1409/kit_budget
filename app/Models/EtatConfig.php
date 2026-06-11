@@ -152,16 +152,40 @@ class EtatConfig extends Model
             ->toArray();
     }
 
+    /**
+     * ✅ Retourne l'entête mergée : entete_config prioritaire sur ParametresStructure
+     */
+    public function getEntete(?\App\Models\ParametresStructure $params = null): array
+    {
+        $params ??= \App\Models\ParametresStructure::where('actif', true)->first();
+
+        $defauts = [
+            'titre_fr'          => $params?->nom_complet      ?? 'CENTRE HOSPITALIER ET UNIVERSITAIRE DE YAOUNDE',
+            'titre_en'          => $params?->nom_structure_en ?? 'YAOUNDE UNIVERSITY TEACHING HOSPITAL',
+            'sigle'             => $params?->sigle             ?? 'CHUY',
+            'ministere_fr'      => 'MINISTERE DE LA SANTE PUBLIQUE',
+            'ministere_en'      => 'MINISTRY OF PUBLIC HEALTH',
+            'sous_direction_fr' => null,
+            'sous_direction_en' => null,
+            'titre_document'    => null,
+            'logo_override'     => null,
+        ];
+
+        // ✅ entete_config écrase les valeurs par défaut si défini
+        return array_merge($defauts, array_filter($this->entete_config ?? [], fn($v) => !is_null($v) && $v !== ''));
+    }
+
     // ============================================================
-// 2. MODIFIER app/Models/EtatConfig.php
-//    Ajouter dans estSupprimable() les nouveaux codes système
-// ============================================================
+    // 2. MODIFIER app/Models/EtatConfig.php
+    //    Ajouter dans estSupprimable() les nouveaux codes système
+    // ============================================================
     public function estSupprimable(): bool
     {
         $etatsSysteme = [
             'certificat_engagement',
             'autorisation_engagement',
             'bon_commande',
+            'bon_commande_regie',
             'bordereau_engagement',
             'decision_administrative',
             'ordonnance_paiement',

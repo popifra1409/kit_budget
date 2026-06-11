@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\BonCommandeRegie;
+use App\Models\EtatConfig;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\Request;
 
 class BonCommandeRegiePdfController extends Controller
 {
@@ -16,32 +16,41 @@ class BonCommandeRegiePdfController extends Controller
             'regieAvance',
             'ligneRegieAvance.nomenclature',
         ]);
-        // ✅ Adapter les lignes BCR pour le template bon-commande.blade.php
-        // → ajouter un accessor 'reference' sur chaque ligne
+
+        // ✅ Adapter les lignes BCR — ajouter accessor 'reference'
         $bcr->lignes->each(function ($ligne) {
-            // Le template lit $ligne->reference
             $ligne->reference = $ligne->referenceMercuriale?->code_reference
                 ?? $ligne->reference_personnalisee
                 ?? '—';
         });
 
-        $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+        // ✅ Charger la config entête pour BCR/BCM
+        $etatConfig = EtatConfig::where('type_document', 'bon_commande_regie')
+            ->where('actif', true)
+            ->where('est_defaut', true)
+            ->first()
+            // Fallback : première config active si aucune par défaut
+            ?? EtatConfig::where('type_document', 'bon_commande_regie')
+            ->where('actif', true)
+            ->first();
 
         $createur = $bcr->created_by
             ? \App\Models\User::find($bcr->created_by)
             : null;
 
         return [
-            '_raw'                    => $bcr,
-            'service'                 => $bcr->regieAvance?->libelle ?? 'RÉGIE',
-            'numero_bca'              => $bcr->numero,
-            'date_impression'         => now()->format('d/m/Y à H:i'),
-            'prestataire_nom'         => $bcr->fournisseur?->raison_sociale ?? '—',
-            'prestataire_adresse'     => $bcr->fournisseur?->adresse ?? '—',
-            'prestataire_tel'         => $bcr->fournisseur?->telephone ?? '—',
+            '_raw'                     => $bcr,
+            '_etat_config'             => $etatConfig,    
+            'service'                  => $bcr->regieAvance?->libelle ?? 'RÉGIE',
+            'numero_bca'               => $bcr->numero,
+            'date_impression'          => now()->format('d/m/Y à H:i'),
+            'prestataire_nom'          => $bcr->fournisseur?->raison_sociale    ?? '—',
+            'prestataire_adresse'      => $bcr->fournisseur?->adresse           ?? '—',
+            'prestataire_tel'          => $bcr->fournisseur?->telephone         ?? '—',
             'prestataire_contribuable' => $bcr->fournisseur?->numero_contribuable ?? '—',
-            'montant_lettres'         => \App\Helpers\NombreEnLettres::montantCFA($bcr->montant_ttc ?? 0),
-            'parametres'              => $parametres,
+            'montant_lettres'          => \App\Helpers\NombreEnLettres::montantCFA(
+                $bcr->montant_ttc ?? 0
+            ),
         ];
     }
 
@@ -49,10 +58,13 @@ class BonCommandeRegiePdfController extends Controller
     {
         $donnees = $this->preparerDonnees($bcr);
 
-        $pdf = Pdf::loadView('pdf.templates.bon-commande', ['donnees' => $donnees])
+        $pdf = Pdf::loadView(
+            'pdf.templates.bon-commande',  
+            ['donnees' => $donnees]
+        )
             ->setPaper('a4', 'portrait')
             ->setOption('margin-top',    '20mm')
-            ->setOption('margin-bottom', '25mm')
+            ->setOption('margin-bottom', '15mm')
             ->setOption('margin-left',   '15mm')
             ->setOption('margin-right',  '15mm');
 
@@ -63,10 +75,13 @@ class BonCommandeRegiePdfController extends Controller
     {
         $donnees = $this->preparerDonnees($bcr);
 
-        $pdf = Pdf::loadView('pdf.templates.bon-commande', ['donnees' => $donnees])
+        $pdf = Pdf::loadView(
+            'pdf.templates.bon-commande', 
+            ['donnees' => $donnees]
+        )
             ->setPaper('a4', 'portrait')
             ->setOption('margin-top',    '20mm')
-            ->setOption('margin-bottom', '25mm')
+            ->setOption('margin-bottom', '15mm')
             ->setOption('margin-left',   '15mm')
             ->setOption('margin-right',  '15mm');
 

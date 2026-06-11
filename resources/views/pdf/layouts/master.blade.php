@@ -255,11 +255,13 @@
         $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
     @endphp
 
-    {{-- Header personnalisable --}}
-    @if (isset($typeHeader) && View::exists("pdf.partials.header-{$typeHeader}"))
-        @include("pdf.partials.header-{$typeHeader}")
-    @else
-        @include('pdf.partials.header')
+    {{-- Header personnalisable — désactivable avec $disableHeader = true --}}
+    @if (!isset($disableHeader) || !$disableHeader)
+        @if (isset($typeHeader) && View::exists("pdf.partials.header-{$typeHeader}"))
+            @include("pdf.partials.header-{$typeHeader}")
+        @else
+            @include('pdf.partials.header')
+        @endif
     @endif
 
     {{-- Contenu principal --}}
