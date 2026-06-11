@@ -426,24 +426,28 @@
                     </tbody>
                     <tfoot>
                         <tr>
+                            @php
+                                $tfHt = 0;
+                                $tfTva = 0;
+                                $tfTtc = 0;
+                                $tfIr = 0;
+                                $tfNet = 0;
+                                foreach ($bc->lignes->sortBy('numero_ligne') as $l) {
+                                    $tfHt += (int) number_format((float) ($l->montant_ht ?? 0), 0, '.', '');
+                                    $tfTva += (int) number_format((float) ($l->montant_tva ?? 0), 0, '.', '');
+                                    $tfTtc += (int) number_format((float) ($l->montant_ttc ?? 0), 0, '.', '');
+                                    $tfIr += (int) number_format((float) ($l->montant_ir ?? 0), 0, '.', '');
+                                    $tfNet += (int) number_format((float) ($l->net_a_payer ?? 0), 0, '.', '');
+                                }
+                            @endphp
                             <td colspan="6" style="text-align:right; font-size:.72rem; color:#94a3b8; padding-right:1rem;">
                                 TOTAUX ({{ $bc->lignes->count() }} ligne{{ $bc->lignes->count() > 1 ? 's' : '' }})
                             </td>
-                            <td class="num">
-                                {{ number_format($bc->lignes->sum('montant_ht'), 0, ',', ' ') }}
-                            </td>
-                            <td class="num" style="color:#854d0e;">
-                                {{ number_format($bc->lignes->sum('montant_tva'), 0, ',', ' ') }}
-                            </td>
-                            <td class="num" style="color:#1e40af;">
-                                {{ number_format($bc->lignes->sum('montant_ttc'), 0, ',', ' ') }}
-                            </td>
-                            <td class="num" style="color:#9f1239;">
-                                {{ number_format($bc->lignes->sum('montant_ir'), 0, ',', ' ') }}
-                            </td>
-                            <td class="num" style="color:#166534;">
-                                {{ number_format($bc->lignes->sum('net_a_payer'), 0, ',', ' ') }}
-                            </td>
+                            <td class="num">{{ number_format($tfHt, 0, ',', ' ') }}</td>
+                            <td class="num" style="color:#854d0e;">{{ number_format($tfTva, 0, ',', ' ') }}</td>
+                            <td class="num" style="color:#1e40af;">{{ number_format($tfTtc, 0, ',', ' ') }}</td>
+                            <td class="num" style="color:#9f1239;">{{ number_format($tfIr, 0, ',', ' ') }}</td>
+                            <td class="num" style="color:#166534;">{{ number_format($tfNet, 0, ',', ' ') }}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -452,12 +456,27 @@
 
         {{-- ── Récapitulatif ───────────────────────────────────────── --}}
         @php
-            $totalHT = $bc->montant_ht ?? $bc->lignes->sum('montant_ht');
-            $totalTVA = $bc->montant_tva ?? $bc->lignes->sum('montant_tva');
-            $totalTTC = $bc->montant_ttc ?? $bc->lignes->sum('montant_ttc');
-            $totalIR = $bc->montant_ir ?? $bc->lignes->sum('montant_ir');
-            $totalTSR = $bc->montant_tsr ?? $bc->lignes->sum('montant_tsr', 0);
-            $totalNet = $bc->lignes->sum('net_a_payer') ?: ($totalTTC - $totalIR - $totalTSR);
+            // ✅ Totaux exacts = somme des valeurs arrondies par ligne
+            $totalHT = 0;
+            $totalTVA = 0;
+            $totalTTC = 0;
+            $totalIR = 0;
+            $totalTSR = 0;
+            $totalNet = 0;
+
+            foreach ($bc->lignes as $l) {
+                $totalHT += (int) number_format((float) ($l->montant_ht ?? 0), 0, '.', '');
+                $totalTVA += (int) number_format((float) ($l->montant_tva ?? 0), 0, '.', '');
+                $totalTtcL = (int) number_format((float) ($l->montant_ttc ?? 0), 0, '.', '');
+                $totalIRL = (int) number_format((float) ($l->montant_ir ?? 0), 0, '.', '');
+                $totalTSRL = (int) number_format((float) ($l->montant_tsr ?? 0), 0, '.', '');
+                $totalTTC += $totalTtcL;
+                $totalIR += $totalIRL;
+                $totalTSR += $totalTSRL;
+            }
+
+            // ✅ Net à payer = HT arrondi - IR arrondi - TSR arrondi
+            $totalNet = $totalHT - $totalIR - $totalTSR;
         @endphp
 
         <div style="display:flex; justify-content:flex-end; margin-top:.5rem;">
