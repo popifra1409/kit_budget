@@ -143,6 +143,8 @@ class EtatConfigSeeder extends Seeder
                     'montant_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_ttc']],
                 ],
                 'signature_config' => ['afficher' => false],
+                // ✅ Valeurs initiales — appliquées uniquement à la création
+                'entete_config' => [],
             ],
             [
                 'code' => 'bon_commande_complet',
@@ -190,6 +192,45 @@ class EtatConfigSeeder extends Seeder
                     'montant_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_ttc']],
                 ],
                 'signature_config' => ['afficher' => false],
+            ],
+
+            // ═══════════════════════════════════════════════════
+            // ✅ BON DE COMMANDE RÉGIE / MENU DÉPENSE — 1 variante
+            // ═══════════════════════════════════════════════════
+            [
+                'code' => 'bon_commande_regie_standard',
+                'type_document' => 'bon_commande_regie',
+                'est_defaut' => true,
+                'nom' => 'BCR/BCM Standard',
+                'template' => 'pdf.templates.bon-commande',
+                'description' => 'Bon de commande Régie d\'Avance / Menu Dépense',
+                'categorie' => 'Commercial',
+                'ordre' => 1,
+                'champs_variables' => [
+                    'service' => ['source' => 'regieAvance.libelle', 'type' => 'uppercase'],
+                    'numero_bca' => ['source' => 'numero', 'type' => 'text'],
+                    'date_impression' => ['source' => 'created_at', 'type' => 'date', 'format' => 'd/m/Y'],
+                    'prestataire_nom' => ['source' => 'fournisseur.raison_sociale', 'type' => 'text'],
+                    'prestataire_adresse' => ['source' => 'fournisseur.adresse', 'type' => 'text'],
+                    'prestataire_tel' => ['source' => 'fournisseur.telephone', 'type' => 'text'],
+                    'prestataire_contribuable' => ['source' => 'fournisseur.numero_contribuable', 'type' => 'text'],
+                    'objet' => ['source' => 'objet', 'type' => 'text'],
+                    'montant_ht' => ['source' => 'montant_ht', 'type' => 'money'],
+                    'montant_tva' => ['source' => 'montant_tva', 'type' => 'money'],
+                    'montant_ttc' => ['source' => 'montant_ttc', 'type' => 'money'],
+                    'articles' => ['source' => 'lignes', 'type' => 'array'],
+                ],
+                'calculs' => [
+                    'montant_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_ttc']],
+                ],
+                'signature_config' => ['afficher' => false],
+                // ✅ Valeurs initiales — appliquées uniquement à la création
+                // ou si entete_config est encore vide (jamais personnalisé)
+                'entete_config' => [
+                    'titre_document'    => 'BON DE COMMANDE RÉGIE D\'AVANCE',
+                    'sous_direction_fr' => 'SERVICE DU BUDGET ET DE LA COMPTABILITÉ',
+                    'sous_direction_en' => 'BUDGET AND ACCOUNTING DEPARTMENT',
+                ],
             ],
 
             // ═══════════════════════════════════════════════════
@@ -685,11 +726,32 @@ class EtatConfigSeeder extends Seeder
             ],
         ];
 
+        // ═══════════════════════════════════════════════════════
+        // ✅ SEEDING — préserve les personnalisations entete_config
+        // ═══════════════════════════════════════════════════════
         foreach ($etats as $etat) {
-            EtatConfig::updateOrCreate(
+            // Extraire entete_config — traité séparément pour ne pas
+            // écraser les personnalisations admin lors des re-seeds
+            $enteteConfigInitial = $etat['entete_config'] ?? null;
+            unset($etat['entete_config']);
+
+            $config = EtatConfig::updateOrCreate(
                 ['code' => $etat['code']],
                 $etat
             );
+
+            // N'appliquer entete_config QUE si :
+            // - l'enregistrement vient d'être créé, OU
+            // - son entete_config est actuellement vide/null
+            // (préserve toute personnalisation existante de l'admin :
+            //  logo, titres, sigle, sous-directions, etc.)
+            if ($enteteConfigInitial !== null) {
+                $enteteActuel = $config->entete_config;
+
+                if ($config->wasRecentlyCreated || empty($enteteActuel)) {
+                    $config->update(['entete_config' => $enteteConfigInitial]);
+                }
+            }
         }
 
         // Résumé par type_document
