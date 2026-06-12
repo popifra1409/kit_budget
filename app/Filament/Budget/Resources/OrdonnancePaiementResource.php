@@ -278,43 +278,6 @@ class OrdonnancePaiementResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('type_ordonnance')
-                    ->label('Type')
-                    ->options([
-                        'standard' => 'Standard',
-                        'impot' => 'Impôt',
-                    ]),
-
-                Tables\Filters\SelectFilter::make('statut')
-                    ->label('Statut')
-                    ->options([
-                        'brouillon' => 'Brouillon',
-                        'emise' => 'Émise',
-                        'visee' => 'Visée',
-                        'payee' => 'Payée',
-                        'annulee' => 'Annulée',
-                    ])
-                    ->multiple(),
-
-                Tables\Filters\Filter::make('date_emission')
-                    ->form([
-                        Forms\Components\DatePicker::make('date_emission_from')
-                            ->label('Date d\'émission du'),
-                        Forms\Components\DatePicker::make('date_emission_until')
-                            ->label('Date d\'émission au'),
-                    ])
-                    ->query(function ($query, array $data) {
-                        return $query
-                            ->when(
-                                $data['date_emission_from'],
-                                fn($q, $date) => $q->whereDate('date_emission', '>=', $date)
-                            )
-                            ->when(
-                                $data['date_emission_until'],
-                                fn($q, $date) => $q->whereDate('date_emission', '<=', $date)
-                            );
-                    }),
-
                 // FILTRE PAR PÉRIODE PRÉDÉFINIE
                 Tables\Filters\Filter::make('periode')
                     ->form([
@@ -385,6 +348,43 @@ class OrdonnancePaiementResource extends Resource
                         ];
 
                         return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
+
+                Tables\Filters\SelectFilter::make('type_ordonnance')
+                    ->label('Type')
+                    ->options([
+                        'standard' => 'Standard',
+                        'impot' => 'Impôt',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('statut')
+                    ->label('Statut')
+                    ->options([
+                        'brouillon' => 'Brouillon',
+                        'emise' => 'Émise',
+                        'visee' => 'Visée',
+                        'payee' => 'Payée',
+                        'annulee' => 'Annulée',
+                    ])
+                    ->multiple(),
+
+                Tables\Filters\Filter::make('date_emission')
+                    ->form([
+                        Forms\Components\DatePicker::make('date_emission_from')
+                            ->label('Date d\'émission du'),
+                        Forms\Components\DatePicker::make('date_emission_until')
+                            ->label('Date d\'émission au'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        return $query
+                            ->when(
+                                $data['date_emission_from'],
+                                fn($q, $date) => $q->whereDate('date_emission', '>=', $date)
+                            )
+                            ->when(
+                                $data['date_emission_until'],
+                                fn($q, $date) => $q->whereDate('date_emission', '<=', $date)
+                            );
                     }),
             ])
             ->actions([

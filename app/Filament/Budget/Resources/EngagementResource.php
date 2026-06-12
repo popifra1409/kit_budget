@@ -17,8 +17,8 @@ use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;  
-use Illuminate\Support\Facades\DB;   
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class EngagementResource extends Resource
 {
@@ -353,44 +353,6 @@ class EngagementResource extends Resource
                     })->toggleable(),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('engageable_type')
-                    ->label('Source')
-                    ->options([
-                        'all'                               => 'Tout',
-                        'App\Models\BonCommande'            => 'Bon de Commande',
-                        'App\Models\DecisionAdministrative' => 'Décision Administrative',
-                        'manuel'                            => 'Engagement Manuel',
-                    ])
-                    ->default('all')
-                    ->query(function ($query, $state) {
-                        if (($state['value'] ?? 'all') === 'all') return $query;
-                        if ($state['value'] === 'manuel') return $query->whereNull('engageable_type');
-                        return $query->where('engageable_type', $state['value']);
-                    }),
-
-                Tables\Filters\SelectFilter::make('statut')
-                    ->label('Statut')
-                    ->options(['provisoire' => 'Provisoire', 'definitif' => 'Définitif', 'annule' => 'Annulé']),
-
-                Tables\Filters\SelectFilter::make('exercice_id')
-                    ->label('Exercice')->relationship('exercice', 'annee')
-                    ->searchable()->preload()->placeholder('Tous les exercices')
-                    ->default(fn() => Exercice::getActif()?->id),
-
-                Tables\Filters\SelectFilter::make('budget_id')
-                    ->label('Budget')->relationship('budget', 'libelle')
-                    ->searchable()->preload(),
-
-                Tables\Filters\Filter::make('date_engagement')
-                    ->form([
-                        Forms\Components\DatePicker::make('du')->label('Du'),
-                        Forms\Components\DatePicker::make('au')->label('Au'),
-                    ])
-                    ->query(
-                        fn($query, array $data) => $query
-                            ->when($data['du'], fn($q, $v) => $q->whereDate('date_engagement', '>=', $v))
-                            ->when($data['au'], fn($q, $v) => $q->whereDate('date_engagement', '<=', $v))
-                    ),
                 // ✅ Filtre par période — Aujourd'hui par défaut
                 Tables\Filters\Filter::make('periode')
                     ->form([
@@ -447,6 +409,45 @@ class EngagementResource extends Resource
                         ];
                         return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
+
+                Tables\Filters\SelectFilter::make('engageable_type')
+                    ->label('Source')
+                    ->options([
+                        'all'                               => 'Tout',
+                        'App\Models\BonCommande'            => 'Bon de Commande',
+                        'App\Models\DecisionAdministrative' => 'Décision Administrative',
+                        'manuel'                            => 'Engagement Manuel',
+                    ])
+                    ->default('all')
+                    ->query(function ($query, $state) {
+                        if (($state['value'] ?? 'all') === 'all') return $query;
+                        if ($state['value'] === 'manuel') return $query->whereNull('engageable_type');
+                        return $query->where('engageable_type', $state['value']);
+                    }),
+
+                Tables\Filters\SelectFilter::make('statut')
+                    ->label('Statut')
+                    ->options(['provisoire' => 'Provisoire', 'definitif' => 'Définitif', 'annule' => 'Annulé']),
+
+                Tables\Filters\SelectFilter::make('exercice_id')
+                    ->label('Exercice')->relationship('exercice', 'annee')
+                    ->searchable()->preload()->placeholder('Tous les exercices')
+                    ->default(fn() => Exercice::getActif()?->id),
+
+                Tables\Filters\SelectFilter::make('budget_id')
+                    ->label('Budget')->relationship('budget', 'libelle')
+                    ->searchable()->preload(),
+
+                Tables\Filters\Filter::make('date_engagement')
+                    ->form([
+                        Forms\Components\DatePicker::make('du')->label('Du'),
+                        Forms\Components\DatePicker::make('au')->label('Au'),
+                    ])
+                    ->query(
+                        fn($query, array $data) => $query
+                            ->when($data['du'], fn($q, $v) => $q->whereDate('date_engagement', '>=', $v))
+                            ->when($data['au'], fn($q, $v) => $q->whereDate('date_engagement', '<=', $v))
+                    ),
             ])
             ->actions([
 

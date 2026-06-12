@@ -304,44 +304,98 @@ class EtatConfigResource extends Resource
                                 // ── Titre du document ─────────────────────────────
                                 Forms\Components\TextInput::make('entete_config.titre_document')
                                     ->label('Titre du document (centre)')
+                                    ->live(onBlur: true)
                                     ->placeholder('Ex: BON DE COMMANDE RÉGIE D\'AVANCE')
                                     ->helperText('Remplace le titre affiché au centre du PDF')
                                     ->columnSpanFull(),
+
+                                // ✅ Aperçu logo structure (ParametresStructure) — distinct du logo alternatif
+                                Forms\Components\Placeholder::make('logo_structure_info')
+                                    ->label('Logo de la structure (ParametresStructure)')
+                                    ->content(function () {
+                                        $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+
+                                        if (!$parametres?->logo) {
+                                            return new \Illuminate\Support\HtmlString(
+                                                '<div style="background:#fef9c3;border:1px solid #ca8a04;border-radius:.5rem;
+                    padding:.6rem .75rem;font-size:.8rem;color:#854d0e;">
+                    ⚠️ Aucun logo défini dans ParametresStructure.
+                    Configurez-le dans Paramétrage &gt; Structure.
+                </div>'
+                                            );
+                                        }
+
+                                        $logoPath = storage_path('app/public/' . ltrim($parametres->logo, '/'));
+
+                                        if (!file_exists($logoPath)) {
+                                            return new \Illuminate\Support\HtmlString(
+                                                '<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:.5rem;
+                    padding:.6rem .75rem;font-size:.8rem;color:#991b1b;">
+                    ⚠️ Fichier logo introuvable : ' . e($parametres->logo) . '
+                </div>'
+                                            );
+                                        }
+
+                                        $logoB64  = base64_encode(file_get_contents($logoPath));
+                                        $mimeType = mime_content_type($logoPath) ?: 'image/png';
+
+                                        return new \Illuminate\Support\HtmlString(
+                                            '<div style="display:flex;align-items:center;gap:1rem;
+                background:#f8fafc;border:1px solid #e2e8f0;border-radius:.5rem;padding:.75rem;">
+                <img src="data:' . $mimeType . ';base64,' . $logoB64 . '"
+                     style="height:50px;border:1px solid #e2e8f0;border-radius:.375rem;padding:4px;background:#fff;">
+                <div style="font-size:.78rem;color:#64748b;line-height:1.5;">
+                    Ce logo (issu de <strong>ParametresStructure</strong>) sera affiché
+                    automatiquement sous le titre de l\'institution, en mode entête texte
+                    — uniquement si <strong>aucun logo alternatif</strong> n\'est défini ci-dessous.
+                </div>
+            </div>'
+                                        );
+                                    })
+                                    ->columnSpanFull(),
+
 
                                 Forms\Components\Grid::make(2)->schema([
 
                                     // ── Institution ───────────────────────────────
                                     Forms\Components\TextInput::make('entete_config.titre_fr')
                                         ->label('Nom institution (FR)')
+                                        ->live(onBlur: true)
                                         ->placeholder('Laisser vide = ParametresStructure')
                                         ->helperText('Ex: CENTRE HOSPITALIER ET UNIVERSITAIRE DE YAOUNDE'),
 
                                     Forms\Components\TextInput::make('entete_config.titre_en')
                                         ->label('Nom institution (EN)')
+                                        ->live(onBlur: true)
                                         ->placeholder('Laisser vide = ParametresStructure')
                                         ->helperText('Ex: YAOUNDE UNIVERSITY TEACHING HOSPITAL'),
 
                                     // ── Ministère ─────────────────────────────────
                                     Forms\Components\TextInput::make('entete_config.ministere_fr')
                                         ->label('Ministère (FR)')
+                                        ->live(onBlur: true)
                                         ->placeholder('Ex: MINISTERE DE LA SANTE PUBLIQUE'),
 
                                     Forms\Components\TextInput::make('entete_config.ministere_en')
                                         ->label('Ministère (EN)')
+                                        ->live(onBlur: true)
                                         ->placeholder('Ex: MINISTRY OF PUBLIC HEALTH'),
 
                                     // ── Sous-direction ────────────────────────────
                                     Forms\Components\TextInput::make('entete_config.sous_direction_fr')
                                         ->label('Sous-direction (FR)')
+                                        ->live(onBlur: true)
                                         ->placeholder('Ex: DIRECTION DES RESSOURCES HUMAINES ET FINANCIÈRES'),
 
                                     Forms\Components\TextInput::make('entete_config.sous_direction_en')
                                         ->label('Sous-direction (EN)')
+                                        ->live(onBlur: true)
                                         ->placeholder('Ex: HUMAN RESOURCES AND FINANCIAL DIRECTORATE'),
 
                                     // ── Sigle ─────────────────────────────────────
                                     Forms\Components\TextInput::make('entete_config.sigle')
                                         ->label('Sigle institution')
+                                        ->live(onBlur: true)
                                         ->placeholder('Laisser vide = ParametresStructure')
                                         ->helperText('Ex: CHUY'),
 
@@ -412,6 +466,90 @@ class EtatConfigResource extends Resource
                                                 . '</pre>'
                                         );
                                     })
+                                    ->columnSpanFull(),
+
+                                // ── Aperçu visuel du mode "entête texte" ──────────────────
+                                Forms\Components\Placeholder::make('apercu_entete_texte')
+                                    ->label('Aperçu — Mode entête texte (si pas de logo alternatif)')
+                                    ->content(function (Forms\Get $get) {
+                                        $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+
+                                        // ✅ Valeurs effectives : champ du form sinon ParametresStructure
+                                        $titreFr = $get('entete_config.titre_fr')
+                                            ?: ($parametres?->nom_complet ?? 'CENTRE HOSPITALIER ET UNIVERSITAIRE DE YAOUNDE');
+
+                                        $titreEn = $get('entete_config.titre_en')
+                                            ?: ($parametres?->nom_structure_en ?? 'YAOUNDE UNIVERSITY TEACHING HOSPITAL');
+
+                                        $sousDirFr = $get('entete_config.sous_direction_fr');
+                                        $sousDirEn = $get('entete_config.sous_direction_en');
+
+                                        $ministereFr = $get('entete_config.ministere_fr') ?: 'MINISTERE DE LA SANTE PUBLIQUE';
+                                        $ministereEn = $get('entete_config.ministere_en') ?: 'MINISTRY OF PUBLIC HEALTH';
+
+                                        $titreDocument = $get('entete_config.titre_document') ?: 'BON DE COMMANDE ADMINISTRATIF';
+
+                                        // ✅ Logo : logo ParametresStructure (le logo_override n'intervient
+                                        //    pas ici puisque ce mode s'applique seulement en son absence)
+                                        $logoHtml = '';
+                                        if ($parametres?->logo) {
+                                            $logoPath = storage_path('app/public/' . ltrim($parametres->logo, '/'));
+                                            if (file_exists($logoPath)) {
+                                                $logoB64  = base64_encode(file_get_contents($logoPath));
+                                                $mimeType = mime_content_type($logoPath) ?: 'image/png';
+                                                $logoHtml = '<div style="text-align:center;margin-top:4px;margin-bottom:3px;">'
+                                                    . '<img src="data:' . $mimeType . ';base64,' . $logoB64 . '" '
+                                                    . 'style="height:42px;display:inline-block;">'
+                                                    . '</div>';
+                                            }
+                                        }
+
+                                        $sousDirHtml = '';
+                                        if ($sousDirFr) {
+                                            $sousDirHtml = "<div style='font-size:7.5pt;margin-top:2px;'>"
+                                                . e($sousDirFr);
+                                            if ($sousDirEn) {
+                                                $sousDirHtml .= "<br><em style='font-size:7pt;'>" . e($sousDirEn) . "</em>";
+                                            }
+                                            $sousDirHtml .= "</div>";
+                                        }
+
+                                        $html = '
+    <div style="border:1px solid #e2e8f0;border-radius:.5rem;padding:1rem;background:#fff;">
+        <table style="width:100%;border-collapse:collapse;border:none;">
+            <tr>
+                <td style="width:22%;vertical-align:top;text-align:center;font-size:7.5pt;border:none;">
+                    <strong>REPUBLIQUE DU CAMEROUN</strong><br>
+                    <em>Paix - Travail - Patrie</em><br>
+                    <span style="font-size:6.5pt;">' . e($ministereFr) . '</span>
+                </td>
+                <td style="width:56%;text-align:center;vertical-align:top;border:none;">
+                    <div style="font-size:10pt;font-weight:bold;text-transform:uppercase;">
+                        ' . e($titreFr) . '
+                    </div>
+                    <div style="font-size:8pt;font-style:italic;">
+                        ' . e($titreEn) . '
+                    </div>
+                    ' . $logoHtml . '
+                    ' . $sousDirHtml . '
+                    <div style="font-size:8.5pt;font-weight:bold;margin-top:6px;
+                         text-transform:uppercase;border:1px solid #000;padding:3px;">
+                        ' . e($titreDocument) . '
+                    </div>
+                </td>
+                <td style="width:22%;vertical-align:top;text-align:center;font-size:7.5pt;border:none;">
+                    <strong>REPUBLIC OF CAMEROON</strong><br>
+                    <em>Peace - Work - Fatherland</em><br>
+                    <span style="font-size:6.5pt;">' . e($ministereEn) . '</span>
+                </td>
+            </tr>
+        </table>
+    </div>
+';
+
+                                        return new \Illuminate\Support\HtmlString($html);
+                                    })
+                                    ->live()
                                     ->columnSpanFull(),
                             ]),
                     ]),

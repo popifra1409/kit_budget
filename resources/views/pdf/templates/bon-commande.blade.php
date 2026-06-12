@@ -442,7 +442,7 @@ $nombrePages        = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
 {{-- ════ EN-TÊTE (page 1 uniquement) ════ --}}
 @if ($pageIndex === 0)
 
-  @if ($logoOverride && $logoBase64)
+ @if ($logoOverride && $logoBase64)
     {{-- ✅ Logo pleine largeur — occupe tout l'en-tête A4 --}}
     <div style="
         width: 100%;
@@ -459,10 +459,10 @@ $nombrePages        = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
     </div>
 @else
 
-    {{-- ✅ MODE TEXTE : entête institutionnel structuré --}}
-    <table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
+    {{-- ✅ MODE TEXTE : entête institutionnel structuré (sans bordures) --}}
+    <table style="width:100%; border-collapse:collapse; border:none; margin-bottom:6px;">
         <tr>
-            <td style="width:22%; vertical-align:top; text-align:center; font-size:7.5pt;">
+            <td style="width:22%; vertical-align:top; text-align:center; font-size:7.5pt; border:none;">
                 <strong>REPUBLIQUE DU CAMEROUN</strong><br>
                 <em>Paix - Travail - Patrie</em><br>
                 <span style="font-size:6.5pt;">
@@ -474,18 +474,21 @@ $nombrePages        = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
                 </span>
                 @endif
             </td>
-            <td style="width:56%; text-align:center; vertical-align:top;">
-                {{-- Logo standard en base64 --}}
-                @if($logoStdBase64)
-                    <img src="data:{{ $logoStdMimeType }};base64,{{ $logoStdBase64 }}"
-                         style="height:38px; margin-bottom:3px;"><br>
-                @endif
+            <td style="width:56%; text-align:center; vertical-align:top; border:none;">
+                {{-- ✅ Noms institution (FR/EN) AU-DESSUS du logo --}}
                 <div style="font-size:10pt; font-weight:bold; text-transform:uppercase;">
                     {{ $entete['titre_fr'] }}
                 </div>
                 <div style="font-size:8pt; font-style:italic;">
                     {{ $entete['titre_en'] }}
                 </div>
+
+                {{-- ✅ Logo structure EN DESSOUS des noms FR/EN --}}
+                @if($logoStdBase64)
+                    <img src="data:{{ $logoStdMimeType }};base64,{{ $logoStdBase64 }}"
+                         style="height:38px; margin-top:4px; margin-bottom:3px;">
+                @endif
+
                 @if($entete['sous_direction_fr'] ?? null)
                 <div style="font-size:7.5pt; margin-top:2px;">
                     {{ $entete['sous_direction_fr'] }}
@@ -495,7 +498,7 @@ $nombrePages        = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
                 </div>
                 @endif
             </td>
-            <td style="width:22%; vertical-align:top; text-align:center; font-size:7.5pt;">
+            <td style="width:22%; vertical-align:top; text-align:center; font-size:7.5pt; border:none;">
                 <strong>REPUBLIC OF CAMEROON</strong><br>
                 <em>Peace - Work - Fatherland</em><br>
                 <span style="font-size:6.5pt;">

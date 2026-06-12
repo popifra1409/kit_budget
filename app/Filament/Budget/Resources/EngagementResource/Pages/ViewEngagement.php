@@ -356,7 +356,7 @@ class ViewEngagement extends ViewRecord
                 ->modalWidth('2xl')
                 ->action(function (array $data) {
                     try {
-                        DB::transaction(function () use ($data) {  // ✅ TOUT dans une transaction
+                        DB::transaction(function () use ($data) { 
 
                             $engagement      = $this->record;
                             $typeCorrection  = $data['type_correction'];
