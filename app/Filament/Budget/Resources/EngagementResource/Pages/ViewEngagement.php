@@ -355,8 +355,21 @@ class ViewEngagement extends ViewRecord
                 ->modalHeading('Créer un avenant de rectification')
                 ->modalWidth('2xl')
                 ->action(function (array $data) {
+
+                    // Variables capturées pour le message final (hors transaction)
+                    $optResultat       = null;
+                    $optNumeroCorrige  = false;
+                    $optNumeroOriginal = null;
+                    $deltaFinal        = 0;
+
                     try {
-                        DB::transaction(function () use ($data) { 
+                        DB::transaction(function () use (
+                            $data,
+                            &$optResultat,
+                            &$optNumeroCorrige,
+                            &$optNumeroOriginal,
+                            &$deltaFinal
+                        ) {
 
                             $engagement      = $this->record;
                             $typeCorrection  = $data['type_correction'];
@@ -381,6 +394,7 @@ class ViewEngagement extends ViewRecord
                             $nomenclatureCorrigeeId  = $data['nomenclature_corrigee_id']
                                 ?? $nomenclatureOriginaleId;
                             $delta      = $montantCorrige - $montantOriginal;
+                            $deltaFinal = $delta;
                             $corrigerOp = (bool) ($data['corriger_ordonnances'] ?? true);
 
                             $donneesCorrection = array_filter([
@@ -518,26 +532,67 @@ class ViewEngagement extends ViewRecord
                                 $exerciceId = $engagement->exercice_id;
                                 $annee      = $engagement->exercice?->annee ?? now()->year;
 
-                                // ✅ Numéro OPT = numéro OP standard avec préfixe OPT
-                                $numeroOpt = null;
+                                // ✅ 1. Numéro candidat = numéro OP standard avec préfixe OPT
+                                $numeroCandidat = null;
 
                                 if ($opStandardExiste) {
                                     $opStdPourNumero = $engagement->ordonnancesPaiement()
                                         ->where('type_ordonnance', 'standard')->first();
                                     if ($opStdPourNumero?->numero) {
-                                        $numeroOpt = preg_replace('/^OP-/', 'OPT-', $opStdPourNumero->numero);
+                                        $numeroCandidat = preg_replace('/^OP-/', 'OPT-', $opStdPourNumero->numero);
                                     }
                                 }
 
                                 // Fallback si pas d'OP standard
-                                if (!$numeroOpt) {
-                                    $seq       = \App\Models\OrdonnancePaiement::whereYear('created_at', $annee)
+                                if (!$numeroCandidat) {
+                                    $seq            = \App\Models\OrdonnancePaiement::whereYear('created_at', $annee)
                                         ->where('type_ordonnance', 'impot')
                                         ->withTrashed()->count() + 1;
-                                    $numeroOpt = 'OPT-' . $annee . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+                                    $numeroCandidat = 'OPT-' . $annee . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+                                }
+
+                                // ✅ 2. OPT (même soft-deleted) déjà liée à CET engagement ?
+                                $optExistanteTrashed = \App\Models\OrdonnancePaiement::withTrashed()
+                                    ->where('engagement_id', $engagement->id)
+                                    ->where('type_ordonnance', 'impot')
+                                    ->first();
+
+                                $numeroOpt        = $numeroCandidat;
+                                $numeroFutCorrige = false;
+
+                                if (!$optExistanteTrashed) {
+                                    // ✅ 3. Vérifier collision : numéro déjà pris par UN AUTRE engagement
+                                    $collision = \App\Models\OrdonnancePaiement::withTrashed()
+                                        ->where('numero', $numeroCandidat)
+                                        ->where('engagement_id', '!=', $engagement->id)
+                                        ->exists();
+
+                                    if ($collision) {
+                                        $suffixe = 1;
+                                        do {
+                                            $tentative = $suffixe === 1
+                                                ? $numeroCandidat . '-BIS'
+                                                : $numeroCandidat . '-BIS' . $suffixe;
+
+                                            $existe = \App\Models\OrdonnancePaiement::withTrashed()
+                                                ->where('numero', $tentative)->exists();
+
+                                            $suffixe++;
+                                        } while ($existe && $suffixe < 20);
+
+                                        $numeroOpt        = $tentative;
+                                        $numeroFutCorrige = true;
+
+                                        Log::warning('Collision numéro OPT détectée — numéro alternatif généré', [
+                                            'engagement_actuel'  => $engagement->numero,
+                                            'numero_candidat'    => $numeroCandidat,
+                                            'numero_attribue'    => $numeroOpt,
+                                        ]);
+                                    }
                                 }
 
                                 $donneesOpt = [
+                                    'numero'               => $numeroOpt,
                                     'engagement_id'        => $engagement->id,
                                     'exercice_id'          => $exerciceId,
                                     'type_ordonnance'      => 'impot',
@@ -576,11 +631,26 @@ class ViewEngagement extends ViewRecord
                                     ]);
                                 }
 
-                                // ✅ updateOrCreate — évite la violation de contrainte unique
-                                $opt = \App\Models\OrdonnancePaiement::updateOrCreate(
-                                    ['numero' => $numeroOpt],   // ← clé de recherche
-                                    $donneesOpt                 // ← données à créer ou mettre à jour
-                                );
+                                // ✅ 4. Créer / restaurer / mettre à jour
+                                if ($optExistanteTrashed) {
+                                    if ($optExistanteTrashed->trashed()) {
+                                        $optExistanteTrashed->restore();
+                                        Log::info('OPT restaurée (était soft-deleted)', [
+                                            'engagement' => $engagement->numero,
+                                            'opt'        => $optExistanteTrashed->numero,
+                                        ]);
+                                    }
+                                    // Conserver le numéro existant de l'OPT restaurée
+                                    unset($donneesOpt['numero']);
+                                    $optExistanteTrashed->update($donneesOpt);
+                                    $opt = $optExistanteTrashed;
+                                } else {
+                                    $opt = \App\Models\OrdonnancePaiement::create($donneesOpt);
+                                }
+
+                                $optResultat       = $opt;
+                                $optNumeroCorrige  = $numeroFutCorrige;
+                                $optNumeroOriginal = $numeroCandidat;
 
                                 // ✅ Recalculer l'OP standard
                                 if ($opStandardExiste) {
@@ -620,11 +690,11 @@ class ViewEngagement extends ViewRecord
                                     }
                                 }
 
-                                Log::info('OPT créée/mise à jour via avenant', [
-                                    'engagement' => $engagement->numero,
-                                    'opt'        => $opt->numero,
-                                    'taxes'      => $nouvellesTaxes,
-                                    'created'    => $opt->wasRecentlyCreated,
+                                Log::info('OPT créée/restaurée/mise à jour via avenant', [
+                                    'engagement'     => $engagement->numero,
+                                    'opt'            => $opt->numero,
+                                    'taxes'          => $nouvellesTaxes,
+                                    'numero_corrige' => $numeroFutCorrige,
                                 ]);
 
                                 // ════ CAS 2 : OPT existante → mettre à jour ══════════
@@ -713,41 +783,105 @@ class ViewEngagement extends ViewRecord
                                     $opImpot->delete();
                                 }
                             }
+
+                            // ════════════════════════════════════════════════════
+                            // ✅ RÉPERCUSSION FINALE DE L'OBJET — exécutée EN DERNIER
+                            //    pour ne jamais être écrasée par CAS1/CAS2/OPT créée
+                            // ════════════════════════════════════════════════════
+                            if (!empty($donneesCorrection['objet'])) {
+                                $objetFinal     = $engagement->objet; // déjà à jour (refresh fait plus haut)
+                                $nouvelObjetOpt = 'Reversement impôts et taxes — ' . $objetFinal;
+
+                                $opsAMettreAJour = $engagement->ordonnancesPaiement()
+                                    ->withTrashed() // ✅ inclut l'OPT restaurée éventuelle
+                                    ->get();
+
+                                foreach ($opsAMettreAJour as $op) {
+                                    $nouvelObjet = $op->type_ordonnance === 'impot'
+                                        ? $nouvelObjetOpt
+                                        : $objetFinal;
+
+                                    if ($op->objet !== $nouvelObjet) {
+                                        $op->updateQuietly(['objet' => $nouvelObjet]);
+                                    }
+                                }
+
+                                Log::info('Objet répercuté sur les ordonnances (final)', [
+                                    'engagement'         => $engagement->numero,
+                                    'nouvel_objet'       => $objetFinal,
+                                    'nb_op_mises_a_jour' => $opsAMettreAJour->count(),
+                                ]);
+                            }
                         }); // ✅ fin DB::transaction
 
                         // ── Message résumé (hors transaction) ────────────────
-                        $engagement  = $this->record->fresh();
+                        $engagement     = $this->record->fresh();
                         $typeCorrection = $data['type_correction'];
-                        $montantOriginal = 0; // recalculer si besoin pour le message
 
                         $msgParts = ['✅ Avenant appliqué avec succès.'];
 
                         $opImpot = $engagement->ordonnancesPaiement()
                             ->where('type_ordonnance', 'impot')->first();
-                        if ($opImpot) {
+
+                        if ($optResultat) {
+                            if ($optNumeroCorrige) {
+                                $msgParts[] = "⚠️ ATTENTION : Le numéro attendu ({$optNumeroOriginal}) "
+                                    . "était déjà utilisé par un autre engagement (donnée incohérente).\n"
+                                    . "Une OPT a été créée/mise à jour avec le numéro alternatif : {$optResultat->numero}\n"
+                                    . "Veuillez signaler ce cas à l'administrateur pour vérifier "
+                                    . "l'engagement portant le numéro {$optNumeroOriginal}.";
+                            } else {
+                                $msgParts[] = "OPT : {$optResultat->numero} — "
+                                    . number_format($optResultat->montant_net, 0, ',', ' ') . " FCFA";
+                            }
+                        } elseif ($opImpot) {
                             $msgParts[] = "OPT : {$opImpot->numero} — "
                                 . number_format($opImpot->montant_net, 0, ',', ' ') . " FCFA";
                         }
-                        if ($typeCorrection === 'objet') {
-                            $msgParts[] = "📝 Objet mis à jour.";
-                        }
+
                         if (!empty($data['nouvel_objet'])) {
-                            $msgParts[] = "📝 Objet mis à jour.";
+                            $msgParts[] = "📝 Objet mis à jour (engagement, document source et ordonnances).";
+                        }
+
+                        if ($typeCorrection !== 'objet') {
+                            if ($deltaFinal > 0) {
+                                $msgParts[] = "Augmentation : +" . number_format($deltaFinal, 0, ',', ' ') . " FCFA.";
+                            } elseif ($deltaFinal < 0) {
+                                $msgParts[] = "Réduction : " . number_format(abs($deltaFinal), 0, ',', ' ') . " FCFA libérés.";
+                            }
                         }
 
                         Notification::make()
-                            ->title('✅ Avenant appliqué')
-                            ->success()
-                            ->body(implode("\n", $msgParts))
-                            ->duration(8000)
+                            ->title($optNumeroCorrige ? '⚠️ Avenant appliqué — anomalie détectée' : '✅ Avenant appliqué')
+                            ->color($optNumeroCorrige ? 'warning' : 'success')
+                            ->body(implode("\n\n", $msgParts))
+                            ->duration($optNumeroCorrige ? null : 8000)
+                            ->persistent($optNumeroCorrige)
                             ->send();
 
                         return redirect()->route(
                             'filament.budget.resources.engagements.view',
                             ['record' => $this->record]
                         );
+                    } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                        Log::error('Erreur avenant — contrainte unique violée', [
+                            'engagement' => $this->record->numero,
+                            'error'      => $e->getMessage(),
+                        ]);
+
+                        Notification::make()
+                            ->title('❌ Erreur — Numéro OPT en conflit')
+                            ->danger()
+                            ->body(
+                                "Le système n'a pas pu générer un numéro d'OPT unique pour cet engagement.\n\n"
+                                    . "Cause probable : un autre engagement utilise déjà ce numéro de référence.\n\n"
+                                    . "Action requise : contactez l'administrateur pour vérifier "
+                                    . "la numérotation des ordonnances de paiement.\n\n"
+                                    . "Aucune modification n'a été enregistrée (transaction annulée)."
+                            )
+                            ->persistent()
+                            ->send();
                     } catch (\Throwable $e) {
-                        // ✅ La transaction a rollbacké — aucune donnée partielle en DB
                         Log::error('Erreur avenant', [
                             'engagement' => $this->record->numero,
                             'error'      => $e->getMessage(),
@@ -757,7 +891,10 @@ class ViewEngagement extends ViewRecord
                         Notification::make()
                             ->title('❌ Erreur avenant')
                             ->danger()
-                            ->body($e->getMessage())
+                            ->body(
+                                "Une erreur est survenue : " . $e->getMessage() . "\n\n"
+                                    . "Aucune modification n'a été enregistrée (transaction annulée)."
+                            )
                             ->persistent()
                             ->send();
                     }
