@@ -335,23 +335,76 @@ class DecaissementsRelationManager extends RelationManager
                     ->requiresConfirmation()
                     ->modalHeading('Apurer la tranche')
                     ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
-                        '<div class="text-sm text-slate-800 dark:text-slate-200">'
-                            . "<p>Tranche : <strong>{$record->libelle_tranche}</strong></p>"
-                            . "<p>Dépensé : <strong>"
-                            . number_format($record->montant_depense, 0, ',', ' ')
-                            . " FCFA</strong></p>"
-                            . "<p>IR collecté : <strong class='text-red-600 dark:text-red-400'>"
-                            . number_format($record->montant_ir_collecte, 0, ',', ' ')
-                            . " FCFA</strong></p>"
-                            . '</div>'
+                        (function () use ($record) {
+                            $statutsDepenses = ['livre', 'livre_partiellement', 'paye'];
+                            $record->load('provisions');
+
+                            $totalDepense = 0;
+                            $totalIr      = 0;
+                            $totalEngage  = 0;
+
+                            foreach ($record->provisions as $prov) {
+                                $bcrs = \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
+                                    ->whereIn('statut', $statutsDepenses)
+                                    ->get();
+
+                                $depenses = \App\Models\DepenseRegie::where('provision_ligne_regie_id', $prov->id)
+                                    ->whereIn('statut', ['valide', 'paye'])
+                                    ->get();
+
+                                $totalDepense += $bcrs->sum('montant_ttc') + $depenses->sum('montant_ttc');
+                                $totalIr      += $bcrs->sum('montant_ir')  + $depenses->sum('montant_ir');
+
+                                $totalEngage += \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
+                                    ->where('statut', 'valide')
+                                    ->where('engage', true)
+                                    ->sum('montant_ttc');
+                            }
+
+                            $solde        = ($record->montant_accorde ?? 0) - $totalDepense;
+                            $couleurSolde = $solde < 0 ? 'color:#dc2626;' : 'color:#16a34a;';
+
+                            return '<div class="text-sm text-slate-800 dark:text-slate-200" style="line-height:2;">'
+                                . "<p>Tranche : <strong>{$record->libelle_tranche}</strong></p>"
+                                . "<p>Montant accordé : <strong>"
+                                . number_format($record->montant_accorde, 0, ',', ' ') . " FCFA</strong></p>"
+                                . "<p>Dépensé (livré/payé) : <strong style='color:#1d4ed8;'>"
+                                . number_format($totalDepense, 0, ',', ' ') . " FCFA</strong></p>"
+                                . ($totalEngage > 0
+                                    ? "<p style='color:#92400e;'>Engagé (en cours) : "
+                                    . number_format($totalEngage, 0, ',', ' ') . " FCFA</p>"
+                                    : "")
+                                . "<p>IR collecté : <strong style='color:#dc2626;'>"
+                                . number_format($totalIr, 0, ',', ' ') . " FCFA</strong></p>"
+                                . "<p>Solde : <strong style='{$couleurSolde}'>"
+                                . number_format($solde, 0, ',', ' ') . " FCFA</strong></p>"
+                                . '<hr style="margin:8px 0;border-color:#e2e8f0;">'
+                                . '<p style="font-size:.78rem;color:#64748b;">✅ Seuls les BCR livrés/payés '
+                                . 'sont comptabilisés comme dépenses.</p>'
+                                . '</div>';
+                        })()
                     ))
                     ->action(function ($record) {
+                        // ✅ Recalculer et enregistrer
+                        $record->load('provisions');
                         $record->recalculerDepenses();
+
+                        // ✅ Recharger après recalcul pour avoir les bonnes valeurs
+                        $record->refresh();
+
                         $record->update([
                             'statut'         => 'apure',
                             'date_apurement' => now(),
                         ]);
-                        Notification::make()->title('✅ Tranche apurée')->success()->send();
+
+                        Notification::make()
+                            ->title('✅ Tranche apurée')
+                            ->success()
+                            ->body(
+                                "Dépensé : " . number_format($record->montant_depense, 0, ',', ' ') . " FCFA\n"
+                                    . "IR collecté : " . number_format($record->montant_ir_collecte, 0, ',', ' ') . " FCFA"
+                            )
+                            ->send();
                     }),
 
                 Tables\Actions\EditAction::make()

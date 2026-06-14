@@ -91,40 +91,80 @@ class DecaissementRegie extends Model
     // ── Méthodes ──────────────────────────────────────────────
     public function recalculerDepenses(): void
     {
-        // Toutes les dépenses rattachées à ce décaissement
+        // ✅ Statuts considérés comme "réellement dépensés"
+        $statutsDepenses = ['livre', 'livre_partiellement', 'paye'];
+
+        // Dépenses directes (AchatDirect) rattachées à ce décaissement
         $totalDepense = $this->depenses()
-            ->whereNotIn('statut', ['annule'])
+            ->whereIn('statut', ['valide', 'paye'])
             ->sum('montant_ttc');
 
-        // BCR engagés via les provisions de ce décaissement
-        $totalBcr = \App\Models\BonCommandeRegie::whereHas(
-            'provisionLigneRegie',
-            fn($q) =>
-            $q->where('decaissement_regie_id', $this->id)
-        )
-            ->where('engage', true)
-            ->whereNotIn('statut', ['annule'])
-            ->sum('montant_ttc');
-
-        $totalIr = $this->depenses()
-            ->whereNotIn('statut', ['annule'])
-            ->sum('montant_ir')
-            +
-            \App\Models\BonCommandeRegie::whereHas(
-                'provisionLigneRegie',
-                fn($q) =>
-                $q->where('decaissement_regie_id', $this->id)
-            )
-            ->where('engage', true)
-            ->whereNotIn('statut', ['annule'])
+        $totalIrDepenses = $this->depenses()
+            ->whereIn('statut', ['valide', 'paye'])
             ->sum('montant_ir');
 
-        $totalDepenseGlobal = $totalDepense + $totalBcr;
+        // ✅ BCR réellement dépensés : uniquement livre/paye — PAS valide
+        $bcrDepenses = \App\Models\BonCommandeRegie::whereHas(
+            'provisionLigneRegie',
+            fn($q) => $q->where('decaissement_regie_id', $this->id)
+        )
+            ->whereIn('statut', $statutsDepenses)
+            ->get();
 
+        $totalBcr   = $bcrDepenses->sum('montant_ttc');
+        $totalIrBcr = $bcrDepenses->sum('montant_ir');
+
+        // ✅ BCR engagés (valide + engage) = montant réservé mais pas encore payé
+        $bcrEngage = \App\Models\BonCommandeRegie::whereHas(
+            'provisionLigneRegie',
+            fn($q) => $q->where('decaissement_regie_id', $this->id)
+        )
+            ->where('statut', 'valide')
+            ->where('engage', true)
+            ->sum('montant_ttc');
+
+        $totalDepenseGlobal = $totalDepense + $totalBcr;
+        $totalIr            = $totalIrDepenses + $totalIrBcr;
+
+        // ✅ Mettre à jour montant_consomme sur chaque provision
+        $this->load('provisions');
+        foreach ($this->provisions as $prov) {
+            $consommeProv =
+                \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
+                ->whereIn('statut', $statutsDepenses)
+                ->sum('montant_ttc')
+                + \App\Models\DepenseRegie::where('provision_ligne_regie_id', $prov->id)
+                ->whereIn('statut', ['valide', 'paye'])
+                ->sum('montant_ttc');
+
+            $engageProv = \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
+                ->where('statut', 'valide')
+                ->where('engage', true)
+                ->sum('montant_ttc');
+
+            $prov->updateQuietly([
+                'montant_consomme'   => $consommeProv,
+                'montant_disponible' => $prov->montant_provisionne - $consommeProv,
+            ]);
+        }
+
+        // ✅ Mettre à jour le décaissement
         $this->updateQuietly([
             'montant_depense'     => $totalDepenseGlobal,
             'montant_ir_collecte' => $totalIr,
-            'montant_solde'       => $this->montant_accorde - $totalDepenseGlobal,
+            'montant_solde'       => ($this->montant_accorde ?? 0) - $totalDepenseGlobal,
         ]);
+
+        // ✅ Mettre à jour la régie parente
+        $regie = $this->regieAvance;
+        if ($regie) {
+            $totalDepenseRegie = $regie->decaissements()
+                ->whereIn('statut', ['verse', 'apure'])
+                ->sum('montant_depense');
+
+            $regie->updateQuietly([
+                'montant_depense' => $totalDepenseRegie,
+            ]);
+        }
     }
 }
