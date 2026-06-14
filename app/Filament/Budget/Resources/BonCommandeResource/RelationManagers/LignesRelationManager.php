@@ -183,7 +183,7 @@ class LignesRelationManager extends RelationManager
                             ->default(function () use ($bc) {
                                 if ($bc->exonere_tva) return 0;
                                 if ($bc->tva_commune !== null && $bc->tva_commune !== '') {
-                                    return (float) $bc->tva_commune; 
+                                    return (float) $bc->tva_commune;
                                 }
                                 if ($bc->type_engagement_id) {
                                     $type = \App\Models\TypeEngagement::find($bc->type_engagement_id);
@@ -626,36 +626,34 @@ class LignesRelationManager extends RelationManager
     // ✅ MÉTHODE : Recalculer une ligne
     protected static function recalculerLigne(callable $set, callable $get): void
     {
-        $quantite = (float) ($get('quantite') ?? 0);
+        $quantite       = (float) ($get('quantite')         ?? 0);
         $prixUnitaireHT = (float) ($get('prix_unitaire_ht') ?? 0);
-        $tauxTVA = (float) ($get('taux_tva') ?? 0);
-        $tauxIR = (float) ($get('taux_ir') ?? 0);
+        $tauxTVA        = (float) ($get('taux_tva')         ?? 0);
+        $tauxIR         = (float) ($get('taux_ir')          ?? 0);
 
-        // Montant HT
-        $montantHT = $quantite * $prixUnitaireHT;
-
-        // Montant TVA
+        // Calculs bruts
+        $montantHT  = $quantite * $prixUnitaireHT;
         $montantTVA = ($montantHT * $tauxTVA) / 100;
-
-        // Montant TTC
         $montantTTC = $montantHT + $montantTVA;
+        $montantIR  = ($montantHT * $tauxIR)  / 100;
+        $montantTSR = 0;
 
-        // Montant IR
-        $montantIR = ($montantHT * $tauxIR) / 100;
+        // ✅ Stocker des entiers arrondis — jamais de .5 en DB
+        $htInt  = (int) number_format($montantHT,  0, '.', '');
+        $tvaInt = (int) number_format($montantTVA, 0, '.', '');
+        $ttcInt = (int) number_format($montantTTC, 0, '.', '');
+        $irInt  = (int) number_format($montantIR,  0, '.', '');
+        $tsrInt = (int) number_format($montantTSR, 0, '.', '');
 
-        // TSR (si applicable)
-        $montantTSR = 0; // À adapter selon votre logique
+        // ✅ NET A PAYER = HT arrondi - IR arrondi
+        $netAPayer = $htInt - $irInt - $tsrInt;
 
-        // Net à payer
-        $netAPayer = $montantTTC - $montantIR - $montantTSR;
-
-        // Mettre à jour les champs
-        $set('montant_ht', round($montantHT, 2));
-        $set('montant_tva', round($montantTVA, 2));
-        $set('montant_ttc', round($montantTTC, 2));
-        $set('montant_ir', round($montantIR, 2));
-        $set('montant_tsr', round($montantTSR, 2));
-        $set('net_a_payer', round($netAPayer, 2));
+        $set('montant_ht',  $htInt);
+        $set('montant_tva', $tvaInt);
+        $set('montant_ttc', $ttcInt);
+        $set('montant_ir',  $irInt);
+        $set('montant_tsr', $tsrInt);
+        $set('net_a_payer', $netAPayer);
     }
 
     // ✅ MÉTHODE : Recalculer les totaux du BC
@@ -665,27 +663,37 @@ class LignesRelationManager extends RelationManager
         $bc->refresh();
         $bc->load('lignes');
 
-        $totaux = [
-            'montant_ht' => 0,
-            'montant_tva' => 0,
-            'montant_ttc' => 0,
-            'montant_ir' => 0,
-            'montant_tsr' => 0,
-        ];
+        $totalHT  = 0;
+        $totalTVA = 0;
+        $totalTTC = 0;
+        $totalIR  = 0;
+        $totalTSR = 0;
 
+        // ✅ Sommer les valeurs déjà arrondies ligne par ligne
         foreach ($bc->lignes as $ligne) {
-            $totaux['montant_ht'] += $ligne->montant_ht;
-            $totaux['montant_tva'] += $ligne->montant_tva;
-            $totaux['montant_ttc'] += $ligne->montant_ttc;
-            $totaux['montant_ir'] += $ligne->montant_ir;
-            $totaux['montant_tsr'] += $ligne->montant_tsr;
+            $totalHT  += (int) number_format((float)($ligne->montant_ht  ?? 0), 0, '.', '');
+            $totalTVA += (int) number_format((float)($ligne->montant_tva ?? 0), 0, '.', '');
+            $totalTTC += (int) number_format((float)($ligne->montant_ttc ?? 0), 0, '.', '');
+            $totalIR  += (int) number_format((float)($ligne->montant_ir  ?? 0), 0, '.', '');
+            $totalTSR += (int) number_format((float)($ligne->montant_tsr ?? 0), 0, '.', '');
         }
 
-        $bc->update($totaux);
+        // ✅ NET A PAYER du BC = Total HT - Total IR - Total TSR
+        $netAPayer = $totalHT - $totalIR - $totalTSR;
+
+        $bc->update([
+            'montant_ht'  => $totalHT,
+            'montant_tva' => $totalTVA,
+            'montant_ttc' => $totalTTC,
+            'montant_ir'  => $totalIR,
+            'montant_tsr' => $totalTSR,
+            'net_a_payer' => $netAPayer,
+        ]);
 
         \Log::info("Totaux BC recalculés", [
-            'bc' => $bc->numero,
-            'montant_ttc' => $totaux['montant_ttc'],
+            'bc'          => $bc->numero,
+            'montant_ttc' => $totalTTC,
+            'net_a_payer' => $netAPayer,
         ]);
     }
 
