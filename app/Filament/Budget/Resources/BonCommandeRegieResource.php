@@ -1,5 +1,4 @@
 <?php
-// app/Filament/Budget/Resources/BonCommandeRegieResource.php
 
 namespace App\Filament\Budget\Resources;
 
@@ -17,16 +16,17 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 
 class BonCommandeRegieResource extends Resource
 {
-    protected static ?string $model           = BonCommandeRegie::class;
-    protected static ?string $navigationIcon  = 'heroicon-o-document-text';
-    protected static ?string $navigationLabel = 'BCR / BCM';
-    protected static ?string $modelLabel      = 'Bon de Commande Régie';
+    protected static ?string $model            = BonCommandeRegie::class;
+    protected static ?string $navigationIcon   = 'heroicon-o-document-text';
+    protected static ?string $navigationLabel  = 'BCR / BCM';
+    protected static ?string $modelLabel       = 'Bon de Commande Régie';
     protected static ?string $pluralModelLabel = 'Bons de Commande Régie';
-    protected static ?string $navigationGroup = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort  = 3;
+    protected static ?string $navigationGroup  = 'Régies & Menu Dépenses';
+    protected static ?int    $navigationSort   = 3;
     protected static ?string $recordTitleAttribute = 'numero';
 
     // =========================================================
@@ -56,20 +56,23 @@ class BonCommandeRegieResource extends Resource
             && !$record->engage;
     }
 
+    // =========================================================
+    // RECALCUL LIGNE BCR
+    // =========================================================
     protected static function recalculerLigneBcr(
-        callable|\Filament\Forms\Set $set,
-        callable|\Filament\Forms\Get $get
+        callable|Set $set,
+        callable|Get $get
     ): void {
         $qte    = (float) ($get('quantite')         ?? 0);
         $pu     = (float) ($get('prix_unitaire_ht') ?? 0);
-        $tauxTv = (float) ($get('taux_tva')         ?? 19.25);
+        $tauxTv = (float) ($get('taux_tva')         ?? 0);
         $tauxIr = (float) ($get('taux_ir')          ?? 0);
 
-        $ht  = round($qte * $pu, 2);
-        $tva = round($ht * ($tauxTv / 100), 2);
-        $ttc = round($ht + $tva, 2);
-        $ir  = round($ht * ($tauxIr / 100), 2);
-        $net = round($ht - $ir, 2);
+        $ht  = (int) number_format($qte * $pu,               0, '.', '');
+        $tva = (int) number_format($ht * ($tauxTv / 100),    0, '.', '');
+        $ttc = (int) number_format($ht + $tva,               0, '.', '');
+        $ir  = (int) number_format($ht * ($tauxIr / 100),    0, '.', '');
+        $net = $ht - $ir;
 
         $set('montant_ht',  $ht);
         $set('montant_tva', $tva);
@@ -78,7 +81,6 @@ class BonCommandeRegieResource extends Resource
         $set('net_a_payer', $net);
     }
 
-
     // =========================================================
     // FORMULAIRE
     // =========================================================
@@ -86,11 +88,10 @@ class BonCommandeRegieResource extends Resource
     {
         return $form->schema([
 
-            // ── Section 1 : En-tête ───────────────────────────
+            // ── Section 1 : Identification ──────────────────────
             Forms\Components\Section::make('Identification')
                 ->schema([
                     Forms\Components\Grid::make(3)->schema([
-
                         Forms\Components\TextInput::make('numero')
                             ->label('Numéro')
                             ->disabled()->dehydrated()
@@ -116,7 +117,7 @@ class BonCommandeRegieResource extends Resource
                     ]),
                 ]),
 
-            // ── Section 2 : Régie + Ligne de nomenclature ─────
+            // ── Section 2 : Régie + Ligne budgétaire ────────────
             Forms\Components\Section::make('Régie source et ligne budgétaire')
                 ->description('Sélectionnez la régie puis la ligne de nomenclature (provision) qui sera débitée.')
                 ->schema([
@@ -130,7 +131,7 @@ class BonCommandeRegieResource extends Resource
                                         'super_admin',
                                         'admin',
                                         'daaf',
-                                        'agence_comptable'
+                                        'agence_comptable',
                                     ]),
                                     fn($q) => $q->where('responsable_id', auth()->id())
                                 )
@@ -140,20 +141,18 @@ class BonCommandeRegieResource extends Resource
                                     $r->id => "{$r->numero} — {$r->libelle} ({$r->label_type})"
                                         . " | Dispo: "
                                         . number_format($r->montant_disponible, 0, ',', ' ')
-                                        . " FCFA"
+                                        . " FCFA",
                                 ]);
                         })
                         ->required()
                         ->searchable()
                         ->live()
                         ->afterStateUpdated(function (Set $set) {
-                            // Réinitialiser les sélections dépendantes
                             $set('provision_ligne_regie_id', null);
                             $set('ligne_regie_avance_id',   null);
                         })
                         ->columnSpanFull(),
 
-                    // ── Provision (ligne dérivée approvisionnée) ──
                     Forms\Components\Select::make('provision_ligne_regie_id')
                         ->label('Ligne de nomenclature (Provision disponible)')
                         ->options(function (Get $get) {
@@ -162,8 +161,7 @@ class BonCommandeRegieResource extends Resource
 
                             return ProvisionLigneRegie::whereHas(
                                 'decaissement',
-                                fn($q) =>
-                                $q->where('regie_avance_id', $regieId)
+                                fn($q) => $q->where('regie_avance_id', $regieId)
                                     ->where('statut', 'verse')
                             )
                                 ->where('montant_disponible', '>', 0)
@@ -176,7 +174,7 @@ class BonCommandeRegieResource extends Resource
                                         . "| Tranche: {$p->decaissement->libelle_tranche} "
                                         . "| Dispo: "
                                         . number_format($p->montant_disponible, 0, ',', ' ')
-                                        . " FCFA"
+                                        . " FCFA",
                                 ]);
                         })
                         ->required()
@@ -190,10 +188,8 @@ class BonCommandeRegieResource extends Resource
                         ->helperText('Seules les provisions versées et disponibles sont affichées')
                         ->columnSpanFull(),
 
-                    // Champ caché — ligne régie
                     Forms\Components\Hidden::make('ligne_regie_avance_id'),
 
-                    // ── Aperçu provision sélectionnée ─────────────
                     Forms\Components\Placeholder::make('apercu_provision')
                         ->label('Situation de la provision sélectionnée')
                         ->content(function (Get $get) {
@@ -213,14 +209,14 @@ class BonCommandeRegieResource extends Resource
                                     . "<strong>Tranche :</strong> {$prov->decaissement->libelle_tranche}<br>"
                                     . "<strong>Provisionné :</strong> " . number_format($prov->montant_provisionne, 0, ',', ' ') . " FCFA<br>"
                                     . "<strong>Consommé :</strong> "    . number_format($prov->montant_consomme,    0, ',', ' ') . " FCFA<br>"
-                                    . "<strong style='color:green;'>Disponible :</strong> "  . number_format($prov->montant_disponible,  0, ',', ' ') . " FCFA"
+                                    . "<strong style='color:green;'>Disponible :</strong> " . number_format($prov->montant_disponible, 0, ',', ' ') . " FCFA"
                                     . '</div>'
                             );
                         })
                         ->columnSpanFull(),
                 ]),
 
-            // ── Section 3 : Fournisseur et objet ──────────────
+            // ── Section 3 : Fournisseur et objet ────────────────
             Forms\Components\Section::make('Fournisseur et objet')
                 ->schema([
                     Forms\Components\Select::make('fournisseur_id')
@@ -250,12 +246,10 @@ class BonCommandeRegieResource extends Resource
                 ])
                 ->columns(2),
 
+            // ── Section 4 : Lignes de commande ──────────────────
             Forms\Components\Section::make('Lignes de commande')
                 ->description('Ajoutez les articles/services de ce bon de commande.')
                 ->schema([
-
-                    // ── Taux communs applicables à toutes les lignes ──
-                    // ── Taux communs + Exonérations ──────────────────────────
                     Forms\Components\Grid::make(4)->schema([
 
                         Forms\Components\TextInput::make('tva_commune')
@@ -277,7 +271,6 @@ class BonCommandeRegieResource extends Resource
                             })
                             ->helperText('0 = Sans TVA | 19,25 = Standard'),
 
-                        // ✅ Toggle exonération TVA — par défaut ON (exonéré)
                         Forms\Components\Toggle::make('exonere_tva')
                             ->label('Exonération TVA')
                             ->default(true)
@@ -285,21 +278,18 @@ class BonCommandeRegieResource extends Resource
                             ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
                                 if ($state) {
                                     $set('tva_commune', 0);
-                                    $lignes = $get('lignes') ?? [];
-                                    foreach ($lignes as $index => $ligne) {
+                                    foreach ($get('lignes') ?? [] as $index => $ligne) {
                                         $set("lignes.{$index}.taux_tva", 0);
                                     }
                                 }
                             })
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
-                                $lignes = $get('lignes') ?? [];
-                                foreach ($lignes as $index => $ligne) {
+                                foreach ($get('lignes') ?? [] as $index => $ligne) {
                                     if ($state) {
                                         $set('tva_commune', 0);
                                         $set("lignes.{$index}.taux_tva", 0);
                                     } else {
-                                        $tvaCommune = (float) ($get('tva_commune') ?? 0);
-                                        $set("lignes.{$index}.taux_tva", $tvaCommune);
+                                        $set("lignes.{$index}.taux_tva", (float) ($get('tva_commune') ?? 0));
                                     }
                                     static::recalculerLigneBcr(
                                         fn($k, $v) => $set("lignes.{$index}.{$k}", $v),
@@ -317,8 +307,7 @@ class BonCommandeRegieResource extends Resource
                             ->disabled(fn(Forms\Get $get) => (bool) $get('exonere_ir'))
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                                 if ($get('exonere_ir')) return;
-                                $lignes = $get('lignes') ?? [];
-                                foreach ($lignes as $index => $ligne) {
+                                foreach ($get('lignes') ?? [] as $index => $ligne) {
                                     $set("lignes.{$index}.taux_ir", (float) ($state ?? 0));
                                     static::recalculerLigneBcr(
                                         fn($k, $v) => $set("lignes.{$index}.{$k}", $v),
@@ -328,7 +317,6 @@ class BonCommandeRegieResource extends Resource
                             })
                             ->helperText('0 = Aucun IR | 5,5 = Standard'),
 
-                        // ✅ Toggle exonération IR — par défaut ON (exonéré)
                         Forms\Components\Toggle::make('exonere_ir')
                             ->label('Exonération IR')
                             ->default(true)
@@ -336,21 +324,18 @@ class BonCommandeRegieResource extends Resource
                             ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
                                 if ($state) {
                                     $set('ir_commun', 0);
-                                    $lignes = $get('lignes') ?? [];
-                                    foreach ($lignes as $index => $ligne) {
+                                    foreach ($get('lignes') ?? [] as $index => $ligne) {
                                         $set("lignes.{$index}.taux_ir", 0);
                                     }
                                 }
                             })
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
-                                $lignes = $get('lignes') ?? [];
-                                foreach ($lignes as $index => $ligne) {
+                                foreach ($get('lignes') ?? [] as $index => $ligne) {
                                     if ($state) {
                                         $set('ir_commun', 0);
                                         $set("lignes.{$index}.taux_ir", 0);
                                     } else {
-                                        $irCommun = (float) ($get('ir_commun') ?? 0);
-                                        $set("lignes.{$index}.taux_ir", $irCommun);
+                                        $set("lignes.{$index}.taux_ir", (float) ($get('ir_commun') ?? 0));
                                     }
                                     static::recalculerLigneBcr(
                                         fn($k, $v) => $set("lignes.{$index}.{$k}", $v),
@@ -361,7 +346,6 @@ class BonCommandeRegieResource extends Resource
                             ->helperText('Forcer IR à 0%'),
                     ]),
 
-                    // Total TTC séparé
                     Forms\Components\Placeholder::make('total_commande')
                         ->label('Total TTC commande')
                         ->content(function (Forms\Get $get) {
@@ -370,12 +354,9 @@ class BonCommandeRegieResource extends Resource
                             return number_format($total, 0, ',', ' ') . ' FCFA';
                         }),
 
-                    // ── Repeater lignes ───────────────────────────────
                     Forms\Components\Repeater::make('lignes')
                         ->relationship('lignes')
                         ->schema([
-
-                            // ✅ NOUVEAU — Référence mercuriale ou personnalisée
                             Forms\Components\Grid::make(3)->schema([
                                 Forms\Components\Select::make('reference_mercuriale_id')
                                     ->label('Référence Mercuriale')
@@ -401,7 +382,7 @@ class BonCommandeRegieResource extends Resource
                                                 ->get()
                                                 ->mapWithKeys(fn($ref) => [
                                                     $ref->id => "{$ref->code_reference} — {$ref->designation} ({$ref->unite}) "
-                                                        . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA"
+                                                        . number_format($ref->prix_reference, 0, ',', ' ') . " FCFA",
                                                 ])
                                         );
                                         return ['manual' => '➕ Saisie manuelle'] + $results->toArray();
@@ -425,44 +406,36 @@ class BonCommandeRegieResource extends Resource
                                             $set('reference_personnalisee', null);
                                             return;
                                         }
-
                                         $ref = \Cache::remember(
                                             "mercuriale_full_{$state}",
                                             now()->addMinutes(10),
                                             fn() => \App\Models\ReferenceMercuriale::find($state)
                                         );
-
                                         if ($ref) {
-                                            // ✅ Mapping unité mercuriale → options du Select
                                             $mapUnites = [
-                                                'kg'          => 'kg',
-                                                'kilogramme'  => 'kg',
-                                                'kilo'        => 'kg',
-                                                'l'           => 'litre',
-                                                'litre'       => 'litre',
-                                                'litres'      => 'litre',
-                                                'm'           => 'mètre',
-                                                'mètre'       => 'mètre',
-                                                'metre'       => 'mètre',
-                                                'h'           => 'heure',
-                                                'heure'       => 'heure',
-                                                'heures'      => 'heure',
-                                                'j'           => 'jour',
-                                                'jour'        => 'jour',
-                                                'jours'       => 'jour',
-                                                'lot'         => 'lot',
-                                                'lots'        => 'lot',
-                                                'forfait'     => 'forfait',
+                                                'kg' => 'kg',
+                                                'kilogramme' => 'kg',
+                                                'kilo' => 'kg',
+                                                'l' => 'litre',
+                                                'litre' => 'litre',
+                                                'litres' => 'litre',
+                                                'm' => 'mètre',
+                                                'mètre' => 'mètre',
+                                                'metre' => 'mètre',
+                                                'h' => 'heure',
+                                                'heure' => 'heure',
+                                                'heures' => 'heure',
+                                                'j' => 'jour',
+                                                'jour' => 'jour',
+                                                'jours' => 'jour',
+                                                'lot' => 'lot',
+                                                'lots' => 'lot',
+                                                'forfait' => 'forfait',
                                             ];
-
-                                            $cleUnite       = strtolower(trim($ref->unite ?? ''));
-                                            $uniteNormalisee = $mapUnites[$cleUnite] ?? 'pièce';
-
                                             $set('designation',             $ref->designation);
-                                            $set('unite',                   $uniteNormalisee);
+                                            $set('unite',                   $mapUnites[strtolower(trim($ref->unite ?? ''))] ?? 'pièce');
                                             $set('prix_unitaire_ht',        $ref->prix_reference);
                                             $set('reference_personnalisee', null);
-
                                             static::recalculerLigneBcr($set, $get);
                                         }
                                     })
@@ -482,15 +455,12 @@ class BonCommandeRegieResource extends Resource
                                     ->columnSpan(1),
                             ])->columnSpanFull(),
 
-                            // ✅ Désignation sur sa propre ligne — pleine largeur
                             Forms\Components\TextInput::make('designation')
                                 ->label('Désignation')
                                 ->required()
                                 ->columnSpanFull(),
 
-                            // ✅ Champs numériques sur la ligne suivante — mieux espacés
                             Forms\Components\Grid::make(8)->schema([
-
                                 Forms\Components\TextInput::make('quantite')
                                     ->label('Qté')
                                     ->numeric()->default(1)->required()
@@ -504,13 +474,13 @@ class BonCommandeRegieResource extends Resource
                                 Forms\Components\Select::make('unite')
                                     ->label('Unité')
                                     ->options([
-                                        'pièce'   => 'Pièce',
-                                        'lot'     => 'Lot',
-                                        'kg'      => 'Kg',
-                                        'litre'   => 'L',
-                                        'mètre'   => 'M',
-                                        'heure'   => 'H',
-                                        'jour'    => 'J',
+                                        'pièce' => 'Pièce',
+                                        'lot' => 'Lot',
+                                        'kg' => 'Kg',
+                                        'litre' => 'L',
+                                        'mètre' => 'M',
+                                        'heure' => 'H',
+                                        'jour' => 'J',
                                         'forfait' => 'Forfait',
                                     ])
                                     ->default('pièce')->required()
@@ -525,9 +495,10 @@ class BonCommandeRegieResource extends Resource
                                         static::recalculerLigneBcr($set, $get)
                                     )
                                     ->columnSpan(2),
+
                                 Forms\Components\TextInput::make('taux_tva')
                                     ->label('TVA %')
-                                    ->numeric()->default(0)->suffix('%') 
+                                    ->numeric()->default(0)->suffix('%')
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(
                                         fn(Forms\Get $get, Forms\Set $set) =>
@@ -536,9 +507,7 @@ class BonCommandeRegieResource extends Resource
                                     ->disabled(fn(Forms\Get $get) => (bool) $get('../../exonere_tva'))
                                     ->dehydrated(true)
                                     ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
-                                        if ($get('../../exonere_tva')) {
-                                            $set('taux_tva', 0);
-                                        }
+                                        if ($get('../../exonere_tva')) $set('taux_tva', 0);
                                     })
                                     ->columnSpan(1),
 
@@ -553,11 +522,10 @@ class BonCommandeRegieResource extends Resource
                                     ->disabled(fn(Forms\Get $get) => (bool) $get('../../exonere_ir'))
                                     ->dehydrated(true)
                                     ->afterStateHydrated(function ($state, Forms\Set $set, Forms\Get $get) {
-                                        if ($get('../../exonere_ir')) {
-                                            $set('taux_ir', 0);
-                                        }
+                                        if ($get('../../exonere_ir')) $set('taux_ir', 0);
                                     })
                                     ->columnSpan(1),
+
                                 Forms\Components\Placeholder::make('montant_ttc_affiche')
                                     ->label('TTC')
                                     ->content(
@@ -572,11 +540,9 @@ class BonCommandeRegieResource extends Resource
                                         fn(Forms\Get $get) =>
                                         number_format((float) ($get('net_a_payer') ?? 0), 0, ',', ' ') . ' F'
                                     )
-                                    ->columnSpan(1),  // ← retirez ce champ si vous êtes à 9 colonnes,
-                                //   ou ajustez les spans pour rester à 8
+                                    ->columnSpan(1),
                             ]),
 
-                            // ✅ EXISTANT — Champs cachés calculés (inchangés)
                             Forms\Components\Hidden::make('montant_ht')->default(0),
                             Forms\Components\Hidden::make('montant_tva')->default(0),
                             Forms\Components\Hidden::make('montant_ttc')->default(0),
@@ -584,7 +550,6 @@ class BonCommandeRegieResource extends Resource
                             Forms\Components\Hidden::make('net_a_payer')->default(0),
                             Forms\Components\Hidden::make('numero_ligne')->default(1),
 
-                            // ✅ EXISTANT — Observations (inchangée)
                             Forms\Components\Textarea::make('observations')
                                 ->label('Observations')->rows(1)->columnSpanFull(),
                         ])
@@ -627,7 +592,8 @@ class BonCommandeRegieResource extends Resource
                         }),
                 ])
                 ->columns(1),
-            // ── Section 4 : Totaux (lecture seule) ────────────
+
+            // ── Section 5 : Totaux (lecture seule) ──────────────
             Forms\Components\Section::make('Totaux')
                 ->schema([
                     Forms\Components\Grid::make(5)->schema([
@@ -708,7 +674,8 @@ class BonCommandeRegieResource extends Resource
                     ->label('Date')->date('d/m/Y')->sortable(),
 
                 Tables\Columns\TextColumn::make('montant_ttc')
-                    ->label('TTC')->money('XAF')->sortable()->weight('bold'),
+                    ->label('TTC')
+                    ->money('XAF')->sortable()->weight('bold'),
 
                 Tables\Columns\TextColumn::make('montant_ir')
                     ->label('IR')->money('XAF')->color('warning'),
@@ -716,9 +683,53 @@ class BonCommandeRegieResource extends Resource
                 Tables\Columns\TextColumn::make('net_a_payer')
                     ->label('Net')->money('XAF')->color('success'),
 
-                Tables\Columns\IconColumn::make('engage')
-                    ->label('Engagé')->boolean()
-                    ->trueColor('success')->falseColor('gray'),
+                // ✅ Statut engagement détaillé (partiel vs total)
+                Tables\Columns\TextColumn::make('statut_engagement')
+                    ->label('Engagement')
+                    ->getStateUsing(function ($record) {
+                        if (!$record || !$record->engage) return 'Non engagé';
+
+                        $pct    = (float) ($record->pourcentage_engage ?? 100);
+                        // ✅ montant_engage peut être 0 stocké — fallback si <= 0
+                        $engage = (float) $record->montant_engage > 0
+                            ? (float) $record->montant_engage
+                            : (float) $record->montant_ttc;
+                        $reste  = (float) ($record->reste_a_engager ?? 0);
+
+                        if ($pct >= 100 || $reste <= 0) {
+                            return '✅ Total — ' . number_format($engage, 0, ',', ' ') . ' F';
+                        }
+
+                        return "⚡ {$pct}% — " . number_format($engage, 0, ',', ' ') . " F engagé";
+                    })
+                    ->badge()
+                    ->color(function ($record) {
+                        if (!$record || !$record->engage) return 'gray';
+                        $pct = (float) ($record->pourcentage_engage ?? 100);
+                        return match (true) {
+                            $pct >= 100 => 'success',
+                            $pct >= 50  => 'warning',
+                            default     => 'danger',
+                        };
+                    })
+                    ->toggleable(),
+
+                // ✅ Reste à engager — visible jusqu'au paiement total
+                Tables\Columns\TextColumn::make('reste_a_engager')
+                    ->label('Reste à engager')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$record->engage) return '—';
+                        $reste = (float) ($record->reste_a_engager ?? 0);
+                        if ($reste <= 0) return '✅ Soldé';
+                        return number_format($reste, 0, ',', ' ') . ' FCFA';
+                    })
+                    ->color(function ($record) {
+                        if (!$record->engage) return 'gray';
+                        return ((float) ($record->reste_a_engager ?? 0)) > 0 ? 'danger' : 'success';
+                    })
+                    ->badge()
+                    ->visible(fn($record) => $record && (bool) $record->engage)
+                    ->toggleable(),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->colors([
@@ -729,25 +740,25 @@ class BonCommandeRegieResource extends Resource
                         'danger'  => 'annule',
                     ])
                     ->formatStateUsing(fn($state) => match ($state) {
-                        'brouillon'          => 'Brouillon',
-                        'valide'             => 'Validé',
+                        'brouillon'           => 'Brouillon',
+                        'valide'              => 'Validé',
                         'livre_partiellement' => 'Livré part.',
-                        'livre'              => 'Livré',
-                        'paye'               => 'Payé',
-                        'annule'             => 'Annulé',
-                        default              => $state,
+                        'livre'               => 'Livré',
+                        'paye'                => 'Payé',
+                        'annule'              => 'Annulé',
+                        default               => $state,
                     }),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('statut')
                     ->options([
-                        'brouillon'          => 'Brouillon',
-                        'valide'             => 'Validé',
+                        'brouillon'           => 'Brouillon',
+                        'valide'              => 'Validé',
                         'livre_partiellement' => 'Livré partiellement',
-                        'livre'              => 'Livré',
-                        'paye'               => 'Payé',
-                        'annule'             => 'Annulé',
+                        'livre'               => 'Livré',
+                        'paye'                => 'Payé',
+                        'annule'              => 'Annulé',
                     ]),
 
                 Tables\Filters\TernaryFilter::make('engage')
@@ -764,13 +775,14 @@ class BonCommandeRegieResource extends Resource
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
 
-                // ── Valider ───────────────────────────────────
+                // ── Valider ───────────────────────────────────────
                 Tables\Actions\Action::make('valider')
                     ->label('Valider')
                     ->icon('heroicon-o-check-circle')->color('success')
                     ->visible(
                         fn($record) =>
-                        $record->statut === 'brouillon'
+                        $record
+                            && $record->statut === 'brouillon'
                             && $record->lignes()->count() > 0
                             && auth()->user()?->can('valider_bon_commande_regie')
                     )
@@ -785,20 +797,21 @@ class BonCommandeRegieResource extends Resource
                         Notification::make()->title('✅ BCR/BCM validé')->success()->send();
                     }),
 
-                // ── Engager (débite la provision) ─────────────
+                // ── Engager ───────────────────────────────────────
                 Tables\Actions\Action::make('engager')
                     ->label('Engager')
                     ->icon('heroicon-o-banknotes')->color('primary')
                     ->visible(
                         fn($record) =>
-                        $record->statut === 'valide'
+                        $record
+                            && $record->statut === 'valide'
                             && !$record->engage
                             && auth()->user()?->can('valider_bon_commande_regie')
                     )
                     ->form(function ($record) {
-                        $prov        = $record->provisionLigneRegie;
-                        $montantTtc  = (float) $record->montant_ttc;
-                        $disponible  = (float) ($prov?->montant_disponible ?? 0);
+                        $prov       = $record->provisionLigneRegie;
+                        $montantTtc = (float) $record->montant_ttc;
+                        $disponible = (float) ($prov?->montant_disponible ?? 0);
 
                         return [
                             Forms\Components\Placeholder::make('info_bcr')
@@ -813,63 +826,60 @@ class BonCommandeRegieResource extends Resource
                                 ))
                                 ->columnSpanFull(),
 
-                            // ── Mode d'engagement ─────────────────────────────
                             Forms\Components\Radio::make('mode_engagement')
                                 ->label('Mode d\'engagement')
                                 ->options([
-                                    'total'    => '💯 Total — engager la totalité du TTC',
-                                    'partiel'  => '📊 Partiel — engager un pourcentage ou un montant',
+                                    'total'   => '💯 Total — engager la totalité du TTC',
+                                    'partiel' => '📊 Partiel — engager un pourcentage ou un montant',
                                 ])
                                 ->default('total')
                                 ->live()
                                 ->columnSpanFull(),
 
-                            // ── Engagement partiel ────────────────────────────
-                            Forms\Components\Grid::make(2)->schema([
-                                Forms\Components\Select::make('type_partiel')
-                                    ->label('Calculer par')
-                                    ->options([
-                                        'pourcentage' => '% Pourcentage',
-                                        'montant'     => '💵 Montant fixe',
-                                    ])
-                                    ->default('pourcentage')
-                                    ->live()
-                                    ->required(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
+                            Forms\Components\Grid::make(2)
+                                ->schema([
+                                    Forms\Components\Select::make('type_partiel')
+                                        ->label('Calculer par')
+                                        ->options([
+                                            'pourcentage' => '% Pourcentage',
+                                            'montant'     => '💵 Montant fixe',
+                                        ])
+                                        ->default('pourcentage')
+                                        ->live()
+                                        ->required(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
 
-                                Forms\Components\TextInput::make('pourcentage')
-                                    ->label('Pourcentage (%)')
-                                    ->numeric()->suffix('%')->default(40)
-                                    ->minValue(1)->maxValue(100)
-                                    ->live(onBlur: true)
-                                    ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
-                                        $montantCalc = round($montantTtc * ((float) $state / 100), 2);
-                                        $set('montant_a_engager', $montantCalc);
-                                    })
-                                    ->visible(
-                                        fn(Forms\Get $get) =>
-                                        $get('mode_engagement') === 'partiel'
-                                            && $get('type_partiel') === 'pourcentage'
-                                    ),
+                                    Forms\Components\TextInput::make('pourcentage')
+                                        ->label('Pourcentage (%)')
+                                        ->numeric()->suffix('%')->default(40)
+                                        ->minValue(1)->maxValue(100)
+                                        ->live(onBlur: true)
+                                        ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
+                                            $set('montant_a_engager', round($montantTtc * ((float) $state / 100), 2));
+                                        })
+                                        ->visible(
+                                            fn(Forms\Get $get) =>
+                                            $get('mode_engagement') === 'partiel'
+                                                && $get('type_partiel') === 'pourcentage'
+                                        ),
 
-                                Forms\Components\TextInput::make('montant_fixe')
-                                    ->label('Montant à engager (FCFA)')
-                                    ->numeric()->prefix('FCFA')
-                                    ->minValue(1)->maxValue($montantTtc)
-                                    ->live(onBlur: true)
-                                    ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
-                                        $pct = $montantTtc > 0 ? round(((float) $state / $montantTtc) * 100, 2) : 0;
-                                        $set('montant_a_engager', (float) $state);
-                                        $set('pourcentage', $pct);
-                                    })
-                                    ->visible(
-                                        fn(Forms\Get $get) =>
-                                        $get('mode_engagement') === 'partiel'
-                                            && $get('type_partiel') === 'montant'
-                                    ),
-                            ])
+                                    Forms\Components\TextInput::make('montant_fixe')
+                                        ->label('Montant à engager (FCFA)')
+                                        ->numeric()->prefix('FCFA')
+                                        ->minValue(1)->maxValue($montantTtc)
+                                        ->live(onBlur: true)
+                                        ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
+                                            $pct = $montantTtc > 0 ? round(((float) $state / $montantTtc) * 100, 2) : 0;
+                                            $set('montant_a_engager', (float) $state);
+                                            $set('pourcentage', $pct);
+                                        })
+                                        ->visible(
+                                            fn(Forms\Get $get) =>
+                                            $get('mode_engagement') === 'partiel'
+                                                && $get('type_partiel') === 'montant'
+                                        ),
+                                ])
                                 ->visible(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
 
-                            // ── Résumé montant calculé ────────────────────────
                             Forms\Components\Placeholder::make('resume_engagement')
                                 ->label('Montant qui sera engagé')
                                 ->content(function (Forms\Get $get) use ($montantTtc, $disponible) {
@@ -886,16 +896,16 @@ class BonCommandeRegieResource extends Resource
                                             : 0;
                                     }
 
-                                    $reste      = $montantTtc - $montant;
-                                    $suffisant  = $montant <= $disponible;
-                                    $couleur    = $suffisant ? 'green' : 'red';
-                                    $alerte     = $suffisant ? '' : ' ⚠️ Insuffisant !';
+                                    $reste     = $montantTtc - $montant;
+                                    $suffisant = $montant <= $disponible;
+                                    $couleur   = $suffisant ? 'green' : 'red';
+                                    $alerte    = $suffisant ? '' : ' ⚠️ Provision insuffisante !';
 
                                     return new \Illuminate\Support\HtmlString(
                                         '<div style="background:#f8fafc;padding:.75rem;border-radius:.5rem;font-size:.85rem;line-height:2;">'
                                             . "<strong style='color:{$couleur};font-size:1rem;'>"
                                             . number_format($montant, 0, ',', ' ') . " FCFA ({$pct}%)</strong>{$alerte}<br>"
-                                            . "<strong>Reste à engager après :</strong> "
+                                            . "<strong>Reste non engagé après :</strong> "
                                             . number_format($reste, 0, ',', ' ') . " FCFA<br>"
                                             . "<strong>Provision disponible :</strong> "
                                             . number_format($disponible, 0, ',', ' ') . " FCFA"
@@ -915,7 +925,6 @@ class BonCommandeRegieResource extends Resource
                         try {
                             $montantTtc = (float) $record->montant_ttc;
 
-                            // ── Calculer le montant à engager ─────────────────
                             if ($data['mode_engagement'] === 'total') {
                                 $montantAEngager = $montantTtc;
                             } elseif (($data['type_partiel'] ?? 'pourcentage') === 'pourcentage') {
@@ -931,18 +940,25 @@ class BonCommandeRegieResource extends Resource
                                 ? round(($montantAEngager / $montantTtc) * 100, 2)
                                 : 100;
 
-                            // ── Engager ───────────────────────────────────────
                             $record->engager(
                                 montantPartiel: $montantAEngager,
                                 pourcentage: $pourcentage,
                                 commentaire: $data['commentaire'] ?? null
                             );
 
-                            $msg = $pourcentage === 100.0
-                                ? '✅ BCR engagé totalement — provision débitée'
-                                : "✅ BCR engagé à {$pourcentage}% ("
-                                . number_format($montantAEngager, 0, ',', ' ')
-                                . " FCFA) — provision débitée";
+                            // ✅ Stocker les infos d'engagement — colonnes réelles
+                            $record->forceFill([
+                                'montant_engage'     => $montantAEngager,
+                                'pourcentage_engage' => $pourcentage,
+                                'reste_a_engager'    => $montantTtc - $montantAEngager,
+                            ])->save();
+
+                            $estPartiel = $pourcentage < 100;
+                            $msg = $estPartiel
+                                ? "⚡ BCR engagé partiellement à {$pourcentage}% ("
+                                . number_format($montantAEngager, 0, ',', ' ') . " FCFA sur "
+                                . number_format($montantTtc, 0, ',', ' ') . " FCFA TTC)"
+                                : '✅ BCR engagé totalement — provision débitée';
 
                             Notification::make()->title($msg)->success()->send();
                         } catch (\Exception $e) {
@@ -952,13 +968,14 @@ class BonCommandeRegieResource extends Resource
                         }
                     }),
 
-                // ── Désengager ────────────────────────────────
+                // ── Désengager ────────────────────────────────────
                 Tables\Actions\Action::make('desengager')
                     ->label('Désengager')
                     ->icon('heroicon-o-arrow-uturn-left')->color('warning')
                     ->visible(
                         fn($record) =>
-                        $record->engage
+                        $record
+                            && $record->engage
                             && $record->statut === 'valide'
                             && auth()->user()?->can('annuler_bon_commande_regie')
                     )
@@ -966,6 +983,12 @@ class BonCommandeRegieResource extends Resource
                     ->action(function ($record) {
                         try {
                             $record->desengager();
+                            // ✅ Remettre les champs d'engagement à zéro
+                            $record->updateQuietly([
+                                'montant_engage'     => 0,
+                                'pourcentage_engage' => 0,
+                                'reste_a_engager'    => $record->montant_ttc,
+                            ]);
                             Notification::make()
                                 ->title('↩ BCR désengagé — provision restituée')
                                 ->warning()->send();
@@ -976,33 +999,109 @@ class BonCommandeRegieResource extends Resource
                         }
                     }),
 
-                // ── Livré ─────────────────────────────────────
+                // ── Livré ─────────────────────────────────────────
                 Tables\Actions\Action::make('livrer')
                     ->label('Marquer livré')
                     ->icon('heroicon-o-truck')->color('info')
                     ->visible(
                         fn($record) =>
-                        $record->statut === 'valide'
+                        $record
+                            && $record->statut === 'valide'
                             && $record->engage
                     )
                     ->requiresConfirmation()
                     ->action(fn($record) => $record->update(['statut' => 'livre'])),
 
-                // ── Payé ──────────────────────────────────────
+                // ── Payé ──────────────────────────────────────────
                 Tables\Actions\Action::make('payer')
                     ->label('Marquer payé')
                     ->icon('heroicon-o-banknotes')->color('success')
-                    ->visible(fn($record) => $record->statut === 'livre')
-                    ->requiresConfirmation()
-                    ->action(fn($record) => $record->update(['statut' => 'paye'])),
+                    ->visible(fn($record) => $record && $record->statut === 'livre')
+                    ->form(function ($record) {
+                        $pct   = (float) ($record->pourcentage_engage ?? 100);
+                        $reste = (float) ($record->reste_a_engager    ?? 0);
 
-                // ── Annuler ───────────────────────────────────
+                        // Pas de formulaire si engagement total
+                        if ($pct >= 100 || $reste <= 0) return [];
+
+                        return [
+                            Forms\Components\Placeholder::make('alerte_partiel')
+                                ->label('')
+                                ->content(new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef9c3;border:1px solid #ca8a04;
+                                        border-radius:.5rem;padding:.75rem;font-size:.85rem;line-height:1.8;">'
+                                        . "⚠️ <strong>Engagement partiel non soldé</strong><br>"
+                                        . "Engagé : <strong>{$pct}% ("
+                                        . number_format($record->montant_engage, 0, ',', ' ') . " FCFA)</strong><br>"
+                                        . "Reste non engagé : <strong style='color:#dc2626;'>"
+                                        . number_format($reste, 0, ',', ' ') . " FCFA (" . (100 - $pct) . "%)</strong><br>"
+                                        . "Cochez ci-dessous pour solder automatiquement avant paiement."
+                                        . '</div>'
+                                ))
+                                ->columnSpanFull(),
+
+                            Forms\Components\Toggle::make('solder_engagement')
+                                ->label('Solder le reste avant paiement (' . number_format($reste, 0, ',', ' ') . ' FCFA)')
+                                ->default(true)
+                                ->helperText('Engagera automatiquement le montant restant depuis la provision')
+                                ->columnSpanFull(),
+                        ];
+                    })
+                    ->requiresConfirmation(
+                        fn($record) =>
+                        !$record
+                            || (float) ($record->pourcentage_engage ?? 100) >= 100
+                            || (float) ($record->reste_a_engager ?? 0) <= 0
+                    )
+                    ->modalHeading('Marquer le BCR comme payé')
+                    ->action(function ($record, array $data) {
+                        DB::transaction(function () use ($record, $data) {
+                            $pct   = (float) ($record->pourcentage_engage ?? 100);
+                            $reste = (float) ($record->reste_a_engager    ?? 0);
+
+                            // ✅ Solder l'engagement partiel si demandé
+                            if ($reste > 0 && ($data['solder_engagement'] ?? true)) {
+                                try {
+                                    $record->engager(
+                                        montantPartiel: $reste,
+                                        pourcentage: 100 - $pct,
+                                        commentaire: 'Solde automatique avant paiement'
+                                    );
+                                    $record->updateQuietly([
+                                        'montant_engage'     => $record->montant_ttc,
+                                        'pourcentage_engage' => 100,
+                                        'reste_a_engager'    => 0,
+                                    ]);
+                                } catch (\Exception $e) {
+                                    \Log::warning('Solde engagement BCR: ' . $e->getMessage());
+                                }
+                            }
+
+                            $record->update(['statut' => 'paye']);
+
+                            // ✅ Recalculer les dépenses du décaissement lié
+                            $prov = $record->provisionLigneRegie;
+                            if ($prov?->decaissement) {
+                                $prov->decaissement->load('provisions');
+                                $prov->decaissement->recalculerDepenses();
+                            }
+                        });
+
+                        Notification::make()
+                            ->title('✅ BCR payé')
+                            ->success()
+                            ->body('Dépenses du décaissement recalculées.')
+                            ->send();
+                    }),
+
+                // ── Annuler ───────────────────────────────────────
                 Tables\Actions\Action::make('annuler')
                     ->label('Annuler')
                     ->icon('heroicon-o-x-circle')->color('danger')
                     ->visible(
                         fn($record) =>
-                        in_array($record->statut, ['brouillon', 'valide'])
+                        $record
+                            && in_array($record->statut, ['brouillon', 'valide'])
                             && auth()->user()?->can('annuler_bon_commande_regie')
                     )
                     ->requiresConfirmation()
@@ -1011,21 +1110,22 @@ class BonCommandeRegieResource extends Resource
                             ->label('Motif')->rows(2)->required(),
                     ])
                     ->action(function ($record, array $data) {
-                        // Désengager si nécessaire avant annulation
                         if ($record->engage) {
                             $record->desengager();
                         }
                         $record->update([
-                            'statut'       => 'annule',
-                            'observations' => ($record->observations ?? '')
+                            'statut'         => 'annule',
+                            'observations'   => ($record->observations ?? '')
                                 . "\n--- ANNULÉ " . now()->format('d/m/Y') . " ---\n"
                                 . $data['motif'],
+                            'montant_engage'     => 0,
+                            'pourcentage_engage' => 0,
+                            'reste_a_engager'    => 0,
                         ]);
                         Notification::make()->title('BCR annulé')->warning()->send();
                     }),
 
                 Tables\Actions\ActionGroup::make([
-                    // Aperçu — visible pour tous
                     Tables\Actions\Action::make('apercu_bca')
                         ->label('Aperçu BCA')
                         ->icon('heroicon-o-eye')
@@ -1037,7 +1137,6 @@ class BonCommandeRegieResource extends Resource
                             );
                         }),
 
-                    // Télécharger — visible uniquement après validation
                     Tables\Actions\Action::make('telecharger_bca')
                         ->label('Télécharger BCA')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -1090,12 +1189,11 @@ class BonCommandeRegieResource extends Resource
             'admin',
             'daaf',
             'agence_comptable',
-            'controleur_financier'
+            'controleur_financier',
         ])) {
             $query->whereHas(
                 'regieAvance',
-                fn($q) =>
-                $q->where('responsable_id', $user->id)
+                fn($q) => $q->where('responsable_id', $user->id)
             );
         }
 

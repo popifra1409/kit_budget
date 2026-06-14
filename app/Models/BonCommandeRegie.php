@@ -25,8 +25,8 @@ class BonCommandeRegie extends Model
         'montant_ttc',
         'montant_ir',
         'net_a_payer',
-        'exonere_tva' => 'boolean',
-        'exonere_ir'  => 'boolean',
+        'exonere_tva',
+        'exonere_ir',
         'statut',
         'observations',
         'created_by',
@@ -35,6 +35,9 @@ class BonCommandeRegie extends Model
         'provision_ligne_regie_id',
         'engage',
         'date_engagement',
+        'montant_engage',
+        'pourcentage_engage',
+        'reste_a_engager',
     ];
 
     protected $casts = [
