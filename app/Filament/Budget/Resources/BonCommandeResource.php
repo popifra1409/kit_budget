@@ -25,6 +25,7 @@ use App\Services\BonCommandePdfService;
 use App\Filament\Clusters\GestionBudgetaire;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Tables\Enums\ActionsPosition;
 
 class BonCommandeResource extends Resource
 {
@@ -1544,14 +1545,21 @@ class BonCommandeResource extends Resource
                     ->trueLabel('Engagés')
                     ->falseLabel('Non engagés'),
             ])
-            ->actions(
-                WorkflowActions::make(
-                    avecEngagement: true,
-                    pdfServiceClass: BonCommandePdfService::class,
-                    pdfRouteName: 'bons-commande.pdf.preview',
-                    avecModalEngagement: true
+            ->actions([
+                Tables\Actions\ActionGroup::make(
+                    WorkflowActions::make(
+                        avecEngagement: true,
+                        pdfServiceClass: BonCommandePdfService::class,
+                        pdfRouteName: 'bons-commande.pdf.preview',
+                        avecModalEngagement: true
+                    )
                 )
-            )
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

@@ -16,6 +16,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Models\Exercice;
+use Filament\Tables\Enums\ActionsPosition;
 
 class RegieAvanceResource extends Resource
 {
@@ -372,118 +373,125 @@ class RegieAvanceResource extends Resource
                     ->preload(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
 
-                // ── Suspendre ────────────────────────────────
-                Tables\Actions\Action::make('suspendre')
-                    ->label('Suspendre')
-                    ->icon('heroicon-o-pause-circle')
-                    ->color('warning')
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'actif'
-                            && auth()->user()?->can('suspendre_regie_avance')
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Suspendre la régie')
-                    ->modalDescription(
-                        'La régie sera suspendue — aucune dépense ne pourra être enregistrée.'
-                    )
-                    ->action(function ($record) {
-                        $record->update(['statut' => 'suspendu']);
-                        Notification::make()->title('Régie suspendue')->warning()->send();
-                    }),
+                    // ── Suspendre ────────────────────────────────
+                    Tables\Actions\Action::make('suspendre')
+                        ->label('Suspendre')
+                        ->icon('heroicon-o-pause-circle')
+                        ->color('warning')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'actif'
+                                && auth()->user()?->can('suspendre_regie_avance')
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Suspendre la régie')
+                        ->modalDescription(
+                            'La régie sera suspendue — aucune dépense ne pourra être enregistrée.'
+                        )
+                        ->action(function ($record) {
+                            $record->update(['statut' => 'suspendu']);
+                            Notification::make()->title('Régie suspendue')->warning()->send();
+                        }),
 
-                // ── Réactiver ────────────────────────────────
-                Tables\Actions\Action::make('reactiver')
-                    ->label('Réactiver')
-                    ->icon('heroicon-o-play-circle')
-                    ->color('success')
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'suspendu'
-                            && auth()->user()?->can('suspendre_regie_avance')
-                    )
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->update(['statut' => 'actif']);
-                        Notification::make()->title('Régie réactivée')->success()->send();
-                    }),
+                    // ── Réactiver ────────────────────────────────
+                    Tables\Actions\Action::make('reactiver')
+                        ->label('Réactiver')
+                        ->icon('heroicon-o-play-circle')
+                        ->color('success')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'suspendu'
+                                && auth()->user()?->can('suspendre_regie_avance')
+                        )
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            $record->update(['statut' => 'actif']);
+                            Notification::make()->title('Régie réactivée')->success()->send();
+                        }),
 
-                // ── Clôturer ─────────────────────────────────
-                Tables\Actions\Action::make('cloturer')
-                    ->label('Clôturer')
-                    ->icon('heroicon-o-lock-closed')
-                    ->color('danger')
-                    ->visible(
-                        fn($record) =>
-                        in_array($record->statut, ['actif', 'suspendu'])
-                            && auth()->user()?->can('cloturer_regie_avance')
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Clôturer la régie')
-                    ->modalDescription(
-                        'La régie sera définitivement clôturée. Cette action est irréversible.'
-                    )
-                    ->form([
-                        Forms\Components\DatePicker::make('date_cloture')
-                            ->label('Date de clôture')
-                            ->default(now())
-                            ->required(),
-                        Forms\Components\Textarea::make('observations')
-                            ->label('Observations de clôture')
-                            ->rows(2),
-                    ])
-                    ->action(function ($record, array $data) {
-                        $record->update([
-                            'statut'       => 'cloture',
-                            'date_cloture' => $data['date_cloture'],
-                            'observations' => ($record->observations ?? '')
-                                . "\n\n--- CLÔTURÉE LE " . now()->format('d/m/Y') . " ---\n"
-                                . ($data['observations'] ?? ''),
-                        ]);
-                        Notification::make()->title('✅ Régie clôturée')->success()->send();
-                    }),
+                    // ── Clôturer ─────────────────────────────────
+                    Tables\Actions\Action::make('cloturer')
+                        ->label('Clôturer')
+                        ->icon('heroicon-o-lock-closed')
+                        ->color('danger')
+                        ->visible(
+                            fn($record) =>
+                            in_array($record->statut, ['actif', 'suspendu'])
+                                && auth()->user()?->can('cloturer_regie_avance')
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Clôturer la régie')
+                        ->modalDescription(
+                            'La régie sera définitivement clôturée. Cette action est irréversible.'
+                        )
+                        ->form([
+                            Forms\Components\DatePicker::make('date_cloture')
+                                ->label('Date de clôture')
+                                ->default(now())
+                                ->required(),
+                            Forms\Components\Textarea::make('observations')
+                                ->label('Observations de clôture')
+                                ->rows(2),
+                        ])
+                        ->action(function ($record, array $data) {
+                            $record->update([
+                                'statut'       => 'cloture',
+                                'date_cloture' => $data['date_cloture'],
+                                'observations' => ($record->observations ?? '')
+                                    . "\n\n--- CLÔTURÉE LE " . now()->format('d/m/Y') . " ---\n"
+                                    . ($data['observations'] ?? ''),
+                            ]);
+                            Notification::make()->title('✅ Régie clôturée')->success()->send();
+                        }),
 
-                // ── Réapprovisionner ──────────────────────────
-                Tables\Actions\Action::make('reapprovisionner')
-                    ->label('Réapprovisionner')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('primary')
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'actif'
-                            && auth()->user()?->can('reapprovisionner_regie_avance')
-                    )
-                    ->modalHeading('Réapprovisionner la régie')
-                    ->form([
-                        Forms\Components\Select::make('decision_administrative_id')
-                            ->label('Nouvelle DA engagée')
-                            ->options(function () {
-                                return \App\Models\DecisionAdministrative::where('statut', 'engagee')
-                                    ->get()
-                                    ->mapWithKeys(fn($da) => [
-                                        $da->id => "{$da->numero} — {$da->objet} "
-                                            . "(" . number_format($da->montant_net, 0, ',', ' ') . " FCFA)"
-                                    ]);
-                            })
-                            ->helperText('DA engagée source — les montants seront pré-remplis')
-                            ->required()
-                            ->searchable(),
-                    ])
-                    ->action(function ($record, array $data) {
-                        $da = \App\Models\DecisionAdministrative::findOrFail(
-                            $data['decision_administrative_id']
-                        );
-                        $record->reapprovisionner($da);
-                        Notification::make()
-                            ->title('✅ Régie réapprovisionnée')
-                            ->success()
-                            ->body("+ " . number_format($da->montant_net, 0, ',', ' ') . " FCFA")
-                            ->send();
-                    }),
-            ])
+                    // ── Réapprovisionner ──────────────────────────
+                    Tables\Actions\Action::make('reapprovisionner')
+                        ->label('Réapprovisionner')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('primary')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'actif'
+                                && auth()->user()?->can('reapprovisionner_regie_avance')
+                        )
+                        ->modalHeading('Réapprovisionner la régie')
+                        ->form([
+                            Forms\Components\Select::make('decision_administrative_id')
+                                ->label('Nouvelle DA engagée')
+                                ->options(function () {
+                                    return \App\Models\DecisionAdministrative::where('statut', 'engagee')
+                                        ->get()
+                                        ->mapWithKeys(fn($da) => [
+                                            $da->id => "{$da->numero} — {$da->objet} "
+                                                . "(" . number_format($da->montant_net, 0, ',', ' ') . " FCFA)"
+                                        ]);
+                                })
+                                ->helperText('DA engagée source — les montants seront pré-remplis')
+                                ->required()
+                                ->searchable(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            $da = \App\Models\DecisionAdministrative::findOrFail(
+                                $data['decision_administrative_id']
+                            );
+                            $record->reapprovisionner($da);
+                            Notification::make()
+                                ->title('✅ Régie réapprovisionnée')
+                                ->success()
+                                ->body("+ " . number_format($da->montant_net, 0, ',', ' ') . " FCFA")
+                                ->send();
+                        }),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

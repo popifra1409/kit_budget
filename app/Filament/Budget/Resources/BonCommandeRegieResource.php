@@ -17,6 +17,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use Filament\Tables\Enums\ActionsPosition;
 
 class BonCommandeRegieResource extends Resource
 {
@@ -751,6 +752,62 @@ class BonCommandeRegieResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période')
+                            ->options([
+                                'today'        => "Aujourd'hui",
+                                'yesterday'    => 'Hier',
+                                'this_week'    => 'Cette semaine',
+                                'last_week'    => 'Semaine dernière',
+                                'this_month'   => 'Ce mois',
+                                'last_month'   => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year'    => 'Cette année',
+                                'last_year'    => 'Année dernière',
+                            ])
+                            ->default('today')
+                            ->placeholder('Toutes les périodes'),
+                    ])
+                    ->default(['periode' => 'today'])
+                    ->query(function ($query, array $data) {
+                        return $query->when(
+                            $data['periode'] ?? null,
+                            fn($q, $periode) => match ($periode) {
+                                'today'        => $q->whereDate('date_emission', today()),
+                                'yesterday'    => $q->whereDate('date_emission', today()->subDay()),
+                                'this_week'    => $q->whereBetween('date_emission', [now()->startOfWeek(), now()->endOfWeek()]),
+                                'last_week'    => $q->whereBetween('date_emission', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
+                                'this_month'   => $q->whereMonth('date_emission', now()->month)->whereYear('date_emission', now()->year),
+                                'last_month'   => $q->whereMonth('date_emission', now()->subMonth()->month)->whereYear('date_emission', now()->subMonth()->year),
+                                'this_quarter' => $q->whereBetween('date_emission', [now()->startOfQuarter(), now()->endOfQuarter()]),
+                                'last_quarter' => $q->whereBetween('date_emission', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
+                                'this_year'    => $q->whereYear('date_emission', now()->year),
+                                'last_year'    => $q->whereYear('date_emission', now()->subYear()->year),
+                                default        => $q,
+                            }
+                        );
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) return null;
+                        $labels = [
+                            'today'        => "Aujourd'hui",
+                            'yesterday'    => 'Hier',
+                            'this_week'    => 'Cette semaine',
+                            'last_week'    => 'Semaine dernière',
+                            'this_month'   => 'Ce mois',
+                            'last_month'   => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year'    => 'Cette année',
+                            'last_year'    => 'Année dernière',
+                        ];
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
+
+                // ── Filtres existants (inchangés) ───────────────────────
                 Tables\Filters\SelectFilter::make('statut')
                     ->options([
                         'brouillon'           => 'Brouillon',
@@ -772,388 +829,391 @@ class BonCommandeRegieResource extends Resource
                     ->searchable(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ActionGroup::make([
 
-                // ── Valider ───────────────────────────────────────
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')->color('success')
-                    ->visible(
-                        fn($record) =>
-                        $record
-                            && $record->statut === 'brouillon'
-                            && $record->lignes()->count() > 0
-                            && auth()->user()?->can('valider_bon_commande_regie')
-                    )
-                    ->requiresConfirmation()
-                    ->modalDescription(
-                        fn($record) =>
-                        "Valider le {$record->numero} — "
-                            . number_format($record->montant_ttc, 0, ',', ' ') . " FCFA TTC ?"
-                    )
-                    ->action(function ($record) {
-                        $record->update(['statut' => 'valide']);
-                        Notification::make()->title('✅ BCR/BCM validé')->success()->send();
-                    }),
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
 
-                // ── Engager ───────────────────────────────────────
-                Tables\Actions\Action::make('engager')
-                    ->label('Engager')
-                    ->icon('heroicon-o-banknotes')->color('primary')
-                    ->visible(
-                        fn($record) =>
-                        $record
-                            && $record->statut === 'valide'
-                            && !$record->engage
-                            && auth()->user()?->can('valider_bon_commande_regie')
-                    )
-                    ->form(function ($record) {
-                        $prov       = $record->provisionLigneRegie;
-                        $montantTtc = (float) $record->montant_ttc;
-                        $disponible = (float) ($prov?->montant_disponible ?? 0);
+                    // ── Valider ───────────────────────────────────────
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider')
+                        ->icon('heroicon-o-check-circle')->color('success')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && $record->statut === 'brouillon'
+                                && $record->lignes()->count() > 0
+                                && auth()->user()?->can('valider_bon_commande_regie')
+                        )
+                        ->requiresConfirmation()
+                        ->modalDescription(
+                            fn($record) =>
+                            "Valider le {$record->numero} — "
+                                . number_format($record->montant_ttc, 0, ',', ' ') . " FCFA TTC ?"
+                        )
+                        ->action(function ($record) {
+                            $record->update(['statut' => 'valide']);
+                            Notification::make()->title('✅ BCR/BCM validé')->success()->send();
+                        }),
 
-                        return [
-                            Forms\Components\Placeholder::make('info_bcr')
-                                ->label('Bon de commande')
-                                ->content(new \Illuminate\Support\HtmlString(
-                                    '<div style="background:#f1f5f9;padding:.75rem;border-radius:.5rem;font-size:.82rem;line-height:1.8;">'
-                                        . "<strong>Montant TTC total :</strong> " . number_format($montantTtc, 0, ',', ' ') . " FCFA<br>"
-                                        . "<strong>Provision disponible :</strong> " . number_format($disponible, 0, ',', ' ') . " FCFA<br>"
-                                        . "<strong>Ligne :</strong> " . ($prov?->ligneRegie?->nomenclature?->code ?? '—')
-                                        . " — " . ($prov?->ligneRegie?->nomenclature?->libelle ?? '—')
-                                        . '</div>'
-                                ))
-                                ->columnSpanFull(),
-
-                            Forms\Components\Radio::make('mode_engagement')
-                                ->label('Mode d\'engagement')
-                                ->options([
-                                    'total'   => '💯 Total — engager la totalité du TTC',
-                                    'partiel' => '📊 Partiel — engager un pourcentage ou un montant',
-                                ])
-                                ->default('total')
-                                ->live()
-                                ->columnSpanFull(),
-
-                            Forms\Components\Grid::make(2)
-                                ->schema([
-                                    Forms\Components\Select::make('type_partiel')
-                                        ->label('Calculer par')
-                                        ->options([
-                                            'pourcentage' => '% Pourcentage',
-                                            'montant'     => '💵 Montant fixe',
-                                        ])
-                                        ->default('pourcentage')
-                                        ->live()
-                                        ->required(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
-
-                                    Forms\Components\TextInput::make('pourcentage')
-                                        ->label('Pourcentage (%)')
-                                        ->numeric()->suffix('%')->default(40)
-                                        ->minValue(1)->maxValue(100)
-                                        ->live(onBlur: true)
-                                        ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
-                                            $set('montant_a_engager', round($montantTtc * ((float) $state / 100), 2));
-                                        })
-                                        ->visible(
-                                            fn(Forms\Get $get) =>
-                                            $get('mode_engagement') === 'partiel'
-                                                && $get('type_partiel') === 'pourcentage'
-                                        ),
-
-                                    Forms\Components\TextInput::make('montant_fixe')
-                                        ->label('Montant à engager (FCFA)')
-                                        ->numeric()->prefix('FCFA')
-                                        ->minValue(1)->maxValue($montantTtc)
-                                        ->live(onBlur: true)
-                                        ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
-                                            $pct = $montantTtc > 0 ? round(((float) $state / $montantTtc) * 100, 2) : 0;
-                                            $set('montant_a_engager', (float) $state);
-                                            $set('pourcentage', $pct);
-                                        })
-                                        ->visible(
-                                            fn(Forms\Get $get) =>
-                                            $get('mode_engagement') === 'partiel'
-                                                && $get('type_partiel') === 'montant'
-                                        ),
-                                ])
-                                ->visible(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
-
-                            Forms\Components\Placeholder::make('resume_engagement')
-                                ->label('Montant qui sera engagé')
-                                ->content(function (Forms\Get $get) use ($montantTtc, $disponible) {
-                                    if ($get('mode_engagement') === 'total') {
-                                        $montant = $montantTtc;
-                                        $pct     = 100;
-                                    } elseif ($get('type_partiel') === 'pourcentage') {
-                                        $pct     = (float) ($get('pourcentage') ?? 40);
-                                        $montant = round($montantTtc * ($pct / 100), 2);
-                                    } else {
-                                        $montant = (float) ($get('montant_fixe') ?? 0);
-                                        $pct     = $montantTtc > 0
-                                            ? round(($montant / $montantTtc) * 100, 2)
-                                            : 0;
-                                    }
-
-                                    $reste     = $montantTtc - $montant;
-                                    $suffisant = $montant <= $disponible;
-                                    $couleur   = $suffisant ? 'green' : 'red';
-                                    $alerte    = $suffisant ? '' : ' ⚠️ Provision insuffisante !';
-
-                                    return new \Illuminate\Support\HtmlString(
-                                        '<div style="background:#f8fafc;padding:.75rem;border-radius:.5rem;font-size:.85rem;line-height:2;">'
-                                            . "<strong style='color:{$couleur};font-size:1rem;'>"
-                                            . number_format($montant, 0, ',', ' ') . " FCFA ({$pct}%)</strong>{$alerte}<br>"
-                                            . "<strong>Reste non engagé après :</strong> "
-                                            . number_format($reste, 0, ',', ' ') . " FCFA<br>"
-                                            . "<strong>Provision disponible :</strong> "
-                                            . number_format($disponible, 0, ',', ' ') . " FCFA"
-                                            . '</div>'
-                                    );
-                                })
-                                ->columnSpanFull(),
-
-                            Forms\Components\Textarea::make('commentaire')
-                                ->label('Commentaire (optionnel)')
-                                ->rows(2)->columnSpanFull(),
-                        ];
-                    })
-                    ->modalHeading('Engager le bon de commande')
-                    ->modalWidth('xl')
-                    ->action(function ($record, array $data) {
-                        try {
+                    // ── Engager ───────────────────────────────────────
+                    Tables\Actions\Action::make('engager')
+                        ->label('Engager')
+                        ->icon('heroicon-o-banknotes')->color('primary')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && $record->statut === 'valide'
+                                && !$record->engage
+                                && auth()->user()?->can('valider_bon_commande_regie')
+                        )
+                        ->form(function ($record) {
+                            $prov       = $record->provisionLigneRegie;
                             $montantTtc = (float) $record->montant_ttc;
+                            $disponible = (float) ($prov?->montant_disponible ?? 0);
 
-                            if ($data['mode_engagement'] === 'total') {
-                                $montantAEngager = $montantTtc;
-                            } elseif (($data['type_partiel'] ?? 'pourcentage') === 'pourcentage') {
-                                $montantAEngager = round(
-                                    $montantTtc * ((float) ($data['pourcentage'] ?? 100) / 100),
-                                    2
+                            return [
+                                Forms\Components\Placeholder::make('info_bcr')
+                                    ->label('Bon de commande')
+                                    ->content(new \Illuminate\Support\HtmlString(
+                                        '<div style="background:#f1f5f9;padding:.75rem;border-radius:.5rem;font-size:.82rem;line-height:1.8;">'
+                                            . "<strong>Montant TTC total :</strong> " . number_format($montantTtc, 0, ',', ' ') . " FCFA<br>"
+                                            . "<strong>Provision disponible :</strong> " . number_format($disponible, 0, ',', ' ') . " FCFA<br>"
+                                            . "<strong>Ligne :</strong> " . ($prov?->ligneRegie?->nomenclature?->code ?? '—')
+                                            . " — " . ($prov?->ligneRegie?->nomenclature?->libelle ?? '—')
+                                            . '</div>'
+                                    ))
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Radio::make('mode_engagement')
+                                    ->label('Mode d\'engagement')
+                                    ->options([
+                                        'total'   => '💯 Total — engager la totalité du TTC',
+                                        'partiel' => '📊 Partiel — engager un pourcentage ou un montant',
+                                    ])
+                                    ->default('total')
+                                    ->live()
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Grid::make(2)
+                                    ->schema([
+                                        Forms\Components\Select::make('type_partiel')
+                                            ->label('Calculer par')
+                                            ->options([
+                                                'pourcentage' => '% Pourcentage',
+                                                'montant'     => '💵 Montant fixe',
+                                            ])
+                                            ->default('pourcentage')
+                                            ->live()
+                                            ->required(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
+
+                                        Forms\Components\TextInput::make('pourcentage')
+                                            ->label('Pourcentage (%)')
+                                            ->numeric()->suffix('%')->default(40)
+                                            ->minValue(1)->maxValue(100)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
+                                                $set('montant_a_engager', round($montantTtc * ((float) $state / 100), 2));
+                                            })
+                                            ->visible(
+                                                fn(Forms\Get $get) =>
+                                                $get('mode_engagement') === 'partiel'
+                                                    && $get('type_partiel') === 'pourcentage'
+                                            ),
+
+                                        Forms\Components\TextInput::make('montant_fixe')
+                                            ->label('Montant à engager (FCFA)')
+                                            ->numeric()->prefix('FCFA')
+                                            ->minValue(1)->maxValue($montantTtc)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
+                                                $pct = $montantTtc > 0 ? round(((float) $state / $montantTtc) * 100, 2) : 0;
+                                                $set('montant_a_engager', (float) $state);
+                                                $set('pourcentage', $pct);
+                                            })
+                                            ->visible(
+                                                fn(Forms\Get $get) =>
+                                                $get('mode_engagement') === 'partiel'
+                                                    && $get('type_partiel') === 'montant'
+                                            ),
+                                    ])
+                                    ->visible(fn(Forms\Get $get) => $get('mode_engagement') === 'partiel'),
+
+                                Forms\Components\Placeholder::make('resume_engagement')
+                                    ->label('Montant qui sera engagé')
+                                    ->content(function (Forms\Get $get) use ($montantTtc, $disponible) {
+                                        if ($get('mode_engagement') === 'total') {
+                                            $montant = $montantTtc;
+                                            $pct     = 100;
+                                        } elseif ($get('type_partiel') === 'pourcentage') {
+                                            $pct     = (float) ($get('pourcentage') ?? 40);
+                                            $montant = round($montantTtc * ($pct / 100), 2);
+                                        } else {
+                                            $montant = (float) ($get('montant_fixe') ?? 0);
+                                            $pct     = $montantTtc > 0
+                                                ? round(($montant / $montantTtc) * 100, 2)
+                                                : 0;
+                                        }
+
+                                        $reste     = $montantTtc - $montant;
+                                        $suffisant = $montant <= $disponible;
+                                        $couleur   = $suffisant ? 'green' : 'red';
+                                        $alerte    = $suffisant ? '' : ' ⚠️ Provision insuffisante !';
+
+                                        return new \Illuminate\Support\HtmlString(
+                                            '<div style="background:#f8fafc;padding:.75rem;border-radius:.5rem;font-size:.85rem;line-height:2;">'
+                                                . "<strong style='color:{$couleur};font-size:1rem;'>"
+                                                . number_format($montant, 0, ',', ' ') . " FCFA ({$pct}%)</strong>{$alerte}<br>"
+                                                . "<strong>Reste non engagé après :</strong> "
+                                                . number_format($reste, 0, ',', ' ') . " FCFA<br>"
+                                                . "<strong>Provision disponible :</strong> "
+                                                . number_format($disponible, 0, ',', ' ') . " FCFA"
+                                                . '</div>'
+                                        );
+                                    })
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Textarea::make('commentaire')
+                                    ->label('Commentaire (optionnel)')
+                                    ->rows(2)->columnSpanFull(),
+                            ];
+                        })
+                        ->modalHeading('Engager le bon de commande')
+                        ->modalWidth('xl')
+                        ->action(function ($record, array $data) {
+                            try {
+                                $montantTtc = (float) $record->montant_ttc;
+
+                                if ($data['mode_engagement'] === 'total') {
+                                    $montantAEngager = $montantTtc;
+                                } elseif (($data['type_partiel'] ?? 'pourcentage') === 'pourcentage') {
+                                    $montantAEngager = round(
+                                        $montantTtc * ((float) ($data['pourcentage'] ?? 100) / 100),
+                                        2
+                                    );
+                                } else {
+                                    $montantAEngager = (float) ($data['montant_fixe'] ?? $montantTtc);
+                                }
+
+                                $pourcentage = $montantTtc > 0
+                                    ? round(($montantAEngager / $montantTtc) * 100, 2)
+                                    : 100;
+
+                                $record->engager(
+                                    montantPartiel: $montantAEngager,
+                                    pourcentage: $pourcentage,
+                                    commentaire: $data['commentaire'] ?? null
                                 );
-                            } else {
-                                $montantAEngager = (float) ($data['montant_fixe'] ?? $montantTtc);
+
+                                $record->forceFill([
+                                    'montant_engage'     => $montantAEngager,
+                                    'pourcentage_engage' => $pourcentage,
+                                    'reste_a_engager'    => $montantTtc - $montantAEngager,
+                                ])->save();
+
+                                $estPartiel = $pourcentage < 100;
+                                $msg = $estPartiel
+                                    ? "⚡ BCR engagé partiellement à {$pourcentage}% ("
+                                    . number_format($montantAEngager, 0, ',', ' ') . " FCFA sur "
+                                    . number_format($montantTtc, 0, ',', ' ') . " FCFA TTC)"
+                                    : '✅ BCR engagé totalement — provision débitée';
+
+                                Notification::make()->title($msg)->success()->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('❌ Erreur engagement')
+                                    ->danger()->body($e->getMessage())->persistent()->send();
                             }
+                        }),
 
-                            $pourcentage = $montantTtc > 0
-                                ? round(($montantAEngager / $montantTtc) * 100, 2)
-                                : 100;
+                    // ── Désengager ────────────────────────────────────
+                    Tables\Actions\Action::make('desengager')
+                        ->label('Désengager')
+                        ->icon('heroicon-o-arrow-uturn-left')->color('warning')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && $record->engage
+                                && $record->statut === 'valide'
+                                && auth()->user()?->can('annuler_bon_commande_regie')
+                        )
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            try {
+                                $record->desengager();
+                                $record->updateQuietly([
+                                    'montant_engage'     => 0,
+                                    'pourcentage_engage' => 0,
+                                    'reste_a_engager'    => $record->montant_ttc,
+                                ]);
+                                Notification::make()
+                                    ->title('↩ BCR désengagé — provision restituée')
+                                    ->warning()->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('❌ Erreur')->danger()
+                                    ->body($e->getMessage())->send();
+                            }
+                        }),
 
-                            $record->engager(
-                                montantPartiel: $montantAEngager,
-                                pourcentage: $pourcentage,
-                                commentaire: $data['commentaire'] ?? null
-                            );
+                    // ── Livré ─────────────────────────────────────────
+                    Tables\Actions\Action::make('livrer')
+                        ->label('Marquer livré')
+                        ->icon('heroicon-o-truck')->color('info')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && $record->statut === 'valide'
+                                && $record->engage
+                        )
+                        ->requiresConfirmation()
+                        ->action(fn($record) => $record->update(['statut' => 'livre'])),
 
-                            // ✅ Stocker les infos d'engagement — colonnes réelles
-                            $record->forceFill([
-                                'montant_engage'     => $montantAEngager,
-                                'pourcentage_engage' => $pourcentage,
-                                'reste_a_engager'    => $montantTtc - $montantAEngager,
-                            ])->save();
-
-                            $estPartiel = $pourcentage < 100;
-                            $msg = $estPartiel
-                                ? "⚡ BCR engagé partiellement à {$pourcentage}% ("
-                                . number_format($montantAEngager, 0, ',', ' ') . " FCFA sur "
-                                . number_format($montantTtc, 0, ',', ' ') . " FCFA TTC)"
-                                : '✅ BCR engagé totalement — provision débitée';
-
-                            Notification::make()->title($msg)->success()->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('❌ Erreur engagement')
-                                ->danger()->body($e->getMessage())->persistent()->send();
-                        }
-                    }),
-
-                // ── Désengager ────────────────────────────────────
-                Tables\Actions\Action::make('desengager')
-                    ->label('Désengager')
-                    ->icon('heroicon-o-arrow-uturn-left')->color('warning')
-                    ->visible(
-                        fn($record) =>
-                        $record
-                            && $record->engage
-                            && $record->statut === 'valide'
-                            && auth()->user()?->can('annuler_bon_commande_regie')
-                    )
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        try {
-                            $record->desengager();
-                            // ✅ Remettre les champs d'engagement à zéro
-                            $record->updateQuietly([
-                                'montant_engage'     => 0,
-                                'pourcentage_engage' => 0,
-                                'reste_a_engager'    => $record->montant_ttc,
-                            ]);
-                            Notification::make()
-                                ->title('↩ BCR désengagé — provision restituée')
-                                ->warning()->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('❌ Erreur')->danger()
-                                ->body($e->getMessage())->send();
-                        }
-                    }),
-
-                // ── Livré ─────────────────────────────────────────
-                Tables\Actions\Action::make('livrer')
-                    ->label('Marquer livré')
-                    ->icon('heroicon-o-truck')->color('info')
-                    ->visible(
-                        fn($record) =>
-                        $record
-                            && $record->statut === 'valide'
-                            && $record->engage
-                    )
-                    ->requiresConfirmation()
-                    ->action(fn($record) => $record->update(['statut' => 'livre'])),
-
-                // ── Payé ──────────────────────────────────────────
-                Tables\Actions\Action::make('payer')
-                    ->label('Marquer payé')
-                    ->icon('heroicon-o-banknotes')->color('success')
-                    ->visible(fn($record) => $record && $record->statut === 'livre')
-                    ->form(function ($record) {
-                        $pct   = (float) ($record->pourcentage_engage ?? 100);
-                        $reste = (float) ($record->reste_a_engager    ?? 0);
-
-                        // Pas de formulaire si engagement total
-                        if ($pct >= 100 || $reste <= 0) return [];
-
-                        return [
-                            Forms\Components\Placeholder::make('alerte_partiel')
-                                ->label('')
-                                ->content(new \Illuminate\Support\HtmlString(
-                                    '<div style="background:#fef9c3;border:1px solid #ca8a04;
-                                        border-radius:.5rem;padding:.75rem;font-size:.85rem;line-height:1.8;">'
-                                        . "⚠️ <strong>Engagement partiel non soldé</strong><br>"
-                                        . "Engagé : <strong>{$pct}% ("
-                                        . number_format($record->montant_engage, 0, ',', ' ') . " FCFA)</strong><br>"
-                                        . "Reste non engagé : <strong style='color:#dc2626;'>"
-                                        . number_format($reste, 0, ',', ' ') . " FCFA (" . (100 - $pct) . "%)</strong><br>"
-                                        . "Cochez ci-dessous pour solder automatiquement avant paiement."
-                                        . '</div>'
-                                ))
-                                ->columnSpanFull(),
-
-                            Forms\Components\Toggle::make('solder_engagement')
-                                ->label('Solder le reste avant paiement (' . number_format($reste, 0, ',', ' ') . ' FCFA)')
-                                ->default(true)
-                                ->helperText('Engagera automatiquement le montant restant depuis la provision')
-                                ->columnSpanFull(),
-                        ];
-                    })
-                    ->requiresConfirmation(
-                        fn($record) =>
-                        !$record
-                            || (float) ($record->pourcentage_engage ?? 100) >= 100
-                            || (float) ($record->reste_a_engager ?? 0) <= 0
-                    )
-                    ->modalHeading('Marquer le BCR comme payé')
-                    ->action(function ($record, array $data) {
-                        DB::transaction(function () use ($record, $data) {
+                    // ── Payé ──────────────────────────────────────────
+                    Tables\Actions\Action::make('payer')
+                        ->label('Marquer payé')
+                        ->icon('heroicon-o-banknotes')->color('success')
+                        ->visible(fn($record) => $record && $record->statut === 'livre')
+                        ->form(function ($record) {
                             $pct   = (float) ($record->pourcentage_engage ?? 100);
                             $reste = (float) ($record->reste_a_engager    ?? 0);
 
-                            // ✅ Solder l'engagement partiel si demandé
-                            if ($reste > 0 && ($data['solder_engagement'] ?? true)) {
-                                try {
-                                    $record->engager(
-                                        montantPartiel: $reste,
-                                        pourcentage: 100 - $pct,
-                                        commentaire: 'Solde automatique avant paiement'
-                                    );
-                                    $record->updateQuietly([
-                                        'montant_engage'     => $record->montant_ttc,
-                                        'pourcentage_engage' => 100,
-                                        'reste_a_engager'    => 0,
-                                    ]);
-                                } catch (\Exception $e) {
-                                    \Log::warning('Solde engagement BCR: ' . $e->getMessage());
+                            if ($pct >= 100 || $reste <= 0) return [];
+
+                            return [
+                                Forms\Components\Placeholder::make('alerte_partiel')
+                                    ->label('')
+                                    ->content(new \Illuminate\Support\HtmlString(
+                                        '<div style="background:#fef9c3;border:1px solid #ca8a04;
+                                border-radius:.5rem;padding:.75rem;font-size:.85rem;line-height:1.8;">'
+                                            . "⚠️ <strong>Engagement partiel non soldé</strong><br>"
+                                            . "Engagé : <strong>{$pct}% ("
+                                            . number_format($record->montant_engage, 0, ',', ' ') . " FCFA)</strong><br>"
+                                            . "Reste non engagé : <strong style='color:#dc2626;'>"
+                                            . number_format($reste, 0, ',', ' ') . " FCFA (" . (100 - $pct) . "%)</strong><br>"
+                                            . "Cochez ci-dessous pour solder automatiquement avant paiement."
+                                            . '</div>'
+                                    ))
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Toggle::make('solder_engagement')
+                                    ->label('Solder le reste avant paiement (' . number_format($reste, 0, ',', ' ') . ' FCFA)')
+                                    ->default(true)
+                                    ->helperText('Engagera automatiquement le montant restant depuis la provision')
+                                    ->columnSpanFull(),
+                            ];
+                        })
+                        ->requiresConfirmation(
+                            fn($record) =>
+                            !$record
+                                || (float) ($record->pourcentage_engage ?? 100) >= 100
+                                || (float) ($record->reste_a_engager ?? 0) <= 0
+                        )
+                        ->modalHeading('Marquer le BCR comme payé')
+                        ->action(function ($record, array $data) {
+                            DB::transaction(function () use ($record, $data) {
+                                $pct   = (float) ($record->pourcentage_engage ?? 100);
+                                $reste = (float) ($record->reste_a_engager    ?? 0);
+
+                                if ($reste > 0 && ($data['solder_engagement'] ?? true)) {
+                                    try {
+                                        $record->engager(
+                                            montantPartiel: $reste,
+                                            pourcentage: 100 - $pct,
+                                            commentaire: 'Solde automatique avant paiement'
+                                        );
+                                        $record->updateQuietly([
+                                            'montant_engage'     => $record->montant_ttc,
+                                            'pourcentage_engage' => 100,
+                                            'reste_a_engager'    => 0,
+                                        ]);
+                                    } catch (\Exception $e) {
+                                        \Log::warning('Solde engagement BCR: ' . $e->getMessage());
+                                    }
                                 }
+
+                                $record->update(['statut' => 'paye']);
+
+                                $prov = $record->provisionLigneRegie;
+                                if ($prov?->decaissement) {
+                                    $prov->decaissement->load('provisions');
+                                    $prov->decaissement->recalculerDepenses();
+                                }
+                            });
+
+                            Notification::make()
+                                ->title('✅ BCR payé')
+                                ->success()
+                                ->body('Dépenses du décaissement recalculées.')
+                                ->send();
+                        }),
+
+                    // ── Annuler ───────────────────────────────────────
+                    Tables\Actions\Action::make('annuler')
+                        ->label('Annuler')
+                        ->icon('heroicon-o-x-circle')->color('danger')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && in_array($record->statut, ['brouillon', 'valide'])
+                                && auth()->user()?->can('annuler_bon_commande_regie')
+                        )
+                        ->requiresConfirmation()
+                        ->form([
+                            Forms\Components\Textarea::make('motif')
+                                ->label('Motif')->rows(2)->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            if ($record->engage) {
+                                $record->desengager();
                             }
+                            $record->update([
+                                'statut'         => 'annule',
+                                'observations'   => ($record->observations ?? '')
+                                    . "\n--- ANNULÉ " . now()->format('d/m/Y') . " ---\n"
+                                    . $data['motif'],
+                                'montant_engage'     => 0,
+                                'pourcentage_engage' => 0,
+                                'reste_a_engager'    => 0,
+                            ]);
+                            Notification::make()->title('BCR annulé')->warning()->send();
+                        }),
 
-                            $record->update(['statut' => 'paye']);
+                    // ── Sous-menu PDF (BCA) ─────────────────────────────
+                    Tables\Actions\ActionGroup::make([
+                        Tables\Actions\Action::make('apercu_bca')
+                            ->label('Aperçu BCA')
+                            ->icon('heroicon-o-eye')
+                            ->color('info')
+                            ->action(function ($record, $livewire) {
+                                $livewire->dispatch(
+                                    'open-url-new-tab',
+                                    url: route('bcr.pdf.apercu', $record)
+                                );
+                            }),
 
-                            // ✅ Recalculer les dépenses du décaissement lié
-                            $prov = $record->provisionLigneRegie;
-                            if ($prov?->decaissement) {
-                                $prov->decaissement->load('provisions');
-                                $prov->decaissement->recalculerDepenses();
-                            }
-                        });
-
-                        Notification::make()
-                            ->title('✅ BCR payé')
-                            ->success()
-                            ->body('Dépenses du décaissement recalculées.')
-                            ->send();
-                    }),
-
-                // ── Annuler ───────────────────────────────────────
-                Tables\Actions\Action::make('annuler')
-                    ->label('Annuler')
-                    ->icon('heroicon-o-x-circle')->color('danger')
-                    ->visible(
-                        fn($record) =>
-                        $record
-                            && in_array($record->statut, ['brouillon', 'valide'])
-                            && auth()->user()?->can('annuler_bon_commande_regie')
-                    )
-                    ->requiresConfirmation()
-                    ->form([
-                        Forms\Components\Textarea::make('motif')
-                            ->label('Motif')->rows(2)->required(),
+                        Tables\Actions\Action::make('telecharger_bca')
+                            ->label('Télécharger BCA')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('success')
+                            ->visible(fn($record) => $record->statut !== 'brouillon')
+                            ->action(function ($record, $livewire) {
+                                $livewire->dispatch(
+                                    'open-url-new-tab',
+                                    url: route('bcr.pdf.telecharger', $record)
+                                );
+                            }),
                     ])
-                    ->action(function ($record, array $data) {
-                        if ($record->engage) {
-                            $record->desengager();
-                        }
-                        $record->update([
-                            'statut'         => 'annule',
-                            'observations'   => ($record->observations ?? '')
-                                . "\n--- ANNULÉ " . now()->format('d/m/Y') . " ---\n"
-                                . $data['motif'],
-                            'montant_engage'     => 0,
-                            'pourcentage_engage' => 0,
-                            'reste_a_engager'    => 0,
-                        ]);
-                        Notification::make()->title('BCR annulé')->warning()->send();
-                    }),
+                        ->label('📄 BCA')
+                        ->icon('heroicon-o-document-text'),
 
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('apercu_bca')
-                        ->label('Aperçu BCA')
-                        ->icon('heroicon-o-eye')
-                        ->color('info')
-                        ->action(function ($record, $livewire) {
-                            $livewire->dispatch(
-                                'open-url-new-tab',
-                                url: route('bcr.pdf.apercu', $record)
-                            );
-                        }),
-
-                    Tables\Actions\Action::make('telecharger_bca')
-                        ->label('Télécharger BCA')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('success')
-                        ->visible(fn($record) => $record->statut !== 'brouillon')
-                        ->action(function ($record, $livewire) {
-                            $livewire->dispatch(
-                                'open-url-new-tab',
-                                url: route('bcr.pdf.telecharger', $record)
-                            );
-                        }),
                 ])
-                    ->label('📄 BCA')
-                    ->icon('heroicon-o-document-text')
-                    ->size('sm')
-                    ->button(),
-            ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

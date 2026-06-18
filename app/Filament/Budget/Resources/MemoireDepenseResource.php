@@ -12,6 +12,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Filament\Tables\Enums\ActionsPosition;
 
 class MemoireDepenseResource extends Resource
 {
@@ -610,81 +611,83 @@ class MemoireDepenseResource extends Resource
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
 
-                Tables\Actions\Action::make('apercu')
-                    ->label('Aperçu')
-                    ->icon('heroicon-o-eye')
-                    ->color('info')
-                    ->modalHeading(fn($record) => 'Aperçu — ' . $record->numero)
-                    ->modalWidth('7xl')
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Fermer')
-                    ->modalContent(function ($record) {
-                        $record->load('lignes');
-                        return view('filament.modals.apercu-memoire-depense', [
-                            'memoire' => $record,
-                        ]);
-                    }),
+                    Tables\Actions\Action::make('apercu')
+                        ->label('Aperçu')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->modalHeading(fn($record) => 'Aperçu — ' . $record->numero)
+                        ->modalWidth('7xl')
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Fermer')
+                        ->modalContent(function ($record) {
+                            $record->load('lignes');
+                            return view('filament.modals.apercu-memoire-depense', [
+                                'memoire' => $record,
+                            ]);
+                        }),
 
-                Tables\Actions\Action::make('pdf')
-                    ->label('PDF')
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->color('success')
-                    ->visible(fn($record) => $record->statut !== 'brouillon')
-                    ->url(fn($record) => route('memoire-depense.pdf', $record))
-                    ->openUrlInNewTab(),
+                    Tables\Actions\Action::make('pdf')
+                        ->label('PDF')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut !== 'brouillon')
+                        ->url(fn($record) => route('memoire-depense.pdf', $record))
+                        ->openUrlInNewTab(),
 
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('warning')
-                    ->requiresConfirmation()
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'brouillon'
-                            && static::canValider($record)
-                    )
-                    ->action(function ($record) {
-                        // ✅ Recalculer les totaux depuis les lignes avant validation
-                        $record->lignes->each(function ($ligne) {
-                            // S'assurer que montant_ttc est bien calculé
-                        });
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'brouillon'
+                                && static::canValider($record)
+                        )
+                        ->action(function ($record) {
+                            $totalTtc = $record->lignes->sum('montant_ttc');
+                            $totalNap = $record->lignes->sum('montant_net');
+                            $totalIr  = $record->lignes->sum('montant_ir');
+                            $totalTva = $record->lignes->sum('montant_tva');
 
-                        $totalTtc = $record->lignes->sum('montant_ttc');
-                        $totalNap = $record->lignes->sum('montant_net');
-                        $totalIr  = $record->lignes->sum('montant_ir');
-                        $totalTva = $record->lignes->sum('montant_tva');
+                            $record->update([
+                                'statut'      => 'valide',
+                                'montant_ttc' => $totalTtc,
+                                'montant_net' => $totalNap,
+                                'montant_ir'  => $totalIr,
+                                'montant_tva' => $totalTva,
+                            ]);
 
-                        $record->update([
-                            'statut'      => 'valide',
-                            'montant_ttc' => $totalTtc,
-                            'montant_net' => $totalNap,
-                            'montant_ir'  => $totalIr,
-                            'montant_tva' => $totalTva,
-                        ]);
+                            Notification::make()
+                                ->success()
+                                ->title('Mémoire validé')
+                                ->body("Le mémoire {$record->numero} a été validé. "
+                                    . "Montant TTC : " . number_format($totalTtc, 0, ',', ' ') . " FCFA")
+                                ->send();
+                        }),
 
-                        Notification::make()
-                            ->success()
-                            ->title('Mémoire validé')
-                            ->body("Le mémoire {$record->numero} a été validé. "
-                                . "Montant TTC : " . number_format($totalTtc, 0, ',', ' ') . " FCFA")
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('transformer_en_da')
-                    ->label('→ DA')
-                    ->icon('heroicon-o-arrow-right-circle')
-                    ->color('primary')
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'valide'
-                            && !$record->decision_administrative_id
-                            && static::canTransformerEnDa($record)
-                    )
-                    ->url(fn($record) => static::getUrl('view', ['record' => $record])),
-            ])
+                    Tables\Actions\Action::make('transformer_en_da')
+                        ->label('→ DA')
+                        ->icon('heroicon-o-arrow-right-circle')
+                        ->color('primary')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'valide'
+                                && !$record->decision_administrative_id
+                                && static::canTransformerEnDa($record)
+                        )
+                        ->url(fn($record) => static::getUrl('view', ['record' => $record])),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

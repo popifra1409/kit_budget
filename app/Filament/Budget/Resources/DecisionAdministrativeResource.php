@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Illuminate\Database\Eloquent\Model;
+use Filament\Tables\Enums\ActionsPosition;
 
 class DecisionAdministrativeResource extends Resource
 {
@@ -1024,9 +1025,16 @@ class DecisionAdministrativeResource extends Resource
                     ->label('Engagée')->placeholder('Toutes')
                     ->trueLabel('Engagées')->falseLabel('Non engagées'),
             ])
-            ->actions(
-                WorkflowActions::make(avecEngagement: true)
-            )
+            ->actions([
+                Tables\Actions\ActionGroup::make(
+                    WorkflowActions::make(avecEngagement: true)
+                )
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

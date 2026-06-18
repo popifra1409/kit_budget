@@ -19,6 +19,7 @@ use App\Models\Exercice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Filament\Tables\Enums\ActionsPosition;
 
 class EngagementResource extends Resource
 {
@@ -450,293 +451,293 @@ class EngagementResource extends Resource
                     ),
             ])
             ->actions([
-
-                // ── Passer définitif ──────────────────────────
-                Tables\Actions\Action::make('valider')
-                    ->label('Passer définitif')
-                    ->icon('heroicon-o-check-circle')->color('success')
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'provisoire'
-                            && auth()->user()?->can('valider_engagement')
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Confirmer le passage en définitif')
-                    ->modalDescription(
-                        fn($record) =>
-                        "L'engagement {$record->numero} sera définitif et pourra recevoir des ordonnances."
-                    )
-                    ->action(function ($record) {
-                        try {
-                            $record->passerDefinitif(auth()->user());
-                            Notification::make()->title('✅ Engagement définitif')->success()->send();
-                        } catch (\Exception $e) {
-                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
-                        }
-                    }),
-
-                // ── Créer ordonnances ─────────────────────────
-                Tables\Actions\Action::make('creer_ordonnances')
-                    ->label('Créer OP')
-                    ->icon('heroicon-o-document-currency-dollar')->color('success')
-                    ->visible(
-                        fn($record) =>
-                        $record->statut === 'definitif'
-                            && !$record->hasOrdonnancesPaiement()
-                            && auth()->user()?->can('creer_ordonnance_paiement')
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Créer les ordonnances de paiement')
-                    ->modalContent(function ($record) {
-                        $montantTotal = $record->montant_engage;
-                        $montantIR    = 0;
-                        if ($record->estBonCommande() && $record->engageable)
-                            $montantIR = $record->engageable->montant_ir ?? 0;
-                        elseif ($record->estDecision() && $record->engageable)
-                            $montantIR = $record->engageable->montant_ir ?? 0;
-
-                        return view('filament.modals.recap-ordonnances', [
-                            'engagement'    => $record,
-                            'montant_total' => $montantTotal,
-                            'montant_ir'    => $montantIR,
-                            'montant_net'   => $montantTotal - $montantIR,
-                        ]);
-                    })
-                    ->action(function ($record) {
-                        try {
-                            $ordonnances = $record->creerOrdonnancesPaiement();
-                            $msg = '';
-                            if (isset($ordonnances['standard'])) $msg .= "• OP Standard : {$ordonnances['standard']->numero}\n";
-                            if (isset($ordonnances['impot']))    $msg .= "• OP Impôt : {$ordonnances['impot']->numero}";
-                            Notification::make()->title('✅ Ordonnances créées')->success()->body($msg)->duration(8000)->send();
-                        } catch (\Exception $e) {
-                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->persistent()->send();
-                        }
-                    }),
-
-                // ── Voir ordonnances ──────────────────────────
-                Tables\Actions\Action::make('voir_ordonnances')
-                    ->label('Voir OP')
-                    ->icon('heroicon-o-eye')->color('info')
-                    ->visible(fn($record) => $record->ordonnancesPaiement()->exists())
-                    ->badge(fn($record) => $record->ordonnancesPaiement()->count())->badgeColor('success')
-                    ->modalHeading(fn($record) => "Ordonnances — {$record->numero}")
-                    ->modalContent(fn($record) => view('filament.modals.ordonnances-list', [
-                        'ordonnances' => $record->ordonnancesPaiement()->with('beneficiaire')->get(),
-                        'engagement'  => $record,
-                    ]))
-                    ->modalWidth('5xl')->modalSubmitAction(false)->modalCancelActionLabel('Fermer'),
-
-                // ── Annuler ───────────────────────────────────
-                Tables\Actions\Action::make('annuler')
-                    ->label('Annuler')
-                    ->icon('heroicon-o-x-circle')->color('danger')
-                    ->visible(
-                        fn($record) =>
-                        in_array($record->statut, ['provisoire', 'definitif'])
-                            && $record->peutEtreAnnule()
-                            && auth()->user()?->can('annuler_engagement')
-                    )
-                    ->requiresConfirmation()
-                    ->modalHeading('Annuler l\'engagement')
-                    ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
-                        "<div style='color:#dc2626;font-weight:600;'>
-            L'engagement <strong>{$record->numero}</strong> sera annulé.<br>
-            Les crédits seront libérés sur la ligne budgétaire.<br>"
-                            . ($record->engageable
-                                ? "<span style='color:#92400e;'>Le document source ("
-                                . ($record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative')
-                                . " <strong>{$record->engageable->numero}</strong>) "
-                                . "reviendra à l'état <strong>Validé</strong>.</span>"
-                                : "")
-                            . "</div>"
-                    ))
-                    ->form([
-                        Forms\Components\Textarea::make('motif')
-                            ->label('Motif')->required()->rows(3),
-                    ])
-                    ->action(function ($record, array $data) {
-                        if ($record->ordonnancesPaiement()->exists()) {
-                            Notification::make()
-                                ->title('❌ Impossible — des ordonnances de paiement existent')
-                                ->danger()->persistent()->send();
-                            return;
-                        }
-
-                        try {
-                            \Illuminate\Support\Facades\DB::transaction(function () use ($record, $data) {
-
-                                // ── 1. Annuler l'engagement ───────────────────
-                                $record->annuler(force: true);
-
-                                // ── ✅ Remettre le document source à son état pré-engagement
-                                if ($record->engageable) {
-
-                                    if ($record->estBonCommande()) {
-                                        // ✅ BC : statut autorisé = 'valide' | engage = false
-                                        $record->engageable->updateQuietly([
-                                            'statut' => 'valide',
-                                            'engage' => false,
-                                        ]);
-
-                                        Log::info('BC remis à valide après annulation engagement', [
-                                            'engagement' => $record->numero,
-                                            'bc'         => $record->engageable->numero,
-                                        ]);
-                                    } elseif ($record->estDecision()) {
-                                        // ✅ DA : statut autorisé = 'validee' (avec e final)
-                                        $record->engageable->updateQuietly([
-                                            'statut' => 'validee',
-                                        ]);
-
-                                        Log::info('DA remise à validee après annulation engagement', [
-                                            'engagement' => $record->numero,
-                                            'da'         => $record->engageable->numero,
-                                        ]);
-                                    }
-                                }
-                            });
-
-                            $msgSource = $record->engageable
-                                ? " | " . ($record->estBonCommande() ? 'BC' : 'DA')
-                                . " {$record->engageable->numero} → Validé"
-                                : "";
-
-                            Notification::make()
-                                ->title('✅ Engagement annulé')
-                                ->warning()
-                                ->body("Crédits libérés{$msgSource}")
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('❌ Erreur')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->send();
-                        }
-                    }),
-
-                // ── Standard ──────────────────────────────────
-                Tables\Actions\ViewAction::make()->label('Voir'),
-
-                Tables\Actions\EditAction::make()
-                    ->label('Modifier')
-                    // ✅ Editable seulement si engagement manuel provisoire
-                    ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
-
-                // ── PDF ───────────────────────────────────────
                 Tables\Actions\ActionGroup::make([
 
-                    // ── Certificat ────────────────────────────
-                    Tables\Actions\Action::make('telecharger_certificat')
-                        ->label('Certificat (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')->color('success')
-                        ->visible(fn($record) => $record->statut === 'definitif')
-                        ->form([
-                            \Filament\Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
-                                ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
-                        ])
-                        ->action(function (array $data, $record, $livewire) {
-                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
+                    // ── Standard ──────────────────────────────────
+                    Tables\Actions\ViewAction::make()->label('Voir'),
+
+                    Tables\Actions\EditAction::make()
+                        ->label('Modifier')
+                        ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
+
+                    // ── Passer définitif ──────────────────────────
+                    Tables\Actions\Action::make('valider')
+                        ->label('Passer définitif')
+                        ->icon('heroicon-o-check-circle')->color('success')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'provisoire'
+                                && auth()->user()?->can('valider_engagement')
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Confirmer le passage en définitif')
+                        ->modalDescription(
+                            fn($record) =>
+                            "L'engagement {$record->numero} sera définitif et pourra recevoir des ordonnances."
+                        )
+                        ->action(function ($record) {
+                            try {
+                                $record->passerDefinitif(auth()->user());
+                                Notification::make()->title('✅ Engagement définitif')->success()->send();
+                            } catch (\Exception $e) {
+                                Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
+                            }
                         }),
 
-                    Tables\Actions\Action::make('afficher_certificat')
-                        ->label('Certificat (Aperçu)')
+                    // ── Créer ordonnances ─────────────────────────
+                    Tables\Actions\Action::make('creer_ordonnances')
+                        ->label('Créer OP')
+                        ->icon('heroicon-o-document-currency-dollar')->color('success')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'definitif'
+                                && !$record->hasOrdonnancesPaiement()
+                                && auth()->user()?->can('creer_ordonnance_paiement')
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Créer les ordonnances de paiement')
+                        ->modalContent(function ($record) {
+                            $montantTotal = $record->montant_engage;
+                            $montantIR    = 0;
+                            if ($record->estBonCommande() && $record->engageable)
+                                $montantIR = $record->engageable->montant_ir ?? 0;
+                            elseif ($record->estDecision() && $record->engageable)
+                                $montantIR = $record->engageable->montant_ir ?? 0;
+
+                            return view('filament.modals.recap-ordonnances', [
+                                'engagement'    => $record,
+                                'montant_total' => $montantTotal,
+                                'montant_ir'    => $montantIR,
+                                'montant_net'   => $montantTotal - $montantIR,
+                            ]);
+                        })
+                        ->action(function ($record) {
+                            try {
+                                $ordonnances = $record->creerOrdonnancesPaiement();
+                                $msg = '';
+                                if (isset($ordonnances['standard'])) $msg .= "• OP Standard : {$ordonnances['standard']->numero}\n";
+                                if (isset($ordonnances['impot']))    $msg .= "• OP Impôt : {$ordonnances['impot']->numero}";
+                                Notification::make()->title('✅ Ordonnances créées')->success()->body($msg)->duration(8000)->send();
+                            } catch (\Exception $e) {
+                                Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->persistent()->send();
+                            }
+                        }),
+
+                    // ── Voir ordonnances ──────────────────────────
+                    Tables\Actions\Action::make('voir_ordonnances')
+                        ->label('Voir OP')
                         ->icon('heroicon-o-eye')->color('info')
-                        ->visible(fn($record) => $record->statut === 'definitif')
+                        ->visible(fn($record) => $record->ordonnancesPaiement()->exists())
+                        ->badge(fn($record) => $record->ordonnancesPaiement()->count())->badgeColor('success')
+                        ->modalHeading(fn($record) => "Ordonnances — {$record->numero}")
+                        ->modalContent(fn($record) => view('filament.modals.ordonnances-list', [
+                            'ordonnances' => $record->ordonnancesPaiement()->with('beneficiaire')->get(),
+                            'engagement'  => $record,
+                        ]))
+                        ->modalWidth('5xl')->modalSubmitAction(false)->modalCancelActionLabel('Fermer'),
+
+                    // ── Annuler ───────────────────────────────────
+                    Tables\Actions\Action::make('annuler')
+                        ->label('Annuler')
+                        ->icon('heroicon-o-x-circle')->color('danger')
+                        ->visible(
+                            fn($record) =>
+                            in_array($record->statut, ['provisoire', 'definitif'])
+                                && $record->peutEtreAnnule()
+                                && auth()->user()?->can('annuler_engagement')
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Annuler l\'engagement')
+                        ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
+                            "<div style='color:#dc2626;font-weight:600;'>
+        L'engagement <strong>{$record->numero}</strong> sera annulé.<br>
+        Les crédits seront libérés sur la ligne budgétaire.<br>"
+                                . ($record->engageable
+                                    ? "<span style='color:#92400e;'>Le document source ("
+                                    . ($record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative')
+                                    . " <strong>{$record->engageable->numero}</strong>) "
+                                    . "reviendra à l'état <strong>Validé</strong>.</span>"
+                                    : "")
+                                . "</div>"
+                        ))
                         ->form([
-                            \Filament\Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
-                                ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
+                            Forms\Components\Textarea::make('motif')
+                                ->label('Motif')->required()->rows(3),
                         ])
-                        ->action(function (array $data, $record, $livewire) {
-                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        ->action(function ($record, array $data) {
+                            if ($record->ordonnancesPaiement()->exists()) {
+                                Notification::make()
+                                    ->title('❌ Impossible — des ordonnances de paiement existent')
+                                    ->danger()->persistent()->send();
+                                return;
+                            }
+
+                            try {
+                                \Illuminate\Support\Facades\DB::transaction(function () use ($record, $data) {
+
+                                    $record->annuler(force: true);
+
+                                    if ($record->engageable) {
+
+                                        if ($record->estBonCommande()) {
+                                            $record->engageable->updateQuietly([
+                                                'statut' => 'valide',
+                                                'engage' => false,
+                                            ]);
+
+                                            Log::info('BC remis à valide après annulation engagement', [
+                                                'engagement' => $record->numero,
+                                                'bc'         => $record->engageable->numero,
+                                            ]);
+                                        } elseif ($record->estDecision()) {
+                                            $record->engageable->updateQuietly([
+                                                'statut' => 'validee',
+                                            ]);
+
+                                            Log::info('DA remise à validee après annulation engagement', [
+                                                'engagement' => $record->numero,
+                                                'da'         => $record->engageable->numero,
+                                            ]);
+                                        }
+                                    }
+                                });
+
+                                $msgSource = $record->engageable
+                                    ? " | " . ($record->estBonCommande() ? 'BC' : 'DA')
+                                    . " {$record->engageable->numero} → Validé"
+                                    : "";
+
+                                Notification::make()
+                                    ->title('✅ Engagement annulé')
+                                    ->warning()
+                                    ->body("Crédits libérés{$msgSource}")
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('❌ Erreur')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->send();
+                            }
                         }),
 
-                    // ── Autorisation ──────────────────────────
-                    Tables\Actions\Action::make('telecharger_autorisation')
-                        ->label('Autorisation (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')->color('primary')
-                        ->visible(fn($record) => $record->statut === 'definitif')
-                        ->form([
-                            \Filament\Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
-                                ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
-                        ])
-                        ->action(function (array $data, $record, $livewire) {
-                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
-                        }),
+                    // ── PDF (sous-menu imbriqué) ───────────────────
+                    Tables\Actions\ActionGroup::make([
 
-                    Tables\Actions\Action::make('afficher_autorisation')
-                        ->label('Autorisation (Aperçu)')
-                        ->icon('heroicon-o-eye')->color('gray')
-                        ->visible(fn($record) => $record->statut === 'definitif')
-                        ->form([
-                            \Filament\Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
-                                ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
-                        ])
-                        ->action(function (array $data, $record, $livewire) {
-                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
-                        }),
+                        Tables\Actions\Action::make('telecharger_certificat')
+                            ->label('Certificat (PDF)')
+                            ->icon('heroicon-o-arrow-down-tray')->color('success')
+                            ->visible(fn($record) => $record->statut === 'definitif')
+                            ->form([
+                                \Filament\Forms\Components\Select::make('variante')
+                                    ->label('Modèle d\'état')
+                                    ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
+                                    ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
+                                    ->required()
+                                    ->helperText('⭐ = modèle par défaut'),
+                            ])
+                            ->action(function (array $data, $record, $livewire) {
+                                $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                                $livewire->dispatch('open-url-new-tab', url: $url);
+                            }),
 
-                    // ── Fiche de Performance ──────────────────────
-                    Tables\Actions\Action::make('telecharger_fiche')
-                        ->label('Fiche Perf. (PDF)')
-                        ->icon('heroicon-o-arrow-down-tray')->color('warning')
-                        ->visible(fn($record) => $record->statut === 'definitif')
-                        ->form([
-                            \Filament\Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
-                                ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
-                        ])
-                        ->action(function (array $data, $record, $livewire) {
-                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
-                        }),
+                        Tables\Actions\Action::make('afficher_certificat')
+                            ->label('Certificat (Aperçu)')
+                            ->icon('heroicon-o-eye')->color('info')
+                            ->visible(fn($record) => $record->statut === 'definitif')
+                            ->form([
+                                \Filament\Forms\Components\Select::make('variante')
+                                    ->label('Modèle d\'état')
+                                    ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
+                                    ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
+                                    ->required()
+                                    ->helperText('⭐ = modèle par défaut'),
+                            ])
+                            ->action(function (array $data, $record, $livewire) {
+                                $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                                $livewire->dispatch('open-url-new-tab', url: $url);
+                            }),
 
-                    Tables\Actions\Action::make('afficher_fiche')
-                        ->label('Fiche Perf. (Aperçu)')
-                        ->icon('heroicon-o-eye')->color('secondary')
-                        ->visible(fn($record) => $record->statut === 'definitif')
-                        ->form([
-                            \Filament\Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
-                                ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
-                        ])
-                        ->action(function (array $data, $record, $livewire) {
-                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
-                        }),
+                        Tables\Actions\Action::make('telecharger_autorisation')
+                            ->label('Autorisation (PDF)')
+                            ->icon('heroicon-o-arrow-down-tray')->color('primary')
+                            ->visible(fn($record) => $record->statut === 'definitif')
+                            ->form([
+                                \Filament\Forms\Components\Select::make('variante')
+                                    ->label('Modèle d\'état')
+                                    ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
+                                    ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
+                                    ->required()
+                                    ->helperText('⭐ = modèle par défaut'),
+                            ])
+                            ->action(function (array $data, $record, $livewire) {
+                                $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                                $livewire->dispatch('open-url-new-tab', url: $url);
+                            }),
+
+                        Tables\Actions\Action::make('afficher_autorisation')
+                            ->label('Autorisation (Aperçu)')
+                            ->icon('heroicon-o-eye')->color('gray')
+                            ->visible(fn($record) => $record->statut === 'definitif')
+                            ->form([
+                                \Filament\Forms\Components\Select::make('variante')
+                                    ->label('Modèle d\'état')
+                                    ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
+                                    ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
+                                    ->required()
+                                    ->helperText('⭐ = modèle par défaut'),
+                            ])
+                            ->action(function (array $data, $record, $livewire) {
+                                $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                                $livewire->dispatch('open-url-new-tab', url: $url);
+                            }),
+
+                        Tables\Actions\Action::make('telecharger_fiche')
+                            ->label('Fiche Perf. (PDF)')
+                            ->icon('heroicon-o-arrow-down-tray')->color('warning')
+                            ->visible(fn($record) => $record->statut === 'definitif')
+                            ->form([
+                                \Filament\Forms\Components\Select::make('variante')
+                                    ->label('Modèle d\'état')
+                                    ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
+                                    ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
+                                    ->required()
+                                    ->helperText('⭐ = modèle par défaut'),
+                            ])
+                            ->action(function (array $data, $record, $livewire) {
+                                $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
+                                $livewire->dispatch('open-url-new-tab', url: $url);
+                            }),
+
+                        Tables\Actions\Action::make('afficher_fiche')
+                            ->label('Fiche Perf. (Aperçu)')
+                            ->icon('heroicon-o-eye')->color('secondary')
+                            ->visible(fn($record) => $record->statut === 'definitif')
+                            ->form([
+                                \Filament\Forms\Components\Select::make('variante')
+                                    ->label('Modèle d\'état')
+                                    ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
+                                    ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
+                                    ->required()
+                                    ->helperText('⭐ = modèle par défaut'),
+                            ])
+                            ->action(function (array $data, $record, $livewire) {
+                                $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
+                                $livewire->dispatch('open-url-new-tab', url: $url);
+                            }),
+
+                    ])
+                        ->label('PDF')->icon('heroicon-m-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut === 'definitif'),
 
                 ])
-                    ->label('PDF')->icon('heroicon-m-document-arrow-down')
-                    ->size('sm')->color('success')->button()
-                    ->visible(fn($record) => $record->statut === 'definitif'),
-            ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
