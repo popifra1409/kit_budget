@@ -13,107 +13,166 @@ class ViewActivity extends ViewRecord
 
     public function infolist(Infolist $infolist): Infolist
     {
-        return $infolist
-            ->schema([
-                Components\Section::make('Informations générales')
-                    ->schema([
-                        Components\TextEntry::make('description')
-                            ->label('Description')
-                            ->size('lg')
-                            ->weight('bold')
-                            ->color('primary'),
+        return $infolist->schema([
 
-                        Components\Grid::make(3)
-                            ->schema([
-                                Components\TextEntry::make('created_at')
-                                    ->label('Date et heure')
-                                    ->dateTime('d/m/Y H:i:s'),
+            Components\Section::make('Informations générales')
+                ->schema([
+                    Components\TextEntry::make('description')
+                        ->label('Description')
+                        ->size('lg')
+                        ->weight('bold')
+                        ->color('primary'),
 
-                                Components\TextEntry::make('causer.name')
-                                    ->label('Effectué par')
-                                    ->default('Système')
-                                    ->badge()
-                                    ->color('success'),
+                    Components\Grid::make(4)
+                        ->schema([
+                            Components\TextEntry::make('created_at')
+                                ->label('Date et heure')
+                                ->dateTime('d/m/Y H:i:s'),
 
-                                Components\TextEntry::make('event')
-                                    ->label('Événement')
-                                    ->badge()
-                                    ->color(fn($state) => match ($state) {
-                                        'created' => 'success',
-                                        'updated' => 'info',
-                                        'deleted' => 'danger',
-                                        default => 'gray',
-                                    })
-                                    ->formatStateUsing(fn($state) => match ($state) {
-                                        'created' => 'Création',
-                                        'updated' => 'Modification',
-                                        'deleted' => 'Suppression',
-                                        default => ucfirst($state),
-                                    }),
-                            ]),
-                    ]),
+                            Components\TextEntry::make('causer.name')
+                                ->label('Effectué par')
+                                ->getStateUsing(fn($record) => $record->causer?->name ?: 'Système')
+                                ->badge()
+                                ->color('success'),
 
-                Components\Section::make('Entité concernée')
-                    ->schema([
-                        Components\Grid::make(2)
-                            ->schema([
-                                Components\TextEntry::make('subject_type')
-                                    ->label('Type')
-                                    ->formatStateUsing(fn($state) => class_basename($state))
-                                    ->badge(),
+                            Components\TextEntry::make('event')
+                                ->label('Événement')
+                                ->badge()
+                                ->color(fn($state) => match ($state) {
+                                    'created' => 'success',
+                                    'updated' => 'info',
+                                    'deleted' => 'danger',
+                                    'login'   => 'primary',
+                                    'logout'  => 'gray',
+                                    default   => 'gray',
+                                })
+                                ->formatStateUsing(fn($state) => match ($state) {
+                                    'created' => 'Création',
+                                    'updated' => 'Modification',
+                                    'deleted' => 'Suppression',
+                                    'login'   => 'Connexion',
+                                    'logout'  => 'Déconnexion',
+                                    default   => ucfirst((string) ($state ?? '—')),
+                                }),
 
-                                Components\TextEntry::make('subject_id')
-                                    ->label('ID'),
-                            ]),
-                    ]),
+                            Components\TextEntry::make('ip_address')
+                                ->label('Adresse IP')
+                                ->default('—')
+                                ->copyable(),
+                        ]),
+                ]),
 
-                Components\Section::make('Propriétés')
-                    ->schema([
-                        Components\TextEntry::make('properties')
-                            ->label('')
-                            ->formatStateUsing(function ($state) {
-                                if (empty($state)) {
-                                    return 'Aucune propriété enregistrée';
-                                }
+            Components\Section::make('Entité concernée')
+                ->schema([
+                    Components\Grid::make(2)
+                        ->schema([
+                            Components\TextEntry::make('subject_type')
+                                ->label('Type')
+                                ->formatStateUsing(
+                                    fn($state) => $state ? class_basename($state) : '—'
+                                )
+                                ->badge(),
 
-                                $html = '<div class="space-y-2">';
+                            Components\TextEntry::make('subject_id')
+                                ->label('ID')
+                                ->placeholder('—'),
+                        ]),
+                ])
+                ->visible(fn($record) => !empty($record->subject_type)),
 
-                                foreach ($state as $key => $value) {
-                                    if (is_array($value)) {
-                                        $value = json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-                                    }
+            Components\Section::make('Propriétés')
+                ->schema([
+                    Components\TextEntry::make('properties')
+                        ->label('')
+                        ->html()
+                        ->getStateUsing(function ($record) {
+                            $raw = $record->getAttributes()['properties'] ?? null;
 
-                                    $html .= '<div class="flex gap-2">';
-                                    $html .= '<strong>' . ucfirst(str_replace('_', ' ', $key)) . ':</strong>';
-                                    $html .= '<span>' . htmlspecialchars($value) . '</span>';
-                                    $html .= '</div>';
-                                }
+                            if (is_string($raw)) {
+                                $decoded = json_decode($raw, true);
+                                $state = is_array($decoded) ? $decoded : [];
+                            } else {
+                                $state = [];
+                            }
 
+                            if (empty($state)) {
+                                return 'Aucune propriété enregistrée';
+                            }
+
+                            $html = '<div class="space-y-2">';
+
+                            foreach ($state as $key => $value) {
+                                $html .= '<div class="flex gap-2">';
+                                $html .= '<strong>' . htmlspecialchars(ucfirst(str_replace('_', ' ', (string) $key))) . ':</strong>';
+                                $html .= '<span>' . static::stringifyValeur($value) . '</span>';
                                 $html .= '</div>';
+                            }
 
-                                return new \Illuminate\Support\HtmlString($html);
-                            })
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible(),
+                            $html .= '</div>';
 
-                Components\Section::make('Métadonnées')
-                    ->schema([
-                        Components\Grid::make(2)
-                            ->schema([
-                                Components\TextEntry::make('log_name')
-                                    ->label('Nom du log')
-                                    ->default('default'),
+                            return $html;
+                        })
+                        ->columnSpanFull(),
+                ])
+                ->collapsible(),
 
-                                Components\TextEntry::make('batch_uuid')
-                                    ->label('Batch UUID')
-                                    ->placeholder('Aucun')
-                                    ->visible(fn($record) => !empty($record->batch_uuid)),
-                            ]),
-                    ])
-                    ->collapsible()
-                    ->collapsed(),
-            ]);
+            Components\Section::make('Détails techniques')
+                ->schema([
+                    Components\TextEntry::make('user_agent')
+                        ->label('Navigateur / Appareil')
+                        ->default('—')
+                        ->columnSpanFull(),
+                ])
+                ->collapsible()
+                ->collapsed(),
+
+            Components\Section::make('Métadonnées')
+                ->schema([
+                    Components\Grid::make(2)
+                        ->schema([
+                            Components\TextEntry::make('log_name')
+                                ->label('Nom du log')
+                                ->default('default'),
+
+                            Components\TextEntry::make('batch_uuid')
+                                ->label('Batch UUID')
+                                ->placeholder('Aucun')
+                                ->visible(fn($record) => !empty($record->batch_uuid)),
+                        ]),
+                ])
+                ->collapsible()
+                ->collapsed(),
+        ]);
+    }
+
+    /**
+     * ✅ Convertit n'importe quelle valeur (array, Collection, objet, null,
+     * scalaire) en chaîne HTML-safe, peu importe la profondeur d'imbrication.
+     */
+    protected static function stringifyValeur($value): string
+    {
+        if ($value === null) {
+            return '<em class="text-gray-400">—</em>';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'Oui' : 'Non';
+        }
+
+        if (is_array($value) || $value instanceof \Illuminate\Support\Collection) {
+            $array = $value instanceof \Illuminate\Support\Collection ? $value->toArray() : $value;
+            $json  = json_encode($array, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            return '<pre class="text-xs whitespace-pre-wrap">' . htmlspecialchars($json !== false ? $json : '—') . '</pre>';
+        }
+
+        if (is_object($value)) {
+            if (method_exists($value, '__toString')) {
+                return htmlspecialchars((string) $value);
+            }
+            $json = json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            return '<pre class="text-xs whitespace-pre-wrap">' . htmlspecialchars($json !== false ? $json : '—') . '</pre>';
+        }
+
+        return htmlspecialchars((string) $value);
     }
 }
-                                                                                                                                    

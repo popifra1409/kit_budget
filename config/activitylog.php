@@ -31,11 +31,10 @@ return [
     'subject_returns_soft_deleted_models' => false,
 
     /*
-     * This model will be used to log activity.
-     * It should implement the Spatie\Activitylog\Contracts\Activity interface
-     * and extend Illuminate\Database\Eloquent\Model.
+     * ✅ Modèle personnalisé qui remplit automatiquement
+     * ip_address et user_agent sur chaque activité (cf. App\Models\ActivityLog)
      */
-    'activity_model' => \Spatie\Activitylog\Models\Activity::class,
+    'activity_model' => \App\Models\ActivityLog::class,
 
     /*
      * This is the name of the table that will be created by the migration and

@@ -13,3 +13,5 @@ Schedule::command('workflow:traiter-expirees')
     ->dailyAt('08:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('activity:archive --months=6')->monthly();
