@@ -18,6 +18,7 @@ class ExpressionBesoin extends Model
         'numero',
         'exercice_id',
         'service_demandeur',
+        'service_demandeur_id',
         'responsable_service_id',
         'comptable_matieres_id',
         'ordonnateur_id',
@@ -75,6 +76,11 @@ class ExpressionBesoin extends Model
     public function createur(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function serviceDemandeur(): BelongsTo
+    {
+        return $this->belongsTo(Service::class, 'service_demandeur_id');
     }
 
     // ====================================

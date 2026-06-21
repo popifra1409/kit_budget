@@ -44,13 +44,17 @@ class ExpressionBesoinResource extends Resource
                     ]),
 
                     Forms\Components\Grid::make(2)->schema([
-                        Forms\Components\TextInput::make('service_demandeur')
-                            ->label('Service demandeur')->required(),
-
                         Forms\Components\Select::make('exercice_id')
                             ->label('Exercice')
                             ->relationship('exercice', 'annee')
                             ->default(fn() => \App\Models\Exercice::getActif()?->id)
+                            ->required(),
+
+                        Forms\Components\Select::make('service_demandeur_id')
+                            ->label('Service demandeur')
+                            ->options(fn() => \App\Models\Service::where('actif', true)->pluck('nom', 'id'))
+                            ->searchable()
+                            ->preload()
                             ->required(),
                     ]),
 
@@ -67,7 +71,7 @@ class ExpressionBesoinResource extends Resource
                     ]),
 
                     Forms\Components\Textarea::make('objet')
-                        ->label('Objet')->rows(2)->columnSpanFull(),
+                        ->label('Objet')->required()->rows(2)->columnSpanFull(),
 
                     Forms\Components\Textarea::make('observations')
                         ->label('Observations')->rows(2)->columnSpanFull(),
@@ -99,11 +103,10 @@ class ExpressionBesoinResource extends Resource
                                         }
                                     })
                                     ->columnSpan(5),
-
                                 Forms\Components\TextInput::make('quantite_demandee')
                                     ->label('Qté demandée')
                                     ->numeric()->required()->default(1)
-                                    ->live(onBlur: true)
+                                    ->live(debounce: 600)
                                     ->columnSpan(2),
 
                                 Forms\Components\Placeholder::make('stock_dispo')
@@ -134,6 +137,19 @@ class ExpressionBesoinResource extends Resource
                                     })
                                     ->columnSpan(1),
 
+                                Forms\Components\Select::make('conditionnement_id')
+                                    ->label('Conditionnement')
+                                    ->options(fn() => \App\Models\Conditionnement::actif()->pluck('libelle', 'id'))
+                                    ->searchable()
+                                    ->visible(fn(Get $get) => static::estArticlePharmacie($get('article_id')))
+                                    ->required(fn(Get $get) => static::estArticlePharmacie($get('article_id')))
+                                    ->default(function (Get $get) {
+                                        $article = static::getArticleCache($get('article_id'));
+                                        return $article?->conditionnement_id;
+                                    })
+                                    ->helperText('Obligatoire pour les articles de catégorie Pharmacie')
+                                    ->columnSpan(2),
+
                                 Forms\Components\TextInput::make('prix_unitaire_estime')
                                     ->label('P.U estimé')
                                     ->numeric()->suffix('FCFA')
@@ -144,15 +160,40 @@ class ExpressionBesoinResource extends Resource
                                     ->columnSpan(1),
                             ]),
                         ])
+                        // ✅ Toutes les méthodes du Repeater regroupées ICI, une seule fois
+                        ->mutateRelationshipDataBeforeCreateUsing(function (array $data) {
+                            if (empty($data['conditionnement_id'])) {
+                                $data['conditionnement_id'] = null;
+                            }
+                            return $data;
+                        })
                         ->defaultItems(1)
                         ->addActionLabel('Ajouter un article')
                         ->reorderable()
                         ->orderColumn('ordre')
                         ->collapsible()
                         ->itemLabel(fn(array $state): ?string => Article::find($state['article_id'] ?? null)?->designation),
-                ])
-                ->columns(1),
+                ]),
         ]);
+    }
+
+    public static function mutateFormDataBeforeCreate(array $data): array
+    {
+        return static::syncLegacyServiceDemandeur($data);
+    }
+
+    public static function mutateFormDataBeforeSave(array $data): array
+    {
+        return static::syncLegacyServiceDemandeur($data);
+    }
+
+    protected static function syncLegacyServiceDemandeur(array $data): array
+    {
+        if (!empty($data['service_demandeur_id'])) {
+            $service = \App\Models\Service::find($data['service_demandeur_id']);
+            $data['service_demandeur'] = $service?->nom;
+        }
+        return $data;
     }
 
     public static function table(Table $table): Table
@@ -165,7 +206,7 @@ class ExpressionBesoinResource extends Resource
                 Tables\Columns\TextColumn::make('date_expression')
                     ->label('Date')->date('d/m/Y')->sortable(),
 
-                Tables\Columns\TextColumn::make('service_demandeur')
+                Tables\Columns\TextColumn::make('serviceDemandeur.nom')
                     ->label('Service')->searchable()->limit(25),
 
                 Tables\Columns\TextColumn::make('lignes_count')
@@ -245,5 +286,25 @@ class ExpressionBesoinResource extends Resource
             'view'   => Pages\ViewExpressionBesoin::route('/{record}'),
             'edit'   => Pages\EditExpressionBesoin::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * ✅ Cache léger pour éviter de requêter l'Article en base
+     * à chaque évaluation de visible()/default() dans le Repeater
+     */
+    protected static function getArticleCache(?int $articleId): ?\App\Models\Article
+    {
+        if (!$articleId) return null;
+
+        return \Cache::remember(
+            "article_pharma_check_{$articleId}",
+            now()->addMinutes(5),
+            fn() => Article::find($articleId)
+        );
+    }
+
+    protected static function estArticlePharmacie(?int $articleId): bool
+    {
+        return (bool) static::getArticleCache($articleId)?->est_pharmacie;
     }
 }

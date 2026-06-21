@@ -12,6 +12,7 @@ class LigneExpressionBesoin extends Model
     protected $fillable = [
         'expression_besoin_id',
         'article_id',
+        'conditionnement_id',
         'quantite_demandee',
         'quantite_en_stock',
         'quantite_a_commander',
@@ -43,6 +44,11 @@ class LigneExpressionBesoin extends Model
     public function article(): BelongsTo
     {
         return $this->belongsTo(Article::class);
+    }
+
+    public function conditionnement(): BelongsTo
+    {
+        return $this->belongsTo(Conditionnement::class);
     }
 
     // ====================================

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class Article extends Model
 {
@@ -15,23 +16,24 @@ class Article extends Model
 
     protected $table = 'articles';
 
+    // ✅ Corrigé pour correspondre EXACTEMENT aux colonnes réelles de la table
+    // + ajout unite_mesure_id / conditionnement_id
     protected $fillable = [
         'code',
         'designation',
         'description',
         'type',
         'unite_mesure',
+        'unite_mesure_id',
         'categorie',
-        'sous_categorie',
+        'categorie_id',
+        'conditionnement_id',
         'marque',
-        'reference',
+        'reference_fournisseur',
+        'fournisseur_id',
         'prix_unitaire_moyen',
         'seuil_alerte',
-        'duree_vie_annees',
-        'emplacement_magasin',
         'actif',
-        'observations',
-        'created_by',
     ];
 
     protected $casts = [
@@ -69,6 +71,26 @@ class Article extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function uniteMesure(): BelongsTo
+    {
+        return $this->belongsTo(UniteMesure::class);
+    }
+
+    public function conditionnement(): BelongsTo
+    {
+        return $this->belongsTo(Conditionnement::class);
+    }
+
+    public function categorieArticle(): BelongsTo
+    {
+        return $this->belongsTo(CategorieArticle::class, 'categorie_id');
+    }
+
+    public function fournisseur(): BelongsTo
+    {
+        return $this->belongsTo(Fournisseur::class);
+    }
+
     // ====================================
     // ACCESSEURS
     // ====================================
@@ -86,6 +108,12 @@ class Article extends Model
     public function getEstConsomptibleAttribute(): bool
     {
         return $this->type === 'consomptible';
+    }
+
+    // ✅ Détection pharmacie — insensible à la casse
+    public function getEstPharmacieAttribute(): bool
+    {
+        return (bool) $this->categorieArticle?->est_pharmacie;
     }
 
     public function getStockCritiqueAttribute(): bool
@@ -118,6 +146,11 @@ class Article extends Model
     public function scopeConsomptibles($query)
     {
         return $query->where('type', 'consomptible');
+    }
+
+    public function scopePharmacie($query)
+    {
+        return $query->whereHas('categorieArticle', fn($q) => $q->where('est_pharmacie', true));
     }
 
     public function scopeEnAlerteStock($query)
@@ -169,19 +202,15 @@ class Article extends Model
             if (!$article->code) {
                 $article->code = static::genererCode();
             }
-            if (!$article->created_by) {
-                $article->created_by = auth()->id();
-            }
         });
 
-        // Créer le stock automatiquement
         static::created(function ($article) {
             Stock::create([
                 'article_id'          => $article->id,
                 'quantite_disponible' => 0,
                 'quantite_reservee'   => 0,
                 'quantite_commandee'  => 0,
-                'valeur_stock'        => 0,
+                'exercice_id'         => \App\Models\Exercice::getActif()?->id,
             ]);
         });
     }

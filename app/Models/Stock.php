@@ -12,6 +12,7 @@ class Stock extends Model
 
     protected $fillable = [
         'article_id',
+        'exercice_id',
         'quantite_disponible',
         'quantite_reservee',
         'quantite_commandee',
@@ -24,12 +25,13 @@ class Stock extends Model
     ];
 
     protected $casts = [
-        'quantite_disponible'  => 'integer',
-        'quantite_reservee'    => 'integer',
-        'quantite_commandee'   => 'integer',
-        'valeur_stock'         => 'decimal:2',
+        'quantite_disponible'    => 'integer',
+        'quantite_reservee'      => 'integer',
+        'quantite_commandee'     => 'integer',
+        'quantite_inventaire'    => 'integer',
+        'valeur_stock'           => 'decimal:2',
         'date_dernier_mouvement' => 'date',
-        'date_inventaire'      => 'date',
+        'date_inventaire'        => 'date',
     ];
 
     // ====================================
@@ -39,6 +41,11 @@ class Stock extends Model
     public function article(): BelongsTo
     {
         return $this->belongsTo(Article::class);
+    }
+
+    public function exercice(): BelongsTo
+    {
+        return $this->belongsTo(Exercice::class);
     }
 
     // ====================================

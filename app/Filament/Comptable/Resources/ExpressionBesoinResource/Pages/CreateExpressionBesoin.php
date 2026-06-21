@@ -8,8 +8,18 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateExpressionBesoin extends CreateRecord
 {
     protected static string $resource = ExpressionBesoinResource::class;
-    protected function getRedirectUrl(): string
+
+    protected function mutateFormDataBeforeCreate(array $data): array
     {
-        return $this->getResource()::getUrl('view', ['record' => $this->record]);
+        return $this->syncLegacyServiceDemandeur($data);
+    }
+
+    protected function syncLegacyServiceDemandeur(array $data): array
+    {
+        if (!empty($data['service_demandeur_id'])) {
+            $service = \App\Models\Service::find($data['service_demandeur_id']);
+            $data['service_demandeur'] = $service?->nom;
+        }
+        return $data;
     }
 }
