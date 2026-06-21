@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 
 class ExpressionBesoinResource extends Resource
 {
@@ -21,8 +22,61 @@ class ExpressionBesoinResource extends Resource
     protected static ?string $navigationLabel = 'Expressions de Besoins';
     protected static ?string $modelLabel      = 'Expression de Besoin';
     protected static ?string $pluralModelLabel = 'Expressions de Besoins';
-    protected static ?string $navigationGroup = 'Comptabilité Matières';
+    protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 20;
+
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_expression_besoin') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_expression_besoin') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_expression_besoin') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_expression_besoin')
+            && $record->estModifiable();
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_expression_besoin')
+            && $record->estModifiable();
+    }
+
+    public static function canSoumettre($record): bool
+    {
+        return auth()->user()?->can('soumettre_expression_besoin') ?? false;
+    }
+
+    public static function canValider($record): bool
+    {
+        return auth()->user()?->can('valider_expression_besoin') ?? false;
+    }
+
+    public static function canSigner($record): bool
+    {
+        return auth()->user()?->can('signer_expression_besoin') ?? false;
+    }
+
+    public static function canConsolider(): bool
+    {
+        return auth()->user()?->can('consolider_expression_besoin') ?? false;
+    }
+
+    public static function canGenererBC($record): bool
+    {
+        return auth()->user()?->can('generer_bon_commande_expression_besoin') ?? false;
+    }
 
     public static function form(Form $form): Form
     {
@@ -212,16 +266,34 @@ class ExpressionBesoinResource extends Resource
                 Tables\Columns\TextColumn::make('lignes_count')
                     ->label('Articles')->counts('lignes')->badge()->color('info'),
 
+                Tables\Columns\TextColumn::make('bons_commande_count')
+                    ->label('BC générés')
+                    ->counts('bonsCommande')
+                    ->badge()->color('success')->placeholder('—')
+                    ->toggleable(),
+
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
                     ->colors([
                         'secondary' => 'brouillon',
                         'warning'   => 'soumis',
                         'success'   => 'valide',
+                        'primary'   => 'signe_dg',
                         'info'      => 'en_commande',
-                        'primary'   => 'satisfait',
+                        'success'   => 'satisfait',
                         'danger'    => fn($state) => in_array($state, ['rejete', 'annule']),
-                    ]),
+                    ])
+                    ->formatStateUsing(fn($state) => match ($state) {
+                        'brouillon'   => 'Brouillon',
+                        'soumis'      => 'Soumis',
+                        'valide'      => 'Validé (comptable)',
+                        'signe_dg'    => '✍️ Signé DG',
+                        'en_commande' => 'En commande',
+                        'satisfait'   => 'Satisfait',
+                        'rejete'      => 'Rejeté',
+                        'annule'      => 'Annulé',
+                        default       => $state,
+                    }),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Créé le')->dateTime('d/m/Y H:i')->sortable()
@@ -240,41 +312,291 @@ class ExpressionBesoinResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn($record) => $record->estModifiable()),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn($record) => static::canEdit($record)),
 
-                Tables\Actions\Action::make('soumettre')
-                    ->label('Soumettre')
-                    ->icon('heroicon-o-paper-airplane')
-                    ->color('warning')
-                    ->visible(fn($record) => $record->statut === 'brouillon')
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->update(['statut' => 'soumis']);
-                        Notification::make()->title('✅ Expression soumise')->success()->send();
-                    }),
+                    Tables\Actions\Action::make('soumettre')
+                        ->label('Soumettre')
+                        ->icon('heroicon-o-paper-airplane')
+                        ->color('warning')
+                        ->visible(fn($record) => $record->statut === 'brouillon' && static::canSoumettre($record))
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            $record->update(['statut' => 'soumis']);
+                            Notification::make()->title('✅ Expression soumise')->success()->send();
+                        }),
 
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn($record) => $record->statut === 'soumis')
-                    ->requiresConfirmation()
-                    ->form([
-                        Forms\Components\Select::make('ordonnateur_id')
-                            ->label('Ordonnateur-matières')
-                            ->relationship('ordonnateur', 'name')
-                            ->searchable()->preload()->required(),
-                    ])
-                    ->action(function ($record, array $data) {
-                        $record->update([
-                            'statut'         => 'valide',
-                            'ordonnateur_id' => $data['ordonnateur_id'],
-                            'date_validation' => now()->toDateString(),
-                        ]);
-                        Notification::make()->title('✅ Expression validée')->success()->send();
-                    }),
+                    // ✅ Validation comptable-matières + livraison automatique du disponible en stock
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider & Livrer le disponible')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut === 'soumis' && static::canValider($record))
+                        ->requiresConfirmation()
+                        ->modalHeading('Valider l\'expression et livrer les quantités disponibles')
+                        ->modalDescription(function ($record) {
+                            $record->load('lignes.article');
+                            $detail = $record->lignes->map(
+                                fn($l) =>
+                                "{$l->article?->designation} — Demandé: {$l->quantite_demandee} | "
+                                    . "Dispo: {$l->quantite_en_stock} | À commander: {$l->quantite_a_commander}"
+                            )->implode("\n");
+                            return "Les quantités disponibles en stock seront immédiatement sorties du stock. Le reste sera marqué \"à commander\".\n\n{$detail}";
+                        })
+                        ->form([
+                            Forms\Components\Select::make('ordonnateur_id')
+                                ->label('Ordonnateur-matières')
+                                ->relationship('ordonnateur', 'name')
+                                ->searchable()->preload()->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            DB::transaction(function () use ($record, $data) {
+                                $record->load('lignes.article.stock');
+
+                                foreach ($record->lignes as $ligne) {
+                                    $aLivrer = (int) $ligne->quantite_en_stock;
+                                    if ($aLivrer > 0 && $ligne->article?->stock) {
+                                        $ligne->article->stock->sortie($aLivrer);
+                                    }
+                                }
+
+                                $record->update([
+                                    'statut'          => 'valide',
+                                    'ordonnateur_id'  => $data['ordonnateur_id'],
+                                    'date_validation' => now()->toDateString(),
+                                ]);
+                            });
+
+                            Notification::make()
+                                ->title('✅ Expression validée — quantités disponibles livrées')
+                                ->success()->send();
+                        }),
+
+                    // ✅ Signature DG — individuelle, par expression
+                    Tables\Actions\Action::make('signer_dg')
+                        ->label('Signer (DG)')
+                        ->icon('heroicon-o-pencil')
+                        ->color('primary')
+                        ->visible(fn($record) => $record->statut === 'valide' && static::canSigner($record))
+                        ->requiresConfirmation()
+                        ->modalHeading('Signature du Directeur Général')
+                        ->modalDescription(
+                            fn($record) =>
+                            "Confirmez la signature de l'expression {$record->numero} par le Directeur Général."
+                        )
+                        ->action(function ($record) {
+                            $record->update([
+                                'statut'            => 'signe_dg',
+                                'signe_par_id'      => auth()->id(),
+                                'date_signature_dg' => now(),
+                            ]);
+                            Notification::make()->title('✅ Expression signée par le DG')->success()->send();
+                        }),
+
+                    Tables\Actions\Action::make('generer_bon_commande')
+                        ->label('Générer un Bon de Commande')
+                        ->icon('heroicon-o-document-plus')
+                        ->color('primary')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'signe_dg'
+                                && static::canGenererBC($record)
+                                && $record->lignes()->whereNull('bon_commande_id')->where('quantite_a_commander', '>', 0)->exists()
+                        )
+                        ->form(function ($record) {
+                            $lignesDisponibles = $record->lignes()
+                                ->whereNull('bon_commande_id')
+                                ->where('quantite_a_commander', '>', 0)
+                                ->with('article.uniteMesure')
+                                ->get();
+
+                            return [
+                                Forms\Components\Placeholder::make('info')
+                                    ->label('')
+                                    ->content('Sélectionnez le fournisseur, le budget, et les lignes à inclure dans ce bon de commande. Les lignes non sélectionnées resteront disponibles pour un autre BC (ex: fournisseur différent).')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Select::make('budget_id')
+                                    ->label('Budget')
+                                    ->options(fn() => \App\Models\Budget::where('actif', true)->pluck('libelle', 'id'))
+                                    ->required()->searchable()->live(),
+
+                                Forms\Components\Select::make('fournisseur_id')
+                                    ->label('Fournisseur')
+                                    ->options(fn() => \App\Models\Fournisseur::pluck('raison_sociale', 'id'))
+                                    ->required()->searchable()->preload(),
+
+                                Forms\Components\Select::make('nomenclature_commune_id')
+                                    ->label('Nomenclature budgétaire')
+                                    ->options(function (Get $get) {
+                                        $budgetId = $get('budget_id');
+                                        if (!$budgetId) return [];
+                                        return \App\Models\LigneBudgetaire::where('budget_id', $budgetId)
+                                            ->whereNotNull('nomenclature_id')->with('nomenclature')->get()
+                                            ->filter(fn($lb) => $lb->nomenclature)
+                                            ->mapWithKeys(fn($lb) => [
+                                                $lb->nomenclature_id => "{$lb->nomenclature->code} - {$lb->nomenclature->libelle}"
+                                            ]);
+                                    })
+                                    ->required()->searchable()
+                                    ->disabled(fn(Get $get) => !$get('budget_id')),
+
+                                Forms\Components\Textarea::make('objet')
+                                    ->label('Objet')
+                                    ->default($record->objet)
+                                    ->required()->rows(2)->columnSpanFull(),
+
+                                Forms\Components\CheckboxList::make('lignes_ids')
+                                    ->label('Lignes à commander')
+                                    ->options(
+                                        $lignesDisponibles->mapWithKeys(fn($l) => [
+                                            $l->id => "{$l->article?->designation} — "
+                                                . "{$l->quantite_a_commander} "
+                                                . ($l->article?->uniteMesure?->libelle ?? 'unité')
+                                                . " — PU est.: " . number_format($l->prix_unitaire_estime, 0, ',', ' ') . " FCFA"
+                                        ])
+                                    )
+                                    ->default($lignesDisponibles->pluck('id')->toArray())
+                                    ->required()
+                                    ->columns(1)
+                                    ->columnSpanFull(),
+                            ];
+                        })
+                        ->modalHeading('Générer un Bon de Commande')
+                        ->modalWidth('2xl')
+                        ->action(function ($record, array $data) {
+                            DB::transaction(function () use ($record, $data) {
+                                $lignesEB = \App\Models\LigneExpressionBesoin::whereIn('id', $data['lignes_ids'])
+                                    ->with('article.uniteMesure')->get();
+
+                                $bc = \App\Models\BonCommande::create([
+                                    'exercice_id'             => $record->exercice_id,
+                                    'budget_id'               => $data['budget_id'],
+                                    'fournisseur_id'          => $data['fournisseur_id'],
+                                    'service_demandeur_id'    => $record->service_demandeur_id,
+                                    'nomenclature_commune_id' => $data['nomenclature_commune_id'],
+                                    'expression_besoin_id'    => $record->id,
+                                    'date_emission'           => now(),
+                                    'objet'                   => $data['objet'],
+                                    'statut'                  => 'brouillon',
+                                    'created_by'              => auth()->id(),
+                                ]);
+
+                                $mapUnites = [
+                                    'boîte' => 'lot',
+                                    'boite' => 'lot',
+                                    'plaquette' => 'lot',
+                                    'flacon' => 'pièce',
+                                    'comprimé' => 'pièce',
+                                    'kg' => 'kg',
+                                    'litre' => 'litre',
+                                    'l' => 'litre',
+                                    'mètre' => 'mètre',
+                                    'heure' => 'heure',
+                                    'jour' => 'jour',
+                                    'forfait' => 'forfait',
+                                    'lot' => 'lot',
+                                    'pièce' => 'pièce',
+                                ];
+
+                                foreach ($lignesEB as $ligneEB) {
+                                    $uniteLibelle = strtolower(trim($ligneEB->article?->uniteMesure?->libelle ?? ''));
+                                    $uniteMappee  = $mapUnites[$uniteLibelle] ?? 'pièce';
+
+                                    \App\Models\LigneBonCommande::create([
+                                        'bon_commande_id'  => $bc->id,
+                                        'nomenclature_id'  => $data['nomenclature_commune_id'],
+                                        'designation'      => $ligneEB->article?->designation ?? 'Article',
+                                        'unite'            => $uniteMappee,
+                                        'quantite'         => $ligneEB->quantite_a_commander,
+                                        'prix_unitaire_ht' => $ligneEB->prix_unitaire_estime > 0
+                                            ? $ligneEB->prix_unitaire_estime
+                                            : ($ligneEB->article?->prix_unitaire_moyen ?? 0),
+                                        'observations'     => "Généré depuis Expression de Besoin {$record->numero}",
+                                    ]);
+
+                                    $ligneEB->update(['bon_commande_id' => $bc->id]);
+                                }
+
+                                $bc->refresh()->load('lignes');
+                                $bc->calculerMontants();
+                                $bc->saveQuietly();
+
+                                $record->update(['statut' => 'en_commande']);
+                            });
+
+                            Notification::make()
+                                ->title('✅ Bon de commande généré')
+                                ->success()
+                                ->body('Le BC est en brouillon — complétez/validez-le depuis le module Budget.')
+                                ->send();
+                        }),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: \Filament\Tables\Enums\ActionsPosition::BeforeColumns)
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+
+                    Tables\Actions\BulkAction::make('consolider')
+                        ->label('Consolider dans une fiche')
+                        ->icon('heroicon-o-rectangle-stack')
+                        ->color('info')
+                        ->visible(fn() => static::canConsolider())
+                        ->deselectRecordsAfterCompletion()
+                        ->form([
+                            Forms\Components\Radio::make('mode')
+                                ->label('Fiche de consolidation')
+                                ->options([
+                                    'nouvelle'  => '➕ Créer une nouvelle fiche',
+                                    'existante' => '📂 Ajouter à une fiche ouverte existante',
+                                ])
+                                ->default('nouvelle')
+                                ->live()
+                                ->required(),
+
+                            Forms\Components\Select::make('fiche_id')
+                                ->label('Fiche existante')
+                                ->options(fn() => \App\Models\FicheConsolidationBesoin::where('statut', 'ouverte')->pluck('numero', 'id'))
+                                ->visible(fn(Get $get) => $get('mode') === 'existante')
+                                ->required(fn(Get $get) => $get('mode') === 'existante'),
+
+                            Forms\Components\Textarea::make('observations')
+                                ->label('Observations')
+                                ->visible(fn(Get $get) => $get('mode') === 'nouvelle')
+                                ->rows(2),
+                        ])
+                        ->action(function (\Illuminate\Support\Collection $records, array $data) {
+                            $nonSoumis = $records->where('statut', '!=', 'soumis');
+                            if ($nonSoumis->isNotEmpty()) {
+                                Notification::make()
+                                    ->title('❌ Seules les expressions "Soumises" peuvent être consolidées')
+                                    ->danger()->persistent()->send();
+                                return;
+                            }
+
+                            if ($data['mode'] === 'nouvelle') {
+                                $fiche = \App\Models\FicheConsolidationBesoin::create([
+                                    'comptable_matieres_id' => auth()->id(),
+                                    'observations'          => $data['observations'] ?? null,
+                                ]);
+                            } else {
+                                $fiche = \App\Models\FicheConsolidationBesoin::findOrFail($data['fiche_id']);
+                            }
+
+                            $records->each(fn($r) => $r->update(['fiche_consolidation_id' => $fiche->id]));
+
+                            Notification::make()
+                                ->title("✅ {$records->count()} expression(s) consolidée(s) dans {$fiche->numero}")
+                                ->success()->send();
+                        }),
+                ]),
             ]);
     }
 

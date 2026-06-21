@@ -75,6 +75,10 @@ class RolePermissionSeeder extends Seeder
             'ordre_sortie',
             'fiche_detenteur',
             'registre_consommation',
+            'unite_mesure',
+            'conditionnement',
+            'categorie_article',
+            'fiche_consolidation_besoin',
         ];
 
         $modulesMarches = [];
@@ -169,6 +173,8 @@ class RolePermissionSeeder extends Seeder
             'soumettre_expression_besoin',
             'valider_expression_besoin',
             'rejeter_expression_besoin',
+            'signer_expression_besoin',
+            'consolider_expression_besoin',
             'signer_pv_reception',
             'integrer_reception_stock',
             'signer_ordre_entree',
@@ -215,6 +221,9 @@ class RolePermissionSeeder extends Seeder
             // ✅ NOUVEAU — États / Rapports régie
             'imprimer_etat_retenues_regie',
             'imprimer_compte_emploi_regie',
+
+            'generer_bon_commande_expression_besoin',
+            'generer_expression_besoin_bon_commande',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -349,6 +358,7 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'telecharger_piece_dossier',
             'view_all_dossiers',
+            'generer_expression_besoin_bon_commande',
         ]);
 
         // ── DAAF ─────────────────────────────────────────────
@@ -417,6 +427,14 @@ class RolePermissionSeeder extends Seeder
             'view_any_expression_besoin',
             'view_expression_besoin',
             'valider_expression_besoin',
+            'view_any_unite_mesure',
+            'view_unite_mesure',
+            'view_any_conditionnement',
+            'view_conditionnement',
+            'view_any_categorie_article',
+            'view_categorie_article',
+            'view_any_fiche_consolidation_besoin',
+            'view_fiche_consolidation_besoin',
             'view_any_reception',
             'view_reception',
             'signer_pv_reception',
@@ -471,6 +489,7 @@ class RolePermissionSeeder extends Seeder
             'annuler_bon_commande_regie',
             'imprimer_etat_retenues_regie',
             'imprimer_compte_emploi_regie',
+            'generer_expression_besoin_bon_commande',
         ]);
 
         // ── CONTRÔLEUR FINANCIER ─────────────────────────────
@@ -554,6 +573,11 @@ class RolePermissionSeeder extends Seeder
             'view_any_decision_administrative',
             'view_decision_administrative',
             'valider_decision_administrative',
+            'view_any_expression_besoin',
+            'view_expression_besoin',
+            'signer_expression_besoin',
+            'view_any_fiche_consolidation_besoin',
+            'view_fiche_consolidation_besoin',
             'view_any_type_decision',
             'view_type_decision',
             'view_any_personnel',
@@ -570,7 +594,6 @@ class RolePermissionSeeder extends Seeder
             'valider_piece_dossier',
             'telecharger_piece_dossier',
             'view_all_dossiers',
-            // ✅ NOUVEAU — DG voit les régies (lecture seule)
             'view_any_regie_avance',
             'view_regie_avance',
             'view_any_menu_depense',
@@ -622,6 +645,8 @@ class RolePermissionSeeder extends Seeder
             'view_fiche_stock',
             'view_any_expression_besoin',
             'view_expression_besoin',
+            'view_any_fiche_consolidation_besoin',
+            'view_fiche_consolidation_besoin',
             'view_any_reception',
             'view_reception',
             'view_any_ordre_entree',
@@ -636,7 +661,6 @@ class RolePermissionSeeder extends Seeder
             'view_fiche_detenteur',
             'view_any_registre_consommation',
             'view_registre_consommation',
-            // ✅ NOUVEAU — Agent comptable gère les décaissements
             'view_any_regie_avance',
             'view_regie_avance',
             'view_any_menu_depense',
@@ -709,6 +733,22 @@ class RolePermissionSeeder extends Seeder
             'create_expression_besoin',
             'update_expression_besoin',
             'valider_expression_besoin',
+            'consolider_expression_besoin',
+            'view_any_fiche_consolidation_besoin',
+            'view_fiche_consolidation_besoin',
+            'update_fiche_consolidation_besoin',
+            'view_any_unite_mesure',
+            'view_unite_mesure',
+            'create_unite_mesure',
+            'update_unite_mesure',
+            'view_any_conditionnement',
+            'view_conditionnement',
+            'create_conditionnement',
+            'update_conditionnement',
+            'view_any_categorie_article',
+            'view_categorie_article',
+            'create_categorie_article',
+            'update_categorie_article',
             'view_any_reception',
             'view_reception',
             'create_reception',
@@ -740,6 +780,7 @@ class RolePermissionSeeder extends Seeder
             'retourner_fiche_detenteur',
             'view_any_registre_consommation',
             'view_registre_consommation',
+            'generer_bon_commande_expression_besoin',
         ]);
 
         // ── ORDONNATEUR MATIÈRES ─────────────────────────────

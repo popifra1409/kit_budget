@@ -58,14 +58,14 @@ class ComptablePanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('Budget Suite — Comptabilité Matières')
+            ->brandName('Comptabilité Matières')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
             // ── Cycle de vie complet des biens ───────────────────────────
             ->navigationGroups([
                 'Référentiels',           // Catégories, fournisseurs, localisations
-                'Acquisition',            // Bons de commande, réception, PV
+                'Acquisition des biens',            // Bons de commande, réception, PV
                 'Affectation & Mise en service', // Attribution aux services/agents
                 'Suivi & Inventaire',     // Mouvements, mutations, états
                 'Entretien & Réparation', // Bons de travaux, maintenances

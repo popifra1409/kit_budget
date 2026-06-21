@@ -15,7 +15,7 @@ class FicheStockResource extends Resource
     protected static ?string $navigationLabel = 'Fiches de Stock';
     protected static ?string $modelLabel = 'Fiche de Stock';
     protected static ?string $pluralModelLabel = 'Fiches de Stock';
-    protected static ?string $navigationGroup = 'Comptabilité Matières';
+    protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int $navigationSort = 50;
 
     public static function table(Table $table): Table

@@ -60,6 +60,7 @@ class BonCommande extends Model
         'exonere_tva',
         'exonere_ir',
         'nomenclature_commune_id',
+        'expression_besoin_id',
     ];
 
     protected $casts = [
@@ -106,6 +107,11 @@ class BonCommande extends Model
     public function ligneBudgetaire()
     {
         return $this->belongsTo(LigneBudgetaire::class, 'budgetaire_ligne_id'); // Vrai nom
+    }
+
+    public function expressionBesoin(): BelongsTo
+    {
+        return $this->belongsTo(ExpressionBesoin::class);
     }
 
     /**

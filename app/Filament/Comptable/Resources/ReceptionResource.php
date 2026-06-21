@@ -20,7 +20,7 @@ class ReceptionResource extends Resource
     protected static ?string $navigationLabel = 'Réceptions';
     protected static ?string $modelLabel      = 'Réception';
     protected static ?string $pluralModelLabel = 'Réceptions';
-    protected static ?string $navigationGroup = 'Comptabilité Matières';
+    protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 30;
 
     public static function form(Form $form): Form

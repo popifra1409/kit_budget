@@ -21,6 +21,7 @@ class LigneExpressionBesoin extends Model
         'justification',
         'ordre',
         'disponible_en_stock',
+        'bon_commande_id',
     ];
 
     protected $casts = [
@@ -49,6 +50,11 @@ class LigneExpressionBesoin extends Model
     public function conditionnement(): BelongsTo
     {
         return $this->belongsTo(Conditionnement::class);
+    }
+
+    public function bonCommande(): BelongsTo
+    {
+        return $this->belongsTo(BonCommande::class);
     }
 
     // ====================================

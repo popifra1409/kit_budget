@@ -31,12 +31,16 @@ class ExpressionBesoin extends Model
         'statut',
         'bon_commande_id',
         'created_by',
+        'signe_par_id',
+        'date_signature_dg',
+        'fiche_consolidation_id',
     ];
 
     protected $casts = [
         'date_expression' => 'date',
         'date_validation' => 'date',
         'date_besoin'     => 'date',
+        'date_signature_dg' => 'datetime',
     ];
 
     // ====================================
@@ -83,6 +87,26 @@ class ExpressionBesoin extends Model
         return $this->belongsTo(Service::class, 'service_demandeur_id');
     }
 
+    public function signataireDg(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'signe_par_id');
+    }
+
+    public function ficheConsolidation(): BelongsTo
+    {
+        return $this->belongsTo(FicheConsolidationBesoin::class);
+    }
+
+    public function bonsCommande(): HasMany
+    {
+        return $this->hasMany(BonCommande::class, 'expression_besoin_id');
+    }
+
+    public function peutEtreSigneParDg(): bool
+    {
+        return $this->statut === 'valide';
+    }
+    
     // ====================================
     // ACCESSEURS
     // ====================================

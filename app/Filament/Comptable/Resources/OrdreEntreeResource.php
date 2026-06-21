@@ -18,7 +18,7 @@ class OrdreEntreeResource extends Resource
     protected static ?string $navigationLabel = 'Ordres d\'Entrée';
     protected static ?string $modelLabel      = 'Ordre d\'Entrée';
     protected static ?string $pluralModelLabel = 'Ordres d\'Entrée';
-    protected static ?string $navigationGroup = 'Comptabilité Matières';
+    protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 40;
 
     public static function form(Form $form): Form

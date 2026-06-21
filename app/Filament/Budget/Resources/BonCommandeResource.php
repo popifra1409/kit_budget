@@ -26,6 +26,7 @@ use App\Filament\Clusters\GestionBudgetaire;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Enums\ActionsPosition;
+use Illuminate\Support\Facades\DB;
 
 class BonCommandeResource extends Resource
 {
@@ -1546,14 +1547,122 @@ class BonCommandeResource extends Resource
                     ->falseLabel('Non engagés'),
             ])
             ->actions([
-                Tables\Actions\ActionGroup::make(
-                    WorkflowActions::make(
+                Tables\Actions\ActionGroup::make([
+                    ...WorkflowActions::make(
                         avecEngagement: true,
                         pdfServiceClass: BonCommandePdfService::class,
                         pdfRouteName: 'bons-commande.pdf.preview',
                         avecModalEngagement: true
-                    )
-                )
+                    ),
+
+                    Tables\Actions\Action::make('generer_expression_besoin')
+                        ->label('Générer Expression de Besoin')
+                        ->icon('heroicon-o-document-plus')
+                        ->color('info')
+                        ->visible(
+                            fn($record) =>
+                            $record->engage
+                                && !$record->expression_besoin_id
+                                && auth()->user()?->can('generer_expression_besoin_bon_commande')
+                        )
+                        ->form(function ($record) {
+                            return [
+                                Forms\Components\Placeholder::make('info')
+                                    ->label('')
+                                    ->content('Associez chaque ligne du bon de commande à un article du catalogue Comptabilité Matières (ou ignorez les lignes de service/prestation sans équivalent en stock).')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Select::make('comptable_matieres_id')
+                                    ->label('Comptable-matières responsable')
+                                    ->options(fn() => \App\Models\User::role('comptable_matieres')->pluck('name', 'id'))
+                                    ->required()->searchable(),
+
+                                Forms\Components\Repeater::make('mappings')
+                                    ->label('Lignes du bon de commande')
+                                    ->schema([
+                                        Forms\Components\Hidden::make('ligne_bon_commande_id'),
+
+                                        Forms\Components\Placeholder::make('designation_aff')
+                                            ->label('Ligne BC')
+                                            ->content(fn($get) => $get('designation_aff')),
+
+                                        Forms\Components\Select::make('article_id')
+                                            ->label('Article correspondant')
+                                            ->options(fn() => \App\Models\Article::actif()->pluck('designation', 'id'))
+                                            ->searchable()
+                                            ->helperText('Laissez vide pour ignorer cette ligne'),
+
+                                        Forms\Components\Toggle::make('inclure')
+                                            ->label('Inclure')
+                                            ->default(true),
+                                    ])
+                                    ->columns(3)
+                                    ->default(
+                                        $record->lignes->map(fn($l) => [
+                                            'ligne_bon_commande_id' => $l->id,
+                                            'designation_aff'        => "{$l->designation} — {$l->quantite} {$l->unite}",
+                                            'article_id'              => null,
+                                            'inclure'                  => true,
+                                        ])->toArray()
+                                    )
+                                    ->columnSpanFull()
+                                    ->addable(false)
+                                    ->deletable(false),
+                            ];
+                        })
+                        ->modalHeading('Générer une Expression de Besoin')
+                        ->modalWidth('3xl')
+                        ->action(function ($record, array $data) {
+                            DB::transaction(function () use ($record, $data) {
+                                $eb = \App\Models\ExpressionBesoin::create([
+                                    'exercice_id'            => $record->exercice_id,
+                                    'service_demandeur_id'   => $record->service_demandeur_id,
+                                    'responsable_service_id' => auth()->id(),
+                                    'comptable_matieres_id'  => $data['comptable_matieres_id'],
+                                    'objet'                  => $record->objet,
+                                    'statut'                 => 'signe_dg',
+                                    'date_expression'        => now(),
+                                    'date_validation'        => now(),
+                                    'signe_par_id'           => auth()->id(),
+                                    'date_signature_dg'      => now(),
+                                    'created_by'             => auth()->id(),
+                                ]);
+
+                                $compte = 0;
+                                foreach ($data['mappings'] as $m) {
+                                    if (empty($m['inclure']) || empty($m['article_id'])) {
+                                        continue;
+                                    }
+
+                                    $ligneBC = \App\Models\LigneBonCommande::find($m['ligne_bon_commande_id']);
+                                    if (!$ligneBC) continue;
+
+                                    \App\Models\LigneExpressionBesoin::create([
+                                        'expression_besoin_id' => $eb->id,
+                                        'article_id'           => $m['article_id'],
+                                        'quantite_demandee'    => $ligneBC->quantite,
+                                        'justification'        => "Issu du Bon de Commande {$record->numero}",
+                                        'bon_commande_id'      => $record->id,
+                                    ]);
+                                    $compte++;
+                                }
+
+                                $record->update(['expression_besoin_id' => $eb->id]);
+
+                                if ($compte === 0) {
+                                    Notification::make()
+                                        ->title('⚠️ Expression créée sans ligne')
+                                        ->warning()
+                                        ->body('Aucune ligne n\'a été associée à un article — pensez à les ajouter manuellement si besoin.')
+                                        ->send();
+                                } else {
+                                    Notification::make()
+                                        ->title("✅ Expression {$eb->numero} générée avec {$compte} ligne(s)")
+                                        ->success()->send();
+                                }
+                            });
+                        }),
+                ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->color('gray')

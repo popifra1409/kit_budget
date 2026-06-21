@@ -21,8 +21,26 @@ class ArticleResource extends Resource
     protected static ?string $navigationLabel = 'Articles / Catalogue';
     protected static ?string $modelLabel      = 'Article';
     protected static ?string $pluralModelLabel = 'Articles';
-    protected static ?string $navigationGroup = 'Comptabilité Matières';
+    protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 10;
+
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_article') ?? false;
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_article') ?? false;
+    }
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_article') ?? false;
+    }
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_article') ?? false;
+    }
 
     public static function form(Form $form): Form
     {

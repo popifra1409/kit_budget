@@ -20,6 +20,23 @@ class ConditionnementResource extends Resource
     protected static ?string $navigationGroup = 'Paramétrage';
     protected static ?int    $navigationSort  = 11;
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_conditionnement') ?? false;
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_conditionnement') ?? false;
+    }
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_conditionnement') ?? false;
+    }
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_conditionnement') ?? false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([

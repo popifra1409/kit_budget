@@ -20,6 +20,23 @@ class CategorieArticleResource extends Resource
     protected static ?string $navigationGroup = 'Paramétrage';
     protected static ?int    $navigationSort  = 9;
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_categorie_article') ?? false;
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_categorie_article') ?? false;
+    }
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_categorie_article') ?? false;
+    }
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_categorie_article') ?? false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([

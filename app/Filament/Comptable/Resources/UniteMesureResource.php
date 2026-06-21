@@ -20,6 +20,23 @@ class UniteMesureResource extends Resource
     protected static ?string $navigationGroup = 'Paramétrage';
     protected static ?int    $navigationSort  = 10;
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_unite_mesure') ?? false;
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_unite_mesure') ?? false;
+    }
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_unite_mesure') ?? false;
+    }
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_unite_mesure') ?? false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
