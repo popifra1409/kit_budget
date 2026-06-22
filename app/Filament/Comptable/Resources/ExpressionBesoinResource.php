@@ -533,6 +533,22 @@ class ExpressionBesoinResource extends Resource
                                 ->body('Le BC est en brouillon — complétez/validez-le depuis le module Budget.')
                                 ->send();
                         }),
+
+                    Tables\Actions\Action::make('apercu_pdf')
+                        ->label('Aperçu (PDF)')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->visible(fn($record) => $record->statut !== 'brouillon')
+                        ->url(fn($record) => route('expressions-besoins.pdf.preview', $record->id))
+                        ->openUrlInNewTab(),
+
+                    Tables\Actions\Action::make('telecharger_pdf')
+                        ->label('Télécharger (PDF)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut !== 'brouillon')
+                        ->url(fn($record) => route('expressions-besoins.pdf.download', $record->id))
+                        ->openUrlInNewTab(),
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')

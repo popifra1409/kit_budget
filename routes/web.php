@@ -114,6 +114,31 @@ Route::middleware(['web', 'auth'])->group(function () {
         return DecisionAdministrativePdfService::telecharger($decision);
     })->name('decisions-administratives.pdf.download');
 
+    // ── Expressions de Besoins PDF ────────────────────────────
+    Route::get('/expressions-besoins/{id}/pdf/preview', function (int $id) {
+        $expressionBesoin = \App\Models\ExpressionBesoin::with([
+            'serviceDemandeur',
+            'responsableService',
+            'comptableMatieres',
+            'ordonnateur',
+            'lignes.article.uniteMesure',
+            'lignes.conditionnement',
+        ])->findOrFail($id);
+        return \App\Services\ExpressionBesoinPdfService::apercu($expressionBesoin);
+    })->name('expressions-besoins.pdf.preview');
+
+    Route::get('/expressions-besoins/{id}/pdf/download', function (int $id) {
+        $expressionBesoin = \App\Models\ExpressionBesoin::with([
+            'serviceDemandeur',
+            'responsableService',
+            'comptableMatieres',
+            'ordonnateur',
+            'lignes.article.uniteMesure',
+            'lignes.conditionnement',
+        ])->findOrFail($id);
+        return \App\Services\ExpressionBesoinPdfService::telecharger($expressionBesoin);
+    })->name('expressions-besoins.pdf.download');
+
     // ── Fiche Contrôle Engagements ────────────────────────────
     Route::get('/fiche-controle-engagements/{id}/preview', [FicheControleEngagementsController::class, 'preview'])
         ->name('fiche-controle-engagements.preview');
