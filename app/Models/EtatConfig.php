@@ -191,6 +191,7 @@ class EtatConfig extends Model
             'ordonnance_paiement',
             'ordonnance_paiement_impot',
             'memoire_depense',
+            'expression_besoin',
         ];
         return !in_array($this->code, $etatsSysteme);
     }

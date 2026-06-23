@@ -22,7 +22,6 @@ class EtatConfigSeeder extends Seeder
                 'description' => 'Fiche de suivi de performance des engagements',
                 'categorie' => 'Budgétaire',
                 'ordre' => 1,
-
                 'champs_variables' => [
                     'numero' => ['source' => 'numero', 'type' => 'text'],
                     'exercice' => ['source' => 'exercice.annee', 'type' => 'text'],
@@ -37,22 +36,14 @@ class EtatConfigSeeder extends Seeder
                     'objet' => ['source' => 'objet', 'type' => 'text'],
                     'imputation' => ['source' => 'nomenclaturePrincipale.code', 'type' => 'text'],
                 ],
-
                 'calculs' => [
                     'montant_lettres' => [
                         'fonction' => 'nombre_en_lettres',
-                        'params' => ['_raw.montant_engage']
+                        'params' => ['_raw.montant_engage'],
                     ],
                 ],
-
-                'signature_config' => [
-                    'afficher' => false
-                ],
-
-                'options_pdf' => [
-                    'orientation' => 'portrait',
-                    'format' => 'A4'
-                ],
+                'signature_config' => ['afficher' => false],
+                'options_pdf' => ['orientation' => 'portrait', 'format' => 'A4'],
             ],
 
             // ═══════════════════════════════════════════════════
@@ -143,7 +134,6 @@ class EtatConfigSeeder extends Seeder
                     'montant_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_ttc']],
                 ],
                 'signature_config' => ['afficher' => false],
-                // ✅ Valeurs initiales — appliquées uniquement à la création
                 'entete_config' => [],
             ],
             [
@@ -224,8 +214,6 @@ class EtatConfigSeeder extends Seeder
                     'montant_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_ttc']],
                 ],
                 'signature_config' => ['afficher' => false],
-                // ✅ Valeurs initiales — appliquées uniquement à la création
-                // ou si entete_config est encore vide (jamais personnalisé)
                 'entete_config' => [
                     'titre_document'    => 'BON DE COMMANDE RÉGIE D\'AVANCE',
                     'sous_direction_fr' => 'SERVICE DU BUDGET ET DE LA COMPTABILITÉ',
@@ -507,7 +495,7 @@ class EtatConfigSeeder extends Seeder
                     'montant_net' => ['source' => 'montant_net', 'type' => 'money'],
                 ],
                 'calculs' => [
-                    'montant_net_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_net']],
+                    'montant_lettres' => ['fonction' => 'nombre_en_lettres', 'params' => ['_raw.montant_net']],
                 ],
                 'signature_config' => ['afficher' => false],
             ],
@@ -576,7 +564,7 @@ class EtatConfigSeeder extends Seeder
             ],
 
             // ═══════════════════════════════════════════════════
-            // COMPTABILITÉ MATIÈRES — 1 variante chacun
+            // COMPTABILITÉ MATIÈRES — documents existants
             // ═══════════════════════════════════════════════════
             [
                 'code' => 'pv_reception',
@@ -724,14 +712,53 @@ class EtatConfigSeeder extends Seeder
                     ],
                 ],
             ],
+
+            // ═══════════════════════════════════════════════════
+            // ✅ NOUVEAU — EXPRESSION DE BESOIN — 1 variante
+            // ═══════════════════════════════════════════════════
+            [
+                'code'          => 'expression_besoin',
+                'type_document' => 'expression_besoin',
+                'est_defaut'    => true,
+                'nom'           => 'Expression de Besoin Standard',
+                'template'      => 'pdf.templates.expression-besoin',
+                'description'   => 'Expression des besoins — Services (Pharmacie, etc.)',
+                'categorie'     => 'Comptabilité Matières',
+                'ordre'         => 10,
+                'format_papier' => 'A4',
+                'orientation'   => 'portrait',
+                'champs_variables' => [
+                    'numero'          => ['source' => 'numero',                  'type' => 'text'],
+                    'date_expression' => ['source' => 'date_expression',         'type' => 'date', 'format' => 'd/m/Y'],
+                    'service'         => ['source' => 'serviceDemandeur.nom',    'type' => 'uppercase'],
+                    'objet'           => ['source' => 'objet',                   'type' => 'text'],
+                    'responsable'     => ['source' => 'responsableService.name', 'type' => 'text'],
+                    'comptable'       => ['source' => 'comptableMatieres.name',  'type' => 'text'],
+                    'signataire_dg'   => ['source' => 'signataireDg.name',       'type' => 'text'],
+                    'lignes'          => ['source' => 'lignes',                  'type' => 'array'],
+                ],
+                'calculs' => [],
+                'signature_config' => [
+                    'afficher'   => true,
+                    'signatures' => [
+                        ['titre' => 'LE CHEF DE SERVICE', 'position' => 'right', 'largeur' => 45],
+                    ],
+                ],
+                'options_pdf' => [
+                    'format_papier' => 'A4',
+                    'orientation'   => 'portrait',
+                ],
+                'entete_config' => [
+                    'sous_direction_fr' => 'DIRECTION MEDICALE',
+                    'sous_direction_en' => 'MEDICAL DEPARTMENT',
+                ],
+            ],
         ];
 
         // ═══════════════════════════════════════════════════════
         // ✅ SEEDING — préserve les personnalisations entete_config
         // ═══════════════════════════════════════════════════════
         foreach ($etats as $etat) {
-            // Extraire entete_config — traité séparément pour ne pas
-            // écraser les personnalisations admin lors des re-seeds
             $enteteConfigInitial = $etat['entete_config'] ?? null;
             unset($etat['entete_config']);
 
@@ -740,21 +767,14 @@ class EtatConfigSeeder extends Seeder
                 $etat
             );
 
-            // N'appliquer entete_config QUE si :
-            // - l'enregistrement vient d'être créé, OU
-            // - son entete_config est actuellement vide/null
-            // (préserve toute personnalisation existante de l'admin :
-            //  logo, titres, sigle, sous-directions, etc.)
             if ($enteteConfigInitial !== null) {
                 $enteteActuel = $config->entete_config;
-
                 if ($config->wasRecentlyCreated || empty($enteteActuel)) {
                     $config->update(['entete_config' => $enteteConfigInitial]);
                 }
             }
         }
 
-        // Résumé par type_document
         $groupes = collect($etats)->groupBy('type_document');
         $this->command->info('');
         $this->command->info('✅ ' . count($etats) . ' états créés/mis à jour — ' . $groupes->count() . ' types de documents');

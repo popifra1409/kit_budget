@@ -1304,6 +1304,20 @@ class BonCommandeResource extends Resource
                     ->label('Engagé')->boolean()->trueColor('success')->falseColor('gray')
                     ->toggleable(),
 
+                Tables\Columns\TextColumn::make('expressionBesoin.numero')
+                    ->label('Expression Besoin')
+                    ->badge()
+                    ->color('success')
+                    ->icon('heroicon-o-clipboard-document-list')
+                    ->placeholder('—')
+                    ->url(
+                        fn($record) => $record->expression_besoin_id
+                            ? route('expressions-besoins.pdf.preview', $record->expression_besoin_id)
+                            : null
+                    )
+                    ->openUrlInNewTab()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('typeEngagement.libelle')
                     ->label('Type')->badge()
                     ->color(fn($record) => match ($record->typeEngagement?->code) {
@@ -1555,6 +1569,9 @@ class BonCommandeResource extends Resource
                         avecModalEngagement: true
                     ),
 
+                    // ── Expression de Besoin ──────────────────────────────
+
+                    // ✅ Générer — uniquement si pas encore lié
                     Tables\Actions\Action::make('generer_expression_besoin')
                         ->label('Générer Expression de Besoin')
                         ->icon('heroicon-o-document-plus')
@@ -1574,8 +1591,8 @@ class BonCommandeResource extends Resource
                                         '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:.5rem;padding:.75rem;font-size:.85rem;">'
                                             . '<strong>ℹ️ Génération automatique</strong><br>'
                                             . 'Toutes les lignes du bon de commande seront reprises. '
-                                            . 'Si un article n\'existe pas encore dans le catalogue Comptabilité Matières, '
-                                            . 'il sera créé automatiquement avec les informations minimales (désignation, unité, prix). '
+                                            . 'Si un article n\'existe pas encore dans le catalogue, '
+                                            . 'il sera créé automatiquement. '
                                             . 'Le comptable-matières pourra compléter la fiche article ultérieurement.'
                                             . '</div>'
                                     ))
@@ -1588,7 +1605,7 @@ class BonCommandeResource extends Resource
                                             . '<thead><tr style="background:#f1f5f9;">'
                                             . '<th style="border:1px solid #cbd5e1;padding:4px 8px;text-align:left;">Désignation</th>'
                                             . '<th style="border:1px solid #cbd5e1;padding:4px 8px;text-align:center;">Unité</th>'
-                                            . '<th style="border:1px solid #cbd5e1;padding:4px 8px;text-align:center;">Quantité</th>'
+                                            . '<th style="border:1px solid #cbd5e1;padding:4px 8px;text-align:center;">Qté</th>'
                                             . '<th style="border:1px solid #cbd5e1;padding:4px 8px;text-align:right;">P.U HT</th>'
                                             . '</tr></thead><tbody>';
 
@@ -1611,43 +1628,39 @@ class BonCommandeResource extends Resource
                                     ->options(function () {
                                         $parRole = \App\Models\User::role('comptable_matieres')->pluck('name', 'id');
                                         if ($parRole->isNotEmpty()) return $parRole;
-
                                         $parPermission = \App\Models\User::permission('valider_expression_besoin')->pluck('name', 'id');
                                         if ($parPermission->isNotEmpty()) return $parPermission;
-
                                         return \App\Models\User::orderBy('name')->pluck('name', 'id');
                                     })
                                     ->required()
                                     ->searchable(),
                             ];
                         })
-                        ->modalHeading('Générer une Expression de Besoin depuis ce Bon de Commande')
+                        ->modalHeading('Générer une Expression de Besoin')
                         ->modalWidth('2xl')
                         ->action(function ($record, array $data) {
                             \Illuminate\Support\Facades\DB::transaction(function () use ($record, $data) {
                                 $record->load('lignes');
 
-                                // ✅ Mapper les unités BC vers les unités Article
                                 $mapUnites = [
-                                    'pièce'   => 'pièce',
-                                    'piece'   => 'pièce',
-                                    'lot'     => 'lot',
-                                    'kg'      => 'kg',
+                                    'pièce' => 'pièce',
+                                    'piece' => 'pièce',
+                                    'lot' => 'lot',
+                                    'kg' => 'kg',
                                     'kilogramme' => 'kg',
-                                    'litre'   => 'litre',
-                                    'l'          => 'litre',
-                                    'mètre'   => 'mètre',
-                                    'metre'      => 'mètre',
-                                    'heure'   => 'heure',
-                                    'h'          => 'heure',
-                                    'jour'    => 'jour',
-                                    'j'          => 'jour',
+                                    'litre' => 'litre',
+                                    'l' => 'litre',
+                                    'mètre' => 'mètre',
+                                    'metre' => 'mètre',
+                                    'heure' => 'heure',
+                                    'h' => 'heure',
+                                    'jour' => 'jour',
+                                    'j' => 'jour',
                                     'forfait' => 'forfait',
-                                    'boîte'   => 'lot',
-                                    'boite'      => 'lot',
+                                    'boîte' => 'lot',
+                                    'boite' => 'lot',
                                 ];
 
-                                // ✅ Créer l'Expression de Besoin
                                 $eb = \App\Models\ExpressionBesoin::create([
                                     'exercice_id'            => $record->exercice_id,
                                     'service_demandeur_id'   => $record->service_demandeur_id,
@@ -1664,44 +1677,32 @@ class BonCommandeResource extends Resource
                                 ]);
 
                                 $compte = 0;
-
                                 foreach ($record->lignes as $ligneBc) {
                                     $designation = trim($ligneBc->designation ?? '');
                                     if (empty($designation)) continue;
 
-                                    // ✅ Chercher l'article existant (insensible à la casse)
                                     $article = \App\Models\Article::whereRaw(
                                         'LOWER(TRIM(designation)) = ?',
                                         [strtolower($designation)]
                                     )->first();
 
-                                    // ✅ Sinon : créer automatiquement avec infos minimales
                                     if (!$article) {
-                                        // Résoudre ou créer l'unité de mesure
                                         $uniteLibelle = $mapUnites[strtolower(trim($ligneBc->unite ?? ''))] ?? 'pièce';
-
                                         $uniteMesure = \App\Models\UniteMesure::firstOrCreate(
                                             ['libelle' => $uniteLibelle],
                                             ['actif'   => true]
                                         );
-
                                         $article = \App\Models\Article::create([
-                                            'designation'        => $designation,
-                                            'type'               => 'consomptible',
-                                            'unite_mesure'       => $uniteLibelle,
-                                            'unite_mesure_id'    => $uniteMesure->id,
+                                            'designation'         => $designation,
+                                            'type'                => 'consomptible',
+                                            'unite_mesure'        => $uniteLibelle,
+                                            'unite_mesure_id'     => $uniteMesure->id,
                                             'prix_unitaire_moyen' => (float) ($ligneBc->prix_unitaire_ht ?? 0),
-                                            'actif'              => true,
-                                            'seuil_alerte'       => 0,
-                                        ]);
-
-                                        \Log::info("Article créé automatiquement depuis BC {$record->numero}", [
-                                            'designation' => $designation,
-                                            'article_id'  => $article->id,
+                                            'actif'               => true,
+                                            'seuil_alerte'        => 0,
                                         ]);
                                     }
 
-                                    // ✅ Créer la ligne d'expression de besoin
                                     \App\Models\LigneExpressionBesoin::create([
                                         'expression_besoin_id' => $eb->id,
                                         'article_id'           => $article->id,
@@ -1716,18 +1717,41 @@ class BonCommandeResource extends Resource
                                 }
 
                                 $record->update(['expression_besoin_id' => $eb->id]);
-
-                                Notification::make()
-                                    ->title("✅ Expression {$eb->numero} générée avec {$compte} ligne(s)")
-                                    ->success()
-                                    ->body(
-                                        $compte > 0
-                                            ? "Les articles nouveaux ont été créés automatiquement dans le catalogue. Le comptable-matières peut les compléter."
-                                            : "Aucune ligne trouvée sur ce bon de commande."
-                                    )
-                                    ->send();
                             });
+
+                            Notification::make()
+                                ->title('✅ Expression de besoin générée')
+                                ->success()
+                                ->body('Accessible depuis le menu Actions → Aperçu / Télécharger EB.')
+                                ->send();
                         }),
+
+                    // ✅ Aperçu EB — uniquement si déjà lié
+                    Tables\Actions\Action::make('apercu_expression_besoin')
+                        ->label('Aperçu Expression de Besoin')
+                        ->icon('heroicon-o-clipboard-document-list')
+                        ->color('success')
+                        ->visible(fn($record) => !empty($record->expression_besoin_id))
+                        ->url(
+                            fn($record) => $record->expression_besoin_id
+                                ? route('expressions-besoins.pdf.preview', $record->expression_besoin_id)
+                                : null
+                        )
+                        ->openUrlInNewTab(),
+
+                    // ✅ Télécharger EB — uniquement si déjà lié
+                    Tables\Actions\Action::make('telecharger_expression_besoin')
+                        ->label('Télécharger Expression de Besoin')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->visible(fn($record) => !empty($record->expression_besoin_id))
+                        ->url(
+                            fn($record) => $record->expression_besoin_id
+                                ? route('expressions-besoins.pdf.download', $record->expression_besoin_id)
+                                : null
+                        )
+                        ->openUrlInNewTab(),
+
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
