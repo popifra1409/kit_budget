@@ -87,7 +87,14 @@ class ComptablePanelProvider extends PanelProvider
                 in: app_path('Filament/Comptable/Widgets'),
                 for: 'App\\Filament\\Comptable\\Widgets'
             )
-            ->widgets([Widgets\AccountWidget::class])
+            ->widgets([
+                \App\Filament\Comptable\Widgets\StatsComptableWidget::class,
+                \App\Filament\Comptable\Widgets\AlertesStockWidget::class,
+                \App\Filament\Comptable\Widgets\PipelineExpressionsBesoinWidget::class,
+                \App\Filament\Comptable\Widgets\ActionsRequisesWidget::class,
+                \App\Filament\Comptable\Widgets\MouvementsStockWidget::class,
+                \App\Filament\Comptable\Widgets\TopArticlesConsommesWidget::class,
+            ])
 
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
