@@ -12,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use Illuminate\Database\Eloquent\Builder;
@@ -56,17 +57,14 @@ class OrdonnancePaiementResource extends Resource
             return false;
         }
 
-        // Règle métier : Seules les OP en brouillon sont modifiables
         if ($record->statut !== 'brouillon') {
             return false;
         }
 
-        // Override pour super admin / DAAF
         if ($user->can('override_ordonnance_paiement')) {
             return true;
         }
 
-        // Sinon, seulement ses propres OP
         return $record->created_by === $user->id;
     }
 
@@ -78,12 +76,10 @@ class OrdonnancePaiementResource extends Resource
             return false;
         }
 
-        // Seulement les brouillons
         if ($record->statut !== 'brouillon') {
             return false;
         }
 
-        // Override ou créateur
         return $user->can('override_ordonnance_paiement') || $record->created_by === $user->id;
     }
 
@@ -124,7 +120,6 @@ class OrdonnancePaiementResource extends Resource
                             ->helperText('💡 Seuls les engagements définitifs sans ordonnances sont listés')
                             ->columnSpanFull(),
 
-                        // ✅ Aperçu des montants
                         Forms\Components\Placeholder::make('apercu')
                             ->label('📊 Aperçu')
                             ->content(fn(Forms\Get $get) => static::getApercu($get('engagement_id')))
@@ -149,22 +144,16 @@ class OrdonnancePaiementResource extends Resource
             ]);
     }
 
-    /**
-     * ✅ Aperçu des montants avant création
-     */
     protected static function getApercu(?int $engagementId): string
     {
-        if (!$engagementId)
-            return '';
+        if (!$engagementId) return '';
 
         try {
             $engagement = Engagement::with('engageable', 'beneficiaire')->find($engagementId);
-            if (!$engagement)
-                return '';
+            if (!$engagement) return '';
 
             $donnees = $engagement->extraireDonneesDocument();
 
-            // Calculer les retenues
             if ($engagement->estBonCommande()) {
                 $retenues = ($donnees['montant_ir'] ?? 0) +
                     ($donnees['montant_tva'] ?? 0) +
@@ -223,8 +212,8 @@ class OrdonnancePaiementResource extends Resource
                     ->label('Type')
                     ->formatStateUsing(fn($state) => match ($state) {
                         'standard' => 'Standard',
-                        'impot' => 'Impôt',
-                        default => $state,
+                        'impot'    => 'Impôt',
+                        default    => $state,
                     })
                     ->colors([
                         'primary' => 'standard',
@@ -246,7 +235,6 @@ class OrdonnancePaiementResource extends Resource
                     ->formatStateUsing(fn($record) => $record->statut_label)
                     ->color(fn($record) => $record->statut_color),
 
-                // ✅ Colonnes de montants correctement placées dans la table
                 Tables\Columns\TextColumn::make('montant_brut')
                     ->label('Montant brut')
                     ->money('XAF')
@@ -278,179 +266,131 @@ class OrdonnancePaiementResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                // FILTRE PAR PÉRIODE PRÉDÉFINIE
                 Tables\Filters\Filter::make('periode')
                     ->form([
                         Forms\Components\Select::make('periode')
                             ->label('Période prédéfinie')
                             ->options([
-                                'today' => 'Aujourd\'hui',
-                                'yesterday' => 'Hier',
-                                'this_week' => 'Cette semaine',
-                                'last_week' => 'Semaine dernière',
-                                'this_month' => 'Ce mois',
-                                'last_month' => 'Mois dernier',
-                                'this_quarter' => 'Ce trimestre',
-                                'last_quarter' => 'Trimestre dernier',
-                                'this_year' => 'Cette année',
-                                'last_year' => 'Année dernière',
+                                'today'         => 'Aujourd\'hui',
+                                'yesterday'     => 'Hier',
+                                'this_week'     => 'Cette semaine',
+                                'last_week'     => 'Semaine dernière',
+                                'this_month'    => 'Ce mois',
+                                'last_month'    => 'Mois dernier',
+                                'this_quarter'  => 'Ce trimestre',
+                                'last_quarter'  => 'Trimestre dernier',
+                                'this_year'     => 'Cette année',
+                                'last_year'     => 'Année dernière',
                             ])
                             ->default('today')
                             ->placeholder('Sélectionner une période'),
                     ])
                     ->query(function ($query, array $data) {
                         $periode = $data['periode'] ?? 'today';
-
                         return match ($periode) {
-                            'today' => $query->whereDate('date_emission', today()),
-                            'yesterday' => $query->whereDate('date_emission', today()->subDay()),
-                            'this_week' => $query->whereBetween('date_emission', [
-                                now()->startOfWeek(),
-                                now()->endOfWeek()
-                            ]),
-                            'last_week' => $query->whereBetween('date_emission', [
-                                now()->subWeek()->startOfWeek(),
-                                now()->subWeek()->endOfWeek()
-                            ]),
-                            'this_month' => $query->whereMonth('date_emission', now()->month)
-                                ->whereYear('date_emission', now()->year),
-                            'last_month' => $query->whereMonth('date_emission', now()->subMonth()->month)
-                                ->whereYear('date_emission', now()->subMonth()->year),
-                            'this_quarter' => $query->whereBetween('date_emission', [
-                                now()->startOfQuarter(),
-                                now()->endOfQuarter()
-                            ]),
-                            'last_quarter' => $query->whereBetween('date_emission', [
-                                now()->subQuarter()->startOfQuarter(),
-                                now()->subQuarter()->endOfQuarter()
-                            ]),
-                            'this_year' => $query->whereYear('date_emission', now()->year),
-                            'last_year' => $query->whereYear('date_emission', now()->subYear()->year),
-                            default => $query,
+                            'today'         => $query->whereDate('date_emission', today()),
+                            'yesterday'     => $query->whereDate('date_emission', today()->subDay()),
+                            'this_week'     => $query->whereBetween('date_emission', [now()->startOfWeek(), now()->endOfWeek()]),
+                            'last_week'     => $query->whereBetween('date_emission', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
+                            'this_month'    => $query->whereMonth('date_emission', now()->month)->whereYear('date_emission', now()->year),
+                            'last_month'    => $query->whereMonth('date_emission', now()->subMonth()->month)->whereYear('date_emission', now()->subMonth()->year),
+                            'this_quarter'  => $query->whereBetween('date_emission', [now()->startOfQuarter(), now()->endOfQuarter()]),
+                            'last_quarter'  => $query->whereBetween('date_emission', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
+                            'this_year'     => $query->whereYear('date_emission', now()->year),
+                            'last_year'     => $query->whereYear('date_emission', now()->subYear()->year),
+                            default         => $query,
                         };
                     })
                     ->indicateUsing(function (array $data): ?string {
-                        if (!($data['periode'] ?? null)) {
-                            return 'Période : Aujourd\'hui';
-                        }
-
                         $labels = [
-                            'today' => 'Aujourd\'hui',
-                            'yesterday' => 'Hier',
-                            'this_week' => 'Cette semaine',
-                            'last_week' => 'Semaine dernière',
-                            'this_month' => 'Ce mois',
-                            'last_month' => 'Mois dernier',
+                            'today'        => 'Aujourd\'hui',
+                            'yesterday'    => 'Hier',
+                            'this_week'    => 'Cette semaine',
+                            'last_week'    => 'Semaine dernière',
+                            'this_month'   => 'Ce mois',
+                            'last_month'   => 'Mois dernier',
                             'this_quarter' => 'Ce trimestre',
                             'last_quarter' => 'Trimestre dernier',
-                            'this_year' => 'Cette année',
-                            'last_year' => 'Année dernière',
+                            'this_year'    => 'Cette année',
+                            'last_year'    => 'Année dernière',
                         ];
-
-                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                        return 'Période : ' . ($labels[$data['periode'] ?? 'today'] ?? 'Aujourd\'hui');
                     }),
 
                 Tables\Filters\SelectFilter::make('type_ordonnance')
                     ->label('Type')
                     ->options([
                         'standard' => 'Standard',
-                        'impot' => 'Impôt',
+                        'impot'    => 'Impôt',
                     ]),
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
                     ->options([
                         'brouillon' => 'Brouillon',
-                        'emise' => 'Émise',
-                        'visee' => 'Visée',
-                        'payee' => 'Payée',
-                        'annulee' => 'Annulée',
+                        'emise'     => 'Émise',
+                        'visee'     => 'Visée',
+                        'payee'     => 'Payée',
+                        'annulee'   => 'Annulée',
                     ])
                     ->multiple(),
 
                 Tables\Filters\Filter::make('date_emission')
                     ->form([
-                        Forms\Components\DatePicker::make('date_emission_from')
-                            ->label('Date d\'émission du'),
-                        Forms\Components\DatePicker::make('date_emission_until')
-                            ->label('Date d\'émission au'),
+                        Forms\Components\DatePicker::make('date_emission_from')->label('Date d\'émission du'),
+                        Forms\Components\DatePicker::make('date_emission_until')->label('Date d\'émission au'),
                     ])
                     ->query(function ($query, array $data) {
                         return $query
-                            ->when(
-                                $data['date_emission_from'],
-                                fn($q, $date) => $q->whereDate('date_emission', '>=', $date)
-                            )
-                            ->when(
-                                $data['date_emission_until'],
-                                fn($q, $date) => $q->whereDate('date_emission', '<=', $date)
-                            );
+                            ->when($data['date_emission_from'],   fn($q, $date) => $q->whereDate('date_emission', '>=', $date))
+                            ->when($data['date_emission_until'],  fn($q, $date) => $q->whereDate('date_emission', '<=', $date));
                     }),
             ])
+
+            // ════════════════════════════════════════════════════════
+            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
+            //    Pattern identique à BonCommandeResource
+            // ════════════════════════════════════════════════════════
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-
-                Tables\Actions\Action::make('emettre')
-                    ->label('Émettre')
-                    ->icon('heroicon-o-paper-airplane')
-                    ->color('success')
-                    ->visible(fn($record) => $record->statut === 'brouillon')
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->emettre();
-                        Notification::make()
-                            ->title('Ordonnance émise')
-                            ->success()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('marquer_payee')
-                    ->label('Marquer payée')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn($record) => in_array($record->statut, ['emise', 'visee']))
-                    ->form([
-                        Forms\Components\DatePicker::make('date_paiement')
-                            ->label('Date de paiement')
-                            ->required()
-                            ->default(now()),
-                        Forms\Components\TextInput::make('reference_paiement')
-                            ->label('Référence de paiement')
-                            ->required(),
-                    ])
-                    ->action(function ($record, array $data) {
-                        $record->marquerPayee($data['reference_paiement']);
-                        $record->date_paiement = $data['date_paiement'];
-                        $record->save();
-                        Notification::make()
-                            ->title('Paiement enregistré')
-                            ->success()
-                            ->send();
-                    }),
-
                 Tables\Actions\ActionGroup::make([
 
-                    // ── OP Standard ──────────────────────────────────────
-                    Tables\Actions\Action::make('telecharger_op')
-                        ->label('Télécharger OP')
-                        ->icon('heroicon-o-arrow-down-tray')
+                    // ── Navigation ────────────────────────────────
+                    Tables\Actions\ViewAction::make(),
+
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn($record) => static::canEdit($record)),
+
+                    // ── Workflow ──────────────────────────────────
+                    Tables\Actions\Action::make('emettre')
+                        ->label('Émettre')
+                        ->icon('heroicon-o-paper-airplane')
                         ->color('success')
-                        ->visible(fn($record) => $record->type_ordonnance === 'standard')
-                        ->form([
-                            Forms\Components\Select::make('variante')
-                                ->label('Modèle d\'état')
-                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement'))
-                                // ✅ Défaut dynamique depuis la base
-                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement')?->code)
-                                ->required()
-                                ->helperText('⭐ = modèle par défaut'),
-                        ])
-                        ->action(function ($record, array $data, $livewire) {
-                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
+                        ->visible(fn($record) => $record->statut === 'brouillon')
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            $record->emettre();
+                            Notification::make()->title('Ordonnance émise')->success()->send();
                         }),
 
+                    Tables\Actions\Action::make('marquer_payee')
+                        ->label('Marquer payée')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn($record) => in_array($record->statut, ['emise', 'visee']))
+                        ->form([
+                            Forms\Components\DatePicker::make('date_paiement')
+                                ->label('Date de paiement')->required()->default(now()),
+                            Forms\Components\TextInput::make('reference_paiement')
+                                ->label('Référence de paiement')->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            $record->marquerPayee($data['reference_paiement']);
+                            $record->date_paiement = $data['date_paiement'];
+                            $record->save();
+                            Notification::make()->title('Paiement enregistré')->success()->send();
+                        }),
+
+                    // ── PDF OP Standard ───────────────────────────
                     Tables\Actions\Action::make('afficher_op')
                         ->label('Aperçu OP')
                         ->icon('heroicon-o-eye')
@@ -465,28 +405,33 @@ class OrdonnancePaiementResource extends Resource
                                 ->helperText('⭐ = modèle par défaut'),
                         ])
                         ->action(function ($record, array $data, $livewire) {
-                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
+                            $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id,
+                            ]));
                         }),
 
-                    // ── OPT Impôt ────────────────────────────────────────
-                    Tables\Actions\Action::make('telecharger_op_impot')
-                        ->label('Télécharger OP Impôt')
+                    Tables\Actions\Action::make('telecharger_op')
+                        ->label('Télécharger OP')
                         ->icon('heroicon-o-arrow-down-tray')
-                        ->color('warning')
-                        ->visible(fn($record) => $record->type_ordonnance === 'impot')
+                        ->color('success')
+                        ->visible(fn($record) => $record->type_ordonnance === 'standard')
                         ->form([
                             Forms\Components\Select::make('variante')
                                 ->label('Modèle d\'état')
-                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement_impot'))
-                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement_impot')?->code)
-                                ->required(),
+                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement'))
+                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement')?->code)
+                                ->required()
+                                ->helperText('⭐ = modèle par défaut'),
                         ])
                         ->action(function ($record, array $data, $livewire) {
-                            $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
+                            $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id,
+                            ]));
                         }),
 
+                    // ── PDF OPT Impôt ─────────────────────────────
                     Tables\Actions\Action::make('afficher_op_impot')
                         ->label('Aperçu OP Impôt')
                         ->icon('heroicon-o-eye')
@@ -500,274 +445,128 @@ class OrdonnancePaiementResource extends Resource
                                 ->required(),
                         ])
                         ->action(function ($record, array $data, $livewire) {
-                            $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                            $livewire->dispatch('open-url-new-tab', url: $url);
+                            $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id,
+                            ]));
                         }),
+
+                    Tables\Actions\Action::make('telecharger_op_impot')
+                        ->label('Télécharger OP Impôt')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('warning')
+                        ->visible(fn($record) => $record->type_ordonnance === 'impot')
+                        ->form([
+                            Forms\Components\Select::make('variante')
+                                ->label('Modèle d\'état')
+                                ->options(fn() => EtatConfig::variantesPour('ordonnance_paiement_impot'))
+                                ->default(fn() => EtatConfig::defautPour('ordonnance_paiement_impot')?->code)
+                                ->required(),
+                        ])
+                        ->action(function ($record, array $data, $livewire) {
+                            $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
+                                'etat' => $data['variante'],
+                                'id' => $record->id,
+                            ]));
+                        }),
+
                 ])
-                    ->label('Télécharger / Aperçu')
-                    ->icon('heroicon-m-document-arrow-down')
-                    ->size('sm')
-                    ->button(),
-            ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+
+            ], position: ActionsPosition::BeforeColumns)
+
             ->headerActions([
-                // ========================================
-                // 📊 ACTIONS D'EXPORT
-                // ========================================
+                // ════════════════════════════════════════════════════════
+                // 📊 ACTIONS D'EXPORT (header — inchangées)
+                // ════════════════════════════════════════════════════════
 
                 Tables\Actions\ActionGroup::make([
-
-                    // ── OP Standard Salaires ─────────────────────────────
                     Tables\Actions\Action::make('export_excel_salaires_standard')
                         ->label('Excel OP Standard - Salaires')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('success')
+                        ->icon('heroicon-o-table-cells')->color('success')
                         ->form(static::formulaireExportSalaires())
                         ->action(function (array $data) {
                             $nomenclatureIds = $data['nomenclature_ids'] ?? [];
                             [$dateDebut, $dateFin] = static::resoudrePeriode($data);
-
                             return \Maatwebsite\Excel\Facades\Excel::download(
-                                new \App\Exports\OrdonnancesSalairesExport(
-                                    'standard',
-                                    $nomenclatureIds,
-                                    $dateDebut,
-                                    $dateFin
-                                ),
+                                new \App\Exports\OrdonnancesSalairesExport('standard', $nomenclatureIds, $dateDebut, $dateFin),
                                 'OP_Standard_Salaires_' . now()->format('Y-m-d') . '.xlsx'
                             );
                         }),
 
                     Tables\Actions\Action::make('export_pdf_salaires_standard')
                         ->label('PDF OP Standard - Salaires')
-                        ->icon('heroicon-o-document-text')
-                        ->color('danger')
+                        ->icon('heroicon-o-document-text')->color('danger')
                         ->form(static::formulaireExportSalaires())
                         ->action(function (array $data) {
-                            $nomenclatureIds = $data['nomenclature_ids'] ?? [];
                             [$dateDebut, $dateFin] = static::resoudrePeriode($data);
-
-                            return static::exportPdfSalaires(
-                                'standard',
-                                $nomenclatureIds,
-                                $dateDebut,
-                                $dateFin
-                            );
+                            return static::exportPdfSalaires('standard', $data['nomenclature_ids'] ?? [], $dateDebut, $dateFin);
                         }),
 
-                    // ── OPT Impôt Salaires ───────────────────────────────
                     Tables\Actions\Action::make('export_excel_salaires_impot')
                         ->label('Excel OPT Impôt - Salaires')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('warning')
+                        ->icon('heroicon-o-table-cells')->color('warning')
                         ->form(static::formulaireExportSalaires())
                         ->action(function (array $data) {
                             $nomenclatureIds = $data['nomenclature_ids'] ?? [];
                             [$dateDebut, $dateFin] = static::resoudrePeriode($data);
-
                             return \Maatwebsite\Excel\Facades\Excel::download(
-                                new \App\Exports\OrdonnancesSalairesExport(
-                                    'impot',
-                                    $nomenclatureIds,
-                                    $dateDebut,
-                                    $dateFin
-                                ),
+                                new \App\Exports\OrdonnancesSalairesExport('impot', $nomenclatureIds, $dateDebut, $dateFin),
                                 'OPT_Impot_Salaires_' . now()->format('Y-m-d') . '.xlsx'
                             );
                         }),
 
                     Tables\Actions\Action::make('export_pdf_salaires_impot')
                         ->label('PDF OPT Impôt - Salaires')
-                        ->icon('heroicon-o-document-text')
-                        ->color('gray')
+                        ->icon('heroicon-o-document-text')->color('gray')
                         ->form(static::formulaireExportSalaires())
                         ->action(function (array $data) {
-                            $nomenclatureIds = $data['nomenclature_ids'] ?? [];
                             [$dateDebut, $dateFin] = static::resoudrePeriode($data);
-
-                            return static::exportPdfSalaires(
-                                'impot',
-                                $nomenclatureIds,
-                                $dateDebut,
-                                $dateFin
-                            );
+                            return static::exportPdfSalaires('impot', $data['nomenclature_ids'] ?? [], $dateDebut, $dateFin);
                         }),
                 ])
                     ->label('💼 Rapports Salaires')
                     ->icon('heroicon-o-banknotes')
-                    ->button()
-                    ->color('info'),
+                    ->button()->color('info'),
 
                 Tables\Actions\ActionGroup::make([
-                    // Export Excel OP Standard
                     Tables\Actions\Action::make('export_excel_standard')
                         ->label('Export Excel OP Standard')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('success')
-                        ->form([
-                            Forms\Components\Select::make('mois')
-                                ->label('Mois')
-                                ->options([
-                                    '01' => 'Janvier',
-                                    '02' => 'Février',
-                                    '03' => 'Mars',
-                                    '04' => 'Avril',
-                                    '05' => 'Mai',
-                                    '06' => 'Juin',
-                                    '07' => 'Juillet',
-                                    '08' => 'Août',
-                                    '09' => 'Septembre',
-                                    '10' => 'Octobre',
-                                    '11' => 'Novembre',
-                                    '12' => 'Décembre',
-                                ])
-                                ->required()
-                                ->default(date('m')),
-                            Forms\Components\Select::make('annee')
-                                ->label('Année')
-                                ->options(function () {
-                                    $years = [];
-                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
-                                        $years[$i] = $i;
-                                    }
-                                    return $years;
-                                })
-                                ->required()
-                                ->default(date('Y')),
-                        ])
-                        ->action(function (array $data) {
-                            return Excel::download(
-                                new OrdonnancesPaiementExport('standard', null, null, $data['mois'], $data['annee']),
-                                'OP_Standard_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
-                            );
-                        }),
+                        ->icon('heroicon-o-table-cells')->color('success')
+                        ->form(static::formulaireExportMensuel())
+                        ->action(fn(array $data) => Excel::download(
+                            new OrdonnancesPaiementExport('standard', null, null, $data['mois'], $data['annee']),
+                            'OP_Standard_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
+                        )),
 
-                    // Export Excel OP Impôt
                     Tables\Actions\Action::make('export_excel_impot')
                         ->label('Export Excel OP Impôt')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('warning')
-                        ->form([
-                            Forms\Components\Select::make('mois')
-                                ->label('Mois')
-                                ->options([
-                                    '01' => 'Janvier',
-                                    '02' => 'Février',
-                                    '03' => 'Mars',
-                                    '04' => 'Avril',
-                                    '05' => 'Mai',
-                                    '06' => 'Juin',
-                                    '07' => 'Juillet',
-                                    '08' => 'Août',
-                                    '09' => 'Septembre',
-                                    '10' => 'Octobre',
-                                    '11' => 'Novembre',
-                                    '12' => 'Décembre',
-                                ])
-                                ->required()
-                                ->default(date('m')),
-                            Forms\Components\Select::make('annee')
-                                ->label('Année')
-                                ->options(function () {
-                                    $years = [];
-                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
-                                        $years[$i] = $i;
-                                    }
-                                    return $years;
-                                })
-                                ->required()
-                                ->default(date('Y')),
-                        ])
-                        ->action(function (array $data) {
-                            return Excel::download(
-                                new OrdonnancesPaiementExport('impot', null, null, $data['mois'], $data['annee']),
-                                'OP_Impot_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
-                            );
-                        }),
+                        ->icon('heroicon-o-table-cells')->color('warning')
+                        ->form(static::formulaireExportMensuel())
+                        ->action(fn(array $data) => Excel::download(
+                            new OrdonnancesPaiementExport('impot', null, null, $data['mois'], $data['annee']),
+                            'OP_Impot_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
+                        )),
 
-                    // Export PDF OP Standard
                     Tables\Actions\Action::make('export_pdf_standard')
                         ->label('Export PDF OP Standard')
-                        ->icon('heroicon-o-document-text')
-                        ->color('danger')
-                        ->form([
-                            Forms\Components\Select::make('mois')
-                                ->label('Mois')
-                                ->options([
-                                    '01' => 'Janvier',
-                                    '02' => 'Février',
-                                    '03' => 'Mars',
-                                    '04' => 'Avril',
-                                    '05' => 'Mai',
-                                    '06' => 'Juin',
-                                    '07' => 'Juillet',
-                                    '08' => 'Août',
-                                    '09' => 'Septembre',
-                                    '10' => 'Octobre',
-                                    '11' => 'Novembre',
-                                    '12' => 'Décembre',
-                                ])
-                                ->required()
-                                ->default(date('m')),
-                            Forms\Components\Select::make('annee')
-                                ->label('Année')
-                                ->options(function () {
-                                    $years = [];
-                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
-                                        $years[$i] = $i;
-                                    }
-                                    return $years;
-                                })
-                                ->required()
-                                ->default(date('Y')),
-                        ])
-                        ->action(function (array $data) {
-                            return static::exportPdf('standard', $data['mois'], $data['annee']);
-                        }),
+                        ->icon('heroicon-o-document-text')->color('danger')
+                        ->form(static::formulaireExportMensuel())
+                        ->action(fn(array $data) => static::exportPdf('standard', $data['mois'], $data['annee'])),
 
-                    // Export PDF OP Impôt
                     Tables\Actions\Action::make('export_pdf_impot')
                         ->label('Export PDF OP Impôt')
-                        ->icon('heroicon-o-document-text')
-                        ->color('gray')
-                        ->form([
-                            Forms\Components\Select::make('mois')
-                                ->label('Mois')
-                                ->options([
-                                    '01' => 'Janvier',
-                                    '02' => 'Février',
-                                    '03' => 'Mars',
-                                    '04' => 'Avril',
-                                    '05' => 'Mai',
-                                    '06' => 'Juin',
-                                    '07' => 'Juillet',
-                                    '08' => 'Août',
-                                    '09' => 'Septembre',
-                                    '10' => 'Octobre',
-                                    '11' => 'Novembre',
-                                    '12' => 'Décembre',
-                                ])
-                                ->required()
-                                ->default(date('m')),
-                            Forms\Components\Select::make('annee')
-                                ->label('Année')
-                                ->options(function () {
-                                    $years = [];
-                                    for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
-                                        $years[$i] = $i;
-                                    }
-                                    return $years;
-                                })
-                                ->required()
-                                ->default(date('Y')),
-                        ])
-                        ->action(function (array $data) {
-                            return static::exportPdf('impot', $data['mois'], $data['annee']);
-                        }),
+                        ->icon('heroicon-o-document-text')->color('gray')
+                        ->form(static::formulaireExportMensuel())
+                        ->action(fn(array $data) => static::exportPdf('impot', $data['mois'], $data['annee'])),
                 ])
                     ->label('📥 Exports')
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->button()
-                    ->color('primary'),
+                    ->button()->color('primary'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -777,12 +576,118 @@ class OrdonnancePaiementResource extends Resource
             ->defaultSort('created_at', 'desc');
     }
 
-    /**
-     * ✅ Méthode pour exporter en PDF
-     */
+    // ════════════════════════════════════════════════════════
+    // FORMULAIRES PARTAGÉS
+    // ════════════════════════════════════════════════════════
+
+    protected static function formulaireExportMensuel(): array
+    {
+        $moisOptions = [
+            '01' => 'Janvier',
+            '02' => 'Février',
+            '03' => 'Mars',
+            '04' => 'Avril',
+            '05' => 'Mai',
+            '06' => 'Juin',
+            '07' => 'Juillet',
+            '08' => 'Août',
+            '09' => 'Septembre',
+            '10' => 'Octobre',
+            '11' => 'Novembre',
+            '12' => 'Décembre',
+        ];
+        $anneeOptions = [];
+        for ($i = date('Y'); $i >= date('Y') - 5; $i--) $anneeOptions[$i] = $i;
+
+        return [
+            Forms\Components\Select::make('mois')->label('Mois')
+                ->options($moisOptions)->required()->default(date('m')),
+            Forms\Components\Select::make('annee')->label('Année')
+                ->options($anneeOptions)->required()->default(date('Y')),
+        ];
+    }
+
+    protected static function formulaireExportSalaires(): array
+    {
+        $moisOptions = [
+            '01' => 'Janvier',
+            '02' => 'Février',
+            '03' => 'Mars',
+            '04' => 'Avril',
+            '05' => 'Mai',
+            '06' => 'Juin',
+            '07' => 'Juillet',
+            '08' => 'Août',
+            '09' => 'Septembre',
+            '10' => 'Octobre',
+            '11' => 'Novembre',
+            '12' => 'Décembre',
+        ];
+        $anneeOptions = [];
+        for ($i = date('Y'); $i >= date('Y') - 5; $i--) $anneeOptions[$i] = $i;
+
+        return [
+            Forms\Components\Select::make('nomenclature_ids')
+                ->label('Lignes de nomenclature budgétaire')
+                ->options(function () {
+                    $ids = \App\Models\Engagement::withoutGlobalScope('exercice')
+                        ->whereIn('statut', ['provisoire', 'definitif'])
+                        ->whereNotNull('nomenclature_principale_id')
+                        ->pluck('nomenclature_principale_id')->unique();
+                    return \App\Models\NomenclatureBudgetaire::whereIn('id', $ids)
+                        ->orderBy('code')->get()
+                        ->mapWithKeys(fn($n) => [$n->id => "{$n->code} — {$n->libelle}"]);
+                })
+                ->multiple()->required()->searchable()
+                ->helperText('Sélectionnez une ou plusieurs lignes — les OP seront groupées par nomenclature')
+                ->columnSpanFull(),
+
+            Forms\Components\Radio::make('mode_periode')
+                ->label('Mode de sélection de la période')
+                ->options(['mois' => '📅 Par mois', 'plage' => '📆 Par plage de dates'])
+                ->default('mois')->live()->columnSpanFull(),
+
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Select::make('mois')->label('Mois')
+                    ->options($moisOptions)->default(date('m'))
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'mois')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
+                Forms\Components\Select::make('annee')->label('Année')
+                    ->options($anneeOptions)->default(date('Y'))
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'mois')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
+            ]),
+
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\DatePicker::make('date_debut')->label('Date début')
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'plage')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'plage'),
+                Forms\Components\DatePicker::make('date_fin')->label('Date fin')
+                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'plage')
+                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'plage'),
+            ]),
+        ];
+    }
+
+    protected static function resoudrePeriode(array $data): array
+    {
+        if (($data['mode_periode'] ?? 'mois') === 'mois') {
+            $mois  = $data['mois']  ?? date('m');
+            $annee = $data['annee'] ?? date('Y');
+            return [
+                \Carbon\Carbon::createFromDate($annee, $mois, 1)->startOfMonth()->toDateString(),
+                \Carbon\Carbon::createFromDate($annee, $mois, 1)->endOfMonth()->toDateString(),
+            ];
+        }
+        return [$data['date_debut'] ?? null, $data['date_fin'] ?? null];
+    }
+
+    // ════════════════════════════════════════════════════════
+    // EXPORTS PDF
+    // ════════════════════════════════════════════════════════
+
     protected static function exportPdf(string $type, string $mois, string $annee)
     {
-        // Récupérer les ordonnances
         $ordonnances = OrdonnancePaiement::with(['engagement', 'beneficiaire', 'exercice'])
             ->where('type_ordonnance', $type)
             ->whereMonth('date_emission', $mois)
@@ -791,15 +696,6 @@ class OrdonnancePaiementResource extends Resource
             ->orderBy('numero', 'asc')
             ->get();
 
-        // Calculer les statistiques
-        $statistiques = [
-            'nombre_total' => $ordonnances->count(),
-            'montant_brut' => $ordonnances->sum('montant_brut'),
-            'montant_impot' => $ordonnances->sum('montant_impot'),
-            'montant_net' => $ordonnances->sum('montant_net'),
-        ];
-
-        // Préparer les filtres
         $moisNom = [
             '01' => 'Janvier',
             '02' => 'Février',
@@ -816,50 +712,33 @@ class OrdonnancePaiementResource extends Resource
         ][$mois];
 
         $periode = $moisNom . ' ' . $annee;
-        $filtres = [
-            'Type : ' . ($type === 'standard' ? 'OP Standard' : 'OP Impôt'),
-            'Période : ' . $periode,
-        ];
 
-        // Générer le PDF
         $pdf = Pdf::loadView('pdf.ordonnances-liste', [
-            'ordonnances' => $ordonnances,
-            'statistiques' => $statistiques,
-            'periode' => $periode,
-            'filtres' => $filtres,
-            'utilisateur' => auth()->user()->name,
+            'ordonnances'  => $ordonnances,
+            'statistiques' => [
+                'nombre_total'  => $ordonnances->count(),
+                'montant_brut'  => $ordonnances->sum('montant_brut'),
+                'montant_impot' => $ordonnances->sum('montant_impot'),
+                'montant_net'   => $ordonnances->sum('montant_net'),
+            ],
+            'periode'      => $periode,
+            'filtres'      => ['Type : ' . ($type === 'standard' ? 'OP Standard' : 'OP Impôt'), 'Période : ' . $periode],
+            'utilisateur'  => auth()->user()->name,
         ])
-            ->setPaper('a4', 'landscape') // ← FORMAT PAYSAGE
-            ->setOption('margin-top', 10)
-            ->setOption('margin-right', 10)
-            ->setOption('margin-bottom', 10)
-            ->setOption('margin-left', 10);
+            ->setPaper('a4', 'landscape')
+            ->setOption('margin-top', 10)->setOption('margin-right', 10)
+            ->setOption('margin-bottom', 10)->setOption('margin-left', 10);
 
         $filename = 'Liste_OP_' . ($type === 'standard' ? 'Standard' : 'Impot') . '_' . $mois . '_' . $annee . '.pdf';
 
-        return response()->streamDownload(function () use ($pdf) {
-            echo $pdf->output();
-        }, $filename);
+        return response()->streamDownload(fn() => print($pdf->output()), $filename);
     }
 
-    /**
-     * ✅ Export PDF — Ordonnances Salaires
-     */
-    protected static function exportPdfSalaires(
-        string  $typeOrdonnance,
-        array   $nomenclatureIds,
-        ?string $dateDebut,
-        ?string $dateFin
-    ) {
-        // ✅ Grouper par nomenclature
-        $groupes = OrdonnancePaiement::with([
-            'engagement.nomenclaturePrincipale',
-            'engagement.engageable',
-        ])
+    protected static function exportPdfSalaires(string $typeOrdonnance, array $nomenclatureIds, ?string $dateDebut, ?string $dateFin)
+    {
+        $groupes = OrdonnancePaiement::with(['engagement.nomenclaturePrincipale', 'engagement.engageable'])
             ->where('type_ordonnance', $typeOrdonnance)
-            ->whereHas('engagement', function ($q) use ($nomenclatureIds) {
-                $q->whereIn('nomenclature_principale_id', $nomenclatureIds);
-            })
+            ->whereHas('engagement', fn($q) => $q->whereIn('nomenclature_principale_id', $nomenclatureIds))
             ->when($dateDebut, fn($q) => $q->whereDate('date_emission', '>=', $dateDebut))
             ->when($dateFin,   fn($q) => $q->whereDate('date_emission', '<=', $dateFin))
             ->get()
@@ -867,161 +746,34 @@ class OrdonnancePaiementResource extends Resource
             ->map(fn($ops) => [
                 'nomenclature' => $ops->first()?->engagement?->nomenclaturePrincipale,
                 'ordonnances'  => $ops->sortBy('numero'),
-                'total'        => $ops->sum(
-                    fn($op) =>
-                    (float) ($op->engagement?->montant_engage ?? 0)
-                ),
+                'total'        => $ops->sum(fn($op) => (float) ($op->engagement?->montant_engage ?? 0)),
             ]);
 
-        $grandTotal = $groupes->sum('total');
-
         $periode = '';
-        if ($dateDebut && $dateFin) {
-            $periode = \Carbon\Carbon::parse($dateDebut)->format('d/m/Y')
-                . ' — '
-                . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
-        } elseif ($dateDebut) {
+        if ($dateDebut && $dateFin)
+            $periode = \Carbon\Carbon::parse($dateDebut)->format('d/m/Y') . ' — ' . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
+        elseif ($dateDebut)
             $periode = 'À partir du ' . \Carbon\Carbon::parse($dateDebut)->format('d/m/Y');
-        } elseif ($dateFin) {
+        elseif ($dateFin)
             $periode = "Jusqu'au " . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
-        }
-
-        $titre = $typeOrdonnance === 'standard'
-            ? 'RAPPORT DES ORDONNANCES DE PAIEMENT — PAR NOMENCLATURE'
-            : 'RAPPORT DES ORDONNANCES DE PAIEMENT IMPÔT — PAR NOMENCLATURE';
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.ordonnances-salaires', [
             'groupes'        => $groupes,
-            'grandTotal'     => $grandTotal,
+            'grandTotal'     => $groupes->sum('total'),
             'periode'        => $periode,
-            'titre'          => $titre,
+            'titre'          => $typeOrdonnance === 'standard'
+                ? 'RAPPORT DES ORDONNANCES DE PAIEMENT — PAR NOMENCLATURE'
+                : 'RAPPORT DES ORDONNANCES DE PAIEMENT IMPÔT — PAR NOMENCLATURE',
             'typeOrdonnance' => $typeOrdonnance,
             'utilisateur'    => auth()->user()->name,
             'dateGeneration' => now()->format('d/m/Y H:i'),
         ])
             ->setPaper('a4', 'landscape')
-            ->setOption('margin-top', 10)
-            ->setOption('margin-right', 10)
-            ->setOption('margin-bottom', 10)
-            ->setOption('margin-left', 10);
+            ->setOption('margin-top', 10)->setOption('margin-right', 10)
+            ->setOption('margin-bottom', 10)->setOption('margin-left', 10);
 
-        $suffix   = $typeOrdonnance === 'standard' ? 'Standard' : 'Impot';
-        $filename = "Rapport_OP_{$suffix}_" . now()->format('Y-m-d') . '.pdf';
-
-        return response()->streamDownload(function () use ($pdf) {
-            echo $pdf->output();
-        }, $filename);
-    }
-
-
-    /**
-     * ✅ Formulaire commun pour les exports salaires
-     */
-    protected static function formulaireExportSalaires(): array
-    {
-        return [
-            Forms\Components\Select::make('nomenclature_ids')
-                ->label('Lignes de nomenclature budgétaire')
-                ->options(function () {
-                    // ✅ Toutes les nomenclatures utilisées dans des engagements
-                    $ids = \App\Models\Engagement::withoutGlobalScope('exercice')
-                        ->whereIn('statut', ['provisoire', 'definitif'])
-                        ->whereNotNull('nomenclature_principale_id')
-                        ->pluck('nomenclature_principale_id')
-                        ->unique();
-
-                    return \App\Models\NomenclatureBudgetaire::whereIn('id', $ids)
-                        ->orderBy('code')
-                        ->get()
-                        ->mapWithKeys(fn($n) => [
-                            $n->id => "{$n->code} — {$n->libelle}"
-                        ]);
-                })
-                ->multiple()
-                ->required()
-                ->searchable()
-                ->helperText('Sélectionnez une ou plusieurs lignes — les OP seront groupées par nomenclature')
-                ->columnSpanFull(),
-
-            Forms\Components\Radio::make('mode_periode')
-                ->label('Mode de sélection de la période')
-                ->options([
-                    'mois'  => '📅 Par mois',
-                    'plage' => '📆 Par plage de dates',
-                ])
-                ->default('mois')
-                ->live()
-                ->columnSpanFull(),
-
-            Forms\Components\Grid::make(2)->schema([
-                Forms\Components\Select::make('mois')
-                    ->label('Mois')
-                    ->options([
-                        '01' => 'Janvier',
-                        '02' => 'Février',
-                        '03' => 'Mars',
-                        '04' => 'Avril',
-                        '05' => 'Mai',
-                        '06' => 'Juin',
-                        '07' => 'Juillet',
-                        '08' => 'Août',
-                        '09' => 'Septembre',
-                        '10' => 'Octobre',
-                        '11' => 'Novembre',
-                        '12' => 'Décembre',
-                    ])
-                    ->default(date('m'))
-                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'mois')
-                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
-
-                Forms\Components\Select::make('annee')
-                    ->label('Année')
-                    ->options(function () {
-                        $years = [];
-                        for ($i = date('Y'); $i >= date('Y') - 5; $i--) {
-                            $years[$i] = $i;
-                        }
-                        return $years;
-                    })
-                    ->default(date('Y'))
-                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'mois')
-                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'mois'),
-            ]),
-
-            Forms\Components\Grid::make(2)->schema([
-                Forms\Components\DatePicker::make('date_debut')
-                    ->label('Date début')
-                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'plage')
-                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'plage'),
-
-                Forms\Components\DatePicker::make('date_fin')
-                    ->label('Date fin')
-                    ->required(fn(Forms\Get $get) => $get('mode_periode') === 'plage')
-                    ->visible(fn(Forms\Get $get)  => $get('mode_periode') === 'plage'),
-            ]),
-        ];
-    }
-
-    /**
-     * ✅ Résoudre la période selon le mode choisi
-     * Retourne [dateDebut, dateFin]
-     */
-    protected static function resoudrePeriode(array $data): array
-    {
-        if (($data['mode_periode'] ?? 'mois') === 'mois') {
-            $mois  = $data['mois']  ?? date('m');
-            $annee = $data['annee'] ?? date('Y');
-
-            $dateDebut = \Carbon\Carbon::createFromDate($annee, $mois, 1)
-                ->startOfMonth()->toDateString();
-            $dateFin   = \Carbon\Carbon::createFromDate($annee, $mois, 1)
-                ->endOfMonth()->toDateString();
-        } else {
-            $dateDebut = $data['date_debut'] ?? null;
-            $dateFin   = $data['date_fin']   ?? null;
-        }
-
-        return [$dateDebut, $dateFin];
+        $suffix = $typeOrdonnance === 'standard' ? 'Standard' : 'Impot';
+        return response()->streamDownload(fn() => print($pdf->output()), "Rapport_OP_{$suffix}_" . now()->format('Y-m-d') . '.pdf');
     }
 
     public static function getRelations(): array
@@ -1032,10 +784,10 @@ class OrdonnancePaiementResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListOrdonnancePaiements::route('/'),
+            'index'  => Pages\ListOrdonnancePaiements::route('/'),
             'create' => Pages\CreateOrdonnancePaiement::route('/create'),
-            'view' => Pages\ViewOrdonnancePaiement::route('/{record}'),
-            'edit' => Pages\EditOrdonnancePaiement::route('/{record}/edit'),
+            'view'   => Pages\ViewOrdonnancePaiement::route('/{record}'),
+            'edit'   => Pages\EditOrdonnancePaiement::route('/{record}/edit'),
         ];
     }
 }

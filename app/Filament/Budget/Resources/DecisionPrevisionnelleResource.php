@@ -11,6 +11,7 @@ use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
 
 class DecisionPrevisionnelleResource extends Resource
@@ -23,7 +24,6 @@ class DecisionPrevisionnelleResource extends Resource
     protected static ?string $navigationGroup = 'Commandes & Engagement';
     protected static ?int $navigationSort = 35;
 
-    // ✅ Filtrer uniquement les décisions prévisionnelles
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
         return parent::getEloquentQuery()->where('est_previsionnel', true);
@@ -53,12 +53,9 @@ class DecisionPrevisionnelleResource extends Resource
 
     public static function form(Form $form): Form
     {
-        // ✅ Réutilise exactement le même formulaire que DA normale
-        // en ajoutant juste le champ est_previsionnel = true (caché)
         $daForm = DecisionAdministrativeResource::form($form);
 
         return $form->schema([
-            // ✅ Badge informatif en haut
             Forms\Components\Placeholder::make('info_previsionnel')
                 ->label('')
                 ->content(new \Illuminate\Support\HtmlString(
@@ -76,10 +73,8 @@ class DecisionPrevisionnelleResource extends Resource
                 ))
                 ->columnSpanFull(),
 
-            // ✅ Champ caché — force est_previsionnel = true
             Forms\Components\Hidden::make('est_previsionnel')->default(true),
 
-            // ✅ Reste du formulaire DA (réutilisation totale)
             ...$daForm->getComponents(),
         ]);
     }
@@ -91,7 +86,6 @@ class DecisionPrevisionnelleResource extends Resource
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N°')->searchable()->sortable()->weight('bold')->copyable(),
 
-                // ✅ Badge distinctif
                 Tables\Columns\BadgeColumn::make('type_label')
                     ->label('')
                     ->state('🔮 PRÉVISIONNELLE')
@@ -108,8 +102,8 @@ class DecisionPrevisionnelleResource extends Resource
                     ->formatStateUsing(
                         fn($record) =>
                         $record->type_beneficiaire === 'personnel'
-                        ? ($record->personnel?->nom . ' ' . $record->personnel?->prenoms)
-                        : $record->fournisseur?->raison_sociale ?? '—'
+                            ? ($record->personnel?->nom . ' ' . $record->personnel?->prenoms)
+                            : $record->fournisseur?->raison_sociale ?? '—'
                     ),
 
                 Tables\Columns\TextColumn::make('montant_net')
@@ -119,13 +113,12 @@ class DecisionPrevisionnelleResource extends Resource
                     ->label('Statut')
                     ->colors([
                         'secondary' => 'brouillon',
-                        'warning' => 'validee',
-                        'success' => 'engagee',
-                        'primary' => fn($state) => str_contains($state ?? '', 'op'),
-                        'danger' => 'annulee',
+                        'warning'   => 'validee',
+                        'success'   => 'engagee',
+                        'primary'   => fn($state) => str_contains($state ?? '', 'op'),
+                        'danger'    => 'annulee',
                     ]),
 
-                // ✅ Indique si convertie en DA réelle
                 Tables\Columns\IconColumn::make('est_converti')
                     ->label('Convertie')
                     ->boolean()
@@ -136,105 +129,176 @@ class DecisionPrevisionnelleResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('periode')
+                            ->label('Période prédéfinie')
+                            ->options([
+                                'today'        => 'Aujourd\'hui',
+                                'yesterday'    => 'Hier',
+                                'this_week'    => 'Cette semaine',
+                                'last_week'    => 'Semaine dernière',
+                                'this_month'   => 'Ce mois',
+                                'last_month'   => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year'    => 'Cette année',
+                                'last_year'    => 'Année dernière',
+                            ])
+                            ->placeholder('Toutes les périodes'),
+                    ])
+                    ->query(function ($query, array $data) {
+                        $periode = $data['periode'] ?? null;
+                        if (!$periode) return $query;
+                        return match ($periode) {
+                            'today'        => $query->whereDate('date_decision', today()),
+                            'yesterday'    => $query->whereDate('date_decision', today()->subDay()),
+                            'this_week'    => $query->whereBetween('date_decision', [now()->startOfWeek(), now()->endOfWeek()]),
+                            'last_week'    => $query->whereBetween('date_decision', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
+                            'this_month'   => $query->whereMonth('date_decision', now()->month)->whereYear('date_decision', now()->year),
+                            'last_month'   => $query->whereMonth('date_decision', now()->subMonth()->month)->whereYear('date_decision', now()->subMonth()->year),
+                            'this_quarter' => $query->whereBetween('date_decision', [now()->startOfQuarter(), now()->endOfQuarter()]),
+                            'last_quarter' => $query->whereBetween('date_decision', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
+                            'this_year'    => $query->whereYear('date_decision', now()->year),
+                            'last_year'    => $query->whereYear('date_decision', now()->subYear()->year),
+                            default        => $query,
+                        };
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (!($data['periode'] ?? null)) return null;
+                        $labels = [
+                            'today'        => 'Aujourd\'hui',
+                            'yesterday'    => 'Hier',
+                            'this_week'    => 'Cette semaine',
+                            'last_week'    => 'Semaine dernière',
+                            'this_month'   => 'Ce mois',
+                            'last_month'   => 'Mois dernier',
+                            'this_quarter' => 'Ce trimestre',
+                            'last_quarter' => 'Trimestre dernier',
+                            'this_year'    => 'Cette année',
+                            'last_year'    => 'Année dernière',
+                        ];
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
+                    }),
+
                 Tables\Filters\SelectFilter::make('statut')
                     ->options([
                         'brouillon' => 'Brouillon',
-                        'validee' => 'Validée',
-                        'engagee' => 'Engagée',
-                        'annulee' => 'Annulée',
+                        'validee'   => 'Validée',
+                        'engagee'   => 'Engagée',
+                        'annulee'   => 'Annulée',
                     ]),
+
                 Tables\Filters\TernaryFilter::make('da_reelle_id')
                     ->label('Convertie en DA réelle')
                     ->nullable(),
             ])
+
+            // ════════════════════════════════════════════════════════
+            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
+            //    Pattern identique à BonCommandeResource
+            // ════════════════════════════════════════════════════════
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn($record) => $record->statut === 'brouillon'),
+                Tables\Actions\ActionGroup::make([
 
-                // ── Valider ────────────────────────────────────
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('warning')
-                    ->visible(fn($record) => $record->statut === 'brouillon')
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->valider(auth()->user());
-                        Notification::make()->title('✅ Décision prévisionnelle validée')->success()->send();
-                    }),
+                    // ── Navigation ────────────────────────────────
+                    Tables\Actions\ViewAction::make(),
 
-                // ── Engager (sans déduction budget) ───────────
-                Tables\Actions\Action::make('engager')
-                    ->label('Simuler engagement')
-                    ->icon('heroicon-o-calculator')
-                    ->color('primary')
-                    ->visible(fn($record) => in_array($record->statut, ['validee', 'valide']) && !$record->engagee)
-                    ->form([
-                        Forms\Components\Select::make('nomenclature_id')
-                            ->label('Nomenclature budgétaire (simulation)')
-                            ->options(
-                                fn($record) =>
-                                \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
-                                    ->with('nomenclature')
-                                    ->get()
-                                    ->filter(fn($l) => $l->nomenclature)
-                                    ->mapWithKeys(fn($l) => [
-                                        $l->nomenclature_id =>
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn($record) => $record->statut === 'brouillon'),
+
+                    // ── Workflow ──────────────────────────────────
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('warning')
+                        ->visible(fn($record) => $record->statut === 'brouillon')
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            $record->valider(auth()->user());
+                            Notification::make()
+                                ->title('✅ Décision prévisionnelle validée')
+                                ->success()->send();
+                        }),
+
+                    Tables\Actions\Action::make('engager')
+                        ->label('Simuler engagement')
+                        ->icon('heroicon-o-calculator')
+                        ->color('primary')
+                        ->visible(
+                            fn($record) =>
+                            in_array($record->statut, ['validee', 'valide']) && !$record->engagee
+                        )
+                        ->form([
+                            Forms\Components\Select::make('nomenclature_id')
+                                ->label('Nomenclature budgétaire (simulation)')
+                                ->options(
+                                    fn($record) =>
+                                    \App\Models\LigneBudgetaire::where('budget_id', $record->budget_id)
+                                        ->with('nomenclature')->get()
+                                        ->filter(fn($l) => $l->nomenclature)
+                                        ->mapWithKeys(fn($l) => [
+                                            $l->nomenclature_id =>
                                             $l->nomenclature->code . ' - ' . $l->nomenclature->libelle .
-                                            ' (Dispo: ' . number_format($l->disponible_engagement, 0, ',', ' ') . ' FCFA)'
-                                    ])
-                            )
-                            ->required()->searchable()
-                            ->helperText('⚠️ Aucune déduction ne sera effectuée sur cette ligne'),
-                    ])
-                    ->action(function ($record, array $data) {
-                        try {
-                            $engagement = $record->engagerBudget($data['nomenclature_id']);
-                            Notification::make()
-                                ->title('🔮 Engagement simulé')
-                                ->info()
-                                ->body("Engagement N° {$engagement->numero} créé (simulé — budget non impacté)")
-                                ->send();
-                        } catch (\Exception $e) {
-                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
-                        }
-                    }),
+                                                ' (Dispo: ' . number_format($l->disponible_engagement, 0, ',', ' ') . ' FCFA)'
+                                        ])
+                                )
+                                ->required()->searchable()
+                                ->helperText('⚠️ Aucune déduction ne sera effectuée sur cette ligne'),
+                        ])
+                        ->action(function ($record, array $data) {
+                            try {
+                                $engagement = $record->engagerBudget($data['nomenclature_id']);
+                                Notification::make()
+                                    ->title('🔮 Engagement simulé')
+                                    ->info()
+                                    ->body("Engagement N° {$engagement->numero} créé (simulé — budget non impacté)")
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
+                            }
+                        }),
 
-                // ── Convertir en DA réelle ─────────────────────
-                Tables\Actions\Action::make('convertir_en_da_reelle')
-                    ->label('→ DA Réelle')
-                    ->icon('heroicon-o-arrow-right-circle')
-                    ->color('success')
-                    ->visible(fn($record) => $record->statut !== 'annulee' && !$record->est_converti)
-                    ->requiresConfirmation()
-                    ->modalHeading('Convertir en Décision Administrative réelle')
-                    ->modalDescription('Une nouvelle DA réelle sera créée avec les mêmes données. L\'engagement réel déduira du budget.')
-                    ->action(function ($record) {
-                        try {
-                            $daReelle = $record->convertirEnDAReelle();
-                            Notification::make()
-                                ->title('✅ Convertie en DA réelle')
-                                ->success()
-                                ->body("DA N° {$daReelle->numero} créée. Engagez-la pour impacter le budget.")
-                                ->send();
+                    // ── Conversion ────────────────────────────────
+                    Tables\Actions\Action::make('convertir_en_da_reelle')
+                        ->label('→ DA Réelle')
+                        ->icon('heroicon-o-arrow-right-circle')
+                        ->color('success')
+                        ->visible(fn($record) => $record->statut !== 'annulee' && !$record->est_converti)
+                        ->requiresConfirmation()
+                        ->modalHeading('Convertir en Décision Administrative réelle')
+                        ->modalDescription('Une nouvelle DA réelle sera créée avec les mêmes données. L\'engagement réel déduira du budget.')
+                        ->action(function ($record) {
+                            try {
+                                $daReelle = $record->convertirEnDAReelle();
+                                Notification::make()
+                                    ->title('✅ Convertie en DA réelle')
+                                    ->success()
+                                    ->body("DA N° {$daReelle->numero} créée. Engagez-la pour impacter le budget.")
+                                    ->send();
+                                redirect(DecisionAdministrativeResource::getUrl('view', ['record' => $daReelle->id]));
+                            } catch (\Exception $e) {
+                                Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
+                            }
+                        }),
 
-                            // Rediriger vers la DA réelle
-                            redirect(DecisionAdministrativeResource::getUrl('view', ['record' => $daReelle->id]));
-                        } catch (\Exception $e) {
-                            Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
-                        }
-                    }),
-            ]);
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+
+            ], position: ActionsPosition::BeforeColumns);
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListDecisionsPrevisionnelles::route('/'),
+            'index'  => Pages\ListDecisionsPrevisionnelles::route('/'),
             'create' => Pages\CreateDecisionPrevisionnelle::route('/create'),
-            'view' => Pages\ViewDecisionPrevisionnelle::route('/{record}'),
-            'edit' => Pages\EditDecisionPrevisionnelle::route('/{record}/edit'),
+            'view'   => Pages\ViewDecisionPrevisionnelle::route('/{record}'),
+            'edit'   => Pages\EditDecisionPrevisionnelle::route('/{record}/edit'),
         ];
     }
 }
