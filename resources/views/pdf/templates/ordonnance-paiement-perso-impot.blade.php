@@ -4,100 +4,219 @@
 $ordonnance = $donnees['_raw'];
 $params = \App\Models\ParametresStructure::where('actif', true)->first();
 
-// ── Charger les relations ─────────────────────────────
 if (!$ordonnance->relationLoaded('engagement')) {
-$ordonnance->load([
-'engagement.nomenclaturePrincipale',
-'engagement.engageable',
-'engagement.exercice',
-'exercice',
-'beneficiaire',
-]);
+    $ordonnance->load([
+        'engagement.nomenclaturePrincipale',
+        'engagement.engageable',
+        'engagement.exercice',
+        'exercice',
+        'beneficiaire',
+    ]);
 }
 
-$engagement = $ordonnance->engagement;
-$engageable = $engagement?->engageable;
+$engagement     = $ordonnance->engagement;
+$engageable     = $engagement?->engageable;
 $documentSource = $engageable;
 
-// ── Paramètres structure ──────────────────────────────
-$nomStructure = $params?->nom_complet ?? 'HOPITAL GENERAL DE YAOUNDE';
-$sigle = $params?->sigle ?? 'HGY';
-$ville = $params?->ville ?? 'Yaoundé';
-$bp = $params?->bp ?? 'B.P 5408 YAOUNDE';
-$tel = $params?->telephone ?? '(237) 222 21 20 18';
-$fax = $params?->fax ?? '(237) 222 21 20 15';
-$nomCourtEn = $params?->nom_structure_en ?? '';
-$sous_direction = $params?->sous_direction ?? 'DAAF';
+$nomStructure    = $params?->nom_complet    ?? 'HOPITAL GENERAL DE YAOUNDE';
+$sigle           = $params?->sigle          ?? 'HGY';
+$ville           = $params?->ville          ?? 'Yaoundé';
+$bp              = $params?->bp             ?? 'B.P 5408 YAOUNDE';
+$tel             = $params?->telephone      ?? '(237) 222 21 20 18';
+$fax             = $params?->fax            ?? '(237) 222 21 20 15';
+$nomCourtEn      = $params?->nom_structure_en ?? '';
+$sous_direction  = $params?->sous_direction ?? 'DAAF';
 
-// ── Logo ──────────────────────────────────────────────
-$logoPath = null;
+$logoPath   = null;
 $logoExists = false;
 if ($params?->logo) {
-$logoPath = public_path('storage/' . ltrim($params->logo, '/'));
-$logoExists = file_exists($logoPath);
+    $logoPath   = public_path('storage/' . ltrim($params->logo, '/'));
+    $logoExists = file_exists($logoPath);
 }
 
-// ── Numéros ───────────────────────────────────────────
-$numOP = $ordonnance->numero ?? '—';
+$numOP         = $ordonnance->numero ?? '—';
 $numEngagement = $engagement?->numero ?? '—';
-$annee = $ordonnance->exercice?->annee
-?? $engagement?->exercice?->annee
-?? now()->year;
-$moisEmission = $ordonnance->date_emission
-? $ordonnance->date_emission->format('m/Y')
-: now()->format('m/Y');
-$dateEmission = $ordonnance->date_emission
-? $ordonnance->date_emission->format('d/m/Y')
-: now()->format('d/m/Y');
+$annee         = $ordonnance->exercice?->annee
+    ?? $engagement?->exercice?->annee
+    ?? now()->year;
+$moisEmission  = $ordonnance->date_emission
+    ? $ordonnance->date_emission->format('m/Y')
+    : now()->format('m/Y');
+$dateEmission  = $ordonnance->date_emission
+    ? $ordonnance->date_emission->format('d/m/Y')
+    : now()->format('d/m/Y');
 
 $imputation = $engagement?->nomenclaturePrincipale?->code ?? '';
 
-// ── Reverseur (contribuable ayant subi les retenues) ──
 $reverseur = null;
 if ($documentSource) {
-if ($engagement?->estBonCommande()) {
-$reverseur = $documentSource->fournisseur;
-} elseif ($engagement?->estDecision()) {
-$reverseur = $documentSource->personnel;
-}
+    if ($engagement?->estBonCommande()) {
+        $reverseur = $documentSource->fournisseur;
+    } elseif ($engagement?->estDecision()) {
+        $reverseur = $documentSource->personnel;
+    }
 }
 if (!$reverseur && $ordonnance->beneficiaire) {
-$reverseur = $ordonnance->beneficiaire;
+    $reverseur = $ordonnance->beneficiaire;
 }
 $nomReverseur = $reverseur?->raison_sociale
-?? $reverseur?->nom_complet
-?? $reverseur?->name
-?? '—';
+    ?? $reverseur?->nom_complet
+    ?? $reverseur?->name
+    ?? '—';
 
-// ── Bénéficiaire OPT = LE RECEVEUR ────────────────────
 $nomBeneficiaire = 'LE DIRECTEUR DES IMPOTS';
 
-// ── Détail impôts via getDetailImpots() ───────────────
-$detailImpots = $ordonnance->getDetailImpots();
-$montantTotalImpots = (float) ($detailImpots['total'] ?? 0);
-
-// ── Montants OPT ──────────────────────────────────────
-// Montant brut OPT = 0 (pas de brut propre à l'OPT)
-$montantBrut = 0;
-// A précompter = total des impôts
-$aPrecompter = $montantTotalImpots;
-// Somme nette = total impôts (ce qu'on reverse)
-$sommeNette = $montantTotalImpots;
-
-// Référence OP principale
-$opPrincipaleNumero = $ordonnance->op_principale_numero
-?? $ordonnance->opPrincipale?->numero
-?? $numEngagement;
-
-$objet = $ordonnance->objet
-?? 'Reversement des impôts et taxes' . $opPrincipaleNumero;
-
-$montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
-
-// ✅ Variables de détection du type de document source
+// ── Détail impôts ─────────────────────────────────────────
+// ✅ CORRECTION : reconstruction depuis le document source + champs individuels OPT
 $sourceEstDecision    = $engagement?->estDecision()    ?? false;
 $sourceEstBonCommande = $engagement?->estBonCommande() ?? false;
+
+if ($engagement && $documentSource) {
+    if ($sourceEstDecision) {
+        $irSrc     = (float) ($documentSource->montant_ir      ?? 0);
+        $irncSrc   = (float) ($documentSource->montant_irnc    ?? 0);
+        $cnpsSrc   = (float) ($documentSource->montant_cnps    ?? 0);
+        $tvaSrc    = (float) ($documentSource->montant_tva     ?? 0);
+        $autresSrc = (float) ($documentSource->autres_retenues ?? 0);
+        if ($irSrc === 0.0 && $irncSrc === 0.0 && $cnpsSrc === 0.0) {
+            $irSrc     = (float) ($ordonnance->montant_ir           ?? 0);
+            $irncSrc   = (float) ($ordonnance->montant_irnc         ?? 0);
+            $cnpsSrc   = (float) ($ordonnance->montant_cnps         ?? 0);
+            $tvaSrc    = (float) ($ordonnance->montant_tva          ?? 0);
+            $autresSrc = (float) ($ordonnance->montant_autres_taxes ?? 0);
+        }
+        $detailImpots = [
+            'ir'     => $irSrc,
+            'irnc'   => $irncSrc,
+            'cnps'   => $cnpsSrc,
+            'tva'    => $tvaSrc,
+            'autres' => $autresSrc,
+        ];
+    } else {
+        $irSrc  = (float) ($documentSource->montant_ir  ?? 0);
+        $tvaSrc = (float) ($documentSource->montant_tva ?? 0);
+        $tsrSrc = (float) ($documentSource->montant_tsr ?? 0);
+        if ($irSrc === 0.0 && $tsrSrc === 0.0) {
+            $irSrc  = (float) ($ordonnance->montant_ir  ?? 0);
+            $tvaSrc = (float) ($ordonnance->montant_tva ?? 0);
+            $tsrSrc = (float) ($ordonnance->montant_tsr ?? 0);
+        }
+        $detailImpots = [
+            'ir'  => $irSrc,
+            'tva' => $tvaSrc,
+            'tsr' => $tsrSrc,
+        ];
+    }
+} else {
+    $detailImpots = [
+        'ir'     => (float) ($ordonnance->montant_ir           ?? 0),
+        'tva'    => (float) ($ordonnance->montant_tva          ?? 0),
+        'tsr'    => (float) ($ordonnance->montant_tsr          ?? 0),
+        'cnps'   => (float) ($ordonnance->montant_cnps         ?? 0),
+        'irnc'   => (float) ($ordonnance->montant_irnc         ?? 0),
+        'autres' => (float) ($ordonnance->montant_autres_taxes ?? 0),
+    ];
+}
+
+$detailImpots['total'] = array_sum($detailImpots);
+$montantTotalImpots    = $detailImpots['total'] > 0
+    ? $detailImpots['total']
+    : (float) ($ordonnance->montant_net ?? $ordonnance->montant_impot ?? 0);
+// ✅ CORRECTION : lecture depuis le document source (toujours à jour
+// après avenant). getDetailImpots() retournait un total stale basé
+// sur montant_impot non resynchronisé, ignorant montant_autres_taxes.
+
+$montantIr     = 0;
+$montantIrnc   = 0;
+$montantTsr    = 0;
+$montantCnps   = 0;
+$montantTva    = 0;
+$montantAutres = 0;
+$tauxIr        = 0;
+$tauxIrnc      = 0;
+$tauxTsr       = 0;
+
+if ($engagement->estDecision() && $documentSource) {
+    // ✅ Priorité 1 : document source DA (mis à jour par l'avenant en premier)
+    $montantIr     = (float) ($documentSource->montant_ir      ?? 0);
+    $montantIrnc   = (float) ($documentSource->montant_irnc    ?? 0);
+    $montantCnps   = (float) ($documentSource->montant_cnps    ?? 0);
+    $montantTva    = (float) ($documentSource->montant_tva     ?? 0);
+    $montantAutres = (float) ($documentSource->autres_retenues ?? 0);
+
+    // ✅ Priorité 2 : fallback champs individuels OPT si DA a des zéros
+    if ($montantIr === 0.0 && $montantIrnc === 0.0 && $montantCnps === 0.0) {
+        $montantIr     = (float) ($ordonnance->montant_ir           ?? 0);
+        $montantIrnc   = (float) ($ordonnance->montant_irnc         ?? 0);
+        $montantCnps   = (float) ($ordonnance->montant_cnps         ?? 0);
+        $montantTva    = (float) ($ordonnance->montant_tva          ?? 0);
+        $montantAutres = (float) ($ordonnance->montant_autres_taxes ?? 0);
+    }
+
+    $tauxIr   = (float) ($documentSource->taux_ir   ?? 0);
+    $tauxIrnc = (float) ($documentSource->taux_irnc ?? 0);
+
+} elseif ($engagement->estBonCommande() && $documentSource) {
+    // ✅ Priorité 1 : document source BC
+    $montantIr  = (float) ($documentSource->montant_ir  ?? 0);
+    $montantTva = (float) ($documentSource->montant_tva ?? 0);
+    $montantTsr = (float) ($documentSource->montant_tsr ?? 0);
+
+    // ✅ Priorité 2 : fallback OPT si BC a des zéros
+    if ($montantIr === 0.0 && $montantTsr === 0.0) {
+        $montantIr  = (float) ($ordonnance->montant_ir  ?? 0);
+        $montantTva = (float) ($ordonnance->montant_tva ?? 0);
+        $montantTsr = (float) ($ordonnance->montant_tsr ?? 0);
+    }
+
+    $tauxIr  = (float) ($documentSource->taux_ir  ?? 0);
+    $tauxTsr = (float) ($documentSource->taux_tsr ?? 0);
+
+} else {
+    // ✅ Fallback total : champs individuels OPT
+    $montantIr     = (float) ($ordonnance->montant_ir           ?? 0);
+    $montantIrnc   = (float) ($ordonnance->montant_irnc         ?? 0);
+    $montantCnps   = (float) ($ordonnance->montant_cnps         ?? 0);
+    $montantTva    = (float) ($ordonnance->montant_tva          ?? 0);
+    $montantTsr    = (float) ($ordonnance->montant_tsr          ?? 0);
+    $montantAutres = (float) ($ordonnance->montant_autres_taxes ?? 0);
+}
+
+// ✅ Total calculé depuis les champs individuels — jamais depuis getDetailImpots()
+
+// ✅ Construction du tableau $detailImpots requis par le HTML
+$detailImpots = [
+    'ir'           => $montantIr,
+    'tva'          => $montantTva,
+    'tsr'          => $montantTsr,
+    'cnps'         => $montantCnps,
+    'irnc'         => $montantIrnc,
+    'feicom'       => 0,
+    'redevance_av' => 0,
+    'autres'       => $montantAutres,
+];
+$montantTotalImpots = $montantIr + $montantIrnc + $montantCnps
+                    + $montantTva + $montantTsr + $montantAutres;
+
+// ✅ Sécurité : si tout est à zéro, utiliser montant_net
+if ($montantTotalImpots <= 0) {
+    $montantTotalImpots = (float) ($ordonnance->montant_net ?? $ordonnance->montant_impot ?? 0);
+}
+
+$montantBrut = 0;
+$aPrecompter = $montantTotalImpots;
+$sommeNette  = $montantTotalImpots;
+
+$opPrincipaleNumero = $ordonnance->op_principale_numero
+    ?? $ordonnance->opPrincipale?->numero
+    ?? $numEngagement;
+
+$objet = $ordonnance->objet
+    ?? 'Reversement des impôts et taxes — ' . $opPrincipaleNumero;
+
+$montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
 @endphp
+
 <!DOCTYPE html>
 <html lang="fr">
 
@@ -261,7 +380,6 @@ $sourceEstBonCommande = $engagement?->estBonCommande() ?? false;
                         <td class="ba bg sm" style="padding:0.8mm 1.5mm;">
                             N° de bon de caisse<br><em>N° of the cash voucher</em>
                         </td>
-                        {{-- ✅ N° de bon de caisse = N° engagement --}}
                         <td class="ba tr b" style="padding:0.8mm 1.5mm;">{{ $numEngagement }}</td>
                     </tr>
                     <tr>

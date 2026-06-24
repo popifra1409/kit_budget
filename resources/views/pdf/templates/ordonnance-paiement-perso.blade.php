@@ -1,10 +1,8 @@
 {{-- resources/views/pdf/templates/ordonnance-paiement-perso.blade.php --}}
-{{-- Portrait A4 — Standalone — Variables alignées avec ordonnance-paiement.blade --}}
 @php
     $ordonnance = $donnees['_raw'];
     $params = \App\Models\ParametresStructure::where('actif', true)->first();
 
-    // ── Charger les relations ─────────────────────────────
     if (!$ordonnance->relationLoaded('engagement')) {
         $ordonnance->load([
             'engagement.nomenclaturePrincipale',
@@ -15,42 +13,38 @@
         ]);
     }
 
-    $engagement = $ordonnance->engagement;
-    $engageable = $engagement?->engageable;
+    $engagement     = $ordonnance->engagement;
+    $engageable     = $engagement?->engageable;
     $documentSource = $engageable;
 
-    // ── Paramètres structure ──────────────────────────────
-    $nomStructure = $params?->nom_complet ?? 'HOPITAL GENERAL DE YAOUNDE';
-    $sigle = $params?->sigle ?? 'HGY';
-    $ville = $params?->ville ?? 'Yaoundé';
-    $bp = $params?->bp ?? 'B.P 5408 YAOUNDE';
-    $tel = $params?->telephone ?? '(237) 222 21 20 18';
-    $fax = $params?->fax ?? '(237) 222 21 20 15';
-    $nomCourtEn = $params?->nom_structure_en;
+    $nomStructure  = $params?->nom_complet      ?? 'HOPITAL GENERAL DE YAOUNDE';
+    $sigle         = $params?->sigle             ?? 'HGY';
+    $ville         = $params?->ville             ?? 'Yaoundé';
+    $bp            = $params?->bp                ?? 'B.P 5408 YAOUNDE';
+    $tel           = $params?->telephone         ?? '(237) 222 21 20 18';
+    $fax           = $params?->fax               ?? '(237) 222 21 20 15';
+    $nomCourtEn    = $params?->nom_structure_en;
     $sous_direction = $params?->sous_direction;
 
-    // ── Logo ──────────────────────────────────────────────
-    $logoPath = null;
+    $logoPath   = null;
     $logoExists = false;
     if ($params?->logo) {
-        $logoPath = public_path('storage/' . ltrim($params->logo, '/'));
+        $logoPath   = public_path('storage/' . ltrim($params->logo, '/'));
         $logoExists = file_exists($logoPath);
     }
 
-    // ── Numéros ───────────────────────────────────────────
-    $numOP = $ordonnance->numero ?? '—';
-    $numEngagement = $engagement?->numero ?? '—';  // ← Paiement selon le bon + N° BC
-    $annee = $ordonnance->exercice?->annee ?? $engagement?->exercice?->annee ?? now()->year;
-    $moisEmission = $ordonnance->date_emission
+    $numOP         = $ordonnance->numero ?? '—';
+    $numEngagement = $engagement?->numero ?? '—';
+    $annee         = $ordonnance->exercice?->annee ?? $engagement?->exercice?->annee ?? now()->year;
+    $moisEmission  = $ordonnance->date_emission
         ? $ordonnance->date_emission->format('m/Y')
         : now()->format('m/Y');
-    $dateEmission = $ordonnance->date_emission
+    $dateEmission  = $ordonnance->date_emission
         ? $ordonnance->date_emission->format('d/m/Y')
         : now()->format('d/m/Y');
 
     $imputation = $engagement?->nomenclaturePrincipale?->code ?? '';
 
-    // ── Bénéficiaire ──────────────────────────────────────
     $beneficiaire = null;
     if ($ordonnance->beneficiaire) {
         $beneficiaire = $ordonnance->beneficiaire;
@@ -67,65 +61,84 @@
         ?? $ordonnance->beneficiaire_nom
         ?? '—';
 
-    // ── Montants — identique à la logique de ordonnance-paiement.blade ──
-    if ($engagement && $engagement->engageable) {
-        $donneesEngagement = $engagement->extraireDonneesDocument();
+    // ════════════════════════════════════════════════════════
+    // MONTANTS — lecture directe depuis $documentSource (toujours
+    // à jour après avenant). On n'utilise PAS extraireDonneesDocument()
+    // qui peut retourner des valeurs en cache, ni montant_impot qui
+    // peut être stale. $aPrecompter = array_sum($detailImpots) TOUJOURS.
+    // ════════════════════════════════════════════════════════
+
+    if ($engagement && $documentSource) {
 
         if ($engagement->estBonCommande()) {
-            // BC : montant brut = TTC, imputation = HT
-            $montantBrut = $donneesEngagement['montant_ttc'] ?? 0;
+            $montantBrut  = (float) ($documentSource->montant_ttc ?? 0);
             $detailImpots = [
-                'ir' => $donneesEngagement['montant_ir'] ?? 0,
-                'tva' => $donneesEngagement['montant_tva'] ?? 0,
-                'tsr' => $donneesEngagement['montant_tsr'] ?? 0,
-                'cnps' => 0,
-                'irnc' => 0,
-                'feicom' => 0,
+                'ir'           => (float) ($documentSource->montant_ir  ?? 0),
+                'tva'          => (float) ($documentSource->montant_tva ?? 0),
+                'tsr'          => (float) ($documentSource->montant_tsr ?? 0),
+                'cnps'         => 0,
+                'irnc'         => 0,
+                'feicom'       => 0,
                 'redevance_av' => 0,
-                'autres' => 0,
+                'autres'       => 0,
+            ];
+        } elseif ($engagement->estDecision()) {
+            $montantBrut  = (float) ($documentSource->montant_brut ?? 0);
+            $detailImpots = [
+                'ir'           => (float) ($documentSource->montant_ir         ?? 0),
+                'tva'          => (float) ($documentSource->montant_tva        ?? 0),
+                'tsr'          => 0,
+                'cnps'         => (float) ($documentSource->montant_cnps       ?? 0),
+                'irnc'         => (float) ($documentSource->montant_irnc       ?? 0),
+                'feicom'       => (float) ($documentSource->montant_feicom     ?? 0),
+                'redevance_av' => (float) ($documentSource->montant_redevance_av ?? 0),
+                'autres'       => (float) ($documentSource->autres_retenues    ?? 0),
             ];
         } else {
-            // DA : montant brut = brut avant retenues
-            $montantBrut = $donneesEngagement['montant_brut'] ?? 0;
+            $montantBrut  = (float) ($ordonnance->montant_brut ?? 0);
             $detailImpots = [
-                'ir' => $donneesEngagement['montant_ir'] ?? 0,
-                'tva' => $donneesEngagement['montant_tva'] ?? 0,
-                'tsr' => 0,
-                'cnps' => $donneesEngagement['montant_cnps'] ?? 0,
-                'irnc' => $donneesEngagement['montant_irnc'] ?? 0,
-                'feicom' => $donneesEngagement['montant_feicom'] ?? 0,
-                'redevance_av' => $donneesEngagement['montant_redevance_av'] ?? 0,
-                'autres' => $donneesEngagement['autres_retenues'] ?? 0,
+                'ir'           => (float) ($ordonnance->montant_ir           ?? 0),
+                'tva'          => (float) ($ordonnance->montant_tva          ?? 0),
+                'tsr'          => (float) ($ordonnance->montant_tsr          ?? 0),
+                'cnps'         => (float) ($ordonnance->montant_cnps         ?? 0),
+                'irnc'         => (float) ($ordonnance->montant_irnc         ?? 0),
+                'feicom'       => 0,
+                'redevance_av' => 0,
+                'autres'       => (float) ($ordonnance->montant_autres_taxes ?? 0),
             ];
         }
 
-        // ✅ A précompter = somme de tous les impôts/taxes
-        $aPrecompter = array_sum($detailImpots);
-
-        // ✅ Somme nette = montant brut - a précompter
-        $sommeNette = $montantBrut - $aPrecompter;
-
     } else {
-        // Fallback
-        $montantBrut = (float) ($ordonnance->montant_brut ?? 0);
-        $aPrecompter = (float) ($ordonnance->montant_ir ?? 0);
-        $sommeNette = (float) ($ordonnance->montant_net ?? $montantBrut - $aPrecompter);
+        // ✅ Fallback : lecture directe champs individuels de l'OP
+        $montantBrut  = (float) ($ordonnance->montant_brut ?? 0);
         $detailImpots = [
-            'ir' => $aPrecompter,
-            'tva' => 0,
-            'cnps' => 0,
-            'irnc' => 0,
-            'feicom' => 0,
+            'ir'           => (float) ($ordonnance->montant_ir           ?? 0),
+            'tva'          => (float) ($ordonnance->montant_tva          ?? 0),
+            'tsr'          => (float) ($ordonnance->montant_tsr          ?? 0),
+            'cnps'         => (float) ($ordonnance->montant_cnps         ?? 0),
+            'irnc'         => (float) ($ordonnance->montant_irnc         ?? 0),
+            'feicom'       => 0,
             'redevance_av' => 0,
-            'autres' => 0,
-            'tsr' => 0
+            'autres'       => (float) ($ordonnance->montant_autres_taxes ?? 0),
         ];
     }
 
-    $objet = $ordonnance->objet ?? $documentSource?->objet ?? '—';
-    $montantLettres = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
+    // ✅ $aPrecompter = array_sum($detailImpots) TOUJOURS
+    // Garantit que la box "A PRECOMPTER" = somme exacte des lignes affichées
+    // NE PAS utiliser montant_impot (stale) ni montant_net comme override
+    $aPrecompter = array_sum($detailImpots);
+    $sommeNette  = $montantBrut - $aPrecompter;
+
+    // ✅ Si sommeNette < 0 (cas anomalie), utiliser montant_net de l'OP
+    if ($sommeNette < 0) {
+        $sommeNette = (float) ($ordonnance->montant_net ?? 0);
+    }
+
+    $objet              = $ordonnance->objet ?? $documentSource?->objet ?? '—';
+    $montantLettres     = \App\Helpers\NombreEnLettres::montantCFA($sommeNette);
     $montantBrutLettres = \App\Helpers\NombreEnLettres::montantCFA($montantBrut);
 @endphp
+
 <!DOCTYPE html>
 <html lang="fr">
 
@@ -381,18 +394,26 @@
                 <table>
                     <tr>
                         <td style="border:none; padding:0; width:60%; font-size:7pt;">
-                            A PRECOMPTER
+                           A PRECOMPTER
                             @if(array_sum($detailImpots) > 0)
                                 <span class="xsm it">
-                                    (IR: {{ number_format($detailImpots['ir'], 0, ',', ' ') }}
+                                    @if($detailImpots['ir'] > 0)
+                                        (IR: {{ number_format($detailImpots['ir'], 0, ',', ' ') }}
+                                    @endif
+                                    @if($detailImpots['irnc'] > 0)
+                                        / IRNC: {{ number_format($detailImpots['irnc'], 0, ',', ' ') }}
+                                    @endif
                                     @if($detailImpots['tva'] > 0)
                                         / TVA: {{ number_format($detailImpots['tva'], 0, ',', ' ') }}
                                     @endif
                                     @if($detailImpots['cnps'] > 0)
                                         / CNPS: {{ number_format($detailImpots['cnps'], 0, ',', ' ') }}
                                     @endif
-                                    @if($detailImpots['irnc'] > 0)
-                                        / IRNC: {{ number_format($detailImpots['irnc'], 0, ',', ' ') }}
+                                    @if(($detailImpots['tsr'] ?? 0) > 0)
+                                        / TSR: {{ number_format($detailImpots['tsr'], 0, ',', ' ') }}
+                                    @endif
+                                    @if(($detailImpots['autres'] ?? 0) > 0)
+                                        / Autres: {{ number_format($detailImpots['autres'], 0, ',', ' ') }}
                                     @endif
                                     )
                                 </span>

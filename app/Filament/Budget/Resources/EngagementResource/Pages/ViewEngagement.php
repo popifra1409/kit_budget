@@ -120,9 +120,9 @@ class ViewEngagement extends ViewRecord
                         ->label('')
                         ->content(new \Illuminate\Support\HtmlString(
                             '<div style="background:#fef9c3;border:1px solid #ca8a04;border-radius:.5rem;padding:.75rem;">
-                ⚠️ <strong>Avenant</strong> — Rectification d\'un engagement définitif.<br>
-                La ligne budgétaire et les ordonnances seront mises à jour selon vos corrections.
-                </div>'
+⚠️ <strong>Avenant</strong> — Rectification d\'un engagement définitif.<br>
+Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement ce qui doit être corrigé.
+</div>'
                         ))
                         ->columnSpanFull(),
 
@@ -139,24 +139,26 @@ class ViewEngagement extends ViewRecord
                         ->required()->live()
                         ->helperText('Choisissez ce qui doit être corrigé'),
 
-                    // ✅ Champ objet
+                    // ✅ Objet — placeholder uniquement (vide = ne pas modifier)
                     Forms\Components\Textarea::make('nouvel_objet')
                         ->label('Nouvel objet')
                         ->rows(2)
-                        ->placeholder('Nouveau libellé de l\'objet...')
-                        ->helperText(fn() => 'Actuel : ' . ($this->record->objet ?? '—'))
-                        ->visible(
-                            fn(Get $get) =>
-                            in_array($get('type_correction'), ['objet', 'complet'])
-                        )
+                        ->placeholder(fn() => $this->record->objet ?? '—')
+                        ->helperText('📋 Avant avenant : ' . ($this->record->objet ?? '—') . ' — laissez vide pour conserver')
+                        ->visible(fn(Get $get) => in_array($get('type_correction'), ['objet', 'complet']))
                         ->columnSpanFull(),
 
                     Forms\Components\Section::make('Nouveaux montants du document')
                         ->schema([
+                            // ── DA : Montant brut ──────────────────────────────
                             Forms\Components\TextInput::make('montant_brut')
                                 ->label('Montant brut (FCFA)')->numeric()->prefix('FCFA')
-                                ->helperText(fn() => 'Actuel : ' . number_format(
-                                    $this->record->engageable?->montant_brut ?? $this->record->montant_engage,
+                                // ✅ Pré-rempli avec la valeur actuelle
+                                ->default(fn() => $this->record->engageable?->montant_brut
+                                    ?? $this->record->montant_engage)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
+                                    $this->record->engageable?->montant_brut
+                                        ?? $this->record->montant_engage,
                                     0,
                                     ',',
                                     ' '
@@ -167,9 +169,11 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estDecision()
                                 ),
 
+                            // ── DA : CNPS ──────────────────────────────────────
                             Forms\Components\TextInput::make('montant_cnps')
-                                ->label('CNPS (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->label('CNPS (FCFA)')->numeric()->prefix('FCFA')
+                                ->default(fn() => $this->record->engageable?->montant_cnps ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->montant_cnps ?? 0,
                                     0,
                                     ',',
@@ -181,9 +185,11 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estDecision()
                                 ),
 
+                            // ── DA + BC : IR ───────────────────────────────────
                             Forms\Components\TextInput::make('montant_ir')
-                                ->label('IR (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->label('IR (FCFA)')->numeric()->prefix('FCFA')
+                                ->default(fn() => $this->record->engageable?->montant_ir ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->montant_ir ?? 0,
                                     0,
                                     ',',
@@ -195,9 +201,11 @@ class ViewEngagement extends ViewRecord
                                         && ($this->record->estDecision() || $this->record->estBonCommande())
                                 ),
 
+                            // ── DA : IRNC ──────────────────────────────────────
                             Forms\Components\TextInput::make('montant_irnc')
-                                ->label('IRNC (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->label('IRNC (FCFA)')->numeric()->prefix('FCFA')
+                                ->default(fn() => $this->record->engageable?->montant_irnc ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->montant_irnc ?? 0,
                                     0,
                                     ',',
@@ -209,9 +217,11 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estDecision()
                                 ),
 
+                            // ── DA + BC : TVA ──────────────────────────────────
                             Forms\Components\TextInput::make('montant_tva')
-                                ->label('TVA (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->label('TVA (FCFA)')->numeric()->prefix('FCFA')
+                                ->default(fn() => $this->record->engageable?->montant_tva ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->montant_tva ?? 0,
                                     0,
                                     ',',
@@ -222,9 +232,11 @@ class ViewEngagement extends ViewRecord
                                     in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
                                 ),
 
+                            // ── DA : Autres retenues ───────────────────────────
                             Forms\Components\TextInput::make('autres_retenues')
-                                ->label('Autres retenues (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->label('Autres retenues (FCFA)')->numeric()->prefix('FCFA')
+                                ->default(fn() => $this->record->engageable?->autres_retenues ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->autres_retenues ?? 0,
                                     0,
                                     ',',
@@ -236,9 +248,11 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estDecision()
                                 ),
 
+                            // ── BC : Montant HT ────────────────────────────────
                             Forms\Components\TextInput::make('montant_ht')
                                 ->label('Montant HT (FCFA)')->numeric()->prefix('FCFA')
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->default(fn() => $this->record->engageable?->montant_ht ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->montant_ht ?? 0,
                                     0,
                                     ',',
@@ -250,10 +264,14 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estBonCommande()
                                 ),
 
+                            // ── BC : Montant TTC ───────────────────────────────
                             Forms\Components\TextInput::make('montant_ttc')
                                 ->label('Montant TTC (FCFA)')->numeric()->prefix('FCFA')
-                                ->helperText(fn() => 'Actuel : ' . number_format(
-                                    $this->record->engageable?->montant_ttc ?? 0,
+                                ->default(fn() => $this->record->engageable?->montant_ttc
+                                    ?? $this->record->montant_engage)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
+                                    $this->record->engageable?->montant_ttc
+                                        ?? $this->record->montant_engage,
                                     0,
                                     ',',
                                     ' '
@@ -264,9 +282,11 @@ class ViewEngagement extends ViewRecord
                                         && $this->record->estBonCommande()
                                 ),
 
+                            // ── BC : TSR ───────────────────────────────────────
                             Forms\Components\TextInput::make('montant_tsr')
-                                ->label('TSR (FCFA)')->numeric()->prefix('FCFA')->default(0)
-                                ->helperText(fn() => 'Actuel : ' . number_format(
+                                ->label('TSR (FCFA)')->numeric()->prefix('FCFA')
+                                ->default(fn() => $this->record->engageable?->montant_tsr ?? 0)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
                                     $this->record->engageable?->montant_tsr ?? 0,
                                     0,
                                     ',',
@@ -284,6 +304,7 @@ class ViewEngagement extends ViewRecord
                             in_array($get('type_correction'), ['montant', 'mixte', 'taxes', 'complet'])
                         ),
 
+                    // ── Nouvelle ligne budgétaire ──────────────────────────
                     Forms\Components\Select::make('nomenclature_corrigee_id')
                         ->label('Nouvelle ligne budgétaire')
                         ->options(function () {
@@ -297,17 +318,9 @@ class ViewEngagement extends ViewRecord
                                 ])->toArray();
                         })
                         ->searchable()
-                        ->required(
-                            fn(Get $get) =>
-                            in_array($get('type_correction'), ['nomenclature', 'mixte', 'complet'])
-                        )
-                        ->visible(
-                            fn(Get $get) =>
-                            in_array($get('type_correction'), ['nomenclature', 'mixte', 'complet'])
-                        )
-                        ->helperText(
-                            fn() => 'Actuelle : ' . ($this->record->nomenclaturePrincipale?->code ?? '—')
-                        ),
+                        ->required(fn(Get $get) => in_array($get('type_correction'), ['nomenclature', 'mixte', 'complet']))
+                        ->visible(fn(Get $get) => in_array($get('type_correction'), ['nomenclature', 'mixte', 'complet']))
+                        ->helperText(fn() => '📋 Avant avenant : ' . ($this->record->nomenclaturePrincipale?->code ?? '—')),
 
                     Forms\Components\Section::make('Ordonnance impôt existante')
                         ->schema([
@@ -318,32 +331,26 @@ class ViewEngagement extends ViewRecord
                                         ->where('type_ordonnance', 'impot')->first();
                                     if (!$op) return new \Illuminate\Support\HtmlString(
                                         '<span style="color:#6b7280;">
-                                Aucune OP impôt — sera créée si des taxes sont renseignées.
-                            </span>'
+                Aucune OP impôt — sera créée si des taxes sont renseignées.
+            </span>'
                                     );
                                     return new \Illuminate\Support\HtmlString(
                                         "<div style='background:#f0fdf4;border:1px solid #86efac;
-                                border-radius:.375rem;padding:.5rem .75rem;'>
-                                OP Impôt : <strong>{$op->numero}</strong> — " .
+                border-radius:.375rem;padding:.5rem .75rem;'>
+                OP Impôt : <strong>{$op->numero}</strong> — " .
                                             number_format($op->montant_net, 0, ',', ' ') . " FCFA
-                            </div>"
+            </div>"
                                     );
                                 })
                                 ->columnSpanFull(),
                         ])
-                        ->visible(
-                            fn(Get $get) =>
-                            in_array($get('type_correction'), ['taxes', 'complet'])
-                        )
+                        ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'complet']))
                         ->collapsed(false),
 
                     Forms\Components\Toggle::make('corriger_ordonnances')
                         ->label('Mettre à jour les ordonnances de paiement existantes')
                         ->default(true)
-                        ->helperText(
-                            'Recalcule les montants des OP Standard et OP Impôt '
-                                . '(ou crée l\'OPT si absente)'
-                        )
+                        ->helperText('Recalcule les montants des OP Standard et OP Impôt (ou crée l\'OPT si absente)')
                         ->visible(fn() => $this->record->ordonnancesPaiement()->exists())
                         ->inline(false),
 
@@ -441,29 +448,29 @@ class ViewEngagement extends ViewRecord
                                 \Illuminate\Database\Eloquent\Model::withoutEvents(
                                     function () use ($doc, $donneesCorrection) {
                                         if ($doc instanceof \App\Models\DecisionAdministrative) {
-                                            $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
-                                            $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps);
-                                            $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir);
-                                            $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
-                                            $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
-                                            $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
-                                            $totalTaxes     = $montantCnps + $montantIr + $montantIrnc
-                                                + $montantTva + $autresRetenues;
+                                            $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut    ?? 0);
+                                            $montantCnps    = (float)($donneesCorrection['montant_cnps']    ?? $doc->montant_cnps    ?? 0);
+                                            $montantIr      = (float)($donneesCorrection['montant_ir']      ?? $doc->montant_ir      ?? 0);
+                                            $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc    ?? 0);
+                                            $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva     ?? 0);
+                                            $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues ?? 0);
+                                            $totalTaxes     = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
 
-                                            $updateData = array_merge(
-                                                array_diff_key($donneesCorrection, ['objet' => null]),
-                                                [
-                                                    'montant_ir'  => $montantIr,
-                                                    'total_taxes' => $totalTaxes,
-                                                    'montant_net' => $montantBrut - $totalTaxes,
-                                                    'mode_saisie' => 'forfait',
-                                                ]
-                                            );
+                                            $doc->updateQuietly([
+                                                'montant_brut'    => $montantBrut,
+                                                'montant_ir'      => $montantIr,
+                                                'montant_cnps'    => $montantCnps,
+                                                'montant_irnc'    => $montantIrnc,
+                                                'montant_tva'     => $montantTva,
+                                                'autres_retenues' => $autresRetenues,
+                                                'total_taxes'     => $totalTaxes,
+                                                'montant_net'     => $montantBrut - $totalTaxes,
+                                                'mode_saisie'     => 'forfait',
+                                            ]);
+
                                             if (!empty($donneesCorrection['objet'])) {
-                                                $updateData['objet'] = $donneesCorrection['objet'];
+                                                $doc->updateQuietly(['objet' => trim($donneesCorrection['objet'])]);
                                             }
-                                            unset($updateData['autres_retenues']);
-                                            $doc->updateQuietly($updateData);
                                         } elseif ($doc instanceof \App\Models\BonCommande) {
                                             $montantTtc = (float)($donneesCorrection['montant_ttc'] ?? $doc->montant_ttc);
                                             $montantIr  = (float)($donneesCorrection['montant_ir']  ?? $doc->montant_ir);
