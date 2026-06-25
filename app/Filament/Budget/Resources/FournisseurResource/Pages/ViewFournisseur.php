@@ -16,4 +16,12 @@ class ViewFournisseur extends ViewRecord
             Actions\EditAction::make(),
         ];
     }
+
+    // ✅ Inclure la RelationManager des dossiers dans la page View
+    public function getRelationManagers(): array
+    {
+        return [
+            \App\Filament\Budget\Resources\FournisseurResource\RelationManagers\DossiersRelationManager::class,
+        ];
+    }
 }

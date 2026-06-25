@@ -44,7 +44,7 @@ class Fournisseur extends Model
     ];
 
     protected $casts = [
-        'actif' => 'boolean',
+        'actif'      => 'boolean',
         'blackliste' => 'boolean',
     ];
 
@@ -57,8 +57,12 @@ class Fournisseur extends Model
         });
     }
 
+    // ════════════════════════════════════════════════════════
+    // RELATIONS
+    // ════════════════════════════════════════════════════════
+
     /**
-     * Relation : Bons de commande de ce fournisseur
+     * Bons de commande de ce fournisseur
      */
     public function bonsCommande(): HasMany
     {
@@ -66,7 +70,7 @@ class Fournisseur extends Model
     }
 
     /**
-     * Relation : Régime fiscal
+     * Régime fiscal
      */
     public function regimeFiscal(): BelongsTo
     {
@@ -74,44 +78,49 @@ class Fournisseur extends Model
     }
 
     /**
-     * Calculer l'IR pour un montant donné
+     * ✅ Dossiers fournisseur — créés automatiquement à l'engagement BC/DA
+     * Triés du plus récent au plus ancien
      */
-    public function calculerIR(float $montantHT): float
+    public function dossiers(): HasMany
     {
-        if (!$this->regimeFiscal) {
-            return 0;
-        }
-
-        return $this->regimeFiscal->calculerIR($montantHT);
+        return $this->hasMany(DossierFournisseur::class, 'fournisseur_id')
+            ->orderBy('date_ouverture', 'desc');
     }
 
-    /**
-     * Scope : Fournisseurs actifs
-     */
+    // ════════════════════════════════════════════════════════
+    // SCOPES
+    // ════════════════════════════════════════════════════════
+
     public function scopeActifs($query)
     {
-        return $query->where('actif', true)
-            ->where('blackliste', false);
+        return $query->where('actif', true)->where('blackliste', false);
     }
 
-    /**
-     * Scope : Par type
-     */
     public function scopeType($query, $type)
     {
         return $query->where('type', $type);
     }
 
-    /**
-     * Scope : Blacklistés
-     */
     public function scopeBlacklistes($query)
     {
         return $query->where('blackliste', true);
     }
 
+    // ════════════════════════════════════════════════════════
+    // MÉTHODES MÉTIER
+    // ════════════════════════════════════════════════════════
+
     /**
-     * Obtenir le montant total des commandes
+     * Calculer l'IR pour un montant donné
+     */
+    public function calculerIR(float $montantHT): float
+    {
+        if (!$this->regimeFiscal) return 0;
+        return $this->regimeFiscal->calculerIR($montantHT);
+    }
+
+    /**
+     * Montant total des commandes (hors brouillon/annulé)
      */
     public function getMontantTotalCommandes(): float
     {
@@ -121,7 +130,7 @@ class Fournisseur extends Model
     }
 
     /**
-     * Obtenir le nombre de commandes
+     * Nombre de commandes (hors brouillon/annulé)
      */
     public function getNombreCommandes(): int
     {
@@ -131,16 +140,19 @@ class Fournisseur extends Model
     }
 
     /**
-     * Obtenir le nom complet (raison sociale ou sigle)
+     * Nom complet (sigle ou raison sociale)
      */
     public function getNomComplet(): string
     {
         return $this->sigle ?: $this->raison_sociale;
     }
 
+    /**
+     * Générer un code unique FOUR-AAAA-XXXX
+     */
     public static function genererCode(): string
     {
-        $annee = now()->year;
+        $annee   = now()->year;
         $prefixe = "FOUR-{$annee}-";
 
         $dernierNumero = static::where('code', 'like', "{$prefixe}%")
@@ -162,9 +174,9 @@ class Fournisseur extends Model
      */
     public function blacklister(string $motif): void
     {
-        $this->blackliste = true;
+        $this->blackliste      = true;
         $this->motif_blacklist = $motif;
-        $this->actif = false;
+        $this->actif           = false;
         $this->save();
     }
 
@@ -173,9 +185,9 @@ class Fournisseur extends Model
      */
     public function rehabiliter(): void
     {
-        $this->blackliste = false;
+        $this->blackliste      = false;
         $this->motif_blacklist = null;
-        $this->actif = true;
+        $this->actif           = true;
         $this->save();
     }
 }

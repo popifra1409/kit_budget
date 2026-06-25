@@ -13,6 +13,7 @@ use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\ActionsPosition;
 use Illuminate\Database\Eloquent\Builder;
 
 class RecetteReelleResource extends Resource
@@ -55,14 +56,17 @@ class RecetteReelleResource extends Resource
         12 => 'Décembre',
     ];
 
+    // ========================================
+    // NAVIGATION BADGE
+    // ========================================
+
     public static function getNavigationBadge(): ?string
     {
         try {
             $exercice = Exercice::getActif();
             if (!$exercice) return null;
             $count = RecetteReelle::where('exercice_id', $exercice->id)
-                ->where('statut', 'comptabilisee')
-                ->count();
+                ->where('statut', 'comptabilisee')->count();
             return $count > 0 ? (string) $count : null;
         } catch (\Exception $e) {
             return null;
@@ -74,25 +78,23 @@ class RecetteReelleResource extends Resource
         return 'warning';
     }
 
-    // =========================================================================
+    // ========================================
     // PERMISSIONS
-    // =========================================================================
+    // ========================================
+
     public static function canViewAny(): bool
     {
-        return auth()->check()
-            && auth()->user()->can('view_any_recette_reelle');
+        return auth()->check() && auth()->user()->can('view_any_recette_reelle');
     }
 
     public static function canView($record): bool
     {
-        return auth()->check()
-            && auth()->user()->can('view_recette_reelle');
+        return auth()->check() && auth()->user()->can('view_recette_reelle');
     }
 
     public static function canCreate(): bool
     {
-        return auth()->check()
-            && auth()->user()->can('create_recette_reelle');
+        return auth()->check() && auth()->user()->can('create_recette_reelle');
     }
 
     public static function canEdit($record): bool
@@ -122,9 +124,10 @@ class RecetteReelleResource extends Resource
         return $query;
     }
 
-    // =========================================================================
-    // FORMULAIRE
-    // =========================================================================
+    // ========================================
+    // FORM
+    // ========================================
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -135,22 +138,18 @@ class RecetteReelleResource extends Resource
                         ->label('Exercice')
                         ->options(fn() => Exercice::orderByDesc('annee')->pluck('annee', 'id'))
                         ->default(fn() => Exercice::getActif()?->id)
-                        ->required()
-                        ->live()
+                        ->required()->live()
                         ->afterStateUpdated(fn($set) => $set('prevision_recette_mensuelle_id', null)),
 
                     Forms\Components\Select::make('mois')
                         ->label('Mois')
                         ->options(self::$moisOptions)
                         ->default(now()->month)
-                        ->required()
-                        ->live()
+                        ->required()->live()
                         ->afterStateUpdated(fn($set) => $set('prevision_recette_mensuelle_id', null)),
 
                     Forms\Components\DatePicker::make('date_recette')
-                        ->label("Date d'encaissement")
-                        ->default(now())
-                        ->required(),
+                        ->label("Date d'encaissement")->default(now())->required(),
                 ])
                 ->columns(3),
 
@@ -165,8 +164,7 @@ class RecetteReelleResource extends Resource
 
                             return PrevisionRecetteMensuelle::with('lignePrevisionRecette')
                                 ->where('exercice_id', $exerciceId)
-                                ->where('mois', $mois)
-                                ->get()
+                                ->where('mois', $mois)->get()
                                 ->mapWithKeys(fn($pm) => [
                                     $pm->id => "[{$pm->lignePrevisionRecette?->code_nomenclature}] {$pm->lignePrevisionRecette?->libelle_nomenclature}",
                                 ]);
@@ -190,9 +188,7 @@ class RecetteReelleResource extends Resource
                                     $pm->id => "[{$pm->lignePrevisionRecette?->code_nomenclature}] {$pm->lignePrevisionRecette?->libelle_nomenclature}",
                                 ]);
                         })
-                        ->searchable()
-                        ->required()
-                        ->live()
+                        ->searchable()->required()->live()
                         ->afterStateUpdated(function ($state, $set) {
                             if (!$state) return;
                             $pm = PrevisionRecetteMensuelle::with('lignePrevisionRecette')->find($state);
@@ -226,14 +222,10 @@ class RecetteReelleResource extends Resource
                 ->schema([
                     Forms\Components\TextInput::make('montant')
                         ->label('Montant encaissé (FCFA)')
-                        ->numeric()
-                        ->required()
-                        ->minValue(1)
-                        ->prefix('FCFA'),
+                        ->numeric()->required()->minValue(1)->prefix('FCFA'),
 
                     Forms\Components\TextInput::make('payeur')
-                        ->label('Payeur / Source')
-                        ->maxLength(255),
+                        ->label('Payeur / Source')->maxLength(255),
 
                     Forms\Components\Select::make('mode_paiement')
                         ->label('Mode de paiement')
@@ -247,8 +239,7 @@ class RecetteReelleResource extends Resource
                         ->default('virement'),
 
                     Forms\Components\TextInput::make('reference_paiement')
-                        ->label('Référence paiement')
-                        ->maxLength(100),
+                        ->label('Référence paiement')->maxLength(100),
 
                     Forms\Components\Select::make('statut')
                         ->label('Statut')
@@ -257,55 +248,40 @@ class RecetteReelleResource extends Resource
                             'comptabilisee' => 'Comptabilisée',
                             'validee'       => 'Validée',
                         ])
-                        ->default('encaissee')
-                        ->required(),
+                        ->default('encaissee')->required(),
 
                     Forms\Components\Textarea::make('libelle')
-                        ->label('Libellé / Objet')
-                        ->rows(2),
+                        ->label('Libellé / Objet')->rows(2),
 
                     Forms\Components\Textarea::make('observations')
-                        ->label('Observations')
-                        ->rows(2),
+                        ->label('Observations')->rows(2),
                 ])
                 ->columns(2),
         ]);
     }
 
-    // =========================================================================
+    // ========================================
     // TABLE
-    // =========================================================================
+    // ========================================
+
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N°')
-                    ->searchable()
-                    ->sortable()
-                    ->badge()
-                    ->color('gray'),
+                    ->label('N°')->searchable()->sortable()->badge()->color('gray'),
 
                 Tables\Columns\TextColumn::make('date_recette')
-                    ->label('Date')
-                    ->date('d/m/Y')
-                    ->sortable(),
+                    ->label('Date')->date('d/m/Y')->sortable(),
 
-                // ✅ Fix : utiliser ->state() au lieu de ->getStateUsing()
-                // et protéger contre null
                 Tables\Columns\TextColumn::make('mois')
                     ->label('Mois')
                     ->formatStateUsing(fn($state) => self::$moisLabels[(int) $state] ?? '—')
-                    ->badge()
-                    ->color('info'),
+                    ->badge()->color('info'),
 
                 Tables\Columns\TextColumn::make('code_nomenclature')
-                    ->label('Code')
-                    ->searchable()
-                    ->badge()
-                    ->color('warning'),
+                    ->label('Code')->searchable()->badge()->color('warning'),
 
-                // ✅ Fix : relation imbriquée — utiliser une closure sécurisée
                 Tables\Columns\TextColumn::make('libelle_nomenclature')
                     ->label('Nomenclature')
                     ->getStateUsing(
@@ -323,30 +299,19 @@ class RecetteReelleResource extends Resource
                     ),
 
                 Tables\Columns\TextColumn::make('montant')
-                    ->label('Montant')
-                    ->money('XAF')
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('success')
+                    ->label('Montant')->money('XAF')->sortable()->weight('bold')->color('success')
                     ->summarize([
                         Tables\Columns\Summarizers\Sum::make()->money('XAF')->label('Total'),
                     ]),
 
                 Tables\Columns\TextColumn::make('payeur')
-                    ->label('Payeur')
-                    ->searchable()
-                    ->limit(25)
-                    ->toggleable(),
+                    ->label('Payeur')->searchable()->limit(25)->toggleable(),
 
                 Tables\Columns\TextColumn::make('mode_paiement')
-                    ->label('Mode')
-                    ->badge()
-                    ->color('gray')
-                    ->toggleable(),
+                    ->label('Mode')->badge()->color('gray')->toggleable(),
 
                 Tables\Columns\TextColumn::make('statut')
-                    ->label('Statut')
-                    ->badge()
+                    ->label('Statut')->badge()
                     ->color(fn(string $state) => match ($state) {
                         'encaissee'     => 'warning',
                         'comptabilisee' => 'info',
@@ -362,8 +327,7 @@ class RecetteReelleResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('mois')
-                    ->label('Mois')
-                    ->options(self::$moisOptions),
+                    ->label('Mois')->options(self::$moisOptions),
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
@@ -373,16 +337,32 @@ class RecetteReelleResource extends Resource
                         'validee'       => 'Validée',
                     ]),
             ])
+
+            // ════════════════════════════════════════════════════════
+            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
+            //    Pattern identique à BonCommandeResource
+            // ════════════════════════════════════════════════════════
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn($record) => $record->statut !== 'validee'),
-            ])
+                Tables\Actions\ActionGroup::make([
+
+                    Tables\Actions\EditAction::make(),
+
+                    Tables\Actions\DeleteAction::make()
+                        ->visible(fn($record) => $record->statut !== 'validee'),
+
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+
+            ], position: ActionsPosition::BeforeColumns)
+
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
 
-                    // ✅ Fix BulkAction : ne pas appeler ->where() sur la collection Filament
                     Tables\Actions\BulkAction::make('comptabiliser')
                         ->label('Comptabiliser la sélection')
                         ->icon('heroicon-o-check-circle')

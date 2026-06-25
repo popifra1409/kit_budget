@@ -10,6 +10,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\ActionsPosition;
 use App\Filament\Forms\Components\ExerciceSelect;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Imports\ReferenceMercurialeImport;
@@ -21,24 +22,16 @@ use Illuminate\Support\Facades\Log;
 class ReferenceMercurialeResource extends Resource
 {
     protected static ?string $model = ReferenceMercuriale::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-book-open';
-
     protected static ?string $navigationLabel = 'Références Mercuriales';
-
     protected static ?string $modelLabel = 'Référence Mercuriale';
-
     protected static ?string $pluralModelLabel = 'Références Mercuriales';
-
     protected static ?string $navigationGroup = 'Configuration Budget';
-
     protected static ?int $navigationSort = 5;
 
-    /**
-     * ==========================================
-     * Permissions – Références Mercuriales
-     * ==========================================
-     */
+    // ========================================
+    // PERMISSIONS
+    // ========================================
 
     public static function canViewAny(): bool
     {
@@ -57,27 +50,16 @@ class ReferenceMercurialeResource extends Resource
 
     public static function canEdit($record): bool
     {
-        if (!auth()->user()?->can('update_reference_mercuriale')) {
-            return false;
-        }
-
-        // Règle métier : modifiable uniquement si l'exercice est modifiable
+        if (!auth()->user()?->can('update_reference_mercuriale')) return false;
         return $record->estModifiable();
     }
 
     public static function canDelete($record): bool
     {
-        if (!auth()->user()?->can('delete_reference_mercuriale')) {
-            return false;
-        }
-
-        // Règle métier : suppression uniquement si l'exercice est modifiable
+        if (!auth()->user()?->can('delete_reference_mercuriale')) return false;
         return $record->estModifiable();
     }
 
-    /**
-     * Action métier personnalisée : Activer/Désactiver
-     */
     public static function canActiver($record): bool
     {
         return auth()->user()?->can('update_reference_mercuriale') ?? false;
@@ -88,6 +70,9 @@ class ReferenceMercurialeResource extends Resource
         return parent::getEloquentQuery()->with('exercice');
     }
 
+    // ========================================
+    // FORM
+    // ========================================
 
     public static function form(Form $form): Form
     {
@@ -95,62 +80,45 @@ class ReferenceMercurialeResource extends Resource
             ->schema([
                 Forms\Components\Section::make('Exercice')
                     ->description('Exercice budgétaire de rattachement')
-                    ->schema([
-                        ExerciceSelect::make(),
-                    ])
+                    ->schema([ExerciceSelect::make()])
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null),
 
                 Forms\Components\Section::make('Informations de la référence')
                     ->schema([
                         Forms\Components\TextInput::make('code_reference')
-                            ->label('Code de référence')
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->maxLength(255)
-                            ->placeholder('Ex: REF-2025-001')
-                            ->columnSpan(1),
+                            ->label('Code de référence')->required()->unique(ignoreRecord: true)
+                            ->maxLength(255)->placeholder('Ex: REF-2025-001')->columnSpan(1),
 
                         Forms\Components\TextInput::make('designation')
-                            ->label('Désignation')
-                            ->required()
-                            ->maxLength(255)
-                            ->placeholder('Ex: Ordinateur portable HP EliteBook')
-                            ->columnSpan(2),
+                            ->label('Désignation')->required()->maxLength(255)
+                            ->placeholder('Ex: Ordinateur portable HP EliteBook')->columnSpan(2),
 
                         Forms\Components\TextInput::make('unite')
-                            ->label('Unité')
-                            ->required()
-                            ->maxLength(255)
-                            ->placeholder('pièce, kg, m, etc.')
-                            ->default('pièce'),
+                            ->label('Unité')->required()->maxLength(255)
+                            ->placeholder('pièce, kg, m, etc.')->default('pièce'),
 
                         Forms\Components\TextInput::make('prix_reference')
-                            ->label('Prix de référence')
-                            ->required()
-                            ->numeric()
-                            ->prefix('FCFA')
-                            ->default(0)
-                            ->minValue(0),
+                            ->label('Prix de référence')->required()->numeric()
+                            ->prefix('FCFA')->default(0)->minValue(0),
 
                         Forms\Components\TextInput::make('rubrique')
-                            ->label('Rubrique')
-                            ->maxLength(255)
-                            ->placeholder('Ex: Informatique'),
+                            ->label('Rubrique')->maxLength(255)->placeholder('Ex: Informatique'),
 
                         Forms\Components\TextInput::make('sous_rubrique')
-                            ->label('Sous-rubrique')
-                            ->maxLength(255)
+                            ->label('Sous-rubrique')->maxLength(255)
                             ->placeholder('Ex: Matériel informatique'),
 
                         Forms\Components\Toggle::make('actif')
-                            ->label('Actif')
-                            ->default(true)
-                            ->inline(false),
+                            ->label('Actif')->default(true)->inline(false),
                     ])
                     ->columns(3),
             ]);
     }
+
+    // ========================================
+    // TABLE
+    // ========================================
 
     public static function table(Table $table): Table
     {
@@ -160,64 +128,40 @@ class ReferenceMercurialeResource extends Resource
             ->persistSortInSession()
             ->columns([
                 Tables\Columns\BadgeColumn::make('exercice.annee')
-                    ->label('Exercice')
-                    ->sortable()
+                    ->label('Exercice')->sortable()
                     ->colors([
                         'success' => fn($record) => $record->exercice?->estActif(),
                         'warning' => fn($record) => $record->exercice?->estCloture(),
-                        'danger' => fn($record) => $record->exercice?->estArchive(),
-                        'gray' => fn($record) => $record->exercice?->estBrouillon(),
+                        'danger'  => fn($record) => $record->exercice?->estArchive(),
+                        'gray'    => fn($record) => $record->exercice?->estBrouillon(),
                     ]),
 
                 Tables\Columns\TextColumn::make('code_reference')
-                    ->label('Code')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold')
-                    ->copyable(),
+                    ->label('Code')->searchable()->sortable()->weight('bold')->copyable(),
 
                 Tables\Columns\TextColumn::make('designation')
-                    ->label('Désignation')
-                    ->searchable()
-                    ->limit(40)
-                    ->wrap(),
+                    ->label('Désignation')->searchable()->limit(40)->wrap(),
 
                 Tables\Columns\TextColumn::make('rubrique')
-                    ->label('Rubrique')
-                    ->searchable()
-                    ->badge()
-                    ->color('info')
-                    ->toggleable(),
+                    ->label('Rubrique')->searchable()->badge()->color('info')->toggleable(),
 
                 Tables\Columns\TextColumn::make('sous_rubrique')
-                    ->label('Sous-rubrique')
-                    ->searchable()
-                    ->toggleable(),
+                    ->label('Sous-rubrique')->searchable()->toggleable(),
 
                 Tables\Columns\TextColumn::make('unite')
-                    ->label('Unité')
-                    ->badge()
-                    ->color('gray'),
+                    ->label('Unité')->badge()->color('gray'),
 
                 Tables\Columns\TextColumn::make('prix_reference')
-                    ->label('Prix référence')
-                    ->money('XAF')
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('success'),
+                    ->label('Prix référence')->money('XAF')->sortable()->weight('bold')->color('success'),
 
                 Tables\Columns\IconColumn::make('actif')
-                    ->label('Actif')
-                    ->boolean()
-                    ->trueColor('success')
-                    ->falseColor('danger'),
+                    ->label('Actif')->boolean()->trueColor('success')->falseColor('danger'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
-                    ->searchable()
-                    ->preload()
+                    ->searchable()->preload()
                     ->default(fn() => Exercice::getActif()?->id),
 
                 Tables\Filters\SelectFilter::make('rubrique')
@@ -225,16 +169,14 @@ class ReferenceMercurialeResource extends Resource
                     ->options(fn() => ReferenceMercuriale::distinct()->pluck('rubrique', 'rubrique')->filter()),
 
                 Tables\Filters\TernaryFilter::make('actif')
-                    ->label('Actif')
-                    ->placeholder('Tous')
-                    ->trueLabel('Actifs uniquement')
-                    ->falseLabel('Inactifs uniquement'),
+                    ->label('Actif')->placeholder('Tous')
+                    ->trueLabel('Actifs uniquement')->falseLabel('Inactifs uniquement'),
             ])
             ->headerActions([
+                // ── Import Excel/CSV ──────────────────────────────
                 Tables\Actions\Action::make('importer')
                     ->label('Importer depuis Excel/CSV')
-                    ->icon('heroicon-o-arrow-up-tray')
-                    ->color('success')
+                    ->icon('heroicon-o-arrow-up-tray')->color('success')
                     ->form([
                         Forms\Components\Select::make('exercice_id')
                             ->label('Exercice budgétaire')
@@ -251,8 +193,7 @@ class ReferenceMercurialeResource extends Resource
                                 'text/csv',
                                 'text/plain',
                             ])
-                            ->maxSize(102400)
-                            ->required()
+                            ->maxSize(102400)->required()
                             ->helperText('Formats acceptés : .xlsx, .csv (max 100MB)')
                             ->columnSpanFull(),
 
@@ -263,11 +204,8 @@ class ReferenceMercurialeResource extends Resource
                     ])
                     ->action(function (array $data) {
                         try {
-                            if (empty($data['fichier'])) {
-                                throw new \Exception("Aucun fichier uploadé.");
-                            }
+                            if (empty($data['fichier'])) throw new \Exception("Aucun fichier uploadé.");
 
-                            // ✅ TESTER TOUS LES CHEMINS POSSIBLES
                             $cheminsPossibles = [
                                 storage_path('app/livewire-tmp/' . $data['fichier']),
                                 storage_path('app/' . $data['fichier']),
@@ -283,12 +221,9 @@ class ReferenceMercurialeResource extends Resource
                                 }
                             }
 
-                            // Si toujours pas trouvé, chercher dans livewire-tmp
                             if (!$cheminFichier) {
                                 $nomFichier = basename($data['fichier']);
-                                $fichiers = \Storage::files('livewire-tmp');
-
-                                foreach ($fichiers as $fichier) {
+                                foreach (\Storage::files('livewire-tmp') as $fichier) {
                                     if (basename($fichier) === $nomFichier) {
                                         $cheminFichier = storage_path('app/' . $fichier);
                                         break;
@@ -296,40 +231,26 @@ class ReferenceMercurialeResource extends Resource
                                 }
                             }
 
-                            if (!$cheminFichier || !file_exists($cheminFichier)) {
+                            if (!$cheminFichier || !file_exists($cheminFichier))
                                 throw new \Exception("Fichier introuvable. Vérifiez que l'upload s'est bien passé.");
-                            }
-
-                            if (filesize($cheminFichier) === 0) {
+                            if (filesize($cheminFichier) === 0)
                                 throw new \Exception("Le fichier est vide.");
-                            }
 
-                            // ✅ IMPORT
-                            $import = new \App\Imports\ReferenceMercurialeImport($data['exercice_id']);
+                            $import   = new \App\Imports\ReferenceMercurialeImport($data['exercice_id']);
                             Excel::import($import, $cheminFichier);
-
                             $failures = $import->getFailures();
 
                             if (count($failures) > 0) {
-                                $erreurs = collect($failures)->map(function ($failure) {
-                                    return "Ligne {$failure->row()}: " . implode(', ', $failure->errors());
-                                })->take(10)->implode("\n");
-
-                                Notification::make()
-                                    ->title('Import avec erreurs')
-                                    ->warning()
-                                    ->body("{$erreurs}")
-                                    ->persistent()
-                                    ->send();
+                                $erreurs = collect($failures)->map(
+                                    fn($f) =>
+                                    "Ligne {$f->row()}: " . implode(', ', $f->errors())
+                                )->take(10)->implode("\n");
+                                Notification::make()->title('Import avec erreurs')->warning()
+                                    ->body($erreurs)->persistent()->send();
                             } else {
-                                Notification::make()
-                                    ->title('Import réussi ✅')
-                                    ->success()
-                                    ->body('Toutes les références ont été importées.')
-                                    ->send();
+                                Notification::make()->title('Import réussi ✅')->success()
+                                    ->body('Toutes les références ont été importées.')->send();
                             }
-
-                            // Nettoyage
                             try {
                                 @unlink($cheminFichier);
                             } catch (\Exception $e) {
@@ -339,32 +260,22 @@ class ReferenceMercurialeResource extends Resource
                             foreach ($e->failures() as $failure) {
                                 $erreurs[] = "Ligne {$failure->row()}: " . implode(', ', $failure->errors());
                             }
-
-                            Notification::make()
-                                ->title('Erreur de validation')
-                                ->danger()
-                                ->body(implode("\n", array_slice($erreurs, 0, 10)))
-                                ->persistent()
-                                ->send();
+                            Notification::make()->title('Erreur de validation')->danger()
+                                ->body(implode("\n", array_slice($erreurs, 0, 10)))->persistent()->send();
                         } catch (\Exception $e) {
                             \Log::error('Erreur import', ['error' => $e->getMessage()]);
-
-                            Notification::make()
-                                ->title('Erreur import')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->persistent()
-                                ->send();
+                            Notification::make()->title('Erreur import')->danger()
+                                ->body($e->getMessage())->persistent()->send();
                         }
                     }),
 
+                // ── Télécharger le modèle ─────────────────────────
                 Tables\Actions\Action::make('telecharger_modele')
                     ->label('Télécharger le modèle')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
+                    ->icon('heroicon-o-arrow-down-tray')->color('info')
                     ->action(function () {
                         return response()->streamDownload(function () {
-                            $csv = "Code référence,Désignation,Unité,Prix référence,Rubrique,Sous-rubrique\n";
+                            $csv  = "Code référence,Désignation,Unité,Prix référence,Rubrique,Sous-rubrique\n";
                             $csv .= "REF-2026-001,Ordinateur portable HP EliteBook,pièce,450000,Informatique,Matériel informatique\n";
                             $csv .= "REF-2026-002,Imprimante Laser Canon,pièce,85000,Informatique,Périphériques\n";
                             $csv .= "REF-2026-003,Papier A4 80g (Ramette),ramette,2500,Fournitures,Papeterie\n";
@@ -372,10 +283,24 @@ class ReferenceMercurialeResource extends Resource
                         }, 'modele-references-mercuriales.csv');
                     }),
             ])
+
+            // ════════════════════════════════════════════════════════
+            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
+            //    Pattern identique à BonCommandeResource
+            // ════════════════════════════════════════════════════════
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-            ])
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+
+            ], position: ActionsPosition::BeforeColumns)
+
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
@@ -387,9 +312,9 @@ class ReferenceMercurialeResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListReferenceMercuriales::route('/'),
+            'index'  => Pages\ListReferenceMercuriales::route('/'),
             'create' => Pages\CreateReferenceMercuriale::route('/create'),
-            'edit' => Pages\EditReferenceMercuriale::route('/{record}/edit'),
+            'edit'   => Pages\EditReferenceMercuriale::route('/{record}/edit'),
         ];
     }
 }
