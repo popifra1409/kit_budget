@@ -704,8 +704,51 @@ class BonCommandeResource extends Resource
                         Forms\Components\TextInput::make('reference')
                             ->label('Référence externe')
                             ->maxLength(100)
-                            ->placeholder('Ex: REF-2025-001')
-                            ->helperText('Référence du fournisseur ou numéro de dossier externe'),
+                            ->placeholder('Saisir la référence...')
+
+                            // ✅ hint() est réactif — se met à jour avec live(debounce)
+                            ->hint(function (callable $get): string {
+                                $typeId = $get('type_engagement_id');
+                                if (!$typeId) return '📄 Ex: du 07/06/2024';
+
+                                $code = \App\Models\TypeEngagement::find($typeId)?->code ?? 'BC';
+
+                                return match (strtoupper($code)) {
+                                    'LC'    => '📄 Ex: 2024 du 07/06/2024 (Tranche conditionnelle N°2) ',
+                                    'DL'    => '📄 Ex: Décompte N°2 du 07/06/2024',
+                                    'DM'    => '📄 Ex: Marché N° 2024 — Décompte du 07/06/2024',
+                                    'MA'    => '📄 Ex: 2024 du 07/06/2024(Tranche conditionnelle N° 2)',
+                                    default => '📄 Ex: du 07/06/2024', // BC
+                                };
+                            })
+                            ->hintColor(function (callable $get): string {
+                                $typeId = $get('type_engagement_id');
+                                if (!$typeId) return 'gray';
+
+                                $code = \App\Models\TypeEngagement::find($typeId)?->code ?? 'BC';
+
+                                return match (strtoupper($code)) {
+                                    'LC', 'DL' => 'info',
+                                    'DM', 'MA' => 'warning',
+                                    default    => 'gray',
+                                };
+                            })
+
+                            // ✅ helperText() réactif aussi
+                            ->helperText(function (callable $get): string {
+                                $typeId = $get('type_engagement_id');
+                                if (!$typeId) return 'Date de signature du Bon de Commande (Ex: du 07/06/2024)';
+
+                                $code = \App\Models\TypeEngagement::find($typeId)?->code ?? 'BC';
+
+                                return match (strtoupper($code)) {
+                                    'LC'    => 'Numéro et date de la Lettre de Commande',
+                                    'DL'    => 'Référence du décompte sur Lettre de Commande',
+                                    'DM'    => 'Référence du décompte sur Marché',
+                                    'MA'    => 'Numéro et date du Marché',
+                                    default => 'Date de signature du Bon de Commande',
+                                };
+                            }),
                     ])
                     ->collapsible()
                     ->collapsed(),
