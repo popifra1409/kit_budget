@@ -89,6 +89,22 @@ class OrdonnancePaiementResource extends Resource
             ->whereIn('type_ordonnance', ['standard', 'impot']);
     }
 
+    protected static ?string $recordTitleAttribute = 'numero';
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet'];
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Type'    => $record->type_ordonnance === 'impot' ? 'OPT' : 'OP Standard',
+            'Montant' => number_format($record->montant_net, 0, ',', ' ') . ' FCFA',
+            'Statut'  => $record->statut_label,
+        ];
+    }
+
     public static function form(Form $form): Form
     {
         return $form

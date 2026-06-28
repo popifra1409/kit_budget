@@ -62,6 +62,22 @@ class FournisseurResource extends Resource
         return auth()->user()?->can('blacklist_fournisseur') ?? false;
     }
 
+    protected static ?string $recordTitleAttribute = 'raison_sociale';
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['raison_sociale', 'code', 'nif', 'sigle', 'telephone', 'email'];
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Code'     => $record->code,
+            'NIF'      => $record->nif ?? '—',
+            'Statut'   => $record->blackliste ? '🔴 Blacklisté' : '🟢 Actif',
+        ];
+    }
+
     // ========================================
     // FORM
     // ========================================

@@ -159,6 +159,22 @@ class BordereauEngagementResource extends Resource
         return parent::getEloquentQuery()->with(['exercice']);
     }
 
+
+    protected static ?string $recordTitleAttribute = 'numero';
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet', 'instance_destinataire'];
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Nb engagements' => $record->nombre_engagements,
+            'Montant'        => number_format($record->montant_total, 0, ',', ' ') . ' FCFA',
+            'Statut'         => $record->statut,
+        ];
+    }
     // ========================================
     // TABLE
     // ========================================

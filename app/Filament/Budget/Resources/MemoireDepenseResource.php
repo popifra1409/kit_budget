@@ -63,6 +63,22 @@ class MemoireDepenseResource extends Resource
         return auth()->check() && auth()->user()->can('transformer_memoire_depense_en_da');
     }
 
+    protected static ?string $recordTitleAttribute = 'numero';
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet'];
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Montant TTC' => number_format($record->montant_ttc, 0, ',', ' ') . ' FCFA',
+            'Montant NET' => number_format($record->montant_net, 0, ',', ' ') . ' FCFA',
+            'Statut'  => $record->statut,
+        ];
+    }
+
     // =========================================================================
     // FORMULAIRE
     // =========================================================================

@@ -53,6 +53,22 @@ class PersonnelResource extends Resource
         return $record->decisionsAdministratives()->count() === 0;
     }
 
+    protected static ?string $recordTitleAttribute = 'nom_complet';
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['matricule', 'nom', 'prenoms', 'fonction'];
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Matricule' => $record->matricule,
+            'Fonction'  => $record->fonction ?? '—',
+            'Service'   => $record->service?->nom ?? '—',
+        ];
+    }
+
     // ========================================
     // FORM
     // ========================================
