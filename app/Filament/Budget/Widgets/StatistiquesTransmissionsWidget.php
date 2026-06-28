@@ -12,72 +12,72 @@ class StatistiquesTransmissionsWidget extends BaseWidget
 
     protected function getStats(): array
     {
-        $userId = auth()->id();
+        $userId    = auth()->id();
+        $dashboard = route('filament.budget.pages.dashboard');
 
-        // Mes tâches en attente
+        // ── Comptages ─────────────────────────────────────────
         $mesTachesEnAttente = Transmission::pourDestinataire($userId)
-            ->enAttente()
-            ->count();
+            ->enAttente()->count();
 
-        // Mes tâches urgentes
         $mesTachesUrgentes = Transmission::pourDestinataire($userId)
-            ->enAttente()
-            ->urgentes()
-            ->count();
+            ->enAttente()->urgentes()->count();
 
-        // Mes tâches en retard
         $mesTachesEnRetard = Transmission::pourDestinataire($userId)
-            ->enAttente()
-            ->get()
-            ->filter(fn($t) => $t->estEnRetard())
-            ->count();
+            ->enAttente()->get()
+            ->filter(fn($t) => $t->estEnRetard())->count();
 
-        // Transmissions envoyées (en attente de traitement)
         $mesEnvois = Transmission::deExpediteur($userId)
-            ->enAttente()
-            ->count();
+            ->enAttente()->count();
 
-        // Statistiques globales (si admin)
         $stats = [
+
             Stat::make('Mes tâches en attente', $mesTachesEnAttente)
                 ->description('Documents à traiter')
                 ->descriptionIcon('heroicon-m-inbox')
                 ->color('warning')
-                ->chart($this->getChartData('destinataire', $userId)),
+                ->chart($this->getChartData('destinataire', $userId))
+                // ✅ Pointe vers le dashboard qui contient les widgets de transmission
+                ->url($dashboard),
 
             Stat::make('Tâches urgentes', $mesTachesUrgentes)
                 ->description('Priorité haute/urgente')
                 ->descriptionIcon('heroicon-m-exclamation-triangle')
-                ->color('danger'),
+                ->color('danger')
+                ->url($dashboard),
 
             Stat::make('En retard', $mesTachesEnRetard)
                 ->description('Date limite dépassée')
                 ->descriptionIcon('heroicon-m-clock')
-                ->color('danger'),
+                ->color('danger')
+                ->url($dashboard),
 
             Stat::make('Mes envois en attente', $mesEnvois)
                 ->description('En attente de traitement')
                 ->descriptionIcon('heroicon-m-paper-airplane')
                 ->color('info')
-                ->chart($this->getChartData('expediteur', $userId)),
+                ->chart($this->getChartData('expediteur', $userId))
+                ->url($dashboard),
         ];
 
-        // Ajouter stats globales pour admin
+        // ── Stats globales pour admin ──────────────────────────
         if (auth()->user()->can('view_all_transmissions')) {
+
             $totalEnAttente = Transmission::enAttente()->count();
-            $totalTraitees = Transmission::where('statut', 'traite')
+            $totalTraitees  = Transmission::where('statut', 'traite')
                 ->whereBetween('date_traitement', [now()->subDays(7), now()])
                 ->count();
 
             $stats[] = Stat::make('Total en attente (système)', $totalEnAttente)
                 ->description('Toutes les transmissions')
                 ->descriptionIcon('heroicon-m-globe-alt')
-                ->color('gray');
+                ->color('gray')
+                ->url($dashboard);
 
             $stats[] = Stat::make('Traitées (7 jours)', $totalTraitees)
                 ->description('Dernière semaine')
                 ->descriptionIcon('heroicon-m-check-circle')
-                ->color('success');
+                ->color('success')
+                ->url($dashboard);
         }
 
         return $stats;
@@ -92,7 +92,7 @@ class StatistiquesTransmissionsWidget extends BaseWidget
 
             $count = Transmission::query()
                 ->when($type === 'destinataire', fn($q) => $q->pourDestinataire($userId))
-                ->when($type === 'expediteur', fn($q) => $q->deExpediteur($userId))
+                ->when($type === 'expediteur',   fn($q) => $q->deExpediteur($userId))
                 ->whereDate('date_transmission', $date)
                 ->count();
 

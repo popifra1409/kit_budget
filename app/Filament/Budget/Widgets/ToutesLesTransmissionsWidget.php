@@ -13,7 +13,6 @@ class ToutesLesTransmissionsWidget extends BaseWidget
 
     protected int | string | array $columnSpan = 'full';
 
-    // ✅ Rafraîchir automatiquement toutes les 30 secondes
     protected static ?string $pollingInterval = '30s';
 
     public function table(Table $table): Table
@@ -30,14 +29,17 @@ class ToutesLesTransmissionsWidget extends BaseWidget
             ->columns([
                 Tables\Columns\TextColumn::make('document_type')
                     ->label('Type')
-                    ->formatStateUsing(fn($state) => class_basename($state))
+                    ->formatStateUsing(fn($state) => $this->getTypeLabel($state))
                     ->badge()
                     ->color('info'),
 
+                // ✅ N° Document cliquable
                 Tables\Columns\TextColumn::make('document.numero')
                     ->label('N° Document')
                     ->searchable()
-                    ->weight('bold'),
+                    ->weight('bold')
+                    ->color('primary')
+                    ->url(fn(Transmission $record): string => $this->getDocumentUrl($record)),
 
                 Tables\Columns\TextColumn::make('expediteur.name')
                     ->label('De')
@@ -59,10 +61,10 @@ class ToutesLesTransmissionsWidget extends BaseWidget
                 Tables\Columns\BadgeColumn::make('priorite')
                     ->label('Priorité')
                     ->colors([
-                        'danger' => 'urgente',
+                        'danger'  => 'urgente',
                         'warning' => 'haute',
-                        'info' => 'normale',
-                        'gray' => 'basse',
+                        'info'    => 'normale',
+                        'gray'    => 'basse',
                     ]),
 
                 Tables\Columns\IconColumn::make('date_lecture')
@@ -90,22 +92,22 @@ class ToutesLesTransmissionsWidget extends BaseWidget
                 Tables\Filters\SelectFilter::make('action_attendue')
                     ->label('Action')
                     ->options([
-                        'validation' => 'Validation',
-                        'engagement' => 'Engagement',
+                        'validation'   => 'Validation',
+                        'engagement'   => 'Engagement',
                         'verification' => 'Vérification',
-                        'correction' => 'Correction',
-                        'signature' => 'Signature',
-                        'information' => 'Information',
-                        'liquidation' => 'Liquidation',
-                        'paiement' => 'Paiement',
+                        'correction'   => 'Correction',
+                        'signature'    => 'Signature',
+                        'information'  => 'Information',
+                        'liquidation'  => 'Liquidation',
+                        'paiement'     => 'Paiement',
                     ]),
 
                 Tables\Filters\SelectFilter::make('priorite')
                     ->options([
                         'urgente' => 'Urgente',
-                        'haute' => 'Haute',
+                        'haute'   => 'Haute',
                         'normale' => 'Normale',
-                        'basse' => 'Basse',
+                        'basse'   => 'Basse',
                     ]),
 
                 Tables\Filters\Filter::make('en_retard')
@@ -124,13 +126,8 @@ class ToutesLesTransmissionsWidget extends BaseWidget
                     ->label('Voir')
                     ->icon('heroicon-o-eye')
                     ->color('primary')
-                    ->action(function (Transmission $record) {
-                        // Marquer comme lu
-                        $record->marquerCommeLu();
-
-                        // Rediriger vers le document
-                        $this->redirect($this->getDocumentUrl($record));
-                    }),
+                    ->url(fn(Transmission $record): string => $this->getDocumentUrl($record))
+                    ->action(fn(Transmission $record) => $record->marquerCommeLu()),
             ])
             ->emptyStateHeading('Aucune transmission en cours')
             ->emptyStateDescription('Toutes les transmissions ont été traitées')
@@ -139,17 +136,98 @@ class ToutesLesTransmissionsWidget extends BaseWidget
             ->paginated([10, 25, 50]);
     }
 
+    /**
+     * ✅ Normalise le document_type en clé canonique.
+     * Gère les deux formats : 'App\Models\BonCommande' ET 'bon_commande'
+     */
+    protected function normaliserType(string $documentType): string
+    {
+        // Format FQCN → extraire la classe
+        if (str_contains($documentType, '\\')) {
+            return class_basename($documentType);
+        }
+
+        // Format snake_case → PascalCase
+        return str($documentType)->studly()->toString();
+    }
+
+    /**
+     * ✅ Libellé lisible du type de document
+     */
+    protected function getTypeLabel(string $documentType): string
+    {
+        $type = $this->normaliserType($documentType);
+
+        return match ($type) {
+            'BonCommande'            => 'Bon de Commande',
+            'BonCommandeRegie'       => 'BC Régie',
+            'DecisionAdministrative' => 'Décision Admin.',
+            'DecisionPrevisionnelle' => 'Décision Prév.',
+            'Engagement'             => 'Engagement',
+            'OrdonnancePaiement'     => 'Ordonnance',
+            'MemoireDepense'         => 'Mémoire Dépense',
+            'MenuDepense'            => 'Menu Dépense',
+            'BordereauEngagement'    => 'Bordereau',
+            'RegieAvance'            => 'Régie Avance',
+            'AchatDirect'            => 'Achat Direct',
+            default                  => $type,
+        };
+    }
+
+    /**
+     * ✅ URL vers le document correspondant.
+     * Gère les deux formats de document_type en base :
+     *   - FQCN  : 'App\Models\DecisionAdministrative'
+     *   - snake : 'decision_administrative'
+     */
     protected function getDocumentUrl(Transmission $transmission): string
     {
-        $documentType = class_basename($transmission->document_type);
+        $dashboard = route('filament.budget.pages.dashboard');
+        $id        = $transmission->document_id;
 
-        return match ($documentType) {
-            'BonCommande' => route('filament.budget.resources.bon-commandes.edit', ['record' => $transmission->document_id]),
-            'Engagement' => route('filament.budget.resources.engagements.edit', ['record' => $transmission->document_id]),
-            'Decision' => route('filament.budget.resources.decisions.edit', ['record' => $transmission->document_id]),
-            'Recours' => route('filament.budget.resources.recours.edit', ['record' => $transmission->document_id]),
-            default => route('filament.budget.pages.dashboard'),
-        };
+        if (!$id || !$transmission->document_type) {
+            return $dashboard;
+        }
+
+        $type = $this->normaliserType($transmission->document_type);
+
+        $routeMap = [
+            'BonCommande'            => 'filament.budget.resources.bon-commandes.view',
+            'BonCommandeRegie'       => 'filament.budget.resources.bon-commande-regies.view',
+            'DecisionAdministrative' => 'filament.budget.resources.decision-administratives.view',
+            'DecisionPrevisionnelle' => 'filament.budget.resources.decision-previsionnelles.view',
+            'Engagement'             => 'filament.budget.resources.engagements.view',
+            'OrdonnancePaiement'     => 'filament.budget.resources.ordonnance-paiements.view',
+            'MemoireDepense'         => 'filament.budget.resources.memoire-depenses.view',
+            'MenuDepense'            => 'filament.budget.resources.menus-depenses.view',
+            'BordereauEngagement'    => 'filament.budget.resources.bordereau-engagements.view',
+            'RegieAvance'            => 'filament.budget.resources.regie-avances.view',
+            'AchatDirect'            => 'filament.budget.resources.achats-directs.view',
+            'Fournisseur'            => 'filament.budget.resources.fournisseurs.view',
+            'DossierFournisseur'     => 'filament.budget.resources.dossier-fournisseurs.view',
+            'Budget'                 => 'filament.budget.resources.budgets.view',
+            'PrevisionRecette'       => 'filament.budget.resources.prevision-recettes.view',
+            'VirementBudgetaire'     => 'filament.budget.resources.virement-budgetaires.view',
+        ];
+
+        $routeName = $routeMap[$type] ?? null;
+
+        if (!$routeName) {
+            \Log::warning("ToutesLesTransmissionsWidget: type [{$type}] non mappé", [
+                'raw_type'    => $transmission->document_type,
+                'document_id' => $id,
+            ]);
+            return $dashboard;
+        }
+
+        try {
+            return route($routeName, ['record' => $id]);
+        } catch (\Exception $e) {
+            \Log::warning("ToutesLesTransmissionsWidget: route [{$routeName}] introuvable", [
+                'error' => $e->getMessage(),
+            ]);
+            return $dashboard;
+        }
     }
 
     public static function canView(): bool
