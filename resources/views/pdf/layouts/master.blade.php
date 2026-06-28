@@ -11,8 +11,12 @@
             @if (isset($orientation) && $orientation === 'landscape')
                 size: A4 landscape;
                 margin: 10mm 8mm;
-            @else size: A4 portrait;
-                margin: 2cm 1.5cm;
+            @else
+                size: A4 portrait;
+                {{-- ✅ Marge top réduite : 2cm → 8mm pour gagner de l'espace
+                     quand l'image d'en-tête est présente. La marge basse
+                     passe de 1.5cm → 1cm pour libérer de l'espace signature. --}}
+                margin: 8mm 1.5cm 1cm 1.5cm;
             @endif
         }
 
@@ -27,7 +31,8 @@
             width: 100%;
             border-collapse: collapse;
             border: none;
-            margin-bottom: 12px;
+            {{-- ✅ Réduit : 12px → 5px --}}
+            margin-bottom: 5px;
         }
 
         .header-table td {
@@ -36,22 +41,16 @@
             vertical-align: middle;
         }
 
-        .header-left {
-            width: 33%;
-        }
-
-        .header-center {
-            width: 34%;
-        }
-
-        .header-right {
-            width: 33%;
-        }
+        .header-left   { width: 33%; }
+        .header-center { width: 34%; }
+        .header-right  { width: 33%; }
 
         .logo {
             display: block;
-            max-width: 90px;
-            margin: 0 auto 4px auto;
+            {{-- ✅ Réduit : 90px → 70px pour diminuer l'empreinte verticale --}}
+            max-width: 70px;
+            {{-- ✅ Suppression de la marge basse : 4px → 0 --}}
+            margin: 0 auto;
         }
 
         .structure {
@@ -84,8 +83,7 @@
         /* ================= INFOS ================= */
         .doc-title-wrapper {
             text-align: center;
-            margin: 6px 0 8px 0;
-            /* ↓ 70px → 14px : gain 56px */
+            margin: 4px 0 6px 0;
         }
 
         .doc-title {
@@ -93,13 +91,10 @@
             width: 100%;
             text-align: center;
             font-size: 10pt;
-            /* ↓ légèrement */
             font-weight: bold;
-            margin: 4px 0 8px 0;
-            /* ↓ 30px → 12px : gain 18px */
+            margin: 4px 0 6px 0;
             border: 1px solid #000;
             padding: 4px 0;
-            /* ↓ 6px → 4px */
         }
 
         .info-line {
@@ -138,7 +133,6 @@
         }
 
         /* ================= TABLE ================= */
-
         table {
             width: 100%;
             border-collapse: collapse;
@@ -146,8 +140,7 @@
             font-size: 8.5pt;
         }
 
-        th,
-        td {
+        th, td {
             border: 1px solid #000;
             padding: 4px;
         }
@@ -158,19 +151,9 @@
             font-weight: bold;
         }
 
-        td.num {
-            text-align: center;
-            white-space: nowrap;
-        }
-
-        td.money {
-            text-align: right;
-            white-space: nowrap;
-        }
-
-        td.designation {
-            word-break: break-word;
-        }
+        td.num        { text-align: center; white-space: nowrap; }
+        td.money      { text-align: right;  white-space: nowrap; }
+        td.designation { word-break: break-word; }
 
         /* ================= TOTAUX ================= */
         .totaux {
@@ -180,14 +163,8 @@
             font-size: 8.8pt;
         }
 
-        .totaux table {
-            width: 100%;
-        }
-
-        .totaux td {
-            border: none;
-            padding: 3px;
-        }
+        .totaux table { width: 100%; }
+        .totaux td    { border: none; padding: 3px; }
 
         .total-final {
             border: 2px solid #000;
@@ -205,8 +182,8 @@
 
         .bas-page {
             width: 100%;
-            margin-top: 20px;
-            /* ↓ 70px → 20px : gain 50px */
+            {{-- ✅ Réduit : 20px → 10px --}}
+            margin-top: 10px;
         }
 
         .bas-page::after {
