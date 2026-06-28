@@ -646,6 +646,9 @@ class BonCommandeRegieResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° BCR/BCM')

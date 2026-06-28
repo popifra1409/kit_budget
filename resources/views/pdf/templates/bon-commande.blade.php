@@ -254,26 +254,60 @@ if ($bonCommande->created_at) {
 }
 
 // ── Pagination ────────────────────────────────────────────
-$lignesPage1          = 10;
-$lignesPagesSuivantes = 25;
-$seuilSautTotaux      = 15;
+// Chaque ligne a un poids proportionnel au nombre de lignes visuelles
+// estimées selon la longueur du contenu dans chaque colonne.
 
-$totalLignes     = $bonCommande->lignes->count();
-$lignesChunked   = collect();
-$lignesRestantes = $bonCommande->lignes;
+// Largeur A4 portrait avec marges 1.5cm = 180mm
+// Désignation (44%) ≈ 79mm → ~38 chars/ligne à 9pt DejaVu Sans
+// Référence   (18%) ≈ 32mm → ~14 chars/ligne
+$charsDesignParLigne = 38;
+$charsRefParLigne    = 14;
 
-if ($totalLignes > 0) {
-    $lignesChunked->push($lignesRestantes->take($lignesPage1));
-    $lignesRestantes = $lignesRestantes->skip($lignesPage1);
-    while ($lignesRestantes->count() > 0) {
-        $lignesChunked->push($lignesRestantes->take($lignesPagesSuivantes));
-        $lignesRestantes = $lignesRestantes->skip($lignesPagesSuivantes);
+// Poids d'une ligne = nombre de lignes visuelles estimé
+$calcPoids = function ($ligne) use ($charsDesignParLigne, $charsRefParLigne) {
+    $pDesign = max(1, (int) ceil(mb_strlen($ligne->designation ?? '') / $charsDesignParLigne));
+    $pRef    = max(1, (int) ceil(mb_strlen($ligne->reference   ?? '') / $charsRefParLigne));
+    return max($pDesign, $pRef);
+};
+
+// ✅ Seuils en unités de poids — identiques à l'ancienne logique
+// 1 ligne normale (texte court) = 1 unité
+// 1 ligne longue (texte wrappé) = 2, 3... unités → moins de lignes par page
+$budgetPage1     = 10; // unités disponibles page 1
+$budgetSuivante  = 25; // unités disponibles pages suivantes
+$seuilSautTotaux = 15; // si poids dernière page >= seuil → totaux sur nouvelle page
+
+// Construction dynamique des chunks
+$lignesChunked    = collect();
+$pageCourante     = collect();
+$poidsPageCourant = 0;
+$budgetCourant    = $budgetPage1;
+
+foreach ($bonCommande->lignes as $ligne) {
+    $poids = $calcPoids($ligne);
+
+    // ✅ Si ajouter cette ligne dépasse le budget → saut de page
+    if ($pageCourante->isNotEmpty() && ($poidsPageCourant + $poids) > $budgetCourant) {
+        $lignesChunked->push($pageCourante);
+        $pageCourante     = collect();
+        $poidsPageCourant = 0;
+        $budgetCourant    = $budgetSuivante;
     }
+
+    $pageCourante->push($ligne);
+    $poidsPageCourant += $poids;
 }
 
-$derniereLigneCount = $lignesChunked->last()?->count() ?? 0;
-$totauxVontSauter   = $derniereLigneCount >= $seuilSautTotaux;
-$nombrePages        = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
+// Ajouter la dernière page si non vide
+if ($pageCourante->isNotEmpty()) {
+    $lignesChunked->push($pageCourante);
+}
+
+// ✅ Les totaux+signature ont-ils besoin d'une page supplémentaire ?
+// Basé sur le poids cumulé de la dernière page (pas le nombre de lignes)
+$totauxVontSauter = $poidsPageCourant >= $seuilSautTotaux;
+$nombrePages      = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
+
 @endphp
 
 @extends('pdf.layouts.master', ['orientation' => 'portrait'])

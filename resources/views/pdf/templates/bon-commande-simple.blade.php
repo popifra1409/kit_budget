@@ -65,26 +65,49 @@ $dateCreation = \Carbon\Carbon::parse($bonCommande->created_at)
 }
 
 // ── Pagination ────────────────────────────────────────────
-$lignesPage1 = 8;
-$lignesPagesSuivantes = 25;
-$seuilSautTotaux = 15;
+// Largeur utile A4 portrait (180mm) selon les colgroup :
+// Désignation (46%) ≈ 83mm → ~40 chars/ligne à 9pt DejaVu Sans
+// Référence   (16%) ≈ 29mm → ~13 chars/ligne
 
-$totalLignes = $bonCommande->lignes->count();
-$lignesChunked = collect();
-$lignesRestantes = $bonCommande->lignes;
+$charsDesignParLigne = 40;
+$charsRefParLigne    = 13;
 
-if ($totalLignes > 0) {
-$lignesChunked->push($lignesRestantes->take($lignesPage1));
-$lignesRestantes = $lignesRestantes->skip($lignesPage1);
-while ($lignesRestantes->count() > 0) {
-$lignesChunked->push($lignesRestantes->take($lignesPagesSuivantes));
-$lignesRestantes = $lignesRestantes->skip($lignesPagesSuivantes);
+$calcPoids = function ($ligne) use ($charsDesignParLigne, $charsRefParLigne) {
+    $pDesign = max(1, (int) ceil(mb_strlen($ligne->designation ?? '') / $charsDesignParLigne));
+    $pRef    = max(1, (int) ceil(mb_strlen($ligne->reference   ?? '') / $charsRefParLigne));
+    return max($pDesign, $pRef);
+};
+
+$budgetPage1    = 8;  // unités disponibles page 1 (inchangé)
+$budgetSuivante = 25; // unités disponibles pages suivantes (inchangé)
+$seuilSautTotaux = 15; // seuil pour page de totaux séparée (inchangé)
+
+$lignesChunked    = collect();
+$pageCourante     = collect();
+$poidsPageCourant = 0;
+$budgetCourant    = $budgetPage1;
+
+foreach ($bonCommande->lignes as $ligne) {
+    $poids = $calcPoids($ligne);
+
+    if ($pageCourante->isNotEmpty() && ($poidsPageCourant + $poids) > $budgetCourant) {
+        $lignesChunked->push($pageCourante);
+        $pageCourante     = collect();
+        $poidsPageCourant = 0;
+        $budgetCourant    = $budgetSuivante;
+    }
+
+    $pageCourante->push($ligne);
+    $poidsPageCourant += $poids;
 }
+
+if ($pageCourante->isNotEmpty()) {
+    $lignesChunked->push($pageCourante);
 }
 
-$derniereLigneCount = $lignesChunked->last()?->count() ?? 0;
-$totauxVontSauter = $derniereLigneCount >= $seuilSautTotaux;
-$nombrePages = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
+$totauxVontSauter = $poidsPageCourant >= $seuilSautTotaux;
+$nombrePages      = $lignesChunked->count() + ($totauxVontSauter ? 1 : 0);
+
 @endphp
 
 @extends('pdf.layouts.master')
