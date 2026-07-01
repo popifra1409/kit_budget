@@ -51,6 +51,9 @@ class DecaissementRegie extends Model
             }
             $decaissement->created_by = auth()->id();
         });
+
+        static::saved(fn($d) => $d->regieAvance?->recalculerMontants());
+        static::deleted(fn($d) => $d->regieAvance?->recalculerMontants());
     }
 
     // ── Relations ─────────────────────────────────────────────

@@ -306,30 +306,44 @@ class RegieAvanceResource extends Resource
                     ->money('XAF')->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                // ✅ Label changé
                 Tables\Columns\TextColumn::make('montant_alloue')
                     ->label('Net à décaisser')
                     ->money('XAF')->sortable(),
 
                 Tables\Columns\TextColumn::make('montant_decaisse')
                     ->label('Décaissé')
-                    ->money('XAF')->color('warning'),
+                    ->money('XAF')->sortable()
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('montant_depense')
                     ->label('Dépensé')
-                    ->money('XAF')->color('danger'),
+                    ->money('XAF')->sortable()
+                    ->color('warning')
+                    ->tooltip('Somme des dépenses apurées par décaissement'),
+
+                // ✅ NOUVEAU — IR collecté sur l'ensemble des décaissements
+                Tables\Columns\TextColumn::make('montant_ir_collecte')
+                    ->label('IR collecté')
+                    ->getStateUsing(
+                        fn($record) =>
+                        $record->decaissements()->sum('montant_ir_collecte')
+                    )
+                    ->money('XAF')
+                    ->color('danger')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('montant_disponible')
                     ->label('Disponible')
-                    ->money('XAF')->weight('bold')
-                    ->color(fn($record) => $record->montant_disponible < 0
-                        ? 'danger' : 'success'),
+                    ->money('XAF')->sortable()
+                    ->weight('bold')
+                    ->color(fn($record) => (float) $record->montant_disponible < 0
+                        ? 'danger' : 'success')
+                    ->tooltip('= Décaissé − Dépensé'),
 
                 Tables\Columns\TextColumn::make('taux_consommation')
                     ->label('Consommation')
                     ->formatStateUsing(
-                        fn($record) =>
-                        number_format($record->taux_consommation, 1) . '%'
+                        fn($record) => number_format($record->taux_consommation, 1) . '%'
                     )
                     ->badge()
                     ->color(fn($record) => match (true) {
@@ -376,6 +390,23 @@ class RegieAvanceResource extends Resource
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make(),
                     Tables\Actions\EditAction::make(),
+
+                    Tables\Actions\Action::make('recalculer')
+                        ->label('Recalculer les montants')
+                        ->icon('heroicon-o-calculator')
+                        ->color('gray')
+                        ->tooltip('Recalcule montant_depense et montant_disponible depuis les décaissements')
+                        ->action(function ($record) {
+                            $record->recalculerMontants();
+                            \Filament\Notifications\Notification::make()
+                                ->title('✅ Montants recalculés')
+                                ->body(
+                                    'Dépensé : ' . number_format($record->fresh()->montant_depense, 0, ',', ' ') . ' FCFA'
+                                        . ' | Disponible : ' . number_format($record->fresh()->montant_disponible, 0, ',', ' ') . ' FCFA'
+                                )
+                                ->success()
+                                ->send();
+                        }),
 
                     // ── Suspendre ────────────────────────────────
                     Tables\Actions\Action::make('suspendre')

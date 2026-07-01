@@ -38,11 +38,11 @@ class RegieAvance extends Model
     ];
 
     protected $casts = [
-        'date_creation'     => 'date',
-        'date_cloture'      => 'date',
-        'montant_alloue'    => 'decimal:2',
-        'montant_decaisse'  => 'decimal:2',
-        'montant_depense'   => 'decimal:2',
+        'date_creation'      => 'date',
+        'date_cloture'       => 'date',
+        'montant_alloue'     => 'decimal:2',
+        'montant_decaisse'   => 'decimal:2',
+        'montant_depense'    => 'decimal:2',
         'montant_disponible' => 'decimal:2',
     ];
 
@@ -55,7 +55,7 @@ class RegieAvance extends Model
             if (!$regie->numero) {
                 $regie->numero = static::genererNumero($regie->type, $regie->exercice_id);
             }
-            $regie->created_by = auth()->id();
+            $regie->created_by         = auth()->id();
             $regie->montant_disponible = $regie->montant_alloue;
         });
 
@@ -68,16 +68,19 @@ class RegieAvance extends Model
                     $regie->decision_administrative_id
                 );
                 if ($da) {
-                    // ✅ Uniquement montant_alloue
                     $regie->montant_alloue = (float) ($da->montant_net ?? 0);
-                    // ❌ encaisse_annuelle non touchée
                 }
             }
         });
-        static::updating(function ($regie) {
+
+        static::updating(function (RegieAvance $regie) {
             $regie->updated_by = auth()->id();
-            // Recalculer disponible à chaque mise à jour
-            $regie->montant_disponible = $regie->montant_alloue - $regie->montant_depense;
+
+            // ✅ montant_disponible = décaissé - dépensé
+            // Ne pas recalculer montant_depense ici pour éviter
+            // les boucles infinies avec DecaissementRegie
+            $regie->montant_disponible = (float) $regie->montant_decaisse
+                - (float) $regie->montant_depense;
         });
     }
 
@@ -154,24 +157,19 @@ class RegieAvance extends Model
                 SELECT COALESCE(MAX(CAST(SPLIT_PART(numero, '-', 2) AS INTEGER)), 0) AS max_seq
                 FROM regies_avances
                 WHERE exercice_id = :exercice_id
-                AND numero LIKE :pattern
+                  AND numero LIKE :pattern
             ", [
                 'exercice_id' => $exercice->id,
                 'pattern'     => "{$prefix}-%",
             ]);
 
-            $sequence = ($result->max_seq ?? 0) + 1;
-            return sprintf('%s-%05d', $prefix, $sequence);
+            return sprintf('%s-%05d', $prefix, ($result->max_seq ?? 0) + 1);
         });
     }
 
     // =========================================================
     // MÉTHODES MÉTIER
     // =========================================================
-
-    /**
-     * Seuil achat direct depuis les paramètres
-     */
     public static function seuilAchatDirect(): float
     {
         return (float) (
@@ -190,28 +188,38 @@ class RegieAvance extends Model
 
     public static function determinerTypeDepense(float $montantTtc): string
     {
-        $seuilAd  = static::seuilAchatDirect();  // 500 000
-        $seuilBcr = static::seuilBonCommande();  // 5 000 000
+        $seuilAd  = static::seuilAchatDirect();
+        $seuilBcr = static::seuilBonCommande();
 
         return match (true) {
-            $montantTtc < $seuilAd  => 'achat_direct',   // < 500 000
-            $montantTtc < $seuilBcr => 'bon_commande',   // >= 500 000 et < 5 000 000
-            default                 => 'marche_public',  // >= 5 000 000 → hors régie
+            $montantTtc < $seuilAd  => 'achat_direct',
+            $montantTtc < $seuilBcr => 'bon_commande',
+            default                 => 'marche_public',
         };
     }
 
     /**
-     * Recalculer montant_depense et montant_disponible depuis les dépenses
+     * ✅ CORRIGÉ — source : DecaissementRegie.montant_depense
+     *
+     * Architecture de la régie :
+     *   RegieAvance
+     *     └── DecaissementRegie (tranches : 01ERE ENCAISSE, 02EME ENCAISSE...)
+     *           └── montant_depense = dépenses réelles de la tranche
+     *
+     * montant_depense (régie)  = Σ decaissements.montant_depense
+     * montant_disponible (régie) = montant_decaisse - montant_depense
+     *
+     * Avant : sommait DepenseRegie (toujours vide → 0)
+     * Après : somme DecaissementRegie.montant_depense (correct)
      */
     public function recalculerMontants(): void
     {
-        $totalDepense = $this->depenses()
-            ->whereNotIn('statut', ['annule'])
-            ->sum('montant_ttc');
+        $totalDepense = $this->decaissements()->sum('montant_depense');
+        $totalIr      = $this->decaissements()->sum('montant_ir_collecte');
 
         $this->updateQuietly([
             'montant_depense'    => $totalDepense,
-            'montant_disponible' => $this->montant_alloue - $totalDepense,
+            'montant_disponible' => (float) $this->montant_decaisse - $totalDepense,
         ]);
     }
 
@@ -267,10 +275,15 @@ class RegieAvance extends Model
         };
     }
 
+    /**
+     * Taux calculé à la volée depuis les colonnes en base
+     * (montant_depense mis à jour par recalculerMontants())
+     */
     public function getTauxConsommationAttribute(): float
     {
-        if ($this->montant_alloue <= 0) return 0;
-        return round(($this->montant_depense / $this->montant_alloue) * 100, 2);
+        $base = (float) $this->montant_decaisse;
+        if ($base <= 0) return 0.0;
+        return round(((float) $this->montant_depense / $base) * 100, 2);
     }
 
     public function getActivitylogOptions(): LogOptions
