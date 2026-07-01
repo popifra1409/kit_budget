@@ -485,6 +485,183 @@ class RegieAvanceResource extends Resource
                                 ->body("+ " . number_format($da->montant_net, 0, ',', ' ') . " FCFA")
                                 ->send();
                         }),
+                    // ── État Compte d'Emploi ───────────────────────────────────────
+                    Tables\Actions\Action::make('etat_compte_emploi')
+                        ->label('📄 Compte d\'Emploi')
+                        ->icon('heroicon-o-document-text')
+                        ->color('primary')
+                        ->modalHeading(fn($record) => 'Compte d\'Emploi — ' . $record->numero)
+                        ->modalWidth('2xl')
+                        ->form([
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\DatePicker::make('date_debut')
+                                    ->label('Période — Début')
+                                    ->default(fn($record) => $record->date_creation)
+                                    ->required(),
+                                Forms\Components\DatePicker::make('date_fin')
+                                    ->label('Période — Fin')
+                                    ->default(now())
+                                    ->required(),
+                            ]),
+
+                            Forms\Components\CheckboxList::make('statuts')
+                                ->label('Statuts à inclure')
+                                ->options([
+                                    'paye'   => 'Payé',
+                                    'valide' => 'Validé',
+                                ])
+                                ->default(['paye', 'valide'])
+                                ->columns(2)
+                                ->required(),
+
+                            Forms\Components\TextInput::make('numero_tranche')
+                                ->label('N° de tranche / désignation')
+                                ->placeholder('Ex: QUATRIÈME ENCAISSE'),
+
+                            Forms\Components\Textarea::make('texte_apurement')
+                                ->label('Pièces justificatives (une ligne par numéro)')
+                                ->rows(10)
+                                ->placeholder(
+                                    "Résolution N°... portant ouverture de la Régie...\n" .
+                                        "Décision N°... pour l'achat des réactifs...\n" .
+                                        "Décision de Déblocage N°...\n" .
+                                        "Demande d'autorisation du...\n" .
+                                        "Certificat d'Engagement N°...\n" .
+                                        "Quittance de Reversement du solde de gestion...\n" .
+                                        "Quittance de Reversement de l'IR N°...\n" .
+                                        "Tableau des justificatifs de dépenses de l'encaisse N°..."
+                                )
+                                ->helperText('Chaque ligne sera numérotée automatiquement dans le document')
+                                ->columnSpanFull(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            // ✅ Récupération de l'EtatConfig
+                            $etatConfig = \App\Models\EtatConfig::where('code', 'etat_compte_emploi_regie')
+                                ->where('est_defaut', true)
+                                ->first();
+
+                            $depenses = \App\Models\BonCommandeRegie::where('regie_avance_id', $record->id)
+                                ->whereIn('statut', $data['statuts'] ?? ['paye', 'valide'])
+                                ->whereBetween('date_emission', [$data['date_debut'], $data['date_fin']])
+                                ->with('fournisseur')
+                                ->orderBy('date_emission')
+                                ->get();
+
+                            $lignesApurement = collect(explode("\n", $data['texte_apurement'] ?? ''))
+                                ->map(fn($l) => trim($l))
+                                ->filter()
+                                ->values();
+
+                            $totaux = [
+                                'ttc' => $depenses->sum('montant_ttc'),
+                                'tva' => $depenses->sum('montant_tva'),
+                                'ir'  => $depenses->sum('montant_ir'),
+                                'net' => $depenses->sum('net_a_payer'),
+                            ];
+
+                            // ✅ $donnees structuré comme tous les autres documents
+                            $donnees = [
+                                '_raw'            => $record,
+                                '_etat_config'    => $etatConfig,
+                                'depenses'        => $depenses,
+                                'lignesApurement' => $lignesApurement,
+                                'numeroTranche'   => $data['numero_tranche'] ?? '',
+                                'dateDebut'       => \Carbon\Carbon::parse($data['date_debut']),
+                                'dateFin'         => \Carbon\Carbon::parse($data['date_fin']),
+                                'totaux'          => $totaux,
+                            ];
+
+                            $template = $etatConfig?->template ?? 'pdf.templates.etat-compte-emploi-regie';
+
+                            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($template, ['donnees' => $donnees])
+                                ->setPaper('a4', 'landscape');
+
+                            $nomFichier = 'Compte-Emploi-' . $record->numero . '-' . now()->format('Ymd') . '.pdf';
+
+                            return response()->streamDownload(
+                                fn() => print($pdf->output()),
+                                $nomFichier
+                            );
+                        }),
+
+                    // ── État des Retenues Fiscales IR ───────────────────────────────
+                    Tables\Actions\Action::make('etat_retenues_ir')
+                        ->label('📄 Retenues IR')
+                        ->icon('heroicon-o-receipt-percent')
+                        ->color('warning')
+                        ->modalHeading(fn($record) => 'État Retenues Fiscales — ' . $record->numero)
+                        ->modalWidth('lg')
+                        ->form([
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\DatePicker::make('date_debut')
+                                    ->label('Période — Début')
+                                    ->default(fn($record) => $record->date_creation)
+                                    ->required(),
+                                Forms\Components\DatePicker::make('date_fin')
+                                    ->label('Période — Fin')
+                                    ->default(now())
+                                    ->required(),
+                            ]),
+
+                            Forms\Components\CheckboxList::make('statuts')
+                                ->label('Statuts à inclure')
+                                ->options([
+                                    'paye'   => 'Payé',
+                                    'valide' => 'Validé',
+                                ])
+                                ->default(['paye', 'valide'])
+                                ->columns(2)
+                                ->required(),
+
+                            Forms\Components\TextInput::make('numero_tranche')
+                                ->label('N° de tranche / désignation')
+                                ->placeholder('Ex: QUATRIÈME TRANCHE DE L\'ENCAISSE'),
+                        ])
+                        ->action(function ($record, array $data) {
+                            // ✅ Récupération de l'EtatConfig
+                            $etatConfig = \App\Models\EtatConfig::where('code', 'etat_retenues_ir_regie')
+                                ->where('est_defaut', true)
+                                ->first();
+
+                            $depenses = \App\Models\BonCommandeRegie::where('regie_avance_id', $record->id)
+                                ->whereIn('statut', $data['statuts'] ?? ['paye', 'valide'])
+                                ->whereBetween('date_emission', [$data['date_debut'], $data['date_fin']])
+                                ->where('montant_ir', '>', 0)
+                                ->with('fournisseur')
+                                ->orderBy('date_emission')
+                                ->get();
+
+                            $totaux = [
+                                'ttc' => $depenses->sum('montant_ttc'),
+                                'tva' => $depenses->sum('montant_tva'),
+                                'ir'  => $depenses->sum('montant_ir'),
+                                'net' => $depenses->sum('net_a_payer'),
+                            ];
+
+                            // ✅ $donnees structuré comme tous les autres documents
+                            $donnees = [
+                                '_raw'          => $record,
+                                '_etat_config'  => $etatConfig,
+                                'depenses'      => $depenses,
+                                'numeroTranche' => $data['numero_tranche'] ?? '',
+                                'dateDebut'     => \Carbon\Carbon::parse($data['date_debut']),
+                                'dateFin'       => \Carbon\Carbon::parse($data['date_fin']),
+                                'totaux'        => $totaux,
+                            ];
+
+                            $template = $etatConfig?->template ?? 'pdf.templates.etat-retenues-ir-regie';
+
+                            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($template, ['donnees' => $donnees])
+                                ->setPaper('a4', 'landscape');
+
+                            $nomFichier = 'Retenues-IR-' . $record->numero . '-' . now()->format('Ymd') . '.pdf';
+
+                            return response()->streamDownload(
+                                fn() => print($pdf->output()),
+                                $nomFichier
+                            );
+                        }),
+
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')

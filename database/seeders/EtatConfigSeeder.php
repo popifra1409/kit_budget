@@ -753,6 +753,60 @@ class EtatConfigSeeder extends Seeder
                     'sous_direction_en' => 'MEDICAL DEPARTMENT',
                 ],
             ],
+
+            // ═══════════════════════════════════════════════════
+            // ÉTATS RÉGIE D'AVANCE — 2 documents
+            // ═══════════════════════════════════════════════════
+            [
+                'code'          => 'etat_compte_emploi_regie',
+                'type_document' => 'etat_compte_emploi_regie',
+                'est_defaut'    => true,
+                'nom'           => 'Compte d\'Emploi Régie d\'Avance',
+                'template'      => 'pdf.templates.etat-compte-emploi-regie',
+                'description'   => 'État des dépenses (BonCommandeRegie) — compte d\'emploi périodique',
+                'categorie'     => 'Régie d\'Avance',
+                'ordre'         => 1,
+                'orientation'   => 'landscape',
+                'format_papier' => 'A4',
+                'champs_variables' => [
+                    'numero'    => ['source' => 'numero',  'type' => 'text'],
+                    'libelle'   => ['source' => 'libelle', 'type' => 'text'],
+                ],
+                'calculs'          => [],
+                'signature_config' => ['afficher' => false],
+                'options_pdf'      => ['format_papier' => 'A4', 'orientation' => 'landscape'],
+                'entete_config'    => [
+                    'sous_direction_fr' => 'DIRECTION GÉNÉRALE',
+                    'sous_direction_en' => 'GENERAL MANAGEMENT',
+                    'titre_document'    => 'COMPTE D\'EMPLOI',
+                ],
+            ],
+
+            [
+                'code'          => 'etat_retenues_ir_regie',
+                'type_document' => 'etat_retenues_ir_regie',
+                'est_defaut'    => true,
+                'nom'           => 'État des Retenues Fiscales IR — Régie',
+                'template'      => 'pdf.templates.etat-retenues-ir-regie',
+                'description'   => 'État périodique des retenues IR opérées sur les dépenses de régie',
+                'categorie'     => 'Régie d\'Avance',
+                'ordre'         => 2,
+                'orientation'   => 'landscape',
+                'format_papier' => 'A4',
+                'champs_variables' => [
+                    'numero'  => ['source' => 'numero',  'type' => 'text'],
+                    'libelle' => ['source' => 'libelle', 'type' => 'text'],
+                ],
+                'calculs'          => [],
+                'signature_config' => ['afficher' => false],
+                'options_pdf'      => ['format_papier' => 'A4', 'orientation' => 'landscape'],
+                'entete_config'    => [
+                    'sous_direction_fr' => 'DIRECTION GÉNÉRALE',
+                    'sous_direction_en' => 'GENERAL MANAGEMENT',
+                    'titre_document'    => 'ÉTAT DES RETENUES FISCALES (IR)',
+                ],
+            ],
+
         ];
 
         // ═══════════════════════════════════════════════════════
