@@ -65,16 +65,19 @@ class ViewOrdonnancePaiement extends ViewRecord
                         Infolists\Components\TextEntry::make('montant_brut')
                             ->label('Montant brut')
                             ->money('XAF')
+                            ->state(fn($record) => $record->fresh()->montant_brut)
                             ->weight('bold'),
 
                         Infolists\Components\TextEntry::make('montant_impot')
                             ->label('Montant impôt/IR')
                             ->money('XAF')
+                            ->state(fn($record) => $record->fresh()->montant_impot)
                             ->color('warning'),
 
                         Infolists\Components\TextEntry::make('montant_net')
                             ->label('Montant net à payer')
                             ->money('XAF')
+                            ->state(fn($record) => $record->fresh()->montant_net)
                             ->color('success')
                             ->weight('bold')
                             ->size('lg'),
@@ -383,5 +386,12 @@ class ViewOrdonnancePaiement extends ViewRecord
                     });
                 }),
         ];
+    }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $this->record->refresh();
+
+        return $data;
     }
 }

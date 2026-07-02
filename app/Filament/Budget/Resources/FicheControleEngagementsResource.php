@@ -8,6 +8,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
+use Filament\Notifications\Notification;
 
 class FicheControleEngagementsResource extends Resource
 {
@@ -22,41 +23,111 @@ class FicheControleEngagementsResource extends Resource
     // ========================================
     // PERMISSIONS
     // ========================================
-
     public static function canViewAny(): bool
     {
         return auth()->check() && auth()->user()->can('view_any_fiche_controle_engagements');
     }
-
     public static function canView($record): bool
     {
         return auth()->check() && auth()->user()->can('view_fiche_controle_engagements');
     }
-
     public static function canCreate(): bool
     {
         return false;
     }
-
     public static function canEdit($record): bool
     {
         return false;
     }
-
     public static function canDelete($record): bool
     {
         return false;
     }
-
     public static function canGenererPdf($record): bool
     {
         return auth()->check() && auth()->user()->can('generer_pdf_fiche_controle_engagements');
     }
 
     // ========================================
-    // TABLE
+    // HELPER — calculs dynamiques centralisés
     // ========================================
 
+    /**
+     * ✅ Calcule le total engagé depuis les engagements actifs (non annulés, non supprimés)
+     *    Utilise une requête directe pour éviter le N+1 et avoir des données fraîches
+     */
+    private static function getTotalEngage(LigneBudgetaire $record): float
+    {
+        return (float) \App\Models\Engagement::query()
+            ->where('budget_id', $record->budget_id)
+            ->where('nomenclature_principale_id', $record->nomenclature_id)
+            ->whereNotIn('statut', ['annule'])
+            ->sum('montant_engage');
+    }
+
+    /**
+     * ✅ Calcule le disponible réel = budget_initial - totalEngagé
+     *    (ne dépend PAS de la colonne stockée disponible_engagement qui peut être stale)
+     */
+    private static function getDisponibleReel(LigneBudgetaire $record): float
+    {
+        return (float) $record->budget_initial - self::getTotalEngage($record);
+    }
+
+    /**
+     * ✅ Total des montants OP Standard liés aux engagements de cette ligne
+     */
+    private static function getMontantOP(LigneBudgetaire $record): float
+    {
+        return (float) \App\Models\OrdonnancePaiement::query()
+            ->whereHas(
+                'engagement',
+                fn($q) => $q
+                    ->where('budget_id', $record->budget_id)
+                    ->where('nomenclature_principale_id', $record->nomenclature_id)
+                    ->whereNotIn('statut', ['annule'])
+            )
+            ->where('type_ordonnance', 'standard')
+            ->whereNotIn('statut', ['annulee'])
+            ->sum('montant_net');
+    }
+
+    /**
+     * ✅ Total des montants OPT (Impôt) liés aux engagements de cette ligne
+     */
+    private static function getMontantOPT(LigneBudgetaire $record): float
+    {
+        return (float) \App\Models\OrdonnancePaiement::query()
+            ->whereHas(
+                'engagement',
+                fn($q) => $q
+                    ->where('budget_id', $record->budget_id)
+                    ->where('nomenclature_principale_id', $record->nomenclature_id)
+                    ->whereNotIn('statut', ['annule'])
+            )
+            ->where('type_ordonnance', 'impot')
+            ->whereNotIn('statut', ['annulee'])
+            ->sum('montant_net');
+    }
+
+    /**
+     * ✅ Recalcule et persiste les colonnes stockées sur LigneBudgetaire
+     *    Appelé depuis l'action "Recalculer" ou après une suppression/avenant
+     */
+    public static function recalculerLigne(LigneBudgetaire $record): void
+    {
+        $totalEngage = self::getTotalEngage($record);
+        $disponible  = (float) $record->budget_initial - $totalEngage;
+
+        $record->updateQuietly([
+            'engage'               => $totalEngage,
+            'disponible_engagement' => $disponible,
+        ]);
+    }
+
+    // ========================================
+    // TABLE
+    // ========================================
     public static function table(Table $table): Table
     {
         return $table
@@ -80,34 +151,58 @@ class FicheControleEngagementsResource extends Resource
                 Tables\Columns\TextColumn::make('budget_initial')
                     ->label('Dotation Initiale')->money('XAF')->sortable()->color('info'),
 
-                Tables\Columns\TextColumn::make('total_engage')
+                // ✅ CORRIGÉ — calcul dynamique depuis engagements actifs
+                Tables\Columns\TextColumn::make('total_engage_dynamique')
                     ->label('Total Engagé')
-                    ->getStateUsing(fn($record) => $record->engagements()->get()->sum('montant_engage'))
+                    ->getStateUsing(fn($record) => self::getTotalEngage($record))
                     ->money('XAF')->color('warning')->weight('bold'),
 
-                Tables\Columns\TextColumn::make('disponible_engagement')
-                    ->label('Disponible')->money('XAF')->sortable()
+                // ✅ CORRIGÉ — disponible calculé dynamiquement (pas la colonne stockée)
+                Tables\Columns\TextColumn::make('disponible_reel')
+                    ->label('Disponible')
+                    ->getStateUsing(fn($record) => self::getDisponibleReel($record))
+                    ->money('XAF')
                     ->color(fn($state) => $state > 0 ? 'success' : 'danger')
                     ->weight('bold'),
 
-                Tables\Columns\TextColumn::make('taux_consommation')
+                // ✅ NOUVEAU — Montant OP Standard émises/payées
+                Tables\Columns\TextColumn::make('montant_op')
+                    ->label('Montant OP')
+                    ->getStateUsing(fn($record) => self::getMontantOP($record))
+                    ->money('XAF')->color('primary')
+                    ->toggleable(isToggledHiddenByDefault: false),
+
+                // ✅ NOUVEAU — Montant OPT Impôt émises/payées
+                Tables\Columns\TextColumn::make('montant_opt')
+                    ->label('Montant OPT')
+                    ->getStateUsing(fn($record) => self::getMontantOPT($record))
+                    ->money('XAF')->color('warning')
+                    ->toggleable(isToggledHiddenByDefault: false),
+
+                // ✅ CORRIGÉ — taux calculé dynamiquement
+                Tables\Columns\TextColumn::make('taux_consommation_dynamique')
                     ->label('Taux Conso.')
                     ->getStateUsing(function ($record) {
                         if ($record->budget_initial == 0) return 0;
-                        $totalEngage = $record->engagements()->get()->sum('montant_engage');
-                        return ($totalEngage / $record->budget_initial) * 100;
+                        return (self::getTotalEngage($record) / $record->budget_initial) * 100;
                     })
                     ->formatStateUsing(fn($state) => number_format($state, 1) . '%')
                     ->badge()
-                    ->color(function ($state) {
-                        if ($state < 50)  return 'success';
-                        if ($state < 80)  return 'warning';
-                        return 'danger';
+                    ->color(fn($state) => match (true) {
+                        $state < 50 => 'success',
+                        $state < 80 => 'warning',
+                        default     => 'danger',
                     }),
 
                 Tables\Columns\TextColumn::make('nb_engagements')
                     ->label('Nb Engagements')
-                    ->getStateUsing(fn($record) => $record->engagements()->get()->count())
+                    ->getStateUsing(
+                        fn($record) =>
+                        \App\Models\Engagement::where('budget_id', $record->budget_id)
+                            ->where('nomenclature_principale_id', $record->nomenclature_id)
+                            ->whereNotIn('statut', ['annule'])
+                            ->count()
+                    )
                     ->badge()->color('gray'),
 
                 Tables\Columns\TextColumn::make('created_at')
@@ -122,7 +217,7 @@ class FicheControleEngagementsResource extends Resource
 
                 Tables\Filters\Filter::make('depassement')
                     ->label('Dépassements de crédits')
-                    ->query(fn($query) => $query->where('disponible_engagement', '<', 0))
+                    ->query(fn($query) => $query->whereRaw('disponible_engagement < 0'))
                     ->toggle(),
 
                 Tables\Filters\Filter::make('dotation_positive')
@@ -130,11 +225,6 @@ class FicheControleEngagementsResource extends Resource
                     ->query(fn($query) => $query->where('budget_initial', '>', 0))
                     ->toggle(),
             ])
-
-            // ════════════════════════════════════════════════════════
-            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
-            //    Pattern identique à BonCommandeResource
-            // ════════════════════════════════════════════════════════
             ->actions([
                 Tables\Actions\ActionGroup::make([
 
@@ -144,6 +234,10 @@ class FicheControleEngagementsResource extends Resource
                         ->icon('heroicon-o-document-arrow-down')
                         ->color('danger')
                         ->visible(fn($record) => static::canGenererPdf($record))
+                        ->action(function ($record) {
+                            // ✅ Recalcule avant de générer le PDF
+                            static::recalculerLigne($record);
+                        })
                         ->url(fn($record) => route('fiche-controle-engagements.pdf', $record->id))
                         ->openUrlInNewTab(),
 
@@ -153,8 +247,29 @@ class FicheControleEngagementsResource extends Resource
                         ->icon('heroicon-o-eye')
                         ->color('info')
                         ->visible(fn($record) => static::canView($record))
+                        ->action(function ($record) {
+                            // ✅ Recalcule avant l'aperçu
+                            static::recalculerLigne($record);
+                        })
                         ->url(fn($record) => route('fiche-controle-engagements.preview', $record->id))
                         ->openUrlInNewTab(),
+
+                    // ✅ NOUVEAU — Recalculer les montants stockés
+                    Tables\Actions\Action::make('recalculer')
+                        ->label('Recalculer')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->tooltip('Recalcule les montants engagés et le disponible depuis les données réelles')
+                        ->action(function ($record) {
+                            static::recalculerLigne($record);
+                            Notification::make()
+                                ->title('✅ Recalcul effectué')
+                                ->body(
+                                    'Engagé : ' . number_format(self::getTotalEngage($record), 0, ',', ' ') . ' FCFA'
+                                        . ' | Disponible : ' . number_format(self::getDisponibleReel($record), 0, ',', ' ') . ' FCFA'
+                                )
+                                ->success()->send();
+                        }),
 
                     // ── Détails ───────────────────────────────────
                     Tables\Actions\Action::make('details')
@@ -164,17 +279,27 @@ class FicheControleEngagementsResource extends Resource
                         ->visible(fn($record) => static::canView($record))
                         ->modalHeading('Détails de la Ligne Budgétaire')
                         ->modalContent(function ($record) {
-                            $engagements = $record->engagements()->get();
-                            $totalEngage = $engagements->sum('montant_engage');
+                            $engagements = \App\Models\Engagement::with(['ordonnancesPaiement'])
+                                ->where('budget_id', $record->budget_id)
+                                ->where('nomenclature_principale_id', $record->nomenclature_id)
+                                ->whereNotIn('statut', ['annule'])
+                                ->get();
+
+                            $totalEngage = self::getTotalEngage($record);
                             $tauxConso   = $record->budget_initial > 0
                                 ? ($totalEngage / $record->budget_initial) * 100
                                 : 0;
+                            $montantOP  = self::getMontantOP($record);
+                            $montantOPT = self::getMontantOPT($record);
 
                             return view('filament.pages.fiche-controle-details', [
                                 'record'      => $record,
                                 'engagements' => $engagements,
                                 'totalEngage' => $totalEngage,
                                 'tauxConso'   => $tauxConso,
+                                'montantOP'   => $montantOP,
+                                'montantOPT'  => $montantOPT,
+                                'disponible'  => self::getDisponibleReel($record),
                             ]);
                         })
                         ->modalWidth('7xl')
@@ -189,7 +314,28 @@ class FicheControleEngagementsResource extends Resource
                     ->size('sm'),
 
             ], position: ActionsPosition::BeforeColumns)
-
+            ->headerActions([
+                // ✅ Recalcul global de toutes les lignes budgétaires
+                Tables\Actions\Action::make('recalculer_tout')
+                    ->label('🔄 Recalculer tout')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Recalculer toutes les lignes budgétaires ?')
+                    ->modalDescription('Recalcule les montants engagés et disponibles pour toutes les lignes. Peut prendre quelques secondes.')
+                    ->action(function () {
+                        $lignes = LigneBudgetaire::all();
+                        $count = 0;
+                        foreach ($lignes as $ligne) {
+                            static::recalculerLigne($ligne);
+                            $count++;
+                        }
+                        Notification::make()
+                            ->title('✅ Recalcul terminé')
+                            ->body("{$count} ligne(s) recalculée(s)")
+                            ->success()->send();
+                    }),
+            ])
             ->bulkActions([]);
     }
 

@@ -53,7 +53,6 @@ class EngagementResource extends Resource
             ->pourDestinataire(auth()->id())
             ->enAttente()
             ->count();
-
         return $count > 0 ? (string) $count : null;
     }
 
@@ -67,12 +66,10 @@ class EngagementResource extends Resource
     {
         return auth()->check() && auth()->user()->can('view_any_engagement');
     }
-
     public static function canView($record): bool
     {
         return auth()->check() && auth()->user()->can('view_engagement');
     }
-
     public static function canCreate(): bool
     {
         return auth()->check() && auth()->user()->can('create_engagement');
@@ -82,18 +79,13 @@ class EngagementResource extends Resource
     {
         if (!auth()->check()) return false;
         if (!auth()->user()->can('update_engagement')) return false;
-
-        // ✅ Seuls les engagements manuels provisoires sont éditables
         if (!$record->estModifiable()) {
             if ($record->estLectureSeule()) {
-                Notification::make()
-                    ->title('Modification impossible')->warning()
-                    ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")
-                    ->send();
+                Notification::make()->title('Modification impossible')->warning()
+                    ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")->send();
             }
             return false;
         }
-
         return true;
     }
 
@@ -101,52 +93,44 @@ class EngagementResource extends Resource
     {
         if (!auth()->check()) return false;
         if (!auth()->user()->can('delete_engagement')) return false;
-        return $record->estModifiable();
+        // ✅ Suppression autorisée si provisoire et sans ordonnances
+        return $record->statut === 'provisoire'
+            && !$record->ordonnancesPaiement()->exists();
     }
 
     public static function canValider($record): bool
     {
         return auth()->check() && auth()->user()->can('valider_engagement');
     }
-
     public static function canAnnuler($record): bool
     {
         return auth()->check() && auth()->user()->can('annuler_engagement');
     }
 
-    // ── Form (utilisé uniquement pour EditEngagement) ─────────
-    // La création est gérée par CreateEngagement.php (wizard BC/DA)
     public static function form(Form $form): Form
     {
         return $form->schema([
-
-            // ── Info source — lecture seule ───────────────────
             Forms\Components\Section::make('Document source')
                 ->schema([
                     Forms\Components\Placeholder::make('source_info')
                         ->label('Document lié')
                         ->content(function ($record) {
                             if (!$record) return '—';
-
                             if ($record->estBonCommande() && $record->engageable) {
                                 $bc = $record->engageable;
                                 return new \Illuminate\Support\HtmlString(
-                                    "<span style='background:#dbeafe;color:#1d4ed8;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>BC</span> " .
-                                        "<strong>{$bc->numero}</strong> — {$bc->fournisseur?->raison_sociale}"
+                                    "<span style='background:#dbeafe;color:#1d4ed8;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>BC</span> "
+                                        . "<strong>{$bc->numero}</strong> — {$bc->fournisseur?->raison_sociale}"
                                 );
                             }
-
                             if ($record->estDecision() && $record->engageable) {
                                 $da = $record->engageable;
-                                $beneficiaire = $da->personnel?->nom_complet
-                                    ?? $da->fournisseur?->raison_sociale
-                                    ?? '—';
+                                $benef = $da->personnel?->nom_complet ?? $da->fournisseur?->raison_sociale ?? '—';
                                 return new \Illuminate\Support\HtmlString(
-                                    "<span style='background:#fef9c3;color:#a16207;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>DA</span> " .
-                                        "<strong>{$da->numero}</strong> — {$beneficiaire}"
+                                    "<span style='background:#fef9c3;color:#a16207;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>DA</span> "
+                                        . "<strong>{$da->numero}</strong> — {$benef}"
                                 );
                             }
-
                             return new \Illuminate\Support\HtmlString(
                                 "<span style='background:#f1f5f9;color:#475569;padding:.2rem .6rem;border-radius:9999px;font-size:.8rem;font-weight:700;'>Manuel</span>"
                             );
@@ -156,12 +140,10 @@ class EngagementResource extends Resource
                 ->visible(fn($record) => $record !== null)
                 ->collapsible()->collapsed(false),
 
-            // ── Exercice ──────────────────────────────────────
             Forms\Components\Section::make('Exercice')
                 ->schema([ExerciceSelect::make()])
                 ->collapsible()->collapsed(fn($record) => $record !== null),
 
-            // ── Informations principales ──────────────────────
             Forms\Components\Section::make('Informations principales')
                 ->schema([
                     Forms\Components\Select::make('budget_id')
@@ -170,18 +152,13 @@ class EngagementResource extends Resource
                         ->required()->searchable()->preload()->live()
                         ->afterStateUpdated(fn(callable $set) => $set('nomenclature_principale_id', null))
                         ->disabled(fn($record) => $record?->engageable_id !== null),
-
                     Forms\Components\TextInput::make('type_engagement')
                         ->label('Type d\'engagement')
-                        ->disabled(fn($record) => $record?->engageable_id !== null)
-                        ->dehydrated(),
-
+                        ->disabled(fn($record) => $record?->engageable_id !== null)->dehydrated(),
                     Forms\Components\DatePicker::make('date_engagement')
                         ->label('Date d\'engagement')->required()->default(now()),
-                ])
-                ->columns(3),
+                ])->columns(3),
 
-            // ── Nomenclature et montant ───────────────────────
             Forms\Components\Section::make('Nomenclature et montant')
                 ->schema([
                     Forms\Components\Select::make('nomenclature_principale_id')
@@ -194,8 +171,8 @@ class EngagementResource extends Resource
                                 ->filter(fn($lb) => $lb->nomenclature)
                                 ->mapWithKeys(fn($lb) => [
                                     $lb->nomenclature_id =>
-                                    "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} " .
-                                        "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
+                                    "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} "
+                                        . "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                 ])->toArray();
                         })
                         ->required()->searchable()->preload()->live()
@@ -212,16 +189,12 @@ class EngagementResource extends Resource
                                 : '✅ Disponible: ' . number_format($lb->disponible_engagement, 0, ',', ' ') . ' FCFA';
                         })
                         ->disabled(fn(callable $get) => !$get('budget_id')),
-
                     Forms\Components\TextInput::make('montant_engage')
                         ->label('Montant à engager')->required()->numeric()->prefix('FCFA')
                         ->live(onBlur: true)
-                        // ✅ Readonly si lié à un BC/DA — montant imposé par le document
                         ->readOnly(fn($record) => $record?->engageable_id !== null),
-                ])
-                ->columns(2),
+                ])->columns(2),
 
-            // ── Bénéficiaire ──────────────────────────────────
             Forms\Components\Section::make('Bénéficiaire')
                 ->schema([
                     Forms\Components\Radio::make('type_beneficiaire')
@@ -229,7 +202,6 @@ class EngagementResource extends Resource
                         ->options(['fournisseur' => 'Fournisseur', 'personnel' => 'Personnel (Agent)'])
                         ->required()->live()->default('fournisseur')->inline()
                         ->disabled(fn($record) => $record?->engageable_id !== null),
-
                     Forms\Components\Select::make('beneficiaire_fournisseur_id')
                         ->label('Fournisseur')
                         ->options(Fournisseur::whereNotNull('raison_sociale')->pluck('raison_sociale', 'id'))
@@ -237,7 +209,6 @@ class EngagementResource extends Resource
                         ->required(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
                         ->visible(fn(callable $get) => $get('type_beneficiaire') === 'fournisseur')
                         ->disabled(fn($record) => $record?->engageable_id !== null),
-
                     Forms\Components\Select::make('beneficiaire_personnel_id')
                         ->label('Personnel')
                         ->options(User::whereNotNull('name')->pluck('name', 'id'))
@@ -245,38 +216,30 @@ class EngagementResource extends Resource
                         ->required(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
                         ->visible(fn(callable $get) => $get('type_beneficiaire') === 'personnel')
                         ->disabled(fn($record) => $record?->engageable_id !== null),
-                ])
-                ->columns(2),
+                ])->columns(2),
 
-            // ── Objet et référence ────────────────────────────
             Forms\Components\Section::make('Objet et référence')
                 ->schema([
                     Forms\Components\Textarea::make('objet')
-                        ->label('Objet de l\'engagement')->required()->rows(3)
-                        ->columnSpanFull(),
-
+                        ->label('Objet de l\'engagement')->required()->rows(3)->columnSpanFull(),
                     Forms\Components\TextInput::make('reference_document')
                         ->label('Référence du document')->maxLength(255)
                         ->disabled(fn($record) => $record?->engageable_id !== null),
                 ]),
 
-            // ── Observations ──────────────────────────────────
             Forms\Components\Section::make('Observations')
                 ->schema([
                     Forms\Components\Textarea::make('observations')
                         ->label('Observations')->rows(2)->columnSpanFull(),
-                ])
-                ->collapsible()->collapsed(),
+                ])->collapsible()->collapsed(),
         ]);
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()
-            ->withoutGlobalScope('exercice')
-            ->with('exercice');
+        return parent::getEloquentQuery()->withoutGlobalScope('exercice')->with('exercice');
     }
-    // ── Table ─────────────────────────────────────────────────
+
     public static function table(Table $table): Table
     {
         return $table
@@ -285,9 +248,7 @@ class EngagementResource extends Resource
             ->persistSortInSession()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N° Engagement')->searchable()->sortable()->weight('bold')->copyable()
-                    ->toggleable(),
-
+                    ->label('N° Engagement')->searchable()->sortable()->weight('bold')->copyable()->toggleable(),
                 Tables\Columns\TextColumn::make('engageable_type')
                     ->label('Source')->sortable()
                     ->formatStateUsing(fn($state) => match ($state) {
@@ -300,24 +261,15 @@ class EngagementResource extends Resource
                         'App\Models\BonCommande'            => 'info',
                         'App\Models\DecisionAdministrative' => 'warning',
                         default                             => 'gray',
-                    })
-                    ->toggleable(),
-
+                    })->toggleable(),
                 Tables\Columns\TextColumn::make('document_source')
                     ->label('N° Document')
-                    ->getStateUsing(
-                        fn($record) =>
-                        $record->reference_document ?? $record->engageable?->numero ?? null
-                    )
-                    ->searchable(['reference_document'])
-                    ->copyable()->placeholder('Manuel')
-                    ->badge()->color('gray')
-                    ->toggleable(),
-
+                    ->getStateUsing(fn($record) => $record->reference_document ?? $record->engageable?->numero ?? null)
+                    ->searchable(['reference_document'])->copyable()->placeholder('Manuel')
+                    ->badge()->color('gray')->toggleable(),
                 Tables\Columns\TextColumn::make('nomenclaturePrincipale.code')
                     ->label('Nomenclature')->searchable()->badge()->color('warning')
                     ->toggleable(isToggledHiddenByDefault: true),
-
                 Tables\Columns\TextColumn::make('beneficiaire')
                     ->label('Bénéficiaire')
                     ->getStateUsing(fn($record) => $record->getNomBeneficiaire() ?? 'Non défini')
@@ -326,26 +278,16 @@ class EngagementResource extends Resource
                             $q->whereHasMorph('beneficiaire', [\App\Models\Fournisseur::class], fn($sq) =>
                             $sq->where('raison_sociale', 'like', "%{$search}%"))
                                 ->orWhereHasMorph('beneficiaire', [\App\Models\Personnel::class], fn($sq) =>
-                                $sq->where('nom', 'like', "%{$search}%")
-                                    ->orWhere('prenoms', 'like', "%{$search}%"));
+                                $sq->where('nom', 'like', "%{$search}%")->orWhere('prenoms', 'like', "%{$search}%"));
                         });
-                    })
-                    ->toggleable()
-                    ->limit(30),
-
+                    })->toggleable()->limit(30),
                 Tables\Columns\TextColumn::make('date_engagement')
                     ->label('Date')->date('d/m/Y')->sortable()->toggleable(),
-
                 Tables\Columns\TextColumn::make('montant_engage')
                     ->label('Montant')->money('XAF')->sortable()->weight('bold')->color('success'),
-
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
-                    ->colors([
-                        'secondary' => 'provisoire',
-                        'success'   => 'definitif',
-                        'danger'    => 'annule',
-                    ])
+                    ->colors(['secondary' => 'provisoire', 'success' => 'definitif', 'danger' => 'annule'])
                     ->formatStateUsing(fn(string $state): string => match ($state) {
                         'provisoire' => 'Provisoire',
                         'definitif'  => 'Définitif',
@@ -354,59 +296,53 @@ class EngagementResource extends Resource
                     })->toggleable(),
             ])
             ->filters([
-                // ✅ Filtre par période — Aujourd'hui par défaut
                 Tables\Filters\Filter::make('periode')
                     ->form([
                         Forms\Components\Select::make('periode')
                             ->label('Période')
                             ->options([
-                                'today'        => "Aujourd'hui",
-                                'yesterday'    => 'Hier',
-                                'this_week'    => 'Cette semaine',
-                                'last_week'    => 'Semaine dernière',
-                                'this_month'   => 'Ce mois',
-                                'last_month'   => 'Mois dernier',
+                                'today' => "Aujourd'hui",
+                                'yesterday' => 'Hier',
+                                'this_week' => 'Cette semaine',
+                                'last_week' => 'Semaine dernière',
+                                'this_month' => 'Ce mois',
+                                'last_month' => 'Mois dernier',
                                 'this_quarter' => 'Ce trimestre',
                                 'last_quarter' => 'Trimestre dernier',
-                                'this_year'    => 'Cette année',
-                                'last_year'    => 'Année dernière',
+                                'this_year' => 'Cette année',
+                                'last_year' => 'Année dernière',
                             ])
-                            ->default('today')
-                            ->placeholder('Toutes les périodes'),
+                            ->default('today')->placeholder('Toutes les périodes'),
                     ])
                     ->default(['periode' => 'today'])
                     ->query(function ($query, array $data) {
-                        return $query->when(
-                            $data['periode'] ?? null,
-                            fn($q, $periode) =>
-                            match ($periode) {
-                                'today'        => $q->whereDate('date_engagement', today()),
-                                'yesterday'    => $q->whereDate('date_engagement', today()->subDay()),
-                                'this_week'    => $q->whereBetween('date_engagement', [now()->startOfWeek(), now()->endOfWeek()]),
-                                'last_week'    => $q->whereBetween('date_engagement', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
-                                'this_month'   => $q->whereMonth('date_engagement', now()->month)->whereYear('date_engagement', now()->year),
-                                'last_month'   => $q->whereMonth('date_engagement', now()->subMonth()->month)->whereYear('date_engagement', now()->subMonth()->year),
-                                'this_quarter' => $q->whereBetween('date_engagement', [now()->startOfQuarter(), now()->endOfQuarter()]),
-                                'last_quarter' => $q->whereBetween('date_engagement', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
-                                'this_year'    => $q->whereYear('date_engagement', now()->year),
-                                'last_year'    => $q->whereYear('date_engagement', now()->subYear()->year),
-                                default        => $q,
-                            }
-                        );
+                        return $query->when($data['periode'] ?? null, fn($q, $p) => match ($p) {
+                            'today'        => $q->whereDate('date_engagement', today()),
+                            'yesterday'    => $q->whereDate('date_engagement', today()->subDay()),
+                            'this_week'    => $q->whereBetween('date_engagement', [now()->startOfWeek(), now()->endOfWeek()]),
+                            'last_week'    => $q->whereBetween('date_engagement', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]),
+                            'this_month'   => $q->whereMonth('date_engagement', now()->month)->whereYear('date_engagement', now()->year),
+                            'last_month'   => $q->whereMonth('date_engagement', now()->subMonth()->month)->whereYear('date_engagement', now()->subMonth()->year),
+                            'this_quarter' => $q->whereBetween('date_engagement', [now()->startOfQuarter(), now()->endOfQuarter()]),
+                            'last_quarter' => $q->whereBetween('date_engagement', [now()->subQuarter()->startOfQuarter(), now()->subQuarter()->endOfQuarter()]),
+                            'this_year'    => $q->whereYear('date_engagement', now()->year),
+                            'last_year'    => $q->whereYear('date_engagement', now()->subYear()->year),
+                            default        => $q,
+                        });
                     })
                     ->indicateUsing(function (array $data): ?string {
                         if (!($data['periode'] ?? null)) return null;
                         $labels = [
-                            'today'        => "Aujourd'hui",
-                            'yesterday'    => 'Hier',
-                            'this_week'    => 'Cette semaine',
-                            'last_week'    => 'Semaine dernière',
-                            'this_month'   => 'Ce mois',
-                            'last_month'   => 'Mois dernier',
+                            'today' => "Aujourd'hui",
+                            'yesterday' => 'Hier',
+                            'this_week' => 'Cette semaine',
+                            'last_week' => 'Semaine dernière',
+                            'this_month' => 'Ce mois',
+                            'last_month' => 'Mois dernier',
                             'this_quarter' => 'Ce trimestre',
                             'last_quarter' => 'Trimestre dernier',
-                            'this_year'    => 'Cette année',
-                            'last_year'    => 'Année dernière',
+                            'this_year' => 'Cette année',
+                            'last_year' => 'Année dernière',
                         ];
                         return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
@@ -436,8 +372,7 @@ class EngagementResource extends Resource
                     ->default(fn() => Exercice::getActif()?->id),
 
                 Tables\Filters\SelectFilter::make('budget_id')
-                    ->label('Budget')->relationship('budget', 'libelle')
-                    ->searchable()->preload(),
+                    ->label('Budget')->relationship('budget', 'libelle')->searchable()->preload(),
 
                 Tables\Filters\Filter::make('date_engagement')
                     ->form([
@@ -453,9 +388,8 @@ class EngagementResource extends Resource
             ->actions([
                 Tables\Actions\ActionGroup::make([
 
-                    // ── Standard ──────────────────────────────────
+                    // ── Navigation ────────────────────────────────
                     Tables\Actions\ViewAction::make()->label('Voir'),
-
                     Tables\Actions\EditAction::make()
                         ->label('Modifier')
                         ->visible(fn($record) => $record->statut === 'provisoire' && !$record->engageable_id),
@@ -499,11 +433,8 @@ class EngagementResource extends Resource
                         ->modalContent(function ($record) {
                             $montantTotal = $record->montant_engage;
                             $montantIR    = 0;
-                            if ($record->estBonCommande() && $record->engageable)
-                                $montantIR = $record->engageable->montant_ir ?? 0;
-                            elseif ($record->estDecision() && $record->engageable)
-                                $montantIR = $record->engageable->montant_ir ?? 0;
-
+                            if ($record->estBonCommande() && $record->engageable) $montantIR = $record->engageable->montant_ir ?? 0;
+                            elseif ($record->estDecision() && $record->engageable) $montantIR = $record->engageable->montant_ir ?? 0;
                             return view('filament.modals.recap-ordonnances', [
                                 'engagement'    => $record,
                                 'montant_total' => $montantTotal,
@@ -525,8 +456,7 @@ class EngagementResource extends Resource
 
                     // ── Voir ordonnances ──────────────────────────
                     Tables\Actions\Action::make('voir_ordonnances')
-                        ->label('Voir OP')
-                        ->icon('heroicon-o-eye')->color('info')
+                        ->label('Voir OP')->icon('heroicon-o-eye')->color('info')
                         ->visible(fn($record) => $record->ordonnancesPaiement()->exists())
                         ->badge(fn($record) => $record->ordonnancesPaiement()->count())->badgeColor('success')
                         ->modalHeading(fn($record) => "Ordonnances — {$record->numero}")
@@ -550,8 +480,8 @@ class EngagementResource extends Resource
                         ->modalHeading('Annuler l\'engagement')
                         ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
                             "<div style='color:#dc2626;font-weight:600;'>
-        L'engagement <strong>{$record->numero}</strong> sera annulé.<br>
-        Les crédits seront libérés sur la ligne budgétaire.<br>"
+                                L'engagement <strong>{$record->numero}</strong> sera annulé.<br>
+                                Les crédits seront libérés sur la ligne budgétaire.<br>"
                                 . ($record->engageable
                                     ? "<span style='color:#92400e;'>Le document source ("
                                     . ($record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative')
@@ -561,8 +491,7 @@ class EngagementResource extends Resource
                                 . "</div>"
                         ))
                         ->form([
-                            Forms\Components\Textarea::make('motif')
-                                ->label('Motif')->required()->rows(3),
+                            Forms\Components\Textarea::make('motif')->label('Motif')->required()->rows(3),
                         ])
                         ->action(function ($record, array $data) {
                             if ($record->ordonnancesPaiement()->exists()) {
@@ -571,33 +500,18 @@ class EngagementResource extends Resource
                                     ->danger()->persistent()->send();
                                 return;
                             }
-
                             try {
-                                \Illuminate\Support\Facades\DB::transaction(function () use ($record, $data) {
-
+                                DB::transaction(function () use ($record, $data) {
+                                    // annuler() → forceDelete() → déclenche static::deleted()
+                                    // qui met à jour DA/BC automatiquement
                                     $record->annuler(force: true);
 
+                                    // Double mise à jour idempotente (sécurité)
                                     if ($record->engageable) {
-
                                         if ($record->estBonCommande()) {
-                                            $record->engageable->updateQuietly([
-                                                'statut' => 'valide',
-                                                'engage' => false,
-                                            ]);
-
-                                            Log::info('BC remis à valide après annulation engagement', [
-                                                'engagement' => $record->numero,
-                                                'bc'         => $record->engageable->numero,
-                                            ]);
+                                            $record->engageable->updateQuietly(['statut' => 'valide', 'engage' => false]);
                                         } elseif ($record->estDecision()) {
-                                            $record->engageable->updateQuietly([
-                                                'statut' => 'validee',
-                                            ]);
-
-                                            Log::info('DA remise à validee après annulation engagement', [
-                                                'engagement' => $record->numero,
-                                                'da'         => $record->engageable->numero,
-                                            ]);
+                                            $record->engageable->updateQuietly(['statut' => 'validee']);
                                         }
                                     }
                                 });
@@ -606,25 +520,17 @@ class EngagementResource extends Resource
                                     ? " | " . ($record->estBonCommande() ? 'BC' : 'DA')
                                     . " {$record->engageable->numero} → Validé"
                                     : "";
-
-                                Notification::make()
-                                    ->title('✅ Engagement annulé')
-                                    ->warning()
-                                    ->body("Crédits libérés{$msgSource}")
-                                    ->send();
+                                Notification::make()->title('✅ Engagement annulé')->warning()
+                                    ->body("Crédits libérés{$msgSource}")->send();
                             } catch (\Exception $e) {
-                                Notification::make()
-                                    ->title('❌ Erreur')
-                                    ->danger()
-                                    ->body($e->getMessage())
-                                    ->send();
+                                Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
                             }
                         }),
 
+                    // ── ✅ Supprimer (provisoire sans OP) ─────────────────────
                     Tables\Actions\Action::make('supprimer')
                         ->label('Supprimer')
-                        ->icon('heroicon-o-trash')
-                        ->color('danger')
+                        ->icon('heroicon-o-trash')->color('danger')
                         ->visible(
                             fn($record) =>
                             $record->statut === 'provisoire'
@@ -636,188 +542,151 @@ class EngagementResource extends Resource
                         ->modalHeading(fn($record) => 'Supprimer ' . $record->numero . ' ?')
                         ->modalDescription(function ($record) {
                             $msg = 'Cette action est <strong>irréversible</strong>.';
-
                             if ($record->engageable) {
                                 $type  = $record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative';
-                                $etat  = $record->estBonCommande()  ? '<strong>Validé</strong>' : '<strong>Validée</strong>';
+                                $etat  = $record->estBonCommande() ? '<strong>Validé</strong>' : '<strong>Validée</strong>';
                                 $msg  .= "<br><br>Le document source ({$type} <strong>{$record->engageable->numero}</strong>) "
-                                    . "sera remis à l'état {$etat}.";
+                                    . "sera remis à l'état {$etat} automatiquement.";
                             }
-
                             return new \Illuminate\Support\HtmlString($msg);
                         })
                         ->action(function ($record) {
-                            // La mise à jour DA/BC est gérée automatiquement
-                            // par le hook static::deleted() dans Engagement::booted()
-                            $numero = $record->numero;
+                            $numero    = $record->numero;
+                            $engSource = $record->engageable?->numero;
+                            $typeSource = $record->estBonCommande() ? 'BC' : ($record->estDecision() ? 'DA' : null);
+
+                            // ✅ Le hook static::deleted() gère la mise à jour DA/BC
                             $record->delete();
 
                             Notification::make()
                                 ->title('✅ Engagement supprimé')
-                                ->body($numero . ' supprimé.'
-                                    . ($record->engageable
-                                        ? ' ' . ($record->estBonCommande() ? 'BC' : 'DA')
-                                        . ' ' . $record->engageable->numero . ' → remis à Validé/Validée.'
-                                        : ''))
-                                ->success()
-                                ->send();
+                                ->body($numero . ($engSource ? " | {$typeSource} {$engSource} → Validé/Validée" : ''))
+                                ->success()->send();
                         }),
 
-                    // ── PDF (sous-menu imbriqué) ───────────────────
+                    // ── PDF ───────────────────────────────────────
                     Tables\Actions\ActionGroup::make([
-
                         Tables\Actions\Action::make('telecharger_certificat')
-                            ->label('Certificat (PDF)')
-                            ->icon('heroicon-o-arrow-down-tray')->color('success')
+                            ->label('Certificat (PDF)')->icon('heroicon-o-arrow-down-tray')->color('success')
                             ->visible(fn($record) => $record->statut === 'definitif')
                             ->form([
-                                \Filament\Forms\Components\Select::make('variante')
-                                    ->label('Modèle d\'état')
+                                \Filament\Forms\Components\Select::make('variante')->label('Modèle d\'état')
                                     ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
                                     ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
-                                    ->required()
-                                    ->helperText('⭐ = modèle par défaut'),
+                                    ->required()->helperText('⭐ = modèle par défaut'),
                             ])
-                            ->action(function (array $data, $record, $livewire) {
-                                $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                                $livewire->dispatch('open-url-new-tab', url: $url);
-                            }),
+                            ->action(
+                                fn(array $data, $record, $livewire) =>
+                                $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]))
+                            ),
 
                         Tables\Actions\Action::make('afficher_certificat')
-                            ->label('Certificat (Aperçu)')
-                            ->icon('heroicon-o-eye')->color('info')
+                            ->label('Certificat (Aperçu)')->icon('heroicon-o-eye')->color('info')
                             ->visible(fn($record) => $record->statut === 'definitif')
                             ->form([
-                                \Filament\Forms\Components\Select::make('variante')
-                                    ->label('Modèle d\'état')
+                                \Filament\Forms\Components\Select::make('variante')->label('Modèle d\'état')
                                     ->options(fn() => \App\Models\EtatConfig::variantesPour('certificat_engagement'))
                                     ->default(fn() => \App\Models\EtatConfig::defautPour('certificat_engagement')?->code)
-                                    ->required()
-                                    ->helperText('⭐ = modèle par défaut'),
+                                    ->required()->helperText('⭐ = modèle par défaut'),
                             ])
-                            ->action(function (array $data, $record, $livewire) {
-                                $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                                $livewire->dispatch('open-url-new-tab', url: $url);
-                            }),
+                            ->action(
+                                fn(array $data, $record, $livewire) =>
+                                $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]))
+                            ),
 
                         Tables\Actions\Action::make('telecharger_autorisation')
-                            ->label('Autorisation (PDF)')
-                            ->icon('heroicon-o-arrow-down-tray')->color('primary')
+                            ->label('Autorisation (PDF)')->icon('heroicon-o-arrow-down-tray')->color('primary')
                             ->visible(fn($record) => $record->statut === 'definitif')
                             ->form([
-                                \Filament\Forms\Components\Select::make('variante')
-                                    ->label('Modèle d\'état')
+                                \Filament\Forms\Components\Select::make('variante')->label('Modèle d\'état')
                                     ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
                                     ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
-                                    ->required()
-                                    ->helperText('⭐ = modèle par défaut'),
+                                    ->required()->helperText('⭐ = modèle par défaut'),
                             ])
-                            ->action(function (array $data, $record, $livewire) {
-                                $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                                $livewire->dispatch('open-url-new-tab', url: $url);
-                            }),
+                            ->action(
+                                fn(array $data, $record, $livewire) =>
+                                $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]))
+                            ),
 
                         Tables\Actions\Action::make('afficher_autorisation')
-                            ->label('Autorisation (Aperçu)')
-                            ->icon('heroicon-o-eye')->color('gray')
+                            ->label('Autorisation (Aperçu)')->icon('heroicon-o-eye')->color('gray')
                             ->visible(fn($record) => $record->statut === 'definitif')
                             ->form([
-                                \Filament\Forms\Components\Select::make('variante')
-                                    ->label('Modèle d\'état')
+                                \Filament\Forms\Components\Select::make('variante')->label('Modèle d\'état')
                                     ->options(fn() => \App\Models\EtatConfig::variantesPour('autorisation_engagement'))
                                     ->default(fn() => \App\Models\EtatConfig::defautPour('autorisation_engagement')?->code)
-                                    ->required()
-                                    ->helperText('⭐ = modèle par défaut'),
+                                    ->required()->helperText('⭐ = modèle par défaut'),
                             ])
-                            ->action(function (array $data, $record, $livewire) {
-                                $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                                $livewire->dispatch('open-url-new-tab', url: $url);
-                            }),
+                            ->action(
+                                fn(array $data, $record, $livewire) =>
+                                $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]))
+                            ),
 
                         Tables\Actions\Action::make('telecharger_fiche')
-                            ->label('Fiche Perf. (PDF)')
-                            ->icon('heroicon-o-arrow-down-tray')->color('warning')
+                            ->label('Fiche Perf. (PDF)')->icon('heroicon-o-arrow-down-tray')->color('warning')
                             ->visible(fn($record) => $record->statut === 'definitif')
                             ->form([
-                                \Filament\Forms\Components\Select::make('variante')
-                                    ->label('Modèle d\'état')
+                                \Filament\Forms\Components\Select::make('variante')->label('Modèle d\'état')
                                     ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
                                     ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
-                                    ->required()
-                                    ->helperText('⭐ = modèle par défaut'),
+                                    ->required()->helperText('⭐ = modèle par défaut'),
                             ])
-                            ->action(function (array $data, $record, $livewire) {
-                                $url = route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]);
-                                $livewire->dispatch('open-url-new-tab', url: $url);
-                            }),
+                            ->action(
+                                fn(array $data, $record, $livewire) =>
+                                $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $record->id]))
+                            ),
 
                         Tables\Actions\Action::make('afficher_fiche')
-                            ->label('Fiche Perf. (Aperçu)')
-                            ->icon('heroicon-o-eye')->color('secondary')
+                            ->label('Fiche Perf. (Aperçu)')->icon('heroicon-o-eye')->color('secondary')
                             ->visible(fn($record) => $record->statut === 'definitif')
                             ->form([
-                                \Filament\Forms\Components\Select::make('variante')
-                                    ->label('Modèle d\'état')
+                                \Filament\Forms\Components\Select::make('variante')->label('Modèle d\'état')
                                     ->options(fn() => \App\Models\EtatConfig::variantesPour('fiche_performance'))
                                     ->default(fn() => \App\Models\EtatConfig::defautPour('fiche_performance')?->code)
-                                    ->required()
-                                    ->helperText('⭐ = modèle par défaut'),
+                                    ->required()->helperText('⭐ = modèle par défaut'),
                             ])
-                            ->action(function (array $data, $record, $livewire) {
-                                $url = route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]);
-                                $livewire->dispatch('open-url-new-tab', url: $url);
-                            }),
-
+                            ->action(
+                                fn(array $data, $record, $livewire) =>
+                                $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', ['etat' => $data['variante'], 'id' => $record->id]))
+                            ),
                     ])
-                        ->label('PDF')->icon('heroicon-m-document-arrow-down')
-                        ->color('success')
+                        ->label('PDF')->icon('heroicon-m-document-arrow-down')->color('success')
                         ->visible(fn($record) => $record->statut === 'definitif'),
 
                 ])
-                    ->label('Actions')
-                    ->icon('heroicon-m-ellipsis-vertical')
-                    ->color('gray')
-                    ->button()
-                    ->size('sm'),
+                    ->label('Actions')->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')->button()->size('sm'),
             ], position: ActionsPosition::BeforeColumns)
+
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-
-                    // ✅ BulkDelete sécurisé — met à jour DA/BC avant suppression
+                    // ✅ Bulk delete sécurisé — ne supprime que les provisoires sans OP
+                    //    Le hook static::deleted() gère automatiquement la mise à jour DA/BC
                     Tables\Actions\BulkAction::make('delete_bulk')
                         ->label('Supprimer la sélection')
-                        ->icon('heroicon-o-trash')
-                        ->color('danger')
+                        ->icon('heroicon-o-trash')->color('danger')
                         ->requiresConfirmation()
                         ->modalHeading('Supprimer les engagements sélectionnés ?')
                         ->modalDescription(
                             'Seuls les engagements provisoires sans ordonnances seront supprimés. '
-                                . 'Les documents source (BC/DA) seront remis à leur état précédent.'
+                                . 'Les documents source (BC/DA) seront automatiquement remis à leur état précédent.'
                         )
                         ->deselectRecordsAfterCompletion()
                         ->action(function (\Illuminate\Database\Eloquent\Collection $records) {
-                            $supprimés = 0;
-                            $ignorés   = 0;
-
+                            $supprimes = 0;
+                            $ignores   = 0;
                             foreach ($records as $record) {
-                                // Sécurité : ne supprimer que les provisoires sans OP
                                 if ($record->statut !== 'provisoire' || $record->ordonnancesPaiement()->exists()) {
-                                    $ignorés++;
+                                    $ignores++;
                                     continue;
                                 }
-                                // Le hook booted::deleted gère la mise à jour DA/BC
+                                // static::deleted() gère la mise à jour DA/BC
                                 $record->delete();
-                                $supprimés++;
+                                $supprimes++;
                             }
-
-                            $msg = "{$supprimés} engagement(s) supprimé(s).";
-                            if ($ignorés > 0) $msg .= " {$ignorés} ignoré(s) (définitifs ou avec OP).";
-
-                            Notification::make()
-                                ->title('✅ Suppression terminée')
-                                ->body($msg)
-                                ->success()
-                                ->send();
+                            $msg = "{$supprimes} engagement(s) supprimé(s).";
+                            if ($ignores > 0) $msg .= " {$ignores} ignoré(s) (définitifs ou avec OP).";
+                            Notification::make()->title('✅ Suppression terminée')->body($msg)->success()->send();
                         }),
                 ]),
             ])
