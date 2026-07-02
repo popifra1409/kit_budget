@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\EtatConfig;
+use Illuminate\Support\Facades\DB;
 
 class OrdonnancePaiementResource extends Resource
 {
@@ -53,32 +54,23 @@ class OrdonnancePaiementResource extends Resource
     {
         $user = auth()->user();
 
-        if (!$user?->can('update_ordonnance_paiement')) {
-            return false;
-        }
-
-        if ($record->statut !== 'brouillon') {
-            return false;
-        }
-
-        if ($user->can('override_ordonnance_paiement')) {
-            return true;
-        }
+        if (!$user?->can('update_ordonnance_paiement')) return false;
+        if ($record->statut !== 'brouillon') return false;
+        if ($user->can('override_ordonnance_paiement')) return true;
 
         return $record->created_by === $user->id;
     }
 
+    /**
+     * ✅ CORRIGÉ — suppression autorisée tant que l'OP n'est pas payée
+     * Statuts autorisés : brouillon, emise, visee
+     */
     public static function canDelete($record): bool
     {
         $user = auth()->user();
 
-        if (!$user?->can('delete_ordonnance_paiement')) {
-            return false;
-        }
-
-        if ($record->statut !== 'brouillon') {
-            return false;
-        }
+        if (!$user?->can('delete_ordonnance_paiement')) return false;
+        if ($record->statut === 'payee') return false;
 
         return $user->can('override_ordonnance_paiement') || $record->created_by === $user->id;
     }
@@ -107,57 +99,56 @@ class OrdonnancePaiementResource extends Resource
 
     public static function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Création automatique d\'ordonnances')
-                    ->description('⚡ Les ordonnances de paiement seront créées automatiquement à partir de l\'engagement.')
-                    ->schema([
-                        Forms\Components\Select::make('engagement_id')
-                            ->label('Engagement')
-                            ->options(
-                                Engagement::with('engageable', 'beneficiaire')
-                                    ->where('statut', 'definitif')
-                                    ->whereDoesntHave('ordonnancesPaiement')
-                                    ->orderBy('date_engagement', 'desc')
-                                    ->get()
-                                    ->mapWithKeys(fn($eng) => [
-                                        $eng->id => sprintf(
-                                            '%s - %s (%s FCFA)',
-                                            $eng->numero,
-                                            \Str::limit($eng->objet, 50),
-                                            number_format($eng->montant_engage, 0, ',', ' ')
-                                        )
-                                    ])
-                            )
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->live()
-                            ->helperText('💡 Seuls les engagements définitifs sans ordonnances sont listés')
-                            ->columnSpanFull(),
+        return $form->schema([
+            Forms\Components\Section::make('Création automatique d\'ordonnances')
+                ->description('⚡ Les ordonnances de paiement seront créées automatiquement à partir de l\'engagement.')
+                ->schema([
+                    Forms\Components\Select::make('engagement_id')
+                        ->label('Engagement')
+                        ->options(
+                            Engagement::with('engageable', 'beneficiaire')
+                                ->where('statut', 'definitif')
+                                ->whereDoesntHave('ordonnancesPaiement')
+                                ->orderBy('date_engagement', 'desc')
+                                ->get()
+                                ->mapWithKeys(fn($eng) => [
+                                    $eng->id => sprintf(
+                                        '%s - %s (%s FCFA)',
+                                        $eng->numero,
+                                        \Str::limit($eng->objet, 50),
+                                        number_format($eng->montant_engage, 0, ',', ' ')
+                                    )
+                                ])
+                        )
+                        ->required()
+                        ->searchable()
+                        ->preload()
+                        ->live()
+                        ->helperText('💡 Seuls les engagements définitifs sans ordonnances sont listés')
+                        ->columnSpanFull(),
 
-                        Forms\Components\Placeholder::make('apercu')
-                            ->label('📊 Aperçu')
-                            ->content(fn(Forms\Get $get) => static::getApercu($get('engagement_id')))
-                            ->columnSpanFull()
-                            ->visible(fn(Forms\Get $get) => $get('engagement_id')),
-                    ]),
+                    Forms\Components\Placeholder::make('apercu')
+                        ->label('📊 Aperçu')
+                        ->content(fn(Forms\Get $get) => static::getApercu($get('engagement_id')))
+                        ->columnSpanFull()
+                        ->visible(fn(Forms\Get $get) => $get('engagement_id')),
+                ]),
 
-                Forms\Components\Section::make('ℹ️ Information')
-                    ->schema([
-                        Forms\Components\Placeholder::make('info')
-                            ->label('')
-                            ->content(
-                                "**Ce qui sera créé automatiquement :**\n\n" .
-                                    "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
-                                    "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
-                                    "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
-                            )
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible()
-                    ->collapsed(),
-            ]);
+            Forms\Components\Section::make('ℹ️ Information')
+                ->schema([
+                    Forms\Components\Placeholder::make('info')
+                        ->label('')
+                        ->content(
+                            "**Ce qui sera créé automatiquement :**\n\n" .
+                                "1️⃣ **OP Standard** : Pour payer le bénéficiaire (fournisseur ou personnel)\n" .
+                                "2️⃣ **OP Impôt** : Pour reverser les taxes au Trésor Public (si applicable)\n\n" .
+                                "✅ Tous les montants et bénéficiaires sont calculés automatiquement."
+                        )
+                        ->columnSpanFull(),
+                ])
+                ->collapsible()
+                ->collapsed(),
+        ]);
     }
 
     protected static function getApercu(?int $engagementId): string
@@ -171,21 +162,13 @@ class OrdonnancePaiementResource extends Resource
             $donnees = $engagement->extraireDonneesDocument();
 
             if ($engagement->estBonCommande()) {
-                $retenues = ($donnees['montant_ir'] ?? 0) +
-                    ($donnees['montant_tva'] ?? 0) +
-                    ($donnees['montant_tsr'] ?? 0);
+                $retenues = ($donnees['montant_ir'] ?? 0) + ($donnees['montant_tva'] ?? 0) + ($donnees['montant_tsr'] ?? 0);
             } else {
-                $retenues = ($donnees['montant_ir'] ?? 0) +
-                    ($donnees['montant_cnps'] ?? 0) +
-                    ($donnees['montant_irnc'] ?? 0) +
-                    ($donnees['autres_retenues'] ?? 0);
+                $retenues = ($donnees['montant_ir'] ?? 0) + ($donnees['montant_cnps'] ?? 0) + ($donnees['montant_irnc'] ?? 0) + ($donnees['autres_retenues'] ?? 0);
             }
 
             $beneficiaire = $donnees['beneficiaire'];
-            $nomBenef = $beneficiaire->raison_sociale ??
-                $beneficiaire->nom_complet ??
-                $beneficiaire->name ??
-                'N/A';
+            $nomBenef = $beneficiaire->raison_sociale ?? $beneficiaire->nom_complet ?? $beneficiaire->name ?? 'N/A';
 
             $html = "**💰 Montants :**\n\n";
             $html .= "• Montant TTC : **" . number_format($donnees['montant_ttc'], 0, ',', ' ') . " FCFA**\n";
@@ -219,10 +202,7 @@ class OrdonnancePaiementResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° OP')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold')
-                    ->copyable(),
+                    ->searchable()->sortable()->weight('bold')->copyable(),
 
                 Tables\Columns\BadgeColumn::make('type_ordonnance')
                     ->label('Type')
@@ -231,20 +211,13 @@ class OrdonnancePaiementResource extends Resource
                         'impot'    => 'Impôt',
                         default    => $state,
                     })
-                    ->colors([
-                        'primary' => 'standard',
-                        'warning' => 'impot',
-                    ]),
+                    ->colors(['primary' => 'standard', 'warning' => 'impot']),
 
                 Tables\Columns\TextColumn::make('engagement.numero')
-                    ->label('Engagement')
-                    ->searchable()
-                    ->sortable(),
+                    ->label('Engagement')->searchable()->sortable(),
 
                 Tables\Columns\TextColumn::make('objet')
-                    ->label('Objet')
-                    ->limit(40)
-                    ->searchable(),
+                    ->label('Objet')->limit(40)->searchable(),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
@@ -252,33 +225,21 @@ class OrdonnancePaiementResource extends Resource
                     ->color(fn($record) => $record->statut_color),
 
                 Tables\Columns\TextColumn::make('montant_brut')
-                    ->label('Montant brut')
-                    ->money('XAF')
-                    ->sortable()
+                    ->label('Montant brut')->money('XAF')->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('montant_impot')
-                    ->label('À précompter')
-                    ->money('XAF')
-                    ->sortable()
-                    ->color('danger')
+                    ->label('À précompter')->money('XAF')->sortable()->color('danger')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('montant_net')
-                    ->label('Montant Net')
-                    ->money('XAF')
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('success'),
+                    ->label('Montant Net')->money('XAF')->sortable()->weight('bold')->color('success'),
 
                 Tables\Columns\TextColumn::make('date_emission')
-                    ->label('Date émission')
-                    ->date('d/m/Y')
-                    ->sortable(),
+                    ->label('Date émission')->date('d/m/Y')->sortable(),
 
                 Tables\Columns\TextColumn::make('date_paiement')
-                    ->label('Date paiement')
-                    ->date('d/m/Y')
+                    ->label('Date paiement')->date('d/m/Y')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
@@ -287,19 +248,18 @@ class OrdonnancePaiementResource extends Resource
                         Forms\Components\Select::make('periode')
                             ->label('Période prédéfinie')
                             ->options([
-                                'today'         => 'Aujourd\'hui',
-                                'yesterday'     => 'Hier',
-                                'this_week'     => 'Cette semaine',
-                                'last_week'     => 'Semaine dernière',
-                                'this_month'    => 'Ce mois',
-                                'last_month'    => 'Mois dernier',
-                                'this_quarter'  => 'Ce trimestre',
-                                'last_quarter'  => 'Trimestre dernier',
-                                'this_year'     => 'Cette année',
-                                'last_year'     => 'Année dernière',
+                                'today' => 'Aujourd\'hui',
+                                'yesterday' => 'Hier',
+                                'this_week' => 'Cette semaine',
+                                'last_week' => 'Semaine dernière',
+                                'this_month' => 'Ce mois',
+                                'last_month' => 'Mois dernier',
+                                'this_quarter' => 'Ce trimestre',
+                                'last_quarter' => 'Trimestre dernier',
+                                'this_year' => 'Cette année',
+                                'last_year' => 'Année dernière',
                             ])
-                            ->default('today')
-                            ->placeholder('Sélectionner une période'),
+                            ->default('today')->placeholder('Sélectionner une période'),
                     ])
                     ->query(function ($query, array $data) {
                         $periode = $data['periode'] ?? 'today';
@@ -319,35 +279,32 @@ class OrdonnancePaiementResource extends Resource
                     })
                     ->indicateUsing(function (array $data): ?string {
                         $labels = [
-                            'today'        => 'Aujourd\'hui',
-                            'yesterday'    => 'Hier',
-                            'this_week'    => 'Cette semaine',
-                            'last_week'    => 'Semaine dernière',
-                            'this_month'   => 'Ce mois',
-                            'last_month'   => 'Mois dernier',
+                            'today' => 'Aujourd\'hui',
+                            'yesterday' => 'Hier',
+                            'this_week' => 'Cette semaine',
+                            'last_week' => 'Semaine dernière',
+                            'this_month' => 'Ce mois',
+                            'last_month' => 'Mois dernier',
                             'this_quarter' => 'Ce trimestre',
                             'last_quarter' => 'Trimestre dernier',
-                            'this_year'    => 'Cette année',
-                            'last_year'    => 'Année dernière',
+                            'this_year' => 'Cette année',
+                            'last_year' => 'Année dernière',
                         ];
                         return 'Période : ' . ($labels[$data['periode'] ?? 'today'] ?? 'Aujourd\'hui');
                     }),
 
                 Tables\Filters\SelectFilter::make('type_ordonnance')
                     ->label('Type')
-                    ->options([
-                        'standard' => 'Standard',
-                        'impot'    => 'Impôt',
-                    ]),
+                    ->options(['standard' => 'Standard', 'impot' => 'Impôt']),
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
                     ->options([
                         'brouillon' => 'Brouillon',
-                        'emise'     => 'Émise',
-                        'visee'     => 'Visée',
-                        'payee'     => 'Payée',
-                        'annulee'   => 'Annulée',
+                        'emise' => 'Émise',
+                        'visee' => 'Visée',
+                        'payee' => 'Payée',
+                        'annulee' => 'Annulée',
                     ])
                     ->multiple(),
 
@@ -356,23 +313,18 @@ class OrdonnancePaiementResource extends Resource
                         Forms\Components\DatePicker::make('date_emission_from')->label('Date d\'émission du'),
                         Forms\Components\DatePicker::make('date_emission_until')->label('Date d\'émission au'),
                     ])
-                    ->query(function ($query, array $data) {
-                        return $query
-                            ->when($data['date_emission_from'],   fn($q, $date) => $q->whereDate('date_emission', '>=', $date))
-                            ->when($data['date_emission_until'],  fn($q, $date) => $q->whereDate('date_emission', '<=', $date));
-                    }),
+                    ->query(
+                        fn($query, array $data) => $query
+                            ->when($data['date_emission_from'],  fn($q, $d) => $q->whereDate('date_emission', '>=', $d))
+                            ->when($data['date_emission_until'], fn($q, $d) => $q->whereDate('date_emission', '<=', $d))
+                    ),
             ])
 
-            // ════════════════════════════════════════════════════════
-            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
-            //    Pattern identique à BonCommandeResource
-            // ════════════════════════════════════════════════════════
             ->actions([
                 Tables\Actions\ActionGroup::make([
 
                     // ── Navigation ────────────────────────────────
                     Tables\Actions\ViewAction::make(),
-
                     Tables\Actions\EditAction::make()
                         ->visible(fn($record) => static::canEdit($record)),
 
@@ -406,6 +358,157 @@ class OrdonnancePaiementResource extends Resource
                             Notification::make()->title('Paiement enregistré')->success()->send();
                         }),
 
+                    // ════════════════════════════════════════════════
+                    // ✅ SUPPRESSION OP STANDARD
+                    //    → supprime l'OPT liée automatiquement
+                    //    → remet l'engagement à 'valide'
+                    // ════════════════════════════════════════════════
+                    Tables\Actions\Action::make('supprimer_op')
+                        ->label('Supprimer')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->visible(
+                            fn($record) =>
+                            $record->type_ordonnance === 'standard'
+                                && $record->statut !== 'payee'
+                                && static::canDelete($record)
+                        )
+                        ->requiresConfirmation()
+                        ->modalIcon('heroicon-o-exclamation-triangle')
+                        ->modalHeading(fn($record) => 'Supprimer ' . $record->numero . ' ?')
+                        ->modalDescription(function ($record) {
+                            $opt = OrdonnancePaiement::where('engagement_id', $record->engagement_id)
+                                ->where('type_ordonnance', 'impot')
+                                ->first();
+
+                            $msg = 'Cette action est <strong>irréversible</strong>.'
+                                . ' L\'engagement associé sera remis à l\'état <strong>Validé</strong>.';
+
+                            if ($opt) {
+                                $msg .= '<br><br>⚠️ L\'ordonnance impôt <strong>'
+                                    . $opt->numero
+                                    . '</strong> sera également supprimée automatiquement.';
+                            }
+
+                            return new \Illuminate\Support\HtmlString($msg);
+                        })
+                        ->action(function ($record) {
+                            DB::transaction(function () use ($record) {
+                                // 1. Supprimer l'OPT liée (même engagement)
+                                OrdonnancePaiement::where('engagement_id', $record->engagement_id)
+                                    ->where('type_ordonnance', 'impot')
+                                    ->each(fn($opt) => $opt->delete());
+
+                                // 2. Remettre l'engagement à 'valide'
+                                if ($record->engagement_id) {
+                                    Engagement::where('id', $record->engagement_id)
+                                        ->update(['statut' => 'provisoire']);
+                                }
+
+                                // 3. Supprimer l'OP
+                                $numero = $record->numero;
+                                $record->delete();
+
+                                Notification::make()
+                                    ->title('✅ Ordonnance supprimée')
+                                    ->body($numero . ' supprimée. Engagement remis à l\'état Validé.')
+                                    ->success()
+                                    ->send();
+                            });
+                        }),
+
+                    // ════════════════════════════════════════════════
+                    // ✅ SUPPRESSION OPT (Impôt)
+                    //    → supprime l'OPT
+                    //    → confirmation optionnelle pour supprimer l'OP
+                    //      génératrice + remettre l'engagement à 'valide'
+                    // ════════════════════════════════════════════════
+                    Tables\Actions\Action::make('supprimer_opt')
+                        ->label('Supprimer')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->visible(
+                            fn($record) =>
+                            $record->type_ordonnance === 'impot'
+                                && $record->statut !== 'payee'
+                                && static::canDelete($record)
+                        )
+                        ->modalIcon('heroicon-o-exclamation-triangle')
+                        ->modalHeading(fn($record) => 'Supprimer ' . $record->numero . ' ?')
+                        ->modalDescription(function ($record) {
+                            $op = OrdonnancePaiement::where('engagement_id', $record->engagement_id)
+                                ->where('type_ordonnance', 'standard')
+                                ->first();
+
+                            if ($op) {
+                                return new \Illuminate\Support\HtmlString(
+                                    'Vous supprimez uniquement l\'OPT <strong>' . $record->numero . '</strong>.'
+                                        . '<br>L\'OP génératrice <strong>' . $op->numero . '</strong> sera <u>conservée</u>.'
+                                        . '<br><br>Cochez l\'option ci-dessous pour la supprimer aussi '
+                                        . '(l\'engagement sera alors remis à <strong>Validé</strong>).'
+                                );
+                            }
+
+                            return new \Illuminate\Support\HtmlString(
+                                'Suppression de l\'OPT <strong>' . $record->numero . '</strong>. Action irréversible.'
+                            );
+                        })
+                        ->form([
+                            Forms\Components\Checkbox::make('supprimer_op_aussi')
+                                ->label(function ($record) {
+                                    $op = OrdonnancePaiement::where('engagement_id', $record->engagement_id)
+                                        ->where('type_ordonnance', 'standard')
+                                        ->first();
+                                    return $op
+                                        ? '⚠️ Supprimer aussi l\'OP génératrice ' . $op->numero . ' (remet l\'engagement à Validé)'
+                                        : 'Supprimer aussi l\'OP génératrice (remet l\'engagement à Validé)';
+                                })
+                                ->default(false),
+                        ])
+                        ->action(function ($record, array $data) {
+                            DB::transaction(function () use ($record, $data) {
+                                $numeroOpt = $record->numero;
+
+                                if ($data['supprimer_op_aussi'] ?? false) {
+                                    // Trouver et supprimer l'OP génératrice
+                                    $op = OrdonnancePaiement::where('engagement_id', $record->engagement_id)
+                                        ->where('type_ordonnance', 'standard')
+                                        ->first();
+
+                                    if ($op) {
+                                        $numeroOp = $op->numero;
+                                        $op->delete();
+
+                                        // Remettre l'engagement à 'valide'
+                                        if ($record->engagement_id) {
+                                            Engagement::where('id', $record->engagement_id)
+                                                ->update(['statut' => 'provisoire']);
+                                        }
+
+                                        // Supprimer l'OPT
+                                        $record->delete();
+
+                                        Notification::make()
+                                            ->title('✅ OPT et OP supprimées')
+                                            ->body($numeroOpt . ' + ' . $numeroOp . ' supprimées. Engagement remis à Validé.')
+                                            ->success()
+                                            ->send();
+
+                                        return;
+                                    }
+                                }
+
+                                // Supprimer uniquement l'OPT
+                                $record->delete();
+
+                                Notification::make()
+                                    ->title('✅ OPT supprimée')
+                                    ->body($numeroOpt . ' supprimée. L\'OP génératrice est conservée.')
+                                    ->success()
+                                    ->send();
+                            });
+                        }),
+
                     // ── PDF OP Standard ───────────────────────────
                     Tables\Actions\Action::make('afficher_op')
                         ->label('Aperçu OP')
@@ -423,7 +526,7 @@ class OrdonnancePaiementResource extends Resource
                         ->action(function ($record, array $data, $livewire) {
                             $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', [
                                 'etat' => $data['variante'],
-                                'id' => $record->id,
+                                'id'   => $record->id,
                             ]));
                         }),
 
@@ -443,7 +546,7 @@ class OrdonnancePaiementResource extends Resource
                         ->action(function ($record, array $data, $livewire) {
                             $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
                                 'etat' => $data['variante'],
-                                'id' => $record->id,
+                                'id'   => $record->id,
                             ]));
                         }),
 
@@ -463,7 +566,7 @@ class OrdonnancePaiementResource extends Resource
                         ->action(function ($record, array $data, $livewire) {
                             $livewire->dispatch('open-url-new-tab', url: route('pdf.afficher', [
                                 'etat' => $data['variante'],
-                                'id' => $record->id,
+                                'id'   => $record->id,
                             ]));
                         }),
 
@@ -482,7 +585,7 @@ class OrdonnancePaiementResource extends Resource
                         ->action(function ($record, array $data, $livewire) {
                             $livewire->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
                                 'etat' => $data['variante'],
-                                'id' => $record->id,
+                                'id'   => $record->id,
                             ]));
                         }),
 
@@ -496,10 +599,6 @@ class OrdonnancePaiementResource extends Resource
             ], position: ActionsPosition::BeforeColumns)
 
             ->headerActions([
-                // ════════════════════════════════════════════════════════
-                // 📊 ACTIONS D'EXPORT (header — inchangées)
-                // ════════════════════════════════════════════════════════
-
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('export_excel_salaires_standard')
                         ->label('Excel OP Standard - Salaires')
@@ -508,7 +607,7 @@ class OrdonnancePaiementResource extends Resource
                         ->action(function (array $data) {
                             $nomenclatureIds = $data['nomenclature_ids'] ?? [];
                             [$dateDebut, $dateFin] = static::resoudrePeriode($data);
-                            return \Maatwebsite\Excel\Facades\Excel::download(
+                            return Excel::download(
                                 new \App\Exports\OrdonnancesSalairesExport('standard', $nomenclatureIds, $dateDebut, $dateFin),
                                 'OP_Standard_Salaires_' . now()->format('Y-m-d') . '.xlsx'
                             );
@@ -530,7 +629,7 @@ class OrdonnancePaiementResource extends Resource
                         ->action(function (array $data) {
                             $nomenclatureIds = $data['nomenclature_ids'] ?? [];
                             [$dateDebut, $dateFin] = static::resoudrePeriode($data);
-                            return \Maatwebsite\Excel\Facades\Excel::download(
+                            return Excel::download(
                                 new \App\Exports\OrdonnancesSalairesExport('impot', $nomenclatureIds, $dateDebut, $dateFin),
                                 'OPT_Impot_Salaires_' . now()->format('Y-m-d') . '.xlsx'
                             );
@@ -655,7 +754,7 @@ class OrdonnancePaiementResource extends Resource
                         ->mapWithKeys(fn($n) => [$n->id => "{$n->code} — {$n->libelle}"]);
                 })
                 ->multiple()->required()->searchable()
-                ->helperText('Sélectionnez une ou plusieurs lignes — les OP seront groupées par nomenclature')
+                ->helperText('Sélectionnez une ou plusieurs lignes')
                 ->columnSpanFull(),
 
             Forms\Components\Radio::make('mode_periode')
@@ -727,8 +826,6 @@ class OrdonnancePaiementResource extends Resource
             '12' => 'Décembre',
         ][$mois];
 
-        $periode = $moisNom . ' ' . $annee;
-
         $pdf = Pdf::loadView('pdf.ordonnances-liste', [
             'ordonnances'  => $ordonnances,
             'statistiques' => [
@@ -737,16 +834,15 @@ class OrdonnancePaiementResource extends Resource
                 'montant_impot' => $ordonnances->sum('montant_impot'),
                 'montant_net'   => $ordonnances->sum('montant_net'),
             ],
-            'periode'      => $periode,
-            'filtres'      => ['Type : ' . ($type === 'standard' ? 'OP Standard' : 'OP Impôt'), 'Période : ' . $periode],
-            'utilisateur'  => auth()->user()->name,
+            'periode'     => $moisNom . ' ' . $annee,
+            'filtres'     => ['Type : ' . ($type === 'standard' ? 'OP Standard' : 'OP Impôt'), 'Période : ' . $moisNom . ' ' . $annee],
+            'utilisateur' => auth()->user()->name,
         ])
             ->setPaper('a4', 'landscape')
             ->setOption('margin-top', 10)->setOption('margin-right', 10)
             ->setOption('margin-bottom', 10)->setOption('margin-left', 10);
 
         $filename = 'Liste_OP_' . ($type === 'standard' ? 'Standard' : 'Impot') . '_' . $mois . '_' . $annee . '.pdf';
-
         return response()->streamDownload(fn() => print($pdf->output()), $filename);
     }
 
@@ -768,12 +864,8 @@ class OrdonnancePaiementResource extends Resource
         $periode = '';
         if ($dateDebut && $dateFin)
             $periode = \Carbon\Carbon::parse($dateDebut)->format('d/m/Y') . ' — ' . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
-        elseif ($dateDebut)
-            $periode = 'À partir du ' . \Carbon\Carbon::parse($dateDebut)->format('d/m/Y');
-        elseif ($dateFin)
-            $periode = "Jusqu'au " . \Carbon\Carbon::parse($dateFin)->format('d/m/Y');
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.ordonnances-salaires', [
+        $pdf = Pdf::loadView('pdf.ordonnances-salaires', [
             'groupes'        => $groupes,
             'grandTotal'     => $groupes->sum('total'),
             'periode'        => $periode,

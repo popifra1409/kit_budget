@@ -621,6 +621,48 @@ class EngagementResource extends Resource
                             }
                         }),
 
+                    Tables\Actions\Action::make('supprimer')
+                        ->label('Supprimer')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->visible(
+                            fn($record) =>
+                            $record->statut === 'provisoire'
+                                && !$record->ordonnancesPaiement()->exists()
+                                && auth()->user()?->can('delete_engagement')
+                        )
+                        ->requiresConfirmation()
+                        ->modalIcon('heroicon-o-exclamation-triangle')
+                        ->modalHeading(fn($record) => 'Supprimer ' . $record->numero . ' ?')
+                        ->modalDescription(function ($record) {
+                            $msg = 'Cette action est <strong>irréversible</strong>.';
+
+                            if ($record->engageable) {
+                                $type  = $record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative';
+                                $etat  = $record->estBonCommande()  ? '<strong>Validé</strong>' : '<strong>Validée</strong>';
+                                $msg  .= "<br><br>Le document source ({$type} <strong>{$record->engageable->numero}</strong>) "
+                                    . "sera remis à l'état {$etat}.";
+                            }
+
+                            return new \Illuminate\Support\HtmlString($msg);
+                        })
+                        ->action(function ($record) {
+                            // La mise à jour DA/BC est gérée automatiquement
+                            // par le hook static::deleted() dans Engagement::booted()
+                            $numero = $record->numero;
+                            $record->delete();
+
+                            Notification::make()
+                                ->title('✅ Engagement supprimé')
+                                ->body($numero . ' supprimé.'
+                                    . ($record->engageable
+                                        ? ' ' . ($record->estBonCommande() ? 'BC' : 'DA')
+                                        . ' ' . $record->engageable->numero . ' → remis à Validé/Validée.'
+                                        : ''))
+                                ->success()
+                                ->send();
+                        }),
+
                     // ── PDF (sous-menu imbriqué) ───────────────────
                     Tables\Actions\ActionGroup::make([
 
@@ -740,7 +782,43 @@ class EngagementResource extends Resource
             ], position: ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+
+                    // ✅ BulkDelete sécurisé — met à jour DA/BC avant suppression
+                    Tables\Actions\BulkAction::make('delete_bulk')
+                        ->label('Supprimer la sélection')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Supprimer les engagements sélectionnés ?')
+                        ->modalDescription(
+                            'Seuls les engagements provisoires sans ordonnances seront supprimés. '
+                                . 'Les documents source (BC/DA) seront remis à leur état précédent.'
+                        )
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records) {
+                            $supprimés = 0;
+                            $ignorés   = 0;
+
+                            foreach ($records as $record) {
+                                // Sécurité : ne supprimer que les provisoires sans OP
+                                if ($record->statut !== 'provisoire' || $record->ordonnancesPaiement()->exists()) {
+                                    $ignorés++;
+                                    continue;
+                                }
+                                // Le hook booted::deleted gère la mise à jour DA/BC
+                                $record->delete();
+                                $supprimés++;
+                            }
+
+                            $msg = "{$supprimés} engagement(s) supprimé(s).";
+                            if ($ignorés > 0) $msg .= " {$ignorés} ignoré(s) (définitifs ou avec OP).";
+
+                            Notification::make()
+                                ->title('✅ Suppression terminée')
+                                ->body($msg)
+                                ->success()
+                                ->send();
+                        }),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');

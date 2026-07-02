@@ -3,12 +3,16 @@
 namespace App\Filament\Budget\Resources\OrdonnancePaiementResource\Pages;
 
 use App\Filament\Budget\Resources\OrdonnancePaiementResource;
+use App\Models\OrdonnancePaiement;
+use App\Models\Engagement;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use App\Models\EtatConfig;
 use Filament\Forms;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 
 class ViewOrdonnancePaiement extends ViewRecord
 {
@@ -31,8 +35,8 @@ class ViewOrdonnancePaiement extends ViewRecord
                             ->label('Type')
                             ->formatStateUsing(fn($state) => match ($state) {
                                 'standard' => 'Standard (Fournisseur)',
-                                'impot' => 'Impôt (Direction des Impôts)',
-                                default => $state,
+                                'impot'    => 'Impôt (Direction des Impôts)',
+                                default    => $state,
                             })
                             ->badge()
                             ->color(fn($state) => $state === 'standard' ? 'primary' : 'warning'),
@@ -164,9 +168,11 @@ class ViewOrdonnancePaiement extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\EditAction::make(),
+            // ── Éditer ───────────────────────────────────────────────
+            Actions\EditAction::make()
+                ->visible(fn() => OrdonnancePaiementResource::canEdit($this->record)),
 
-            // ── Télécharger OP ───────────────────────────────────────
+            // ── Télécharger PDF ──────────────────────────────────────
             Actions\Action::make('telecharger')
                 ->label('Télécharger PDF')
                 ->icon('heroicon-o-arrow-down-tray')
@@ -176,27 +182,25 @@ class ViewOrdonnancePaiement extends ViewRecord
                         ->label('Modèle d\'état')
                         ->options(fn() => EtatConfig::variantesPour(
                             $this->record->type_ordonnance === 'impot'
-                            ? 'ordonnance_paiement_impot'
-                            : 'ordonnance_paiement'
+                                ? 'ordonnance_paiement_impot'
+                                : 'ordonnance_paiement'
                         ))
-                        // ✅ Défaut dynamique depuis la base
                         ->default(fn() => EtatConfig::defautPour(
                             $this->record->type_ordonnance === 'impot'
-                            ? 'ordonnance_paiement_impot'
-                            : 'ordonnance_paiement'
+                                ? 'ordonnance_paiement_impot'
+                                : 'ordonnance_paiement'
                         )?->code)
                         ->required()
                         ->helperText('⭐ = modèle par défaut'),
                 ])
                 ->action(function (array $data) {
-                    $url = route('pdf.telecharger', [
+                    $this->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
                         'etat' => $data['variante'],
-                        'id' => $this->record->id,
-                    ]);
-                    $this->dispatch('open-url-new-tab', url: $url);
+                        'id'   => $this->record->id,
+                    ]));
                 }),
 
-            // ── Aperçu OP ────────────────────────────────────────────
+            // ── Aperçu PDF ───────────────────────────────────────────
             Actions\Action::make('apercu')
                 ->label('Aperçu PDF')
                 ->icon('heroicon-o-eye')
@@ -206,28 +210,178 @@ class ViewOrdonnancePaiement extends ViewRecord
                         ->label('Modèle d\'état')
                         ->options(fn() => EtatConfig::variantesPour(
                             $this->record->type_ordonnance === 'impot'
-                            ? 'ordonnance_paiement_impot'
-                            : 'ordonnance_paiement'
+                                ? 'ordonnance_paiement_impot'
+                                : 'ordonnance_paiement'
                         ))
-                        // ✅ Défaut dynamique depuis la base
                         ->default(fn() => EtatConfig::defautPour(
                             $this->record->type_ordonnance === 'impot'
-                            ? 'ordonnance_paiement_impot'
-                            : 'ordonnance_paiement'
+                                ? 'ordonnance_paiement_impot'
+                                : 'ordonnance_paiement'
                         )?->code)
                         ->required()
                         ->helperText('⭐ = modèle par défaut'),
                 ])
                 ->action(function (array $data) {
-                    $url = route('pdf.afficher', [
+                    $this->dispatch('open-url-new-tab', url: route('pdf.afficher', [
                         'etat' => $data['variante'],
-                        'id' => $this->record->id,
-                    ]);
-                    $this->dispatch('open-url-new-tab', url: $url);
+                        'id'   => $this->record->id,
+                    ]));
                 })
                 ->openUrlInNewTab(),
 
-            Actions\DeleteAction::make(),
+            // ════════════════════════════════════════════════════════
+            // ✅ SUPPRIMER OP STANDARD
+            //    Remplace Actions\DeleteAction::make() par défaut
+            //    → supprime l'OPT liée automatiquement
+            //    → remet l'engagement à 'provisoire'
+            //    → redirige vers la liste
+            // ════════════════════════════════════════════════════════
+            Actions\Action::make('supprimer_op')
+                ->label('Supprimer')
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->visible(
+                    fn() =>
+                    $this->record->type_ordonnance === 'standard'
+                        && $this->record->statut !== 'payee'
+                        && OrdonnancePaiementResource::canDelete($this->record)
+                )
+                ->requiresConfirmation()
+                ->modalIcon('heroicon-o-exclamation-triangle')
+                ->modalHeading(fn() => 'Supprimer ' . $this->record->numero . ' ?')
+                ->modalDescription(function () {
+                    $opt = OrdonnancePaiement::where('engagement_id', $this->record->engagement_id)
+                        ->where('type_ordonnance', 'impot')
+                        ->first();
+
+                    $msg = 'Cette action est <strong>irréversible</strong>.'
+                        . ' L\'engagement associé sera remis à l\'état <strong>Provisoire</strong>.';
+
+                    if ($opt) {
+                        $msg .= '<br><br>⚠️ L\'ordonnance impôt <strong>'
+                            . $opt->numero
+                            . '</strong> sera également supprimée automatiquement.';
+                    }
+
+                    return new \Illuminate\Support\HtmlString($msg);
+                })
+                ->action(function () {
+                    DB::transaction(function () {
+                        // 1. Supprimer l'OPT liée (même engagement)
+                        OrdonnancePaiement::where('engagement_id', $this->record->engagement_id)
+                            ->where('type_ordonnance', 'impot')
+                            ->each(fn($opt) => $opt->delete());
+
+                        // 2. Remettre l'engagement à 'provisoire'
+                        if ($this->record->engagement_id) {
+                            Engagement::where('id', $this->record->engagement_id)
+                                ->update(['statut' => 'provisoire']);
+                        }
+
+                        // 3. Supprimer l'OP
+                        $numero = $this->record->numero;
+                        $this->record->delete();
+
+                        Notification::make()
+                            ->title('✅ Ordonnance supprimée')
+                            ->body($numero . ' supprimée. Engagement remis à l\'état Provisoire.')
+                            ->success()
+                            ->send();
+                    });
+
+                    $this->redirect(OrdonnancePaiementResource::getUrl('index'));
+                }),
+
+            // ════════════════════════════════════════════════════════
+            // ✅ SUPPRIMER OPT (Impôt)
+            //    → supprime l'OPT
+            //    → checkbox optionnelle pour supprimer aussi l'OP génératrice
+            // ════════════════════════════════════════════════════════
+            Actions\Action::make('supprimer_opt')
+                ->label('Supprimer')
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->visible(
+                    fn() =>
+                    $this->record->type_ordonnance === 'impot'
+                        && $this->record->statut !== 'payee'
+                        && OrdonnancePaiementResource::canDelete($this->record)
+                )
+                ->modalIcon('heroicon-o-exclamation-triangle')
+                ->modalHeading(fn() => 'Supprimer ' . $this->record->numero . ' ?')
+                ->modalDescription(function () {
+                    $op = OrdonnancePaiement::where('engagement_id', $this->record->engagement_id)
+                        ->where('type_ordonnance', 'standard')
+                        ->first();
+
+                    if ($op) {
+                        return new \Illuminate\Support\HtmlString(
+                            'Vous supprimez uniquement l\'OPT <strong>' . $this->record->numero . '</strong>.'
+                                . '<br>L\'OP génératrice <strong>' . $op->numero . '</strong> sera <u>conservée</u>.'
+                                . '<br><br>Cochez l\'option ci-dessous pour la supprimer aussi '
+                                . '(l\'engagement sera alors remis à <strong>Provisoire</strong>).'
+                        );
+                    }
+
+                    return new \Illuminate\Support\HtmlString(
+                        'Suppression de l\'OPT <strong>' . $this->record->numero . '</strong>. Action irréversible.'
+                    );
+                })
+                ->form([
+                    Forms\Components\Checkbox::make('supprimer_op_aussi')
+                        ->label(function () {
+                            $op = OrdonnancePaiement::where('engagement_id', $this->record->engagement_id)
+                                ->where('type_ordonnance', 'standard')
+                                ->first();
+                            return $op
+                                ? '⚠️ Supprimer aussi l\'OP génératrice ' . $op->numero . ' (remet l\'engagement à Provisoire)'
+                                : 'Supprimer aussi l\'OP génératrice (remet l\'engagement à Provisoire)';
+                        })
+                        ->default(false),
+                ])
+                ->action(function (array $data) {
+                    DB::transaction(function () use ($data) {
+                        $numeroOpt = $this->record->numero;
+
+                        if ($data['supprimer_op_aussi'] ?? false) {
+                            $op = OrdonnancePaiement::where('engagement_id', $this->record->engagement_id)
+                                ->where('type_ordonnance', 'standard')
+                                ->first();
+
+                            if ($op) {
+                                $numeroOp = $op->numero;
+                                $op->delete();
+
+                                if ($this->record->engagement_id) {
+                                    Engagement::where('id', $this->record->engagement_id)
+                                        ->update(['statut' => 'provisoire']);
+                                }
+
+                                $this->record->delete();
+
+                                Notification::make()
+                                    ->title('✅ OPT et OP supprimées')
+                                    ->body($numeroOpt . ' + ' . $numeroOp . ' supprimées. Engagement remis à Provisoire.')
+                                    ->success()
+                                    ->send();
+
+                                $this->redirect(OrdonnancePaiementResource::getUrl('index'));
+                                return;
+                            }
+                        }
+
+                        // Supprimer uniquement l'OPT
+                        $this->record->delete();
+
+                        Notification::make()
+                            ->title('✅ OPT supprimée')
+                            ->body($numeroOpt . ' supprimée. L\'OP génératrice est conservée.')
+                            ->success()
+                            ->send();
+
+                        $this->redirect(OrdonnancePaiementResource::getUrl('index'));
+                    });
+                }),
         ];
     }
 }
