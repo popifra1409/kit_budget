@@ -37,24 +37,18 @@ class ViewEngagement extends ViewRecord
                 ->modalHeading('Passer l\'engagement en définitif')
                 ->modalDescription(
                     fn($record) =>
-                    "Voulez-vous passer l'engagement {$record->numero} en statut définitif ?\n" .
-                        "Montant : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA\n\n" .
-                        "Cette action est irréversible."
+                    "Voulez-vous passer l'engagement {$record->numero} en statut définitif ?\n"
+                        . "Montant : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA\n\n"
+                        . "Cette action est irréversible."
                 )
                 ->action(function ($record) {
                     try {
                         $record->passerDefinitif(auth()->user());
-                        Notification::make()
-                            ->title('✅ Engagement passé en définitif')->success()
-                            ->body("L'engagement {$record->numero} est maintenant définitif.")
-                            ->send();
-                        return redirect()->route(
-                            'filament.budget.resources.engagements.view',
-                            ['record' => $record]
-                        );
+                        Notification::make()->title('✅ Engagement passé en définitif')->success()
+                            ->body("L'engagement {$record->numero} est maintenant définitif.")->send();
+                        return redirect()->route('filament.budget.resources.engagements.view', ['record' => $record]);
                     } catch (\Exception $e) {
-                        Notification::make()->title('❌ Erreur')->danger()
-                            ->body($e->getMessage())->send();
+                        Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->send();
                     }
                 }),
 
@@ -63,16 +57,13 @@ class ViewEngagement extends ViewRecord
                 ->label('Créer les OP')
                 ->icon('heroicon-o-document-currency-dollar')
                 ->color('primary')
-                ->visible(
-                    fn($record) =>
-                    $record->statut === 'definitif' && !$record->hasOrdonnancesPaiement()
-                )
+                ->visible(fn($record) => $record->statut === 'definitif' && !$record->hasOrdonnancesPaiement())
                 ->requiresConfirmation()
                 ->modalHeading('Créer les ordonnances de paiement')
                 ->modalDescription(
                     fn($record) =>
-                    "Créer les ordonnances pour l'engagement {$record->numero} ?\n\n" .
-                        "Montant : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA"
+                    "Créer les ordonnances pour l'engagement {$record->numero} ?\n\n"
+                        . "Montant : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA"
                 )
                 ->modalContent(function ($record) {
                     $record->load(['engageable', 'beneficiaire']);
@@ -88,17 +79,14 @@ class ViewEngagement extends ViewRecord
                         $ordonnances = $record->creerOrdonnancesPaiement();
                         $message = "✅ Ordonnances créées :\n\n";
                         if (isset($ordonnances['standard']))
-                            $message .= "• OP Standard : {$ordonnances['standard']->numero} — " .
-                                number_format($ordonnances['standard']->montant_net, 0, ',', ' ') . " FCFA\n";
+                            $message .= "• OP Standard : {$ordonnances['standard']->numero} — "
+                                . number_format($ordonnances['standard']->montant_net, 0, ',', ' ') . " FCFA\n";
                         if (isset($ordonnances['impot']))
-                            $message .= "• OP Impôt : {$ordonnances['impot']->numero} — " .
-                                number_format($ordonnances['impot']->montant_net, 0, ',', ' ') . " FCFA";
+                            $message .= "• OP Impôt : {$ordonnances['impot']->numero} — "
+                                . number_format($ordonnances['impot']->montant_net, 0, ',', ' ') . " FCFA";
                         Notification::make()->title('Ordonnances créées')->success()
                             ->body($message)->duration(10000)->send();
-                        return redirect()->route(
-                            'filament.budget.resources.engagements.view',
-                            ['record' => $record]
-                        );
+                        return redirect()->route('filament.budget.resources.engagements.view', ['record' => $record]);
                     } catch (\Exception $e) {
                         Notification::make()->title('❌ Erreur')->danger()
                             ->body($e->getMessage())->persistent()->send();
@@ -139,10 +127,8 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->required()->live()
                         ->helperText('Choisissez ce qui doit être corrigé'),
 
-                    // ✅ Objet — placeholder uniquement (vide = ne pas modifier)
                     Forms\Components\Textarea::make('nouvel_objet')
-                        ->label('Nouvel objet')
-                        ->rows(2)
+                        ->label('Nouvel objet')->rows(2)
                         ->placeholder(fn() => $this->record->objet ?? '—')
                         ->helperText('📋 Avant avenant : ' . ($this->record->objet ?? '—') . ' — laissez vide pour conserver')
                         ->visible(fn(Get $get) => in_array($get('type_correction'), ['objet', 'complet']))
@@ -150,161 +136,63 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
 
                     Forms\Components\Section::make('Nouveaux montants du document')
                         ->schema([
-                            // ── DA : Montant brut ──────────────────────────────
                             Forms\Components\TextInput::make('montant_brut')
                                 ->label('Montant brut (FCFA)')->numeric()->prefix('FCFA')
-                                // ✅ Pré-rempli avec la valeur actuelle
-                                ->default(fn() => $this->record->engageable?->montant_brut
-                                    ?? $this->record->montant_engage)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_brut
-                                        ?? $this->record->montant_engage,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['montant', 'mixte', 'complet'])
-                                        && $this->record->estDecision()
-                                ),
+                                ->default(fn() => $this->record->engageable?->montant_brut ?? $this->record->montant_engage)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_brut ?? $this->record->montant_engage, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['montant', 'mixte', 'complet']) && $this->record->estDecision()),
 
-                            // ── DA : CNPS ──────────────────────────────────────
                             Forms\Components\TextInput::make('montant_cnps')
                                 ->label('CNPS (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->montant_cnps ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_cnps ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
-                                        && $this->record->estDecision()
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_cnps ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'mixte', 'complet']) && $this->record->estDecision()),
 
-                            // ── DA + BC : IR ───────────────────────────────────
                             Forms\Components\TextInput::make('montant_ir')
                                 ->label('IR (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->montant_ir ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_ir ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
-                                        && ($this->record->estDecision() || $this->record->estBonCommande())
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_ir ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'mixte', 'complet']) && ($this->record->estDecision() || $this->record->estBonCommande())),
 
-                            // ── DA : IRNC ──────────────────────────────────────
                             Forms\Components\TextInput::make('montant_irnc')
                                 ->label('IRNC (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->montant_irnc ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_irnc ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
-                                        && $this->record->estDecision()
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_irnc ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'mixte', 'complet']) && $this->record->estDecision()),
 
-                            // ── DA + BC : TVA ──────────────────────────────────
                             Forms\Components\TextInput::make('montant_tva')
                                 ->label('TVA (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->montant_tva ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_tva ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_tva ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])),
 
-                            // ── DA : Autres retenues ───────────────────────────
                             Forms\Components\TextInput::make('autres_retenues')
                                 ->label('Autres retenues (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->autres_retenues ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->autres_retenues ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
-                                        && $this->record->estDecision()
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->autres_retenues ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'mixte', 'complet']) && $this->record->estDecision()),
 
-                            // ── BC : Montant HT ────────────────────────────────
                             Forms\Components\TextInput::make('montant_ht')
                                 ->label('Montant HT (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->montant_ht ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_ht ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['montant', 'mixte', 'complet'])
-                                        && $this->record->estBonCommande()
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_ht ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['montant', 'mixte', 'complet']) && $this->record->estBonCommande()),
 
-                            // ── BC : Montant TTC ───────────────────────────────
                             Forms\Components\TextInput::make('montant_ttc')
                                 ->label('Montant TTC (FCFA)')->numeric()->prefix('FCFA')
-                                ->default(fn() => $this->record->engageable?->montant_ttc
-                                    ?? $this->record->montant_engage)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_ttc
-                                        ?? $this->record->montant_engage,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['montant', 'mixte', 'complet'])
-                                        && $this->record->estBonCommande()
-                                ),
+                                ->default(fn() => $this->record->engageable?->montant_ttc ?? $this->record->montant_engage)
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_ttc ?? $this->record->montant_engage, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['montant', 'mixte', 'complet']) && $this->record->estBonCommande()),
 
-                            // ── BC : TSR ───────────────────────────────────────
                             Forms\Components\TextInput::make('montant_tsr')
                                 ->label('TSR (FCFA)')->numeric()->prefix('FCFA')
                                 ->default(fn() => $this->record->engageable?->montant_tsr ?? 0)
-                                ->helperText(fn() => '📋 Avant avenant : ' . number_format(
-                                    $this->record->engageable?->montant_tsr ?? 0,
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA')
-                                ->visible(
-                                    fn(Get $get) =>
-                                    in_array($get('type_correction'), ['taxes', 'mixte', 'complet'])
-                                        && $this->record->estBonCommande()
-                                ),
+                                ->helperText(fn() => '📋 Avant avenant : ' . number_format($this->record->engageable?->montant_tsr ?? 0, 0, ',', ' ') . ' FCFA')
+                                ->visible(fn(Get $get) => in_array($get('type_correction'), ['taxes', 'mixte', 'complet']) && $this->record->estBonCommande()),
                         ])
                         ->columns(2)
-                        ->visible(
-                            fn(Get $get) =>
-                            in_array($get('type_correction'), ['montant', 'mixte', 'taxes', 'complet'])
-                        ),
+                        ->visible(fn(Get $get) => in_array($get('type_correction'), ['montant', 'mixte', 'taxes', 'complet'])),
 
-                    // ── Nouvelle ligne budgétaire ──────────────────────────
                     Forms\Components\Select::make('nomenclature_corrigee_id')
                         ->label('Nouvelle ligne budgétaire')
                         ->options(function () {
@@ -313,8 +201,8 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                 ->filter(fn($lb) => $lb->nomenclature)
                                 ->mapWithKeys(fn($lb) => [
                                     $lb->nomenclature_id =>
-                                    "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} " .
-                                        "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
+                                    "{$lb->nomenclature->code} - {$lb->nomenclature->libelle} "
+                                        . "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                 ])->toArray();
                         })
                         ->searchable()
@@ -330,16 +218,12 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                     $op = $this->record->ordonnancesPaiement()
                                         ->where('type_ordonnance', 'impot')->first();
                                     if (!$op) return new \Illuminate\Support\HtmlString(
-                                        '<span style="color:#6b7280;">
-                Aucune OP impôt — sera créée si des taxes sont renseignées.
-            </span>'
+                                        '<span style="color:#6b7280;">Aucune OP impôt — sera créée si des taxes sont renseignées.</span>'
                                     );
                                     return new \Illuminate\Support\HtmlString(
-                                        "<div style='background:#f0fdf4;border:1px solid #86efac;
-                border-radius:.375rem;padding:.5rem .75rem;'>
-                OP Impôt : <strong>{$op->numero}</strong> — " .
-                                            number_format($op->montant_net, 0, ',', ' ') . " FCFA
-            </div>"
+                                        "<div style='background:#f0fdf4;border:1px solid #86efac;border-radius:.375rem;padding:.5rem .75rem;'>"
+                                            . "OP Impôt : <strong>{$op->numero}</strong> — "
+                                            . number_format($op->montant_net, 0, ',', ' ') . " FCFA</div>"
                                     );
                                 })
                                 ->columnSpanFull(),
@@ -363,7 +247,6 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                 ->modalWidth('2xl')
                 ->action(function (array $data) {
 
-                    // Variables capturées pour le message final (hors transaction)
                     $optResultat       = null;
                     $optNumeroCorrige  = false;
                     $optNumeroOriginal = null;
@@ -377,7 +260,6 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                             &$optNumeroOriginal,
                             &$deltaFinal
                         ) {
-
                             $engagement      = $this->record;
                             $typeCorrection  = $data['type_correction'];
                             $montantOriginal = (float) $engagement->montant_engage;
@@ -479,10 +361,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
 
                                             $updateData = array_merge(
                                                 array_diff_key($donneesCorrection, ['objet' => null]),
-                                                [
-                                                    'net_a_percevoir' => $montantTtc
-                                                        - ($montantIr + $montantTva + $montantTsr),
-                                                ]
+                                                ['net_a_percevoir' => $montantTtc - ($montantIr + $montantTva + $montantTsr)]
                                             );
                                             if (!empty($donneesCorrection['objet'])) {
                                                 $updateData['objet'] = $donneesCorrection['objet'];
@@ -503,6 +382,91 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                             if (!empty($donneesCorrection['objet'])) {
                                 $engagement->updateQuietly(['objet' => $donneesCorrection['objet']]);
                             }
+
+                            // ═══════════════════════════════════════════════════════
+                            // ✅ FIX — TRANSFERT DE NOMENCLATURE BUDGÉTAIRE
+                            //    Déclenché pour : 'nomenclature', 'mixte', 'complet'
+                            //    Quand la ligne budgétaire change :
+                            //      1. Libérer crédits ancienne ligne
+                            //      2. Créditer nouvelle ligne
+                            //      3. Mettre à jour engagement.nomenclature_principale_id
+                            //      4. Mettre à jour lignes_engagement
+                            //      5. Recalculer les deux LigneBudgetaire
+                            // ═══════════════════════════════════════════════════════
+                            if (
+                                in_array($typeCorrection, ['nomenclature', 'mixte', 'complet'])
+                                && !empty($data['nomenclature_corrigee_id'])
+                                && (int) $data['nomenclature_corrigee_id'] !== (int) $nomenclatureOriginaleId
+                            ) {
+                                // Montant à transférer = montant corrigé (après avenant)
+                                $montantTransfere = $montantCorrige;
+
+                                // 1. Libérer les crédits sur l'ancienne ligne
+                                $ancienneLigne = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
+                                    ->where('nomenclature_id', $nomenclatureOriginaleId)
+                                    ->first();
+
+                                if ($ancienneLigne) {
+                                    $ancienneLigne->engage = max(0, (float) $ancienneLigne->engage - $montantTransfere);
+                                    $ancienneLigne->disponible_engagement =
+                                        (float) $ancienneLigne->budget_rectifie - $ancienneLigne->engage;
+                                    $ancienneLigne->saveQuietly();
+
+                                    Log::info('Avenant nomenclature — crédits libérés ancienne ligne', [
+                                        'engagement'       => $engagement->numero,
+                                        'nomenclature_old' => $nomenclatureOriginaleId,
+                                        'montant_libere'   => $montantTransfere,
+                                        'engage_restant'   => $ancienneLigne->engage,
+                                    ]);
+                                }
+
+                                // 2. Créditer la nouvelle ligne
+                                $nouvelleLigne = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
+                                    ->where('nomenclature_id', $nomenclatureCorrigeeId)
+                                    ->first();
+
+                                if (!$nouvelleLigne) {
+                                    throw new \Exception(
+                                        "Ligne budgétaire introuvable pour la nomenclature ID {$nomenclatureCorrigeeId}."
+                                    );
+                                }
+
+                                $nouvelleLigne->engage = (float) $nouvelleLigne->engage + $montantTransfere;
+                                $nouvelleLigne->disponible_engagement =
+                                    (float) $nouvelleLigne->budget_rectifie - $nouvelleLigne->engage;
+                                $nouvelleLigne->saveQuietly();
+
+                                Log::info('Avenant nomenclature — crédits ajoutés nouvelle ligne', [
+                                    'engagement'       => $engagement->numero,
+                                    'nomenclature_new' => $nomenclatureCorrigeeId,
+                                    'montant_ajoute'   => $montantTransfere,
+                                    'engage_nouveau'   => $nouvelleLigne->engage,
+                                ]);
+
+                                // 3. Mettre à jour engagement.nomenclature_principale_id
+                                $engagement->updateQuietly([
+                                    'nomenclature_principale_id' => $nomenclatureCorrigeeId,
+                                ]);
+
+                                // 4. Mettre à jour les lignes_engagement
+                                $engagement->lignes()
+                                    ->where('nomenclature_id', $nomenclatureOriginaleId)
+                                    ->update(['nomenclature_id' => $nomenclatureCorrigeeId]);
+
+                                Log::info('Avenant nomenclature appliqué', [
+                                    'engagement'        => $engagement->numero,
+                                    'nomenclature_old'  => $nomenclatureOriginaleId,
+                                    'nomenclature_new'  => $nomenclatureCorrigeeId,
+                                    'montant_transfere' => $montantTransfere,
+                                ]);
+
+                                // 5. Recalculer les deux lignes budgétaires
+                                $ancienneLigne?->recalculerDepuisEngagements();
+                                $nouvelleLigne->recalculerDepuisEngagements();
+                            }
+                            // ═══════════════════════════════════════════════════════
+                            // FIN FIX — suite du code original
+                            // ═══════════════════════════════════════════════════════
 
                             // ── Rafraîchir depuis la DB ───────────────────────────
                             $engagement->refresh();
@@ -525,98 +489,70 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                     + (float)($donneesCorrection['montant_tsr'] ?? $doc?->montant_tsr ?? 0);
                             }
 
-                            $opImpotExiste    = $engagement->ordonnancesPaiement()
-                                ->where('type_ordonnance', 'impot')->exists();
-                            $opStandardExiste = $engagement->ordonnancesPaiement()
-                                ->where('type_ordonnance', 'standard')->exists();
+                            $opImpotExiste    = $engagement->ordonnancesPaiement()->where('type_ordonnance', 'impot')->exists();
+                            $opStandardExiste = $engagement->ordonnancesPaiement()->where('type_ordonnance', 'standard')->exists();
 
                             // ════ CAS 1 : OPT absente + taxes > 0 → créer/mettre à jour ══
-                            if (
-                                !$opImpotExiste
-                                && $nouvellesTaxes > 0
-                                && in_array($typeCorrection, ['taxes', 'mixte', 'complet'])
-                            ) {
+                            if (!$opImpotExiste && $nouvellesTaxes > 0 && in_array($typeCorrection, ['taxes', 'mixte', 'complet'])) {
                                 $exerciceId = $engagement->exercice_id;
                                 $annee      = $engagement->exercice?->annee ?? now()->year;
 
-                                // ✅ 1. Numéro candidat = numéro OP standard avec préfixe OPT
                                 $numeroCandidat = null;
-
                                 if ($opStandardExiste) {
-                                    $opStdPourNumero = $engagement->ordonnancesPaiement()
-                                        ->where('type_ordonnance', 'standard')->first();
+                                    $opStdPourNumero = $engagement->ordonnancesPaiement()->where('type_ordonnance', 'standard')->first();
                                     if ($opStdPourNumero?->numero) {
                                         $numeroCandidat = preg_replace('/^OP-/', 'OPT-', $opStdPourNumero->numero);
                                     }
                                 }
-
-                                // Fallback si pas d'OP standard
                                 if (!$numeroCandidat) {
-                                    $seq            = \App\Models\OrdonnancePaiement::whereYear('created_at', $annee)
-                                        ->where('type_ordonnance', 'impot')
-                                        ->withTrashed()->count() + 1;
+                                    $seq            = \App\Models\OrdonnancePaiement::whereYear('created_at', $annee)->where('type_ordonnance', 'impot')->withTrashed()->count() + 1;
                                     $numeroCandidat = 'OPT-' . $annee . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
                                 }
 
-                                // ✅ 2. OPT (même soft-deleted) déjà liée à CET engagement ?
                                 $optExistanteTrashed = \App\Models\OrdonnancePaiement::withTrashed()
-                                    ->where('engagement_id', $engagement->id)
-                                    ->where('type_ordonnance', 'impot')
-                                    ->first();
+                                    ->where('engagement_id', $engagement->id)->where('type_ordonnance', 'impot')->first();
 
                                 $numeroOpt        = $numeroCandidat;
                                 $numeroFutCorrige = false;
 
                                 if (!$optExistanteTrashed) {
-                                    // ✅ 3. Vérifier collision : numéro déjà pris par UN AUTRE engagement
                                     $collision = \App\Models\OrdonnancePaiement::withTrashed()
-                                        ->where('numero', $numeroCandidat)
-                                        ->where('engagement_id', '!=', $engagement->id)
-                                        ->exists();
-
+                                        ->where('numero', $numeroCandidat)->where('engagement_id', '!=', $engagement->id)->exists();
                                     if ($collision) {
                                         $suffixe = 1;
                                         do {
-                                            $tentative = $suffixe === 1
-                                                ? $numeroCandidat . '-BIS'
-                                                : $numeroCandidat . '-BIS' . $suffixe;
-
-                                            $existe = \App\Models\OrdonnancePaiement::withTrashed()
-                                                ->where('numero', $tentative)->exists();
-
+                                            $tentative = $suffixe === 1 ? $numeroCandidat . '-BIS' : $numeroCandidat . '-BIS' . $suffixe;
+                                            $existe    = \App\Models\OrdonnancePaiement::withTrashed()->where('numero', $tentative)->exists();
                                             $suffixe++;
                                         } while ($existe && $suffixe < 20);
-
                                         $numeroOpt        = $tentative;
                                         $numeroFutCorrige = true;
-
-                                        Log::warning('Collision numéro OPT détectée — numéro alternatif généré', [
-                                            'engagement_actuel'  => $engagement->numero,
-                                            'numero_candidat'    => $numeroCandidat,
-                                            'numero_attribue'    => $numeroOpt,
+                                        Log::warning('Collision numéro OPT — numéro alternatif généré', [
+                                            'engagement_actuel' => $engagement->numero,
+                                            'numero_candidat'   => $numeroCandidat,
+                                            'numero_attribue'   => $numeroOpt,
                                         ]);
                                     }
                                 }
 
                                 $donneesOpt = [
-                                    'numero'               => $numeroOpt,
-                                    'engagement_id'        => $engagement->id,
-                                    'exercice_id'          => $exerciceId,
-                                    'type_ordonnance'      => 'impot',
-                                    'date_emission'        => now(),
-                                    'mois_emission'        => now()->month,
-                                    'statut'               => 'emise',
-                                    'montant_brut'         => $nouvellesTaxes,
-                                    'montant_impot'        => $nouvellesTaxes,
-                                    'montant_net'          => $nouvellesTaxes,
-                                    'objet'                => 'Reversement impôts et taxes — '
-                                        . ($engagement->objet ?? ''),
-                                    'created_by'           => auth()->id(),
-                                    'montant_tva'          => 0,
-                                    'montant_ir'           => 0,
-                                    'montant_tsr'          => 0,
-                                    'montant_cnps'         => 0,
-                                    'montant_irnc'         => 0,
+                                    'numero'          => $numeroOpt,
+                                    'engagement_id'   => $engagement->id,
+                                    'exercice_id'     => $exerciceId,
+                                    'type_ordonnance' => 'impot',
+                                    'date_emission'   => now(),
+                                    'mois_emission'   => now()->month,
+                                    'statut'          => 'emise',
+                                    'montant_brut'    => $nouvellesTaxes,
+                                    'montant_impot'   => $nouvellesTaxes,
+                                    'montant_net'     => $nouvellesTaxes,
+                                    'objet'           => 'Reversement impôts et taxes — ' . ($engagement->objet ?? ''),
+                                    'created_by'      => auth()->id(),
+                                    'montant_tva' => 0,
+                                    'montant_ir' => 0,
+                                    'montant_tsr' => 0,
+                                    'montant_cnps' => 0,
+                                    'montant_irnc' => 0,
                                     'montant_autres_taxes' => 0,
                                 ];
 
@@ -629,7 +565,6 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                         'montant_autres_taxes' => (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0),
                                     ]);
                                 }
-
                                 if ($engagement->estBonCommande()) {
                                     $donneesOpt = array_merge($donneesOpt, [
                                         'montant_ir'  => (float)($donneesCorrection['montant_ir']  ?? $doc?->montant_ir  ?? 0),
@@ -638,16 +573,11 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                     ]);
                                 }
 
-                                // ✅ 4. Créer / restaurer / mettre à jour
                                 if ($optExistanteTrashed) {
                                     if ($optExistanteTrashed->trashed()) {
                                         $optExistanteTrashed->restore();
-                                        Log::info('OPT restaurée (était soft-deleted)', [
-                                            'engagement' => $engagement->numero,
-                                            'opt'        => $optExistanteTrashed->numero,
-                                        ]);
+                                        Log::info('OPT restaurée (était soft-deleted)', ['engagement' => $engagement->numero, 'opt' => $optExistanteTrashed->numero]);
                                     }
-                                    // Conserver le numéro existant de l'OPT restaurée
                                     unset($donneesOpt['numero']);
                                     $optExistanteTrashed->update($donneesOpt);
                                     $opt = $optExistanteTrashed;
@@ -659,11 +589,8 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                 $optNumeroCorrige  = $numeroFutCorrige;
                                 $optNumeroOriginal = $numeroCandidat;
 
-                                // ✅ Recalculer l'OP standard
                                 if ($opStandardExiste) {
-                                    $opStd = $engagement->ordonnancesPaiement()
-                                        ->where('type_ordonnance', 'standard')->first();
-
+                                    $opStd = $engagement->ordonnancesPaiement()->where('type_ordonnance', 'standard')->first();
                                     if ($opStd && $engagement->estDecision()) {
                                         $mb = (float)($donneesCorrection['montant_brut'] ?? $doc?->montant_brut ?? 0);
                                         $tc = (float)($donneesCorrection['montant_cnps']    ?? $doc?->montant_cnps    ?? 0)
@@ -672,16 +599,15 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                             + (float)($donneesCorrection['montant_tva']     ?? $doc?->montant_tva     ?? 0)
                                             + (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0);
                                         $opStd->updateQuietly([
-                                            'montant_net'          => $mb - $tc,
-                                            'montant_brut'         => $mb,
-                                            'montant_cnps'         => (float)($donneesCorrection['montant_cnps']    ?? $doc?->montant_cnps    ?? 0),
-                                            'montant_ir'           => (float)($donneesCorrection['montant_ir']      ?? $doc?->montant_ir      ?? 0),
-                                            'montant_irnc'         => (float)($donneesCorrection['montant_irnc']    ?? $doc?->montant_irnc    ?? 0),
-                                            'montant_tva'          => (float)($donneesCorrection['montant_tva']     ?? $doc?->montant_tva     ?? 0),
+                                            'montant_net' => $mb - $tc,
+                                            'montant_brut' => $mb,
+                                            'montant_cnps' => (float)($donneesCorrection['montant_cnps'] ?? $doc?->montant_cnps ?? 0),
+                                            'montant_ir'   => (float)($donneesCorrection['montant_ir']   ?? $doc?->montant_ir   ?? 0),
+                                            'montant_irnc' => (float)($donneesCorrection['montant_irnc'] ?? $doc?->montant_irnc ?? 0),
+                                            'montant_tva'  => (float)($donneesCorrection['montant_tva']  ?? $doc?->montant_tva  ?? 0),
                                             'montant_autres_taxes' => (float)($donneesCorrection['autres_retenues'] ?? $doc?->autres_retenues ?? 0),
                                         ]);
                                     }
-
                                     if ($opStd && $engagement->estBonCommande()) {
                                         $ttc = (float)($donneesCorrection['montant_ttc'] ?? $doc?->montant_ttc ?? 0);
                                         $ir  = (float)($donneesCorrection['montant_ir']  ?? $doc?->montant_ir  ?? 0);
@@ -691,24 +617,17 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                             'montant_net'  => $ttc - ($ir + $tva + $tsr),
                                             'montant_brut' => $ttc,
                                             'montant_ir'   => $ir,
-                                            'montant_tva'  => $tva,
-                                            'montant_tsr'  => $tsr,
+                                            'montant_tva' => $tva,
+                                            'montant_tsr' => $tsr,
                                         ]);
                                     }
                                 }
 
-                                Log::info('OPT créée/restaurée/mise à jour via avenant', [
-                                    'engagement'     => $engagement->numero,
-                                    'opt'            => $opt->numero,
-                                    'taxes'          => $nouvellesTaxes,
-                                    'numero_corrige' => $numeroFutCorrige,
-                                ]);
+                                Log::info('OPT créée/restaurée via avenant', ['engagement' => $engagement->numero, 'opt' => $opt->numero, 'taxes' => $nouvellesTaxes]);
 
                                 // ════ CAS 2 : OPT existante → mettre à jour ══════════
                             } elseif ($opImpotExiste && $corrigerOp && !empty($donneesCorrection)) {
-
                                 foreach ($engagement->ordonnancesPaiement()->get() as $op) {
-
                                     if ($op->type_ordonnance === 'standard') {
                                         if ($doc instanceof \App\Models\DecisionAdministrative) {
                                             $montantBrut    = (float)($donneesCorrection['montant_brut']    ?? $doc->montant_brut);
@@ -717,15 +636,14 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                             $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                             $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                             $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
-                                            $totalTaxes     = $montantCnps + $montantIr + $montantIrnc
-                                                + $montantTva + $autresRetenues;
+                                            $totalTaxes     = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
                                             $op->updateQuietly([
-                                                'montant_net'          => $montantBrut - $totalTaxes,
-                                                'montant_brut'         => $montantBrut,
-                                                'montant_cnps'         => $montantCnps,
-                                                'montant_ir'           => $montantIr,
-                                                'montant_irnc'         => $montantIrnc,
-                                                'montant_tva'          => $montantTva,
+                                                'montant_net' => $montantBrut - $totalTaxes,
+                                                'montant_brut' => $montantBrut,
+                                                'montant_cnps' => $montantCnps,
+                                                'montant_ir' => $montantIr,
+                                                'montant_irnc' => $montantIrnc,
+                                                'montant_tva' => $montantTva,
                                                 'montant_autres_taxes' => $autresRetenues,
                                             ]);
                                         } elseif ($doc instanceof \App\Models\BonCommande) {
@@ -737,8 +655,8 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                                 'montant_net'  => $montantTtc - ($montantIr + $montantTva + $montantTsr),
                                                 'montant_brut' => $montantTtc,
                                                 'montant_tva'  => $montantTva,
-                                                'montant_ir'   => $montantIr,
-                                                'montant_tsr'  => $montantTsr,
+                                                'montant_ir' => $montantIr,
+                                                'montant_tsr' => $montantTsr,
                                             ]);
                                         }
                                     } elseif ($op->type_ordonnance === 'impot') {
@@ -748,16 +666,15 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                             $montantIrnc    = (float)($donneesCorrection['montant_irnc']    ?? $doc->montant_irnc);
                                             $montantTva     = (float)($donneesCorrection['montant_tva']     ?? $doc->montant_tva);
                                             $autresRetenues = (float)($donneesCorrection['autres_retenues'] ?? $doc->autres_retenues);
-                                            $total          = $montantCnps + $montantIr + $montantIrnc
-                                                + $montantTva + $autresRetenues;
+                                            $total          = $montantCnps + $montantIr + $montantIrnc + $montantTva + $autresRetenues;
                                             $op->updateQuietly([
-                                                'montant_net'          => $total,
-                                                'montant_impot'        => $total,
-                                                'montant_brut'         => $total,
-                                                'montant_cnps'         => $montantCnps,
-                                                'montant_ir'           => $montantIr,
-                                                'montant_irnc'         => $montantIrnc,
-                                                'montant_tva'          => $montantTva,
+                                                'montant_net' => $total,
+                                                'montant_impot' => $total,
+                                                'montant_brut' => $total,
+                                                'montant_cnps' => $montantCnps,
+                                                'montant_ir' => $montantIr,
+                                                'montant_irnc' => $montantIrnc,
+                                                'montant_tva' => $montantTva,
                                                 'montant_autres_taxes' => $autresRetenues,
                                             ]);
                                         } elseif ($doc instanceof \App\Models\BonCommande) {
@@ -766,96 +683,73 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                             $montantTsr = (float)($donneesCorrection['montant_tsr'] ?? $doc->montant_tsr);
                                             $total      = $montantIr + $montantTva + $montantTsr;
                                             $op->updateQuietly([
-                                                'montant_net'   => $total,
+                                                'montant_net' => $total,
                                                 'montant_impot' => $total,
-                                                'montant_brut'  => $total,
-                                                'montant_ir'    => $montantIr,
-                                                'montant_tva'   => $montantTva,
-                                                'montant_tsr'   => $montantTsr,
+                                                'montant_brut' => $total,
+                                                'montant_ir' => $montantIr,
+                                                'montant_tva' => $montantTva,
+                                                'montant_tsr' => $montantTsr,
                                             ]);
                                         }
                                     }
-
-                                    Log::info('OP mise à jour par avenant', [
-                                        'op_numero'           => $op->numero,
-                                        'type'                => $op->type_ordonnance,
-                                        'nouveau_montant_net' => $op->fresh()->montant_net,
-                                    ]);
+                                    Log::info('OP mise à jour par avenant', ['op_numero' => $op->numero, 'type' => $op->type_ordonnance, 'nouveau_montant_net' => $op->fresh()->montant_net]);
                                 }
 
-                                // ✅ Supprimer l'OPT si taxes devenues nulles
-                                $opImpot = $engagement->ordonnancesPaiement()
-                                    ->where('type_ordonnance', 'impot')->first();
+                                $opImpot = $engagement->ordonnancesPaiement()->where('type_ordonnance', 'impot')->first();
                                 if ($opImpot && $nouvellesTaxes <= 0) {
                                     $opImpot->delete();
                                 }
                             }
 
-                            // ════════════════════════════════════════════════════
-                            // ✅ RÉPERCUSSION FINALE DE L'OBJET — exécutée EN DERNIER
-                            //    pour ne jamais être écrasée par CAS1/CAS2/OPT créée
-                            // ════════════════════════════════════════════════════
+                            // ── Répercussion objet sur les OP (en dernier) ────────
                             if (!empty($donneesCorrection['objet'])) {
-                                $objetFinal     = $engagement->objet; // déjà à jour (refresh fait plus haut)
+                                $objetFinal     = $engagement->objet;
                                 $nouvelObjetOpt = 'Reversement impôts et taxes — ' . $objetFinal;
-
-                                $opsAMettreAJour = $engagement->ordonnancesPaiement()
-                                    ->withTrashed() // ✅ inclut l'OPT restaurée éventuelle
-                                    ->get();
-
+                                $opsAMettreAJour = $engagement->ordonnancesPaiement()->withTrashed()->get();
                                 foreach ($opsAMettreAJour as $op) {
-                                    $nouvelObjet = $op->type_ordonnance === 'impot'
-                                        ? $nouvelObjetOpt
-                                        : $objetFinal;
-
-                                    if ($op->objet !== $nouvelObjet) {
-                                        $op->updateQuietly(['objet' => $nouvelObjet]);
-                                    }
+                                    $nouvelObjet = $op->type_ordonnance === 'impot' ? $nouvelObjetOpt : $objetFinal;
+                                    if ($op->objet !== $nouvelObjet) $op->updateQuietly(['objet' => $nouvelObjet]);
                                 }
-
-                                Log::info('Objet répercuté sur les ordonnances (final)', [
-                                    'engagement'         => $engagement->numero,
-                                    'nouvel_objet'       => $objetFinal,
-                                    'nb_op_mises_a_jour' => $opsAMettreAJour->count(),
-                                ]);
+                                Log::info('Objet répercuté sur les ordonnances', ['engagement' => $engagement->numero, 'nb_op' => $opsAMettreAJour->count()]);
                             }
-                        }); // ✅ fin DB::transaction
+                        }); // fin DB::transaction
 
-                        // ── Message résumé (hors transaction) ────────────────
+                        // ── Message résumé ────────────────────────────────────
                         $engagement     = $this->record->fresh();
                         $typeCorrection = $data['type_correction'];
+                        $msgParts       = ['✅ Avenant appliqué avec succès.'];
 
-                        $msgParts = ['✅ Avenant appliqué avec succès.'];
-
-                        $opImpot = $engagement->ordonnancesPaiement()
-                            ->where('type_ordonnance', 'impot')->first();
+                        $opImpot = $engagement->ordonnancesPaiement()->where('type_ordonnance', 'impot')->first();
 
                         if ($optResultat) {
                             if ($optNumeroCorrige) {
-                                $msgParts[] = "⚠️ ATTENTION : Le numéro attendu ({$optNumeroOriginal}) "
-                                    . "était déjà utilisé par un autre engagement (donnée incohérente).\n"
-                                    . "Une OPT a été créée/mise à jour avec le numéro alternatif : {$optResultat->numero}\n"
-                                    . "Veuillez signaler ce cas à l'administrateur pour vérifier "
-                                    . "l'engagement portant le numéro {$optNumeroOriginal}.";
+                                $msgParts[] = "⚠️ ATTENTION : Le numéro attendu ({$optNumeroOriginal}) était déjà utilisé.\n"
+                                    . "OPT créée avec le numéro alternatif : {$optResultat->numero}";
                             } else {
-                                $msgParts[] = "OPT : {$optResultat->numero} — "
-                                    . number_format($optResultat->montant_net, 0, ',', ' ') . " FCFA";
+                                $msgParts[] = "OPT : {$optResultat->numero} — " . number_format($optResultat->montant_net, 0, ',', ' ') . " FCFA";
                             }
                         } elseif ($opImpot) {
-                            $msgParts[] = "OPT : {$opImpot->numero} — "
-                                . number_format($opImpot->montant_net, 0, ',', ' ') . " FCFA";
+                            $msgParts[] = "OPT : {$opImpot->numero} — " . number_format($opImpot->montant_net, 0, ',', ' ') . " FCFA";
+                        }
+
+                        // ✅ Message spécifique au changement de nomenclature
+                        if (
+                            in_array($typeCorrection, ['nomenclature', 'mixte', 'complet'])
+                            && !empty($data['nomenclature_corrigee_id'])
+                            && (int) $data['nomenclature_corrigee_id'] !== (int) ($engagement->fresh()->nomenclature_principale_id ?? 0)
+                        ) {
+                            $ancienCode  = \App\Models\NomenclatureBudgetaire::find($engagement->nomenclature_principale_id)?->code ?? '—';
+                            $nouveauCode = \App\Models\NomenclatureBudgetaire::find($data['nomenclature_corrigee_id'])?->code ?? '—';
+                            $msgParts[]  = "📋 Ligne budgétaire transférée : {$ancienCode} → {$nouveauCode}";
                         }
 
                         if (!empty($data['nouvel_objet'])) {
-                            $msgParts[] = "📝 Objet mis à jour (engagement, document source et ordonnances).";
+                            $msgParts[] = "📝 Objet mis à jour.";
                         }
 
                         if ($typeCorrection !== 'objet') {
-                            if ($deltaFinal > 0) {
-                                $msgParts[] = "Augmentation : +" . number_format($deltaFinal, 0, ',', ' ') . " FCFA.";
-                            } elseif ($deltaFinal < 0) {
-                                $msgParts[] = "Réduction : " . number_format(abs($deltaFinal), 0, ',', ' ') . " FCFA libérés.";
-                            }
+                            if ($deltaFinal > 0)       $msgParts[] = "Augmentation : +" . number_format($deltaFinal, 0, ',', ' ') . " FCFA.";
+                            elseif ($deltaFinal < 0)   $msgParts[] = "Réduction : "     . number_format(abs($deltaFinal), 0, ',', ' ') . " FCFA libérés.";
                         }
 
                         Notification::make()
@@ -866,64 +760,30 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                             ->persistent($optNumeroCorrige)
                             ->send();
 
-                        return redirect()->route(
-                            'filament.budget.resources.engagements.view',
-                            ['record' => $this->record]
-                        );
+                        return redirect()->route('filament.budget.resources.engagements.view', ['record' => $this->record]);
                     } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-                        Log::error('Erreur avenant — contrainte unique violée', [
-                            'engagement' => $this->record->numero,
-                            'error'      => $e->getMessage(),
-                        ]);
-
-                        Notification::make()
-                            ->title('❌ Erreur — Numéro OPT en conflit')
-                            ->danger()
-                            ->body(
-                                "Le système n'a pas pu générer un numéro d'OPT unique pour cet engagement.\n\n"
-                                    . "Cause probable : un autre engagement utilise déjà ce numéro de référence.\n\n"
-                                    . "Action requise : contactez l'administrateur pour vérifier "
-                                    . "la numérotation des ordonnances de paiement.\n\n"
-                                    . "Aucune modification n'a été enregistrée (transaction annulée)."
-                            )
-                            ->persistent()
-                            ->send();
+                        Log::error('Avenant — contrainte unique violée', ['engagement' => $this->record->numero, 'error' => $e->getMessage()]);
+                        Notification::make()->title('❌ Erreur — Numéro OPT en conflit')->danger()
+                            ->body("Le numéro d'OPT est déjà utilisé. Aucune modification enregistrée.")->persistent()->send();
                     } catch (\Throwable $e) {
-                        Log::error('Erreur avenant', [
-                            'engagement' => $this->record->numero,
-                            'error'      => $e->getMessage(),
-                            'trace'      => $e->getTraceAsString(),
-                        ]);
-
-                        Notification::make()
-                            ->title('❌ Erreur avenant')
-                            ->danger()
-                            ->body(
-                                "Une erreur est survenue : " . $e->getMessage() . "\n\n"
-                                    . "Aucune modification n'a été enregistrée (transaction annulée)."
-                            )
-                            ->persistent()
-                            ->send();
+                        Log::error('Erreur avenant', ['engagement' => $this->record->numero, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+                        Notification::make()->title('❌ Erreur avenant')->danger()
+                            ->body("Une erreur est survenue : " . $e->getMessage() . "\n\nAucune modification enregistrée.")->persistent()->send();
                     }
                 }),
 
             // ── Voir les ordonnances ──────────────────────────────
             Actions\Action::make('voir_ordonnances')
-                ->label('Voir les OP')
-                ->icon('heroicon-o-eye')->color('info')
+                ->label('Voir les OP')->icon('heroicon-o-eye')->color('info')
                 ->visible(fn($record) => $record->hasOrdonnancesPaiement())
                 ->modalHeading(fn($record) => "Ordonnances — {$record->numero}")
-                ->modalContent(function ($record) {
-                    return view('filament.modals.ordonnances-list', [
-                        'ordonnances' => $record->ordonnancesPaiement()->with('beneficiaire')->get(),
-                        'engagement'  => $record,
-                    ]);
-                })
+                ->modalContent(fn($record) => view('filament.modals.ordonnances-list', [
+                    'ordonnances' => $record->ordonnancesPaiement()->with('beneficiaire')->get(),
+                    'engagement'  => $record,
+                ]))
                 ->modalWidth('5xl')->modalSubmitAction(false)->modalCancelActionLabel('Fermer'),
 
-            // ══════════════════════════════════════════════════════
-            // ✅ ACTION ANNULER — CORRIGÉE
-            // ══════════════════════════════════════════════════════
+            // ── Annuler ───────────────────────────────────────────
             Actions\Action::make('annuler')
                 ->label('Annuler l\'engagement')
                 ->icon('heroicon-o-x-circle')->color('danger')
@@ -940,8 +800,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         . "L'engagement <strong>{$record->numero}</strong> sera annulé.<br>"
                         . "Les crédits seront libérés sur la ligne budgétaire.<br>"
                         . ($record->engageable
-                            ? "<span style='color:#92400e;'>"
-                            . "Le document source ("
+                            ? "<span style='color:#92400e;'>Le document source ("
                             . ($record->estBonCommande() ? 'Bon de Commande' : 'Décision Administrative')
                             . " <strong>{$record->engageable->numero}</strong>) "
                             . "reviendra à l'état <strong>Validé</strong>.</span>"
@@ -949,70 +808,34 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         . "</div>"
                 ))
                 ->form([
-                    Forms\Components\Textarea::make('motif')
-                        ->label('Motif d\'annulation')
-                        ->required()->rows(3)
-                        ->placeholder('Précisez le motif de l\'annulation...'),
+                    Forms\Components\Textarea::make('motif')->label('Motif d\'annulation')
+                        ->required()->rows(3)->placeholder('Précisez le motif de l\'annulation...'),
                 ])
                 ->action(function ($record, array $data) {
-                    // ✅ Bloquer si des ordonnances existent
                     if ($record->ordonnancesPaiement()->exists()) {
-                        Notification::make()
-                            ->title('❌ Annulation impossible')
-                            ->danger()->persistent()
-                            ->body(
-                                "Des ordonnances de paiement sont liées à cet engagement.\n"
-                                    . "Annulez d'abord les ordonnances avant d'annuler l'engagement."
-                            )->send();
+                        Notification::make()->title('❌ Annulation impossible')->danger()->persistent()
+                            ->body("Des ordonnances de paiement sont liées.\nAnnulez-les d'abord.")->send();
                         return;
                     }
-
                     try {
                         DB::transaction(function () use ($record, $data) {
-
-                            // ── 1. Annuler l'engagement ───────────────
                             $record->annuler(force: true);
-
-                            // ── 2. ✅ Remettre le document source en 'valide'
                             if ($record->engageable) {
-
                                 if ($record->estBonCommande()) {
-                                    $record->engageable->updateQuietly([
-                                        'statut' => 'valide',
-                                        'engage' => false,
-                                    ]);
-                                    Log::info('BC remis à valide après annulation engagement', [
-                                        'engagement' => $record->numero,
-                                        'bc'         => $record->engageable->numero,
-                                    ]);
+                                    $record->engageable->updateQuietly(['statut' => 'valide', 'engage' => false]);
                                 } elseif ($record->estDecision()) {
-                                    $record->engageable->updateQuietly([
-                                        'statut' => 'valide',
-                                    ]);
-                                    Log::info('DA remise à valide après annulation engagement', [
-                                        'engagement' => $record->numero,
-                                        'da'         => $record->engageable->numero,
-                                    ]);
+                                    $record->engageable->updateQuietly(['statut' => 'validee']);
                                 }
                             }
                         });
-
-                        $msgSource = '';
-                        if ($record->engageable) {
-                            $type = $record->estBonCommande() ? 'BC' : 'DA';
-                            $msgSource = " | {$type} {$record->engageable->numero} → Validé";
-                        }
-
-                        Notification::make()
-                            ->title('✅ Engagement annulé')
-                            ->warning()
-                            ->body("Crédits libérés{$msgSource}")
-                            ->send();
-
+                        $msgSource = $record->engageable
+                            ? " | " . ($record->estBonCommande() ? 'BC' : 'DA') . " {$record->engageable->numero} → Validé"
+                            : "";
+                        Notification::make()->title('✅ Engagement annulé')->warning()
+                            ->body("Crédits libérés{$msgSource}")->send();
                         return redirect()->route('filament.budget.resources.engagements.index');
                     } catch (\Exception $e) {
-                        Notification::make()->title('❌ Erreur')
-                            ->danger()->body($e->getMessage())->persistent()->send();
+                        Notification::make()->title('❌ Erreur')->danger()->body($e->getMessage())->persistent()->send();
                     }
                 }),
 
@@ -1027,10 +850,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->required()->helperText('⭐ = modèle par défaut'),
                 ])
                 ->action(function (array $data) {
-                    $this->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
-                        'etat' => $data['variante'],
-                        'id' => $this->record->id,
-                    ]));
+                    $this->dispatch('open-url-new-tab', url: route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $this->record->id]));
                 }),
 
             Actions\Action::make('apercu_ce')
@@ -1043,10 +863,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->required()->helperText('⭐ = modèle par défaut'),
                 ])
                 ->action(function (array $data) {
-                    $this->dispatch('open-url-new-tab', url: route('pdf.afficher', [
-                        'etat' => $data['variante'],
-                        'id' => $this->record->id,
-                    ]));
+                    $this->dispatch('open-url-new-tab', url: route('pdf.afficher', ['etat' => $data['variante'], 'id' => $this->record->id]));
                 }),
 
             // ── PDF : Autorisation ────────────────────────────────
@@ -1060,10 +877,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->required()->helperText('⭐ = modèle par défaut'),
                 ])
                 ->action(function (array $data) {
-                    $this->dispatch('open-url-new-tab', url: route('pdf.telecharger', [
-                        'etat' => $data['variante'],
-                        'id' => $this->record->id,
-                    ]));
+                    $this->dispatch('open-url-new-tab', url: route('pdf.telecharger', ['etat' => $data['variante'], 'id' => $this->record->id]));
                 }),
 
             Actions\Action::make('apercu_ae')
@@ -1076,10 +890,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->required()->helperText('⭐ = modèle par défaut'),
                 ])
                 ->action(function (array $data) {
-                    $this->dispatch('open-url-new-tab', url: route('pdf.afficher', [
-                        'etat' => $data['variante'],
-                        'id' => $this->record->id,
-                    ]));
+                    $this->dispatch('open-url-new-tab', url: route('pdf.afficher', ['etat' => $data['variante'], 'id' => $this->record->id]));
                 }),
         ];
     }
@@ -1093,43 +904,33 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
 
             Infolists\Components\Section::make('Informations générales')
                 ->schema([
-                    Infolists\Components\TextEntry::make('numero')
-                        ->label('Numéro')->weight('bold')->copyable(),
-                    Infolists\Components\TextEntry::make('reference_document')
-                        ->label('Référence document')->placeholder('Aucune'),
-                    Infolists\Components\TextEntry::make('type_engagement')
-                        ->label('Type')->badge(),
-                    Infolists\Components\TextEntry::make('date_engagement')
-                        ->label('Date engagement')->date('d/m/Y'),
-                    Infolists\Components\TextEntry::make('montant_engage')
-                        ->label('Montant engagé')->money('XAF')->weight('bold')->color('success'),
-                    Infolists\Components\TextEntry::make('statut')
-                        ->label('Statut')->badge()
+                    Infolists\Components\TextEntry::make('numero')->label('Numéro')->weight('bold')->copyable(),
+                    Infolists\Components\TextEntry::make('reference_document')->label('Référence document')->placeholder('Aucune'),
+                    Infolists\Components\TextEntry::make('type_engagement')->label('Type')->badge(),
+                    Infolists\Components\TextEntry::make('date_engagement')->label('Date engagement')->date('d/m/Y'),
+                    Infolists\Components\TextEntry::make('montant_engage')->label('Montant engagé')->money('XAF')->weight('bold')->color('success'),
+                    Infolists\Components\TextEntry::make('statut')->label('Statut')->badge()
                         ->color(fn(string $state): string => match ($state) {
                             'provisoire' => 'warning',
-                            'definitif'  => 'success',
-                            'annule'     => 'danger',
-                            default      => 'gray',
+                            'definitif' => 'success',
+                            'annule' => 'danger',
+                            default => 'gray',
                         })
                         ->formatStateUsing(fn(string $state): string => match ($state) {
                             'provisoire' => 'Provisoire',
-                            'definitif'  => 'Définitif',
-                            'annule'     => 'Annulé',
-                            default      => $state,
+                            'definitif' => 'Définitif',
+                            'annule' => 'Annulé',
+                            default => $state,
                         }),
-                ])
-                ->columns(3),
+                ])->columns(3),
 
             Infolists\Components\Section::make('Budget et nomenclature')
                 ->schema([
                     Infolists\Components\TextEntry::make('budget.libelle')->label('Budget'),
                     Infolists\Components\TextEntry::make('exercice.annee')->label('Exercice')->badge(),
-                    Infolists\Components\TextEntry::make('nomenclaturePrincipale.code')
-                        ->label('Code nomenclature')->badge()->color('warning'),
-                    Infolists\Components\TextEntry::make('nomenclaturePrincipale.libelle')
-                        ->label('Libellé nomenclature')->columnSpanFull(),
-                ])
-                ->columns(3),
+                    Infolists\Components\TextEntry::make('nomenclaturePrincipale.code')->label('Code nomenclature')->badge()->color('warning'),
+                    Infolists\Components\TextEntry::make('nomenclaturePrincipale.libelle')->label('Libellé nomenclature')->columnSpanFull(),
+                ])->columns(3),
 
             Infolists\Components\Section::make('Bénéficiaire')
                 ->schema([
