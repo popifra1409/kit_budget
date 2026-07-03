@@ -101,6 +101,7 @@ class ViewEngagement extends ViewRecord
                 ->visible(
                     fn($record) =>
                     $record->statut === 'definitif'
+                        && $record->hasOrdonnancesPaiement()
                         && auth()->user()?->can('create_avenant_engagement')
                 )
                 ->form([
