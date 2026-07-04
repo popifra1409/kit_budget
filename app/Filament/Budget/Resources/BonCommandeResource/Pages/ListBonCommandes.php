@@ -21,7 +21,8 @@ class ListBonCommandes extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Nouveau bon de commande'),
+                ->label('Nouveau bon de commande')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

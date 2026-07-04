@@ -17,7 +17,7 @@ class ListDecisionAdministratives extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Nouvelle décision')
+                ->label('Nouvelle Décision')
                 ->icon('heroicon-o-plus'),
         ];
     }

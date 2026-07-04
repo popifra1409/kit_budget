@@ -16,7 +16,7 @@ class ListBordereauEngagements extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Nouveau bordereau')
+                ->label('Nouveau Bordereau')
                 ->icon('heroicon-o-plus'),
         ];
     }

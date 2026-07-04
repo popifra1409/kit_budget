@@ -12,6 +12,7 @@ class ListDecisionsPrevisionnelles extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [Actions\CreateAction::make()->label('Nouvelle Décision')
+            ->icon('heroicon-o-plus'),];
     }
 }

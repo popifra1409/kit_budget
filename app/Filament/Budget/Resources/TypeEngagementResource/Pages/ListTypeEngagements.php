@@ -13,7 +13,9 @@ class ListTypeEngagements extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouveau Type Engagement')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

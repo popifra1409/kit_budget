@@ -14,7 +14,8 @@ class ListVirementBudgetaires extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Nouveau virement'),
+                ->label('Nouveau Virement')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

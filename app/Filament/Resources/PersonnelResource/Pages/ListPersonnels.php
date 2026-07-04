@@ -13,7 +13,9 @@ class ListPersonnels extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouveau Personnel')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

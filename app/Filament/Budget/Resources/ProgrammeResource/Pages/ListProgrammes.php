@@ -20,7 +20,8 @@ class ListProgrammes extends ListRecords
                 ->url(fn() => route('filament.budget.resources.programmes.generer-cadre-logique')),
 
             Actions\CreateAction::make()
-                ->label('Nouveau programme'),
+                ->label('Nouveau Programme')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

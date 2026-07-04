@@ -13,7 +13,9 @@ class ListParametresStructures extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouveau Parametre')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

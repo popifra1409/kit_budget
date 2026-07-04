@@ -13,7 +13,9 @@ class ListTaches extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouvelle Tache')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

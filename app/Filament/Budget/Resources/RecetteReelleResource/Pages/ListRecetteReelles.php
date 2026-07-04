@@ -21,7 +21,9 @@ class ListRecetteReelles extends ListRecords
                 ->outlined()
                 ->url(fn() => RecetteReelleResource::getUrl('suivi')),
 
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouvelle Recette')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

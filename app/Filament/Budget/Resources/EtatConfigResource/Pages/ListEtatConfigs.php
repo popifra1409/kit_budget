@@ -13,7 +13,8 @@ class ListEtatConfigs extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()->label('Nouvel Etat')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

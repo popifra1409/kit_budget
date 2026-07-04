@@ -14,7 +14,8 @@ class ListBudgets extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Nouveau budget'),
+                ->label('Nouveau Budget')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

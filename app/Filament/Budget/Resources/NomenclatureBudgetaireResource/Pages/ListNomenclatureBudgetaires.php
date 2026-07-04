@@ -26,7 +26,8 @@ class ListNomenclatureBudgetaires extends ListRecords
                 ->url(fn() => route('filament.budget.resources.nomenclature-budgetaires.import')),
 
             Actions\CreateAction::make()
-                ->label('Nouvelle nomenclature'),
+                ->label('Nouvelle nomenclature')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

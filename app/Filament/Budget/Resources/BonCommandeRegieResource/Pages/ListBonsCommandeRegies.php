@@ -11,6 +11,7 @@ class ListBonsCommandeRegies extends ListRecords
     protected static string $resource = BonCommandeRegieResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()->label('Nouveau BCR/BCM')];
+        return [Actions\CreateAction::make()->label('Nouveau BCR/BCM')
+            ->icon('heroicon-o-plus'),];
     }
 }

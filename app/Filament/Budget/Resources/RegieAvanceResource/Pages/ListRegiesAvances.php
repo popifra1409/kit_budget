@@ -13,7 +13,8 @@ class ListRegiesAvances extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make()->label('Nouvelle Régie d\'Avance'),
+            Actions\CreateAction::make()->label('Nouvelle Régie d\'Avance')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

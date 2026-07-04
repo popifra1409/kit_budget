@@ -11,6 +11,7 @@ class ListMenuDepenses extends ListRecords
     protected static string $resource = MenuDepenseResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()->label('Nouveau Menu Dépense')];
+        return [Actions\CreateAction::make()->label('Nouveau Menu Dépense')
+            ->icon('heroicon-o-plus'),];
     }
 }

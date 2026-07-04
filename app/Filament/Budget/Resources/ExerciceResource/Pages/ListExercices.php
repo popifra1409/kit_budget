@@ -13,7 +13,9 @@ class ListExercices extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouvel Exercice')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }
