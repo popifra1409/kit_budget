@@ -45,7 +45,6 @@ $montantLettres = $donnees['montant_lettres']
 // ── Taux depuis les lignes ────────────────────────────────
 $premiereLigne = $lignes->first();
 
-// ✅ Totaux = somme des valeurs telles qu'affichées (number_format 0 décimale)
 $totalNap = 0;
 $totalHt  = 0;
 $totalTva = 0;
@@ -53,15 +52,22 @@ $totalIr  = 0;
 $totalTtc = 0;
 
 foreach ($lignes as $l) {
-    $totalHt  += (int) number_format((float)($l->montant_ht  ?? 0), 0, '.', '');
-    $totalTva += (int) number_format((float)($l->montant_tva ?? 0), 0, '.', '');
-    $totalIr  += (int) number_format((float)($l->montant_ir  ?? 0), 0, '.', '');
-    $totalTtc += (int) number_format((float)($l->montant_ttc ?? 0), 0, '.', '');
-}
+    $qte = max(1, (float)($l->quantite ?? 1));
 
-// ✅ NAP total = HT arrondi - IR arrondi (comme pour le BCA)
-// évite la majoration +1 due aux arrondis intermédiaires
-$totalNap = $totalHt - $totalIr;
+    // ✅ NAP total = montant_net stocké (calculé exact à la sauvegarde)
+    //    fallback : MHT stocké - IR stocké (anciens enregistrements)
+    $napTotal = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
+    if ($napTotal <= 0 && ($l->montant_ht ?? 0) > 0) {
+        $napTotal = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
+    }
+
+    // ✅ Totaux = somme des colonnes stockées en base
+$totalNap = (int) round($lignes->sum('montant_net'),   0);
+$totalHt  = (int) round($lignes->sum('montant_ht'),    0);
+$totalIr  = (int) round($lignes->sum('montant_ir'),    0);
+$totalTva = (int) round($lignes->sum('montant_tva'),   0);
+$totalTtc = (int) round($lignes->sum('montant_ttc'),   0);
+}
 
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
 $tauxIrVal = (float) ($premiereLigne?->taux_ir ?? 5.5);
@@ -394,11 +400,27 @@ $dateCreation = \Carbon\Carbon::parse($memoire->created_at)
     </thead>
     <tbody>
         @forelse($lignesPage as $ligne)
-        @php
-        $qte = max(1, (float) $ligne->quantite);
-        $napUnitaire = ($ligne->montant_net ?? $ligne->net_a_payer ?? 0) / $qte;
-        $napTotal = $ligne->montant_net ?? $ligne->net_a_payer ?? 0;
-        @endphp
+      @php
+    $qte = max(1, (float)($ligne->quantite ?? 1));
+
+    // ✅ NAP total = montant_net stocké
+    //    fallback : MHT - IR si montant_net absent
+    $napTotal = (float)($ligne->montant_net ?? $ligne->net_a_payer ?? 0);
+    if ($napTotal <= 0 && ($ligne->montant_ht ?? 0) > 0) {
+        $napTotal = (float)$ligne->montant_ht - (float)($ligne->montant_ir ?? 0);
+    }
+
+    // ✅ NAP/unité — précision monétaire (évite 349.9997)
+    $brut        = $qte > 0 ? $napTotal / $qte : 0;
+    $entier      = round($brut);
+    $napUnitaire = abs($brut - $entier) < 0.005 ? (float)$entier : round($brut, 2);
+
+    // ✅ Montants depuis la base (pas recalculés)
+    $mht = (float)($ligne->montant_ht  ?? 0);
+    $ir  = (float)($ligne->montant_ir  ?? 0);
+    $tva = (float)($ligne->montant_tva ?? 0);
+   $ttc = (float)($ligne->montant_ttc ?? 0);
+@endphp
         <tr>
             <td>{{ $ligne->nature_depense }}</td>
             <td class="center">
