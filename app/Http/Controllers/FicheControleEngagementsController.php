@@ -32,7 +32,7 @@ class FicheControleEngagementsController extends Controller
         $engagements = $ligneBudgetaire->engagements()
             ->with([
                 'engageable',
-                'ordonnancesPaiement',   // ✅ chargé 1 seule fois ici
+                'ordonnancesPaiement', 
                 'beneficiaire',
                 'beneficiaireFournisseur',
                 'beneficiairePersonnel',
