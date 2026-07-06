@@ -723,7 +723,7 @@ class DecisionAdministrative extends Model
         \DB::beginTransaction();
         try {
             $statutAvant = $this->statut;
-            $this->update([
+            $this->updateQuietly([
                 'statut'                  => 'annulee',
                 'statut_avant_annulation' => $statutAvant,
                 'observations'            => ($this->observations ?? '') .
@@ -768,7 +768,7 @@ class DecisionAdministrative extends Model
 
         \DB::beginTransaction();
         try {
-            $this->update([
+            $this->updateQuietly([
                 'statut'                  => 'brouillon',
                 'statut_avant_annulation' => null,
                 'engagee'                 => false,

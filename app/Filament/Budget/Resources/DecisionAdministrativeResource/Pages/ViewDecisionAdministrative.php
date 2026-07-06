@@ -493,26 +493,52 @@ class ViewDecisionAdministrative extends ViewRecord
             // ── Récupérer ─────────────────────────────────────
             Actions\Action::make('recuperer')
                 ->label('Récupérer')
-                ->icon('heroicon-o-arrow-uturn-left')->color('success')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('success')
                 ->visible(
                     fn() =>
                     $this->record->statut === 'annulee'
                         && DecisionAdministrativeResource::canRecuperer($this->record)
                 )
+                // ✅ FIX 1 — Pas de ->requiresConfirmation() quand on a un ->form([...])
+                //    On remplace par modalHeading + modalDescription + modalSubmitActionLabel
+                ->modalHeading('Récupérer la décision')
+                ->modalDescription(fn() => new \Illuminate\Support\HtmlString(
+                    '<div class="rounded-lg p-3 text-sm bg-green-50 dark:bg-green-900/20 '
+                        . 'text-green-800 dark:text-green-200 border border-green-300">'
+                        . '✅ La décision sera remise en <strong>Brouillon</strong> '
+                        . 'et pourra être modifiée et réutilisée.'
+                        . '</div>'
+                ))
+                ->modalSubmitActionLabel('Récupérer')
                 ->form([
                     Forms\Components\Textarea::make('motif')
-                        ->label('Motif de récupération')->rows(2),
+                        ->label('Motif de récupération (optionnel)')
+                        ->rows(2)
+                        ->placeholder('Ex: Correction des montants, modification du bénéficiaire...'),
                 ])
-                ->requiresConfirmation()
                 ->action(function (array $data) {
                     try {
                         $this->record->recuperer($data['motif'] ?? null);
+
                         Notification::make()
-                            ->title('✅ Décision récupérée en Brouillon')->success()->send();
-                        $this->refreshFormData(['statut']);
+                            ->title('✅ Décision récupérée en Brouillon')
+                            ->success()
+                            ->body('La décision peut maintenant être modifiée et renvoyée.')
+                            ->send();
+
+                        // ✅ FIX 2 — Redirect complet au lieu de refreshFormData()
+                        //    refreshFormData() ne réévalue pas ->visible() des actions header
+                        //    Un redirect force le rechargement complet de la page
+                        $this->redirect(
+                            DecisionAdministrativeResource::getUrl('view', ['record' => $this->record->id])
+                        );
                     } catch (\Exception $e) {
                         Notification::make()
-                            ->title('❌ ' . $e->getMessage())->danger()->persistent()->send();
+                            ->title('❌ ' . $e->getMessage())
+                            ->danger()
+                            ->persistent()
+                            ->send();
                     }
                 }),
 
