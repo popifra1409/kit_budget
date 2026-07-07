@@ -830,30 +830,32 @@ class BonCommande extends Model
      */
     public function calculerMontants(): void
     {
+        if (!$this->relationLoaded('lignes')) $this->load('lignes');
+
+        // Somme uniquement le HT (seul montant qui peut avoir des décimales)
         $totalHT = 0;
-        $totalTVA = 0;
-        $totalIR = 0;
-        $totalTTC = 0;
-        $totalNetAPayer = 0;
-
-        if (!$this->relationLoaded('lignes')) {
-            $this->load('lignes');
-        }
-
         foreach ($this->lignes as $ligne) {
-            $totalHT += $ligne->montant_ht ?? 0;
-            $totalTVA += $ligne->montant_tva ?? 0;
-            $totalIR += $ligne->montant_ir ?? 0;
-            $totalTTC += $ligne->montant_ttc ?? 0;
-            $totalNetAPayer += $ligne->net_a_payer ?? 0;
+            $totalHT += (float)($ligne->montant_ht ?? 0);
         }
 
-        $this->montant_ht = round($totalHT, 2);
-        $this->montant_tva = round($totalTVA, 2);
-        $this->montant_ir = round($totalIR, 2);
-        $this->montant_ttc = round($totalTTC, 2);
-        $this->net_a_payer = round($totalNetAPayer, 2);
-        $this->net_a_percevoir = round($totalNetAPayer, 2); // ✅ AJOUTÉ
+        $premiereLigne = $this->lignes->first();
+        $tauxTva = (float)($premiereLigne?->taux_tva ?? ($this->exonere_tva ? 0 : 19.25));
+        $tauxIr  = (float)($premiereLigne?->taux_ir  ?? ($this->exonere_ir  ? 0 : 5.5));
+
+        // ✅ round() sans décimale → entier FCFA
+        //    round(4118700 × 19.25%) = round(792849.75) = 792850
+        //    round(4118700 + 792850) = 4911550  ✅
+        $totalTva       = $this->exonere_tva ? 0 : (int) round($totalHT * $tauxTva / 100);
+        $totalIr        = $this->exonere_ir  ? 0 : (int) round($totalHT * $tauxIr  / 100);
+        $totalTtc       = (int) round($totalHT + $totalTva);
+        $totalNetAPayer = (int) round($totalHT - $totalIr);
+
+        $this->montant_ht      = round($totalHT, 2);
+        $this->montant_tva     = $totalTva;
+        $this->montant_ir      = $totalIr;
+        $this->montant_ttc     = $totalTtc;
+        $this->net_a_payer     = $totalNetAPayer;
+        $this->net_a_percevoir = $totalNetAPayer;
     }
 
     /**
