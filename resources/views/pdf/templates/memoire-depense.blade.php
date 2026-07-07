@@ -45,28 +45,31 @@ $montantLettres = $donnees['montant_lettres']
 // ── Taux depuis les lignes ────────────────────────────────
 $premiereLigne = $lignes->first();
 
-$totalNap = 0;
-$totalHt  = 0;
-$totalTva = 0;
-$totalIr  = 0;
-$totalTtc = 0;
+$totalNap = 0; $totalHt = 0; $totalTva = 0; $totalIr = 0; $totalTtc = 0;
 
 foreach ($lignes as $l) {
+    $mht = (float)($l->montant_ht  ?? 0);
+    $ir  = (float)($l->montant_ir  ?? 0);
+    $tva = (float)($l->montant_tva ?? 0);
+    $ttc = (float)($l->montant_ttc ?? 0);
     $qte = max(1, (float)($l->quantite ?? 1));
 
-    // ✅ NAP total = montant_net stocké (calculé exact à la sauvegarde)
-    //    fallback : MHT stocké - IR stocké (anciens enregistrements)
-    $napTotal = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
-    if ($napTotal <= 0 && ($l->montant_ht ?? 0) > 0) {
-        $napTotal = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
+    // ✅ Priorité 1 : montant_net stocké
+    $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
+    // ✅ Priorité 2 : MHT - IR (si montant_net absent)
+    if ($nap <= 0 && $mht > 0) $nap = $mht - $ir;
+    // ✅ Priorité 3 : recalculer depuis prix_unitaire
+    if ($nap <= 0 && ($l->prix_unitaire ?? 0) > 0) {
+        $mhtCalc = (float)$l->prix_unitaire * $qte;
+        $tauxIr  = (float)($l->taux_ir ?? 5.5);
+        $nap     = $mhtCalc * (1 - $tauxIr / 100);
     }
 
-    // ✅ Totaux = somme des colonnes stockées en base
-$totalNap = (int) round($lignes->sum('montant_net'),   0);
-$totalHt  = (int) round($lignes->sum('montant_ht'),    0);
-$totalIr  = (int) round($lignes->sum('montant_ir'),    0);
-$totalTva = (int) round($lignes->sum('montant_tva'),   0);
-$totalTtc = (int) round($lignes->sum('montant_ttc'),   0);
+    $totalNap += round($nap);
+    $totalHt  += round($mht);
+    $totalIr  += round($ir);
+    $totalTva += round($tva);
+    $totalTtc += round($ttc);
 }
 
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
