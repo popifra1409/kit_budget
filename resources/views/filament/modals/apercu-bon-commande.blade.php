@@ -401,7 +401,7 @@ $decimales   = $modeArrondi ? 0 : 2;
                                         <span style="color:#cbd5e1; font-size:.72rem;">—</span>
                                     @endif
                                 </td>
-                                <td class="center">{{ number_format($ligne->quantite, 2, ',', ' ') }}</td>
+                                <td class="center">{{ number_format($ligne->quantite, $decimales, ',', ' ') }}</td>
                                 <td class="center" style="color:#64748b; font-size:.75rem;">{{ $ligne->unite }}</td>
                                 <td class="num" style="color:#64748b;">
                                     {{ number_format($ligne->prix_unitaire_ht, $decimales, ',', ' ') }}

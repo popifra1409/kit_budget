@@ -336,7 +336,7 @@ body { font-size: 8.5pt; }
             <tr>
                 <td>{{ $ligne->reference ?? '-' }}</td>
                 <td>{{ $ligne->designation }}</td>
-                <td class="nombre">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
+                <td class="nombre">{{ number_format($ligne->quantite, $decimales, ',', ' ') }}</td>
                 <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, $decimales, ',', ' ') }}</td>
                 <td class="nombre">{{ number_format($ligne->montant_ht, $decimales, ',', ' ') }}</td>
             </tr>
