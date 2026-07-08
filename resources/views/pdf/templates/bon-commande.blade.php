@@ -23,7 +23,7 @@ if ($etatConfig instanceof \App\Models\EtatConfig) {
 $titreDocument = $entete['titre_document'] ?? 'BON DE COMMANDE ADMINISTRATIF';
 $sigle         = $entete['sigle'] ?? $parametres?->sigle ?? 'CHUY';
 
-// ── Logo ────────────────────────────────────────────────────
+// ── Logo ─────────────────────────────────────────────────────
 $logoOverride = !empty($entete['logo_override']);
 $logoBase64 = null; $logoMimeType = 'image/jpeg';
 if ($logoOverride) {
@@ -37,55 +37,47 @@ if (!$logoOverride && $parametres?->logo) {
     if (file_exists($p)) { $logoStdBase64 = base64_encode(file_get_contents($p)); $logoStdMimeType = mime_content_type($p) ?: 'image/jpeg'; }
 }
 
-// ── Infos document ──────────────────────────────────────────
+// ── Infos document ───────────────────────────────────────────
 $service        = $donnees['service']         ?? ($bonCommande->serviceDemandeur->nom      ?? 'DIRECTION GENERALE');
 $numeroBca      = $donnees['numero_bca']      ?? ($bonCommande->numero                     ?? '.........');
 $dateImpression = now()->format('d/m/Y à H:i');
 $prestataireNom = $donnees['prestataire_nom'] ?? ($bonCommande->fournisseur->raison_sociale ?? '');
 
-// ── Taux (depuis lignes du BC ou valeurs par défaut) ────────
+// ════════════════════════════════════════════════════════════
+// MODE ARRONDI — contrôle l'affichage des décimales
+// ✅ true  (défaut) → entiers FCFA  : number_format($v, 0)
+// ✅ false          → 2 décimales   : number_format($v, 2)
+// Les montants sont lus depuis la DB (déjà calculés correctement
+// par BonCommande::calculerMontants() selon le mode choisi).
+// ════════════════════════════════════════════════════════════
+$modeArrondi = $bonCommande->mode_arrondi ?? true;
+$decimales   = $modeArrondi ? 0 : 2;
+
+// ── Montants depuis la DB ────────────────────────────────────
+$montantHt  = (float)($bonCommande->montant_ht  ?? 0);
+$montantTva = (float)($bonCommande->montant_tva ?? 0);
+$montantIr  = (float)($bonCommande->montant_ir  ?? 0);
+$montantTtc = (float)($bonCommande->montant_ttc ?? 0);
+$netAPayer  = (float)($bonCommande->net_a_payer ?? $bonCommande->net_a_percevoir ?? 0);
+
+// ── Taux (pour les labels) ───────────────────────────────────
 $premiereLigne = $bonCommande->lignes->first();
-$tauxTva = (float) ($premiereLigne?->taux_tva ?? ($bonCommande->taux_tva ?? 19.25));
-$tauxIr  = (float) ($premiereLigne?->taux_ir  ?? ($bonCommande->taux_ir  ?? 5.5));
+$tauxTva = (float)($premiereLigne?->taux_tva ?? 19.25);
+$tauxIr  = (float)($premiereLigne?->taux_ir  ?? 5.5);
 
-// ════════════════════════════════════════════════════════════
-// ✅ TOTAUX CALCULÉS DEPUIS LE MONTANT HT TOTAL
-//
-//   Total HT  = somme des montant_ht des lignes
-//   Total TVA = Total HT × tauxTva%
-//   Total IR  = Total HT × tauxIr%
-//   Total TTC = Total HT + Total TVA
-//   NAP       = Total HT − Total IR
-//
-//   → cohérence garantie : pas de cumul d'arrondis individuels
-// ════════════════════════════════════════════════════════════
-$totalHt  = (float) $bonCommande->lignes->sum('montant_ht');
-$totalTva = round($totalHt * $tauxTva / 100, 2);
-$totalIr  = round($totalHt * $tauxIr  / 100, 2);
-$totalTtc = round($totalHt + $totalTva, 2);
-$netAPayer = round($totalHt - $totalIr, 2);
+$labelTva = 'MONTANT TVA (' . rtrim(rtrim(number_format($tauxTva, 2, ',', ''), '0'), ',') . '%)';
+$labelIr  = 'MONTANT IR ('  . rtrim(rtrim(number_format($tauxIr,  2, ',', ''), '0'), ',') . '%)';
 
-// Entiers pour affichage
-$totalHtAff  = (int) round($totalHt,  0);
-$totalTvaAff = (int) round($totalTva, 0);
-$totalIrAff  = (int) round($totalIr,  0);
-$totalTtcAff = (int) round($totalTtc, 0);
-$netAPayerAff = (int) round($netAPayer, 0);
-
-$labelTva = 'TVA (' . rtrim(rtrim(number_format($tauxTva, 2, ',', ''), '0'), ',') . '%)';
-$labelIr  = 'IR ('  . rtrim(rtrim(number_format($tauxIr,  2, ',', ''), '0'), ',') . '%)';
-
-// ── Créateur ────────────────────────────────────────────────
+// ── Créateur ─────────────────────────────────────────────────
 $createur = null; $initiauxCreateur = '';
 if ($bonCommande->created_by ?? null) $createur = \App\Models\User::find($bonCommande->created_by);
 if (!$createur && ($bonCommande->user_id ?? null)) $createur = \App\Models\User::find($bonCommande->user_id);
 if ($createur) $initiauxCreateur = $createur->username ?? $createur->login ?? $createur->name ?? '';
 
-// ── Imputation budgétaire ───────────────────────────────────
+// ── Imputation budgétaire ────────────────────────────────────
 $nomenclatureCode = null; $nomenclatureLib = null;
-$anneeImputation = now()->year; $moisImputation = now()->format('m');
-$codeArticle = null; $ligneImputation = null;
-$engagementBC = null;
+$anneeImputation  = now()->year; $moisImputation = now()->format('m');
+$codeArticle = null; $ligneImputation = null; $engagementBC = null;
 if ($bonCommande->engagement_id)
     $engagementBC = \App\Models\Engagement::with('nomenclaturePrincipale','exercice')->find($bonCommande->engagement_id);
 if (!$engagementBC)
@@ -94,24 +86,23 @@ if (!$engagementBC)
 if ($engagementBC?->nomenclaturePrincipale) {
     $nomenclatureCode = $engagementBC->nomenclaturePrincipale->code;
     $nomenclatureLib  = $engagementBC->nomenclaturePrincipale->libelle;
-    $codeArticle      = $engagementBC->nomenclaturePrincipale->getCodeArticle() ?? substr($nomenclatureCode, 0, 6) ?? null;
+    $codeArticle      = $engagementBC->nomenclaturePrincipale->getCodeArticle()??substr($nomenclatureCode,0,6)??null;
     $dateEng          = \Carbon\Carbon::parse($engagementBC->date_engagement);
     $anneeImputation  = $engagementBC->exercice?->annee ?? $dateEng->year;
     $moisImputation   = $dateEng->format('m');
 }
 if ($nomenclatureCode) {
-    $pa = ($codeArticle && $codeArticle !== $nomenclatureCode) ? $codeArticle . '-' : '';
-    $ligneImputation = $anneeImputation . '-' . $moisImputation . '-' . $pa . $nomenclatureCode;
-    if ($nomenclatureLib) $ligneImputation .= ' (' . strtoupper($nomenclatureLib) . ')';
+    $pa = ($codeArticle && $codeArticle !== $nomenclatureCode) ? $codeArticle.'-' : '';
+    $ligneImputation = $anneeImputation.'-'.$moisImputation.'-'.$pa.$nomenclatureCode;
+    if ($nomenclatureLib) $ligneImputation .= ' ('.strtoupper($nomenclatureLib).')';
 }
 
-// ── Pagination des lignes ───────────────────────────────────
-$lignesPage1        = 12;
-$lignesPagesSuiv    = 20;
-$lignesAll          = $bonCommande->lignes;
-$totalLignes        = $lignesAll->count();
-$lignesChunked      = collect();
-$lignesRest         = $lignesAll;
+// ── Pagination par comptage ───────────────────────────────────
+$lignesPage1     = 12;
+$lignesPagesSuiv = 20;
+$lignesAll       = $bonCommande->lignes;
+$lignesChunked   = collect();
+$lignesRest      = $lignesAll;
 $lignesChunked->push($lignesRest->take($lignesPage1));
 $lignesRest = $lignesRest->skip($lignesPage1);
 while ($lignesRest->count() > 0) {
@@ -125,7 +116,7 @@ $nombrePages = $lignesChunked->count();
 @extends('pdf.layouts.master', ['orientation' => 'portrait'])
 @section('title', 'BCA N° ' . $numeroBca)
 @section('montant_lettres')
-{{ $donnees['montant_lettres'] ?? \App\Helpers\NombreEnLettres::montantCFA($totalTtc) }}
+{{ $donnees['montant_lettres'] ?? \App\Helpers\NombreEnLettres::montantCFA($montantTtc) }}
 @endsection
 
 @push('styles')
@@ -148,23 +139,6 @@ body              { font-size: 8.5pt; }
 table.simple              { width: 100%; border-collapse: collapse; }
 table.simple td           { border: none; padding: 3px; font-size: 8.5pt; }
 table.simple td:first-child { width: 30%; }
-
-/* ── Rappel BCA en haut des pages de suite ─────────────────── */
-.rappel-bca {
-    text-align: right;
-    margin-bottom: 8px;
-    border-bottom: 1px solid #ccc;
-    padding-bottom: 4px;
-}
-.rappel-bca-box {
-    display: inline-block;
-    border: 2px solid #000;
-    padding: 4px 12px;
-    font-weight: bold;
-    font-size: 9.5pt;
-}
-
-/* ── Tableau articles ──────────────────────────────────────── */
 .articles-table        { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 8.5pt; table-layout: fixed; }
 .articles-table thead  { display: table-header-group; }
 .articles-table tr     { page-break-inside: avoid; page-break-after: auto; }
@@ -173,71 +147,20 @@ table.simple td:first-child { width: 30%; }
 .articles-table td.nombre { text-align: right; white-space: nowrap; }
 .col-reference   { width: 18%; }
 .col-designation { width: 44%; }
-.col-qte         { width: 8%; }
+.col-qte         { width: 8%;  }
 .col-pu          { width: 15%; }
 .col-total       { width: 15%; }
-
-/* ── Séparateur entre tableau et totaux ────────────────────── */
-.separateur-totaux {
-    border: none;
-    border-top: 2px solid #000;
-    margin: 10px 0 6px;
-}
-
-/* ── Bloc totaux ───────────────────────────────────────────── */
-.bloc-totaux {
-    clear: both;
-    display: block;
-    page-break-inside: avoid;
-    break-inside: avoid;
-    margin-bottom: 0;
-}
-.totaux-table {
-    width: auto;
-    min-width: 280px;
-    margin-left: auto;
-    border-collapse: collapse;
-}
-.totaux-table td {
-    padding: 3px 10px;
-    font-size: 8.5pt;
-    border: none;
-}
-.totaux-table tr.ligne-ttc {
-    border-top: 1px solid #000;
-    font-weight: bold;
-}
-.totaux-table tr.ligne-nap {
-    border-top: 2px solid #000;
-    background: #f0f0f0;
-    font-weight: bold;
-    font-size: 9pt;
-}
-.totaux-table td.val { text-align: right; }
-
-/* ── Bloc récapitulatif (lettres + signature) ──────────────── */
-.separateur-recap {
-    border: none;
-    border-top: 1px dashed #999;
-    margin: 12px 0 8px;
-}
-.bloc-recap {
-    clear: both;
-    display: block;
-    page-break-inside: avoid;
-    break-inside: avoid;
-}
-.montant-lettres-box { text-align: center; font-style: italic; font-size: 8pt; margin-bottom: 10px; }
-.signature-container { margin-top: 10px; page-break-inside: avoid; }
-
-/* ── Saut de page ──────────────────────────────────────────── */
-.page-break { page-break-after: always; break-after: page; }
-
-/* ── Imputation ─────────────────────────────────────────────── */
+.separateur-totaux    { border: none; border-top: 2px solid #000; margin: 10px 0 6px; }
+.separateur-recap     { border: none; border-top: 1px dashed #999; margin: 12px 0 8px; }
+.bloc-totaux          { clear: both; page-break-inside: avoid; break-inside: avoid; }
+.bloc-recapitulatif   { clear: both; page-break-inside: avoid; break-inside: avoid; }
+.montant-lettres-box  { margin-top: 14px; text-align: center; font-style: italic; font-size: 8pt; page-break-inside: avoid; }
+.signature-container  { margin-top: 15px; page-break-inside: avoid; }
+.page-break           { page-break-after: always; break-after: page; }
+.rappel-bca           { text-align: right; margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+.rappel-bca-box       { display: inline-block; border: 2px solid #000; padding: 4px 12px; font-weight: bold; font-size: 9.5pt; }
 .ligne-imputation        { font-size: 8pt; margin-bottom: 5px; }
 .ligne-imputation strong { font-weight: bold; text-decoration: underline; }
-
-/* ── Footer fixe ───────────────────────────────────────────── */
 .pdf-footer-fixe {
     position: fixed; bottom: 0; left: 0; right: 0;
     height: 1.6cm; border-top: 1px solid #ccc;
@@ -250,7 +173,6 @@ table.simple td:first-child { width: 30%; }
 
 @section('content')
 
-{{-- Pagination DomPDF — au niveau racine --}}
 <script type="text/php">
 if (isset($pdf)) {
     $font = $fontMetrics->getFont("DejaVu Sans");
@@ -258,7 +180,6 @@ if (isset($pdf)) {
 }
 </script>
 
-{{-- Footer fixe --}}
 <div class="pdf-footer-fixe">
     <table>
         <tr>
@@ -271,13 +192,9 @@ if (isset($pdf)) {
     </table>
 </div>
 
-{{-- ════════════════════════════════════════════════════════════
-     BOUCLE SUR LES PAGES (1 chunk = 1 page)
-     ════════════════════════════════════════════════════════════ --}}
 @foreach ($lignesChunked as $pageIndex => $lignesPage)
 
     @if ($pageIndex === 0)
-        {{-- ── En-tête première page ─────────────────────────── --}}
         @if($logoOverride && $logoBase64)
             <div style="width:100%;margin-bottom:6px;line-height:0;font-size:0;">
                 <img src="data:{{ $logoMimeType }};base64,{{ $logoBase64 }}" style="width:100%;display:block;height:auto;">
@@ -335,7 +252,6 @@ if (isset($pdf)) {
         @endif
 
     @else
-        {{-- ── ✅ RAPPEL DU N° BCA EN HAUT DE CHAQUE PAGE DE SUITE ──── --}}
         <div class="rappel-bca">
             <span class="rappel-bca-box">BCA N° : {{ $numeroBca }}</span>
             <span style="font-size:8pt;margin-left:10px;color:#555;">
@@ -344,7 +260,6 @@ if (isset($pdf)) {
         </div>
     @endif
 
-    {{-- ── Tableau des articles ──────────────────────────────── --}}
     <table class="articles-table">
         <colgroup>
             <col class="col-reference"><col class="col-designation">
@@ -365,8 +280,9 @@ if (isset($pdf)) {
                 <td>{{ $ligne->reference ?? '-' }}</td>
                 <td>{{ $ligne->designation }}</td>
                 <td class="nombre">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
-                <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
-                <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                {{-- P.U et Total HT : décimales selon le mode --}}
+                <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, $decimales, ',', ' ') }}</td>
+                <td class="nombre">{{ number_format($ligne->montant_ht, $decimales, ',', ' ') }}</td>
             </tr>
             @endforeach
         </tbody>
@@ -374,52 +290,57 @@ if (isset($pdf)) {
 
     @if ($loop->last)
 
-        {{-- ════════════════════════════════════════════════════
-             ✅ BLOC TOTAUX — séparé du tableau par un filet
-             Calculés depuis le Total HT :
-               TVA = HT × tauxTva%
-               IR  = HT × tauxIr%
-               TTC = HT + TVA
-               NAP = HT − IR
-             ════════════════════════════════════════════════════ --}}
+        <hr class="separateur-totaux">
 
+        {{-- ✅ TOTAUX — formatage selon $modeArrondi --}}
         <div class="bloc-totaux">
-            <table class="totaux-table">
+            <table style="width:auto;min-width:320px;margin-left:auto;border-collapse:collapse;">
                 <tr>
-                    <td>MONTANT HT</td>
-                    <td class="val">{{ number_format($totalHtAff, 0, ',', ' ') }} F</td>
+                    <td style="padding:3px 10px;font-size:8.5pt;">MONTANT HT</td>
+                    <td style="padding:3px 10px;font-size:8.5pt;text-align:right;font-weight:bold;">
+                        {{ number_format($montantHt, $decimales, ',', ' ') }} F
+                    </td>
                 </tr>
                 <tr>
-                    <td>{{ $labelTva }}</td>
-                    <td class="val">
-                        @if($totalTvaAff <= 0) EXONÉRÉE
-                        @else {{ number_format($totalTvaAff, 0, ',', ' ') }} F
+                    <td style="padding:3px 10px;font-size:8.5pt;">{{ $labelTva }}</td>
+                    <td style="padding:3px 10px;font-size:8.5pt;text-align:right;font-weight:bold;">
+                        @if($montantTva <= 0) EXONÉRÉE
+                        @else {{ number_format($montantTva, $decimales, ',', ' ') }} F
                         @endif
                     </td>
                 </tr>
                 <tr>
-                    <td>{{ $labelIr }}</td>
-                    <td class="val">{{ number_format($totalIrAff, 0, ',', ' ') }} F</td>
+                    <td style="padding:3px 10px;font-size:8.5pt;">{{ $labelIr }}</td>
+                    <td style="padding:3px 10px;font-size:8.5pt;text-align:right;font-weight:bold;">
+                        {{ number_format($montantIr, $decimales, ',', ' ') }} F
+                    </td>
                 </tr>
-                 <tr class="ligne-nap">
-                    <td>NET À PAYER</td>
-                    <td class="val">{{ number_format($netAPayerAff, 0, ',', ' ') }} F</td>
+                <tr style="border-top:1px solid #000;">
+                    <td style="padding:3px 10px;font-size:8.5pt;font-weight:bold;">NET À PAYER</td>
+                    <td style="padding:3px 10px;font-size:8.5pt;text-align:right;font-weight:bold;">
+                        {{ number_format($netAPayer, $decimales, ',', ' ') }} F
+                    </td>
                 </tr>
-                <tr class="ligne-ttc">
-                    <td>MONTANT TTC</td>
-                    <td class="val">{{ number_format($totalTtcAff, 0, ',', ' ') }} F</td>
+                <tr style="border-top:2px solid #000;background:#f0f0f0;">
+                    <td style="padding:4px 10px;font-size:9pt;font-weight:bold;">MONTANT TOTAL TTC</td>
+                    <td style="padding:4px 10px;font-size:9pt;text-align:right;font-weight:bold;">
+                        {{ number_format($montantTtc, $decimales, ',', ' ') }} F
+                    </td>
                 </tr>
-                
+                @if(!$modeArrondi)
+                {{-- Indication du mode décimal en petit caractère --}}
+                <tr>
+                    <td colspan="2" style="padding:2px 10px;font-size:6pt;color:#888;text-align:center;font-style:italic;">
+                        Montants avec décimales — mode non arrondi
+                    </td>
+                </tr>
+                @endif
             </table>
         </div>
 
-        {{-- ════════════════════════════════════════════════════
-             ✅ BLOC RÉCAPITULATIF — séparé des totaux par tirets
-             Montant en lettres + Signatures
-             ════════════════════════════════════════════════════ --}}
         <hr class="separateur-recap">
 
-        <div class="bloc-recap">
+        <div class="bloc-recapitulatif">
             <div class="montant-lettres-box">
                 Arrêté le présent bon de commande administratif à la somme TTC de
                 <strong style="text-transform:uppercase;">@yield('montant_lettres')</strong>

@@ -1,3 +1,7 @@
+@php
+$modeArrondi = $bc->mode_arrondi ?? true;
+$decimales   = $modeArrondi ? 0 : 2;
+@endphp
 <div class="p-1">
     <style>
         .apercu-wrap {
@@ -400,26 +404,26 @@
                                 <td class="center">{{ number_format($ligne->quantite, 2, ',', ' ') }}</td>
                                 <td class="center" style="color:#64748b; font-size:.75rem;">{{ $ligne->unite }}</td>
                                 <td class="num" style="color:#64748b;">
-                                    {{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}
+                                    {{ number_format($ligne->prix_unitaire_ht, $decimales, ',', ' ') }}
                                 </td>
-                                <td class="num">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                                <td class="num">{{ number_format($ligne->montant_ht, $decimales, ',', ' ') }}</td>
                                 <td class="num" style="color:#854d0e;">
-                                    {{ number_format($ligne->montant_tva, 0, ',', ' ') }}
+                                    {{ number_format($ligne->montant_tva, $decimales, ',', ' ') }}
                                     @if($ligne->taux_tva > 0)
                                         <span style="font-size:.65rem; color:#94a3b8;">({{ $ligne->taux_tva }}%)</span>
                                     @endif
                                 </td>
                                 <td class="num" style="color:#1e40af; font-weight:600;">
-                                    {{ number_format($ligne->montant_ttc, 0, ',', ' ') }}
+                                    {{ number_format($ligne->montant_ttc, $decimales, ',', ' ') }}
                                 </td>
                                 <td class="num" style="color:#9f1239;">
-                                    {{ number_format($ligne->montant_ir, 0, ',', ' ') }}
+                                    {{ number_format($ligne->montant_ir, $decimales, ',', ' ') }}
                                     @if($ligne->taux_ir > 0)
                                         <span style="font-size:.65rem; color:#94a3b8;">({{ $ligne->taux_ir }}%)</span>
                                     @endif
                                 </td>
                                 <td class="num" style="color:#166534; font-weight:700;">
-                                    {{ number_format($ligne->net_a_payer, 0, ',', ' ') }}
+                                    {{ number_format($ligne->net_a_payer, $decimales, ',', ' ') }}
                                 </td>
                             </tr>
                         @endforeach
@@ -433,21 +437,21 @@
                                 $tfIr = 0;
                                 $tfNet = 0;
                                 foreach ($bc->lignes->sortBy('numero_ligne') as $l) {
-                                    $tfHt += (int) number_format((float) ($l->montant_ht ?? 0), 0, '.', '');
-                                    $tfTva += (int) number_format((float) ($l->montant_tva ?? 0), 0, '.', '');
-                                    $tfTtc += (int) number_format((float) ($l->montant_ttc ?? 0), 0, '.', '');
-                                    $tfIr += (int) number_format((float) ($l->montant_ir ?? 0), 0, '.', '');
-                                    $tfNet += (int) number_format((float) ($l->net_a_payer ?? 0), 0, '.', '');
+                                    $tfHt += round((float) ($l->montant_ht ?? 0), $decimales);
+                                    $tfTva += round((float) ($l->montant_tva ?? 0), $decimales);
+                                    $tfTtc += round((float) ($l->montant_ttc ?? 0), $decimales);
+                                    $tfIr += round((float) ($l->montant_ir ?? 0), $decimales);
+                                    $tfNet += round((float) ($l->net_a_payer ?? 0), $decimales);
                                 }
                             @endphp
                             <td colspan="6" style="text-align:right; font-size:.72rem; color:#94a3b8; padding-right:1rem;">
                                 TOTAUX ({{ $bc->lignes->count() }} ligne{{ $bc->lignes->count() > 1 ? 's' : '' }})
                             </td>
-                            <td class="num">{{ number_format($tfHt, 0, ',', ' ') }}</td>
-                            <td class="num" style="color:#854d0e;">{{ number_format($tfTva, 0, ',', ' ') }}</td>
-                            <td class="num" style="color:#1e40af;">{{ number_format($tfTtc, 0, ',', ' ') }}</td>
-                            <td class="num" style="color:#9f1239;">{{ number_format($tfIr, 0, ',', ' ') }}</td>
-                            <td class="num" style="color:#166534;">{{ number_format($tfNet, 0, ',', ' ') }}</td>
+                            <td class="num">{{ number_format($tfHt, $decimales, ',', ' ') }}</td>
+                            <td class="num" style="color:#854d0e;">{{ number_format($tfTva, $decimales, ',', ' ') }}</td>
+                            <td class="num" style="color:#1e40af;">{{ number_format($tfTtc, $decimales, ',', ' ') }}</td>
+                            <td class="num" style="color:#9f1239;">{{ number_format($tfIr, $decimales, ',', ' ') }}</td>
+                            <td class="num" style="color:#166534;">{{ number_format($tfNet, $decimales, ',', ' ') }}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -465,11 +469,11 @@
             $totalNet = 0;
 
             foreach ($bc->lignes as $l) {
-                $totalHT += (int) number_format((float) ($l->montant_ht ?? 0), 0, '.', '');
-                $totalTVA += (int) number_format((float) ($l->montant_tva ?? 0), 0, '.', '');
-                $totalTtcL = (int) number_format((float) ($l->montant_ttc ?? 0), 0, '.', '');
-                $totalIRL = (int) number_format((float) ($l->montant_ir ?? 0), 0, '.', '');
-                $totalTSRL = (int) number_format((float) ($l->montant_tsr ?? 0), 0, '.', '');
+                $totalHT += round((float) ($l->montant_ht ?? 0), $decimales);
+                $totalTVA += round((float) ($l->montant_tva ?? 0), $decimales);
+                $totalTtcL = round((float) ($l->montant_ttc ?? 0), $decimales);
+                $totalIRL = round((float) ($l->montant_ir ?? 0), $decimales);
+                $totalTSRL = round((float) ($l->montant_tsr ?? 0), $decimales);
                 $totalTTC += $totalTtcL;
                 $totalIR += $totalIRL;
                 $totalTSR += $totalTSRL;
@@ -485,34 +489,34 @@
 
                 <div class="total-row ht">
                     <span>Montant HT</span>
-                    <span class="montant">{{ number_format($totalHT, 0, ',', ' ') }} FCFA</span>
+                    <span class="montant">{{ number_format($totalHT, $decimales, ',', ' ') }} FCFA</span>
                 </div>
 
                 <div class="total-row tva">
                     <span>TVA{{ $bc->exonere_tva ? ' (exonéré)' : '' }}</span>
-                    <span class="montant">+ {{ number_format($totalTVA, 0, ',', ' ') }} FCFA</span>
+                    <span class="montant">+ {{ number_format($totalTVA, $decimales, ',', ' ') }} FCFA</span>
                 </div>
 
                 <div class="total-row ttc">
                     <span>Montant TTC</span>
-                    <span class="montant">{{ number_format($totalTTC, 0, ',', ' ') }} FCFA</span>
+                    <span class="montant">{{ number_format($totalTTC, $decimales, ',', ' ') }} FCFA</span>
                 </div>
 
                 <div class="total-row ir">
                     <span>Retenue IR{{ $bc->exonere_ir ? ' (exonéré)' : '' }}</span>
-                    <span class="montant">− {{ number_format($totalIR, 0, ',', ' ') }} FCFA</span>
+                    <span class="montant">− {{ number_format($totalIR, $decimales, ',', ' ') }} FCFA</span>
                 </div>
 
                 @if($totalTSR > 0)
                     <div class="total-row tsr">
                         <span>Retenue TSR</span>
-                        <span class="montant">− {{ number_format($totalTSR, 0, ',', ' ') }} FCFA</span>
+                        <span class="montant">− {{ number_format($totalTSR, $decimales, ',', ' ') }} FCFA</span>
                     </div>
                 @endif
 
                 <div class="total-row net">
                     <span>💰 Net à payer</span>
-                    <span class="montant">{{ number_format($totalNet, 0, ',', ' ') }} FCFA</span>
+                    <span class="montant">{{ number_format($totalNet, $decimales, ',', ' ') }} FCFA</span>
                 </div>
             </div>
         </div>

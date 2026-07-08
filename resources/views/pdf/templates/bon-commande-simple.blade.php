@@ -57,6 +57,17 @@ $montantIr  = round($montantHt * $tauxIr  / 100, 2);
 $montantTtc = round($montantHt + $montantTva, 2);
 $netAPayer  = (int) round($montantHt - $montantIr, 0);
 
+// ✅ Mode arrondi — contrôle le nombre de décimales dans tout le PDF
+$modeArrondi = $bonCommande->mode_arrondi ?? true;
+$decimales   = $modeArrondi ? 0 : 2;
+// En mode décimal : montants avec décimales, pas d'arrondi intermédiaire
+if (!$modeArrondi) {
+    $montantTva = round($montantHt * $tauxTva / 100, 2);
+    $montantIr  = round($montantHt * $tauxIr  / 100, 2);
+    $montantTtc = round($montantHt + $montantTva, 2);
+    $netAPayer  = round($montantHt - $montantIr, 2);
+}
+
 // ── Créateur ─────────────────────────────────────────────
 $dateImpression = now()->format('d/m/Y à H:i');
 $createur = null; $nomCreateur = '—'; $dateCreation = '—';
@@ -326,8 +337,8 @@ body { font-size: 8.5pt; }
                 <td>{{ $ligne->reference ?? '-' }}</td>
                 <td>{{ $ligne->designation }}</td>
                 <td class="nombre">{{ number_format($ligne->quantite, 0, ',', ' ') }}</td>
-                <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, 0, ',', ' ') }}</td>
-                <td class="nombre">{{ number_format($ligne->montant_ht, 0, ',', ' ') }}</td>
+                <td class="nombre">{{ number_format($ligne->prix_unitaire_ht, $decimales, ',', ' ') }}</td>
+                <td class="nombre">{{ number_format($ligne->montant_ht, $decimales, ',', ' ') }}</td>
             </tr>
             @endforeach
         </tbody>
@@ -352,23 +363,23 @@ body { font-size: 8.5pt; }
             <table style="width:auto;min-width:280px;margin-left:auto;border-collapse:collapse;">
                 <tr>
                     <td style="padding:2px 8px;font-size:8.5pt;">MONTANT HT</td>
-                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantHt,0,',',' ') }}</td>
+                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantHt,$decimales,',',' ') }}</td>
                 </tr>
                 <tr>
                     <td style="padding:2px 8px;font-size:8.5pt;">{{ $labelTva }}</td>
-                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantTva,0,',',' ') }}</td>
+                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantTva,$decimales,',',' ') }}</td>
                 </tr>
                 <tr>
                     <td style="padding:2px 8px;font-size:8.5pt;">{{ $labelIr }}</td>
-                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantIr,0,',',' ') }}</td>
+                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantIr,$decimales,',',' ') }}</td>
                 </tr>
                 <tr style="border-top:1px solid #000;">
                     <td style="padding:2px 8px;font-size:8.5pt;font-weight:bold;">NET A PAYER</td>
-                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($netAPayer,0,',',' ') }}</td>
+                    <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($netAPayer,$decimales,',',' ') }}</td>
                 </tr>
                 <tr style="border-top:2px solid #000;background:#f0f0f0;">
                     <td style="padding:3px 8px;font-size:9pt;font-weight:bold;">MONTANT TOTAL TTC</td>
-                    <td style="padding:3px 8px;font-size:9pt;text-align:right;font-weight:bold;">{{ number_format($montantTtc,0,',',' ') }}</td>
+                    <td style="padding:3px 8px;font-size:9pt;text-align:right;font-weight:bold;">{{ number_format($montantTtc,$decimales,',',' ') }}</td>
                 </tr>
             </table>
         </div>
