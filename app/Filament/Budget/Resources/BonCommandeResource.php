@@ -328,6 +328,66 @@ class BonCommandeResource extends Resource
                             ->required()
                             ->searchable()
                             ->preload(),
+
+                        Forms\Components\Section::make('Paramètres de calcul')
+                            ->description('Choisissez comment les montants TVA, IR et TTC sont calculés.')
+                            ->schema([
+
+                                Forms\Components\ToggleButtons::make('mode_arrondi')
+                                    ->label('Mode de calcul des montants')
+                                    ->options([
+                                        true  => '🏦 Arrondi entier (FCFA)',
+                                        false => '🔢 Valeurs décimales exactes',
+                                    ])
+                                    ->default(true)
+                                    ->inline()
+                                    ->live()
+                                    ->colors([
+                                        true  => 'success',
+                                        false => 'info',
+                                    ])
+                                    ->icons([
+                                        true  => 'heroicon-o-calculator',
+                                        false => 'heroicon-o-variable',
+                                    ])
+                                    ->helperText(
+                                        fn($state) => $state
+                                            ? '✅ TVA, IR, TTC arrondis à l\'entier FCFA — norme comptable camerounaise.'
+                                            : '🔢 Valeurs décimales conservées telles que saisies (ex: 792 849,75 FCFA).'
+                                    )
+                                    ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                        // Recalcul immédiat si les montants sont déjà renseignés
+                                        // (le recalcul réel se fera via calculerMontants() à la sauvegarde)
+                                    })
+                                    ->columnSpan('full'),
+
+                                Forms\Components\Placeholder::make('info_arrondi')
+                                    ->label('')
+                                    ->content(fn(Forms\Get $get): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(
+                                        $get('mode_arrondi')
+                                            ? '<div class="rounded-lg p-3 text-sm bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-300">'
+                                            . '<strong>Mode Arrondi FCFA :</strong><br>'
+                                            . 'TVA = HT × 19,25% → arrondi à l\'entier<br>'
+                                            . 'IR  = HT × 5,5%   → arrondi à l\'entier<br>'
+                                            . 'TTC = HT + TVA (entiers) → entier exact<br>'
+                                            . 'NAP = HT - IR (entiers)  → entier exact'
+                                            . '</div>'
+                                            : '<div class="rounded-lg p-3 text-sm bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 border border-blue-300">'
+                                            . '<strong>Mode Décimal :</strong><br>'
+                                            . 'TVA = HT × 19,25% → ex: 792 849,7500<br>'
+                                            . 'IR  = HT × 5,5%   → ex: 226 528,5000<br>'
+                                            . 'TTC = HT + TVA    → ex: 4 911 549,7500<br>'
+                                            . 'NAP = HT - IR     → ex: 3 892 171,5000'
+                                            . '</div>'
+                                    ))
+                                    ->columnSpan('full'),
+
+                            ])
+                            ->columns(1)
+                            ->collapsible()
+                            ->collapsed(false)
+                            ->icon('heroicon-o-calculator')
+                            ->iconColor('primary'),
                     ])
                     ->columns(3),
 
@@ -1260,6 +1320,20 @@ class BonCommandeResource extends Resource
                 Tables\Columns\TextColumn::make('montant_ttc')
                     ->label('Montant TTC')->money('XAF')->sortable()->weight('bold')->color('success')
                     ->toggleable(),
+
+                Tables\Columns\IconColumn::make('mode_arrondi')
+                    ->label('Arrondi')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-calculator')
+                    ->falseIcon('heroicon-o-variable')
+                    ->trueColor('success')
+                    ->falseColor('info')
+                    ->tooltip(
+                        fn($record) => $record->mode_arrondi
+                            ? 'Montants arrondis à l\'entier FCFA'
+                            : 'Montants décimaux exacts'
+                    )
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('lignes_count')
                     ->label('Lignes')

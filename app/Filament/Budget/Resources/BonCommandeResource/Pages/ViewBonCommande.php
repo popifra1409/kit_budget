@@ -108,7 +108,7 @@ class ViewBonCommande extends ViewRecord
             Actions\EditAction::make()
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()            // ✅ Bloqué si en transmission
+                    !$this->estEnTransmission()
                         && $this->record->estModifiable()
                         && static::getResource()::canEdit($this->record)
                 ),
@@ -117,11 +117,71 @@ class ViewBonCommande extends ViewRecord
             Actions\DeleteAction::make()
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()            // ✅ Bloqué si en transmission
+                    !$this->estEnTransmission()
                         && $this->record->statut === 'brouillon'
                         && static::getResource()::canDelete($this->record)
                 )
                 ->requiresConfirmation(),
+
+            // ✅ Changer mode arrondi — uniquement en brouillon
+            Actions\Action::make('changer_mode_arrondi')
+                ->label(
+                    fn() => ($this->record->mode_arrondi ?? true)
+                        ? '🔢 Passer en mode décimal'
+                        : '🏦 Passer en mode arrondi'
+                )
+                ->icon('heroicon-o-calculator')
+                ->color('gray')
+                ->outlined()
+                ->visible(
+                    fn() =>
+                    $this->record->statut === 'brouillon'
+                        && auth()->user()?->can('update_bon_commande')
+                )
+                ->modalHeading(
+                    fn() => ($this->record->mode_arrondi ?? true)
+                        ? 'Passer en mode décimal'
+                        : 'Passer en mode arrondi FCFA'
+                )
+                ->modalDescription(fn() => new \Illuminate\Support\HtmlString(
+                    ($this->record->mode_arrondi ?? true)
+                        ? '<div class="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 border border-blue-300 text-sm">'
+                        . '🔢 <strong>Mode décimal</strong><br>'
+                        . 'TVA, IR, TTC et NAP conserveront leurs décimales.<br>'
+                        . '<em>Ex : TVA = 792 849,75 FCFA au lieu de 792 850 FCFA</em>'
+                        . '</div>'
+                        : '<div class="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-300 text-sm">'
+                        . '🏦 <strong>Mode arrondi FCFA</strong><br>'
+                        . 'TVA, IR, TTC et NAP seront arrondis à l\'entier FCFA.<br>'
+                        . '<em>Ex : TVA = 792 850 FCFA au lieu de 792 849,75 FCFA</em>'
+                        . '</div>'
+                ))
+                ->modalSubmitActionLabel('Confirmer le changement')
+                ->action(function () {
+                    try {
+                        $this->record->mode_arrondi = !($this->record->mode_arrondi ?? true);
+                        $this->record->load('lignes');
+                        $this->record->calculerMontants();
+                        $this->record->saveQuietly();
+
+                        Notification::make()
+                            ->success()
+                            ->title('Mode de calcul mis à jour')
+                            ->body(($this->record->mode_arrondi)
+                                    ? '✅ Mode arrondi FCFA — montants recalculés'
+                                    : '✅ Mode décimal — montants conservés avec décimales'
+                            )
+                            ->send();
+
+                        $this->redirect(
+                            BonCommandeResource::getUrl('view', ['record' => $this->record->id])
+                        );
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->danger()->title('❌ Erreur')
+                            ->body($e->getMessage())->send();
+                    }
+                }),
 
             // ── Valider ───────────────────────────────────────
             Actions\Action::make('valider')
@@ -129,7 +189,7 @@ class ViewBonCommande extends ViewRecord
                 ->icon('heroicon-o-check-circle')->color('warning')
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()            // ✅ Bloqué si en transmission
+                    !$this->estEnTransmission()
                         && $this->record->statut === 'brouillon'
                         && static::getResource()::canValider($this->record)
                 )
@@ -161,7 +221,7 @@ class ViewBonCommande extends ViewRecord
                 })
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()            // ✅ Bloqué si en transmission
+                    !$this->estEnTransmission()
                         && $this->record->statut === 'valide'
                         && !$this->record->engagement_id
                         && static::getResource()::canEngager($this->record)
@@ -249,7 +309,7 @@ class ViewBonCommande extends ViewRecord
                 ->icon('heroicon-o-arrow-uturn-left')->color('warning')
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()            // ✅ Bloqué si en transmission
+                    !$this->estEnTransmission()
                         && $this->record->engage
                         && $this->record->peutEtreDesengage()
                         && static::getResource()::canDesengager($this->record)
@@ -293,7 +353,7 @@ class ViewBonCommande extends ViewRecord
                 ->icon('heroicon-o-x-circle')->color('danger')
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()            // ✅ Bloqué si en transmission
+                    !$this->estEnTransmission()
                         && $this->record->statut !== 'brouillon'
                         && $this->record->peutEtreAnnule()
                         && static::getResource()::canAnnuler($this->record)
@@ -440,7 +500,6 @@ class ViewBonCommande extends ViewRecord
 
                     \DB::beginTransaction();
                     try {
-                        // Annuler les transmissions actives précédentes
                         Transmission::where('document_type', get_class($this->record))
                             ->where('document_id', $this->record->id)
                             ->where('statut', 'en_attente')
@@ -459,7 +518,6 @@ class ViewBonCommande extends ViewRecord
 
                         \DB::commit();
 
-                        // Notifier le destinataire
                         Notification::make()
                             ->title('📥 Bon de commande à traiter')
                             ->info()
@@ -474,7 +532,6 @@ class ViewBonCommande extends ViewRecord
                             ->title('📤 Transmis à ' . $destinataire->name)
                             ->success()->send();
 
-                        // ✅ Rafraîchir pour mettre à jour les boutons
                         $this->redirect(
                             BonCommandeResource::getUrl('view', ['record' => $this->record->id])
                         );
@@ -514,7 +571,7 @@ class ViewBonCommande extends ViewRecord
                     }
                 }),
 
-            // ── Clôturer transmission (destinataire uniquement) ─
+            // ── Clôturer transmission ──────────────────────────
             Actions\Action::make('cloturer_transmission')
                 ->label('✅ Clôturer')
                 ->icon('heroicon-o-check-circle')->color('success')
@@ -556,11 +613,13 @@ class ViewBonCommande extends ViewRecord
     }
 
     // =========================================================
-    // INFOLIST — inchangé
+    // INFOLIST
     // =========================================================
     public function infolist(Infolist $infolist): Infolist
     {
         return $infolist->schema([
+
+            // ── État / transmission ───────────────────────────
             Infolists\Components\Section::make('État du bon de commande')
                 ->schema([
                     Infolists\Components\TextEntry::make('statut_transmission')
@@ -587,7 +646,7 @@ class ViewBonCommande extends ViewRecord
                 ])
                 ->visible(fn($record) => $record->engage || $this->estEnTransmission()),
 
-            // ... reste de votre infolist existant inchangé ...
+            // ── Vérification budgétaire ───────────────────────
             Infolists\Components\Section::make('Vérification budgétaire')
                 ->schema([
                     Infolists\Components\TextEntry::make('credit_disponible')
@@ -617,6 +676,7 @@ class ViewBonCommande extends ViewRecord
                 ])
                 ->visible(fn($record) => $record->statut === 'valide'),
 
+            // ── Informations générales ────────────────────────
             Infolists\Components\Section::make('Informations générales')
                 ->schema([
                     Infolists\Components\TextEntry::make('numero')
@@ -626,24 +686,24 @@ class ViewBonCommande extends ViewRecord
                     Infolists\Components\TextEntry::make('statut')
                         ->label('Statut')->badge()
                         ->color(fn(string $state) => match ($state) {
-                            'brouillon'          => 'gray',
-                            'valide'             => 'warning',
-                            'engage'             => 'primary',
-                            'en_cours'           => 'info',
+                            'brouillon'           => 'gray',
+                            'valide'              => 'warning',
+                            'engage'              => 'primary',
+                            'en_cours'            => 'info',
                             'livre_partiellement' => 'success',
-                            'livre'              => 'success',
-                            'annule'             => 'danger',
-                            default              => 'gray',
+                            'livre'               => 'success',
+                            'annule'              => 'danger',
+                            default               => 'gray',
                         })
                         ->formatStateUsing(fn(string $state) => match ($state) {
-                            'brouillon'          => 'Brouillon',
-                            'valide'             => 'Validé',
-                            'engage'             => 'Engagé',
-                            'en_cours'           => 'En cours',
+                            'brouillon'           => 'Brouillon',
+                            'valide'              => 'Validé',
+                            'engage'              => 'Engagé',
+                            'en_cours'            => 'En cours',
                             'livre_partiellement' => 'Livré partiellement',
-                            'livre'              => 'Livré',
-                            'annule'             => 'Annulé',
-                            default              => $state,
+                            'livre'               => 'Livré',
+                            'annule'              => 'Annulé',
+                            default               => $state,
                         }),
                     Infolists\Components\TextEntry::make('date_emission')
                         ->label("Date d'émission")->date('d/m/Y'),
@@ -655,6 +715,7 @@ class ViewBonCommande extends ViewRecord
                 ])
                 ->columns(3),
 
+            // ── Fournisseur et Service ────────────────────────
             Infolists\Components\Section::make('Fournisseur et Service')
                 ->schema([
                     Infolists\Components\TextEntry::make('fournisseur.raison_sociale')->label('Fournisseur'),
@@ -666,49 +727,109 @@ class ViewBonCommande extends ViewRecord
                 ])
                 ->columns(2),
 
+            // ── Détails Financiers ────────────────────────────
+            // ✅ Section unifiée — mode_arrondi intégré directement
+            //    Suppression des doublons qui existaient (montant_ht etc. × 2)
             Infolists\Components\Section::make('Détails Financiers')
                 ->schema([
+
+                    // ── Mode de calcul ────────────────────────
+                    Infolists\Components\TextEntry::make('mode_arrondi')
+                        ->label('Mode de calcul')
+                        ->badge()
+                        ->formatStateUsing(
+                            fn($state) => ($state ?? true)
+                                ? '🏦 Arrondi entier FCFA'
+                                : '🔢 Valeurs décimales exactes'
+                        )
+                        ->color(fn($state) => ($state ?? true) ? 'success' : 'info')
+                        ->helperText(
+                            fn($record) => ($record->mode_arrondi ?? true)
+                                ? 'TVA = HT × ' . ($record->lignes->first()?->taux_tva ?? 19.25) . '% → arrondi à l\'entier FCFA'
+                                : 'TVA = HT × ' . ($record->lignes->first()?->taux_tva ?? 19.25) . '% → décimales conservées'
+                        )
+                        ->columnSpanFull(),
+
+                    // ── Montants (formatage adapté au mode) ───
                     Infolists\Components\TextEntry::make('montant_ht')
                         ->label('Montant HT')
-                        ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                        ->formatStateUsing(
+                            fn($state, $record) =>
+                            number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
+                        )
                         ->color('info')
                         ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+
                     Infolists\Components\TextEntry::make('montant_tva')
-                        ->label('Montant TVA')
-                        ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                        ->label(
+                            fn($record) =>
+                            'TVA (' . ($record->lignes->first()?->taux_tva ?? 19.25) . '%)'
+                        )
+                        ->formatStateUsing(
+                            fn($state, $record) =>
+                            $state <= 0
+                                ? 'EXONÉRÉE'
+                                : number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
+                        )
                         ->color('warning')
                         ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+
                     Infolists\Components\TextEntry::make('montant_ttc')
                         ->label('Montant TTC')
-                        ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                        ->formatStateUsing(
+                            fn($state, $record) =>
+                            number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
+                        )
                         ->color('success')
-                        ->size(Infolists\Components\TextEntry\TextEntrySize::Large)->weight('bold'),
+                        ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                        ->weight('bold'),
+
                     Infolists\Components\TextEntry::make('montant_ir')
-                        ->label('Montant IR')
-                        ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                        ->label(
+                            fn($record) =>
+                            'IR (' . ($record->lignes->first()?->taux_ir ?? 5.5) . '%)'
+                        )
+                        ->formatStateUsing(
+                            fn($state, $record) =>
+                            number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
+                        )
                         ->color('danger')
                         ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+
                     Infolists\Components\TextEntry::make('montant_tsr')
                         ->label('Montant TSR')
-                        ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                        ->formatStateUsing(
+                            fn($state, $record) =>
+                            number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
+                        )
                         ->color('danger')
                         ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+
                     Infolists\Components\TextEntry::make('net_a_percevoir')
-                        ->label('Net à Percevoir')
+                        ->label('Net à Percevoir (NAP)')
                         ->formatStateUsing(
-                            fn($record) =>
-                            number_format($record->net_a_percevoir, 0, ',', ' ') . ' FCFA'
+                            fn($state, $record) =>
+                            number_format(
+                                $record->net_a_percevoir ?? 0,
+                                ($record->mode_arrondi ?? true) ? 0 : 2,
+                                ',',
+                                ' '
+                            ) . ' FCFA'
                         )
                         ->color('primary')
-                        ->size(Infolists\Components\TextEntry\TextEntrySize::Large)->weight('bold')
-                        ->helperText('HT - IR'),
+                        ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                        ->weight('bold')
+                        ->helperText('HT − IR'),
+
                     Infolists\Components\TextEntry::make('lignes_count')
                         ->label('Nombre de lignes')
                         ->state(fn($record) => $record->lignes->count())
                         ->badge()->color('gray'),
+
                 ])
                 ->columns(3),
 
+            // ── Engagement Budgétaire ─────────────────────────
             Infolists\Components\Section::make('Engagement Budgétaire')
                 ->schema([
                     Infolists\Components\TextEntry::make('engage')
@@ -717,7 +838,10 @@ class ViewBonCommande extends ViewRecord
                         ->color(fn($state) => $state ? 'success' : 'gray'),
                     Infolists\Components\TextEntry::make('montant_engage')
                         ->label('Montant engagé')
-                        ->formatStateUsing(fn($state) => number_format($state, 0, ',', ' ') . ' FCFA')
+                        ->formatStateUsing(
+                            fn($state, $record) =>
+                            number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
+                        )
                         ->visible(fn($record) => $record->engage),
                     Infolists\Components\TextEntry::make('date_engagement')
                         ->label("Date d'engagement")->dateTime('d/m/Y H:i')
@@ -726,11 +850,13 @@ class ViewBonCommande extends ViewRecord
                 ->columns(3)
                 ->visible(fn($record) => $record->engage),
 
+            // ── Objet ─────────────────────────────────────────
             Infolists\Components\Section::make('Objet')
                 ->schema([
                     Infolists\Components\TextEntry::make('objet')->label('')->columnSpanFull(),
                 ]),
 
+            // ── Validation ────────────────────────────────────
             Infolists\Components\Section::make('Validation')
                 ->schema([
                     Infolists\Components\TextEntry::make('validateur.name')
@@ -741,6 +867,7 @@ class ViewBonCommande extends ViewRecord
                 ->columns(2)
                 ->visible(fn($record) => $record->valide_par),
 
+            // ── Observations ──────────────────────────────────
             Infolists\Components\Section::make('Observations')
                 ->schema([
                     Infolists\Components\TextEntry::make('observations')

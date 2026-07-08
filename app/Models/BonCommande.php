@@ -61,6 +61,7 @@ class BonCommande extends Model
         'exonere_ir',
         'nomenclature_commune_id',
         'expression_besoin_id',
+        'mode_arrondi',
     ];
 
     protected $casts = [
@@ -86,6 +87,7 @@ class BonCommande extends Model
         'net_a_percevoir' => 'decimal:2',
         'exonere_tva' => 'boolean',
         'exonere_ir' => 'boolean',
+        'mode_arrondi' => 'boolean',
     ];
 
     /**
@@ -445,39 +447,6 @@ class BonCommande extends Model
         }
     }
 
-    /**
-     * ✅ Libérer les crédits d'un engagement annulé
-     */
-    // protected function libererCreditsEngagement(): void
-    // {
-    //     $lignesBudgetaires = \App\Models\LigneBudgetaire::where('budget_id', $this->budget_id)
-    //         ->whereIn('nomenclature_id', $this->lignes->pluck('nomenclature_id'))
-    //         ->get();
-
-    //     foreach ($lignesBudgetaires as $ligneBudgetaire) {
-    //         // Calculer le montant engagé pour cette nomenclature
-    //         $montantEngagePourNomenclature = $this->lignes()
-    //             ->where('nomenclature_id', $ligneBudgetaire->nomenclature_id)
-    //             ->sum('montant_ttc');
-
-    //         if ($montantEngagePourNomenclature > 0) {
-    //             // Libérer le crédit
-    //             $ligneBudgetaire->engage -= $montantEngagePourNomenclature;
-
-    //             // Sécurité : ne pas avoir de montant négatif
-    //             if ($ligneBudgetaire->engage < 0) {
-    //                 $ligneBudgetaire->engage = 0;
-    //             }
-
-    //             $ligneBudgetaire->save();
-
-    //             \Log::info("Crédit libéré sur {$ligneBudgetaire->nomenclature->code}", [
-    //                 'montant_libere' => $montantEngagePourNomenclature,
-    //                 'nouveau_engage' => $ligneBudgetaire->engage,
-    //             ]);
-    //         }
-    //     }
-    // }
 
     /**
      * Vérifier si le document est transmis à quelqu'un d'autre
@@ -832,7 +801,11 @@ class BonCommande extends Model
     {
         if (!$this->relationLoaded('lignes')) $this->load('lignes');
 
-        // Somme uniquement le HT (seul montant qui peut avoir des décimales)
+        // ✅ Mode arrondi = true  → entiers FCFA (norme comptable camerounaise)
+        // ✅ Mode arrondi = false → décimales conservées (valeurs saisies exactes)
+        $modeArrondi = $this->mode_arrondi ?? true;
+
+        // Somme du HT (toujours additionnée sans pré-arrondi)
         $totalHT = 0;
         foreach ($this->lignes as $ligne) {
             $totalHT += (float)($ligne->montant_ht ?? 0);
@@ -842,20 +815,28 @@ class BonCommande extends Model
         $tauxTva = (float)($premiereLigne?->taux_tva ?? ($this->exonere_tva ? 0 : 19.25));
         $tauxIr  = (float)($premiereLigne?->taux_ir  ?? ($this->exonere_ir  ? 0 : 5.5));
 
-        // ✅ round() sans décimale → entier FCFA
-        //    round(4118700 × 19.25%) = round(792849.75) = 792850
-        //    round(4118700 + 792850) = 4911550  ✅
-        $totalTva       = $this->exonere_tva ? 0 : (int) round($totalHT * $tauxTva / 100);
-        $totalIr        = $this->exonere_ir  ? 0 : (int) round($totalHT * $tauxIr  / 100);
-        $totalTtc       = (int) round($totalHT + $totalTva);
-        $totalNetAPayer = (int) round($totalHT - $totalIr);
+        $tva = $this->exonere_tva ? 0 : ($totalHT * $tauxTva / 100);
+        $ir  = $this->exonere_ir  ? 0 : ($totalHT * $tauxIr  / 100);
+        $ttc = $totalHT + $tva;
+        $nap = $totalHT - $ir;
 
-        $this->montant_ht      = round($totalHT, 2);
-        $this->montant_tva     = $totalTva;
-        $this->montant_ir      = $totalIr;
-        $this->montant_ttc     = $totalTtc;
-        $this->net_a_payer     = $totalNetAPayer;
-        $this->net_a_percevoir = $totalNetAPayer;
+        if ($modeArrondi) {
+            // ✅ FCFA entiers — round() sans décimale
+            $this->montant_ht      = round($totalHT, 2); // HT garde 2 déc. (PU × Qté)
+            $this->montant_tva     = (int) round($tva);
+            $this->montant_ir      = (int) round($ir);
+            $this->montant_ttc     = (int) round($ttc);
+            $this->net_a_payer     = (int) round($nap);
+            $this->net_a_percevoir = (int) round($nap);
+        } else {
+            // ✅ Décimales conservées — round(..., 4) pour éviter les flottants
+            $this->montant_ht      = round($totalHT, 4);
+            $this->montant_tva     = round($tva, 4);
+            $this->montant_ir      = round($ir,  4);
+            $this->montant_ttc     = round($ttc, 4);
+            $this->net_a_payer     = round($nap, 4);
+            $this->net_a_percevoir = round($nap, 4);
+        }
     }
 
     /**
