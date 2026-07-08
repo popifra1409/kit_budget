@@ -263,7 +263,7 @@
                         {{ number_format($prevision->getTotalPrevuRectifie(), 0, ',', ' ') }}</td>
                     <td class="text-right montant">{{ number_format($prevision->getTotalRecouvre(), 0, ',', ' ') }}
                     </td>
-                    <td class="text-right montant">{{ number_format($prevision->getEcartTotal(), 0, ',', ' ') }}</td>
+                    <td class="text-right montant">{{ number_format($prevision->getEcartGlobal(), 0, ',', ' ') }}</td>
                     <td class="text-center">
                         @php
                             $tauxTotal = $prevision->getTauxRecouvrement();

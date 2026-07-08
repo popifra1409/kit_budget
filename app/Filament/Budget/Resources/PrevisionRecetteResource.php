@@ -20,13 +20,13 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class PrevisionRecetteResource extends Resource
 {
-    protected static ?string $model = PrevisionRecette::class;
-    protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
-    protected static ?string $navigationLabel = 'Prévisions de Recettes';
-    protected static ?string $modelLabel = 'Prévision de Recettes';
+    protected static ?string $model            = PrevisionRecette::class;
+    protected static ?string $navigationIcon   = 'heroicon-o-currency-dollar';
+    protected static ?string $navigationLabel  = 'Prévisions de Recettes';
+    protected static ?string $modelLabel       = 'Prévision de Recettes';
     protected static ?string $pluralModelLabel = 'Prévisions de Recettes';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup  = 'Gestion Budgétaire';
+    protected static ?int    $navigationSort   = 2;
 
     // ========================================
     // PERMISSIONS
@@ -36,12 +36,10 @@ class PrevisionRecetteResource extends Resource
     {
         return auth()->user()?->can('view_any_prevision_recette') ?? false;
     }
-
     public static function canView($record): bool
     {
         return auth()->user()?->can('view_prevision_recette') ?? false;
     }
-
     public static function canCreate(): bool
     {
         return auth()->user()?->can('create_prevision_recette') ?? false;
@@ -68,57 +66,56 @@ class PrevisionRecetteResource extends Resource
 
     public static function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Exercice')
-                    ->description('Exercice budgétaire de rattachement')
-                    ->schema([ExerciceSelect::make()])
-                    ->collapsible()
-                    ->collapsed(fn($record) => $record !== null),
+        return $form->schema([
+            Forms\Components\Section::make('Exercice')
+                ->description('Exercice budgétaire de rattachement')
+                ->schema([ExerciceSelect::make()])
+                ->collapsible()
+                ->collapsed(fn($record) => $record !== null),
 
-                Forms\Components\Section::make('Informations de la Prévision')
-                    ->schema([
-                        Forms\Components\TextInput::make('code')
-                            ->label('Code')->required()->unique(ignoreRecord: true)
-                            ->maxLength(50)->placeholder('Ex: PREV-REC-2026')
-                            ->helperText('Code unique de la prévision de recettes'),
+            Forms\Components\Section::make('Informations de la Prévision')
+                ->schema([
+                    Forms\Components\TextInput::make('code')
+                        ->label('Code')->required()->unique(ignoreRecord: true)
+                        ->maxLength(50)->placeholder('Ex: PREV-REC-2026')
+                        ->helperText('Code unique de la prévision de recettes'),
 
-                        Forms\Components\TextInput::make('libelle')
-                            ->label('Libellé')->required()->maxLength(255)->columnSpanFull()
-                            ->placeholder('Ex: Prévisions de Recettes 2026'),
+                    Forms\Components\TextInput::make('libelle')
+                        ->label('Libellé')->required()->maxLength(255)->columnSpanFull()
+                        ->placeholder('Ex: Prévisions de Recettes 2026'),
 
-                        Forms\Components\DatePicker::make('date_adoption')
-                            ->label('Date d\'adoption')
-                            ->helperText('Date de vote/adoption de la prévision'),
+                    Forms\Components\DatePicker::make('date_adoption')
+                        ->label('Date d\'adoption')
+                        ->helperText('Date de vote/adoption de la prévision'),
 
-                        Forms\Components\DatePicker::make('date_revision')
-                            ->label('Date de révision')
-                            ->helperText('Date de dernière révision'),
+                    Forms\Components\DatePicker::make('date_revision')
+                        ->label('Date de révision')
+                        ->helperText('Date de dernière révision'),
 
-                        Forms\Components\Select::make('statut')
-                            ->label('Statut')
-                            ->options([
-                                'elaboration' => 'En élaboration',
-                                'adopte'      => 'Adopté',
-                                'execution'   => 'En exécution',
-                                'cloture'     => 'Clôturé',
-                            ])
-                            ->required()->default('elaboration'),
+                    Forms\Components\Select::make('statut')
+                        ->label('Statut')
+                        ->options([
+                            'elaboration' => 'En élaboration',
+                            'adopte'      => 'Adopté',
+                            'execution'   => 'En exécution',
+                            'cloture'     => 'Clôturé',
+                        ])
+                        ->required()->default('elaboration'),
 
-                        Forms\Components\Toggle::make('actif')->label('Actif')->default(true),
-                    ])
-                    ->columns(2),
+                    Forms\Components\Toggle::make('actif')->label('Actif')->default(true),
+                ])
+                ->columns(2),
 
-                Forms\Components\Section::make('Observations')
-                    ->schema([
-                        Forms\Components\Textarea::make('observations')
-                            ->label('Observations')->rows(3)->columnSpanFull(),
-                    ])
-                    ->collapsible()->collapsed(),
-            ]);
+            Forms\Components\Section::make('Observations')
+                ->schema([
+                    Forms\Components\Textarea::make('observations')
+                        ->label('Observations')->rows(3)->columnSpanFull(),
+                ])
+                ->collapsible()->collapsed(),
+        ]);
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with('exercice')
@@ -138,12 +135,12 @@ class PrevisionRecetteResource extends Resource
                 Tables\Columns\BadgeColumn::make('exercice.annee')
                     ->label('Exercice')->sortable()
                     ->colors([
-                        'success' => fn($record) => $record->exercice instanceof \App\Models\Exercice && $record->exercice->estActif(),
-                        'warning' => fn($record) => $record->exercice instanceof \App\Models\Exercice && $record->exercice->estCloture(),
-                        'danger'  => fn($record) => $record->exercice instanceof \App\Models\Exercice && $record->exercice->estArchive(),
-                        'gray'    => fn($record) => $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
+                        'success' => fn($record) => $record->exercice instanceof Exercice && $record->exercice->estActif(),
+                        'warning' => fn($record) => $record->exercice instanceof Exercice && $record->exercice->estCloture(),
+                        'danger'  => fn($record) => $record->exercice instanceof Exercice && $record->exercice->estArchive(),
+                        'gray'    => fn($record) => $record->exercice instanceof Exercice && $record->exercice->estBrouillon(),
                     ])
-                    ->tooltip(fn($record) => $record->exercice instanceof \App\Models\Exercice ? $record->exercice->libelle : null)
+                    ->tooltip(fn($record) => $record->exercice instanceof Exercice ? $record->exercice->libelle : null)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('code')
@@ -218,10 +215,6 @@ class PrevisionRecetteResource extends Resource
                     ->trueLabel('Actifs')->falseLabel('Inactifs'),
             ])
 
-            // ════════════════════════════════════════════════════════
-            // ✅ ACTIONS — un seul ActionGroup, aligné à gauche
-            //    Pattern identique à BonCommandeResource
-            // ════════════════════════════════════════════════════════
             ->actions([
                 Tables\Actions\ActionGroup::make([
 
@@ -229,37 +222,38 @@ class PrevisionRecetteResource extends Resource
                     Tables\Actions\EditAction::make(),
 
                     // ── Export Excel ──────────────────────────────
+                    // ✅ FIX — ->url() + ->openUrlInNewTab() au lieu de ->action()
+                    //
+                    // CAUSE ERREUR 500 :
+                    //   return Excel::download() dans un ->action() Filament
+                    //   → Livewire intercepte la réponse via AJAX
+                    //   → Le fichier ne peut pas être streamé → erreur 500
+                    //
+                    // SOLUTION :
+                    //   ->url() génère un lien vers une route dédiée
+                    //   → le navigateur fait une requête HTTP normale (hors Livewire)
+                    //   → le fichier est téléchargé directement
                     Tables\Actions\Action::make('exportExcel')
                         ->label('Export Excel')
                         ->icon('heroicon-o-table-cells')
                         ->color('success')
-                        ->action(function (PrevisionRecette $record) {
-                            return Excel::download(
-                                new PrevisionRecetteExport($record),
-                                'prevision_recette_' . $record->code . '_' . now()->format('Ymd_His') . '.xlsx'
-                            );
-                        }),
+                        ->url(
+                            fn(PrevisionRecette $record) =>
+                            route('prevision-recette.export.excel', $record->id)
+                        )
+                        ->openUrlInNewTab(),
 
                     // ── Export PDF ────────────────────────────────
+                    // ✅ FIX — même pattern que Excel
                     Tables\Actions\Action::make('exportPdf')
                         ->label('Export PDF')
                         ->icon('heroicon-o-document-text')
                         ->color('danger')
-                        ->action(function (PrevisionRecette $record) {
-                            $lignes = $record->lignesPrevisions()
-                                ->with('nomenclature')->orderBy('ordre')->get();
-
-                            $pdf = Pdf::loadView('exports.prevision-recette-pdf', [
-                                'prevision' => $record,
-                                'lignes'    => $lignes,
-                            ]);
-                            $pdf->setPaper('a4', 'landscape');
-
-                            return response()->streamDownload(
-                                fn() => print($pdf->output()),
-                                'prevision_recette_' . $record->code . '_' . now()->format('Ymd_His') . '.pdf'
-                            );
-                        }),
+                        ->url(
+                            fn(PrevisionRecette $record) =>
+                            route('prevision-recette.export.pdf', $record->id)
+                        )
+                        ->openUrlInNewTab(),
 
                 ])
                     ->label('Actions')

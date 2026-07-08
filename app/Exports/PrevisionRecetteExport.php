@@ -150,7 +150,7 @@ class PrevisionRecetteExport implements
         $sheet->setCellValue('C' . $totalRow, number_format($this->previsionRecette->getTotalPrevuInitial(), 0, ',', ' '));
         $sheet->setCellValue('D' . $totalRow, number_format($this->previsionRecette->getTotalPrevuRectifie(), 0, ',', ' '));
         $sheet->setCellValue('E' . $totalRow, number_format($this->previsionRecette->getTotalRecouvre(), 0, ',', ' '));
-        $sheet->setCellValue('F' . $totalRow, number_format($this->previsionRecette->getEcartTotal(), 0, ',', ' '));
+        $sheet->setCellValue('F' . $totalRow, number_format($this->previsionRecette->getEcartGlobal(), 0, ',', ' '));
         $sheet->setCellValue('G' . $totalRow, number_format($this->previsionRecette->getTauxRecouvrement(), 2, ',', ' ') . ' %');
 
         $sheet->getStyle('A' . $totalRow . ':H' . $totalRow)->applyFromArray([

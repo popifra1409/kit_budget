@@ -49,10 +49,6 @@ Route::middleware(['web', 'auth'])->group(function () {
     });
 
     // ── Bons de Commande PDF ──────────────────────────────────
-    // ✅ Utiliser $id (int) au lieu du Route Model Binding automatique
-    // pour bypasser le global scope HasExercice (exercices clôturés 2025)
-
-    // BC Simple
     Route::get('/bons-commande/{id}/pdf/preview-simple', function (int $id) {
         $bonCommande = BonCommande::withoutGlobalScope('exercice')
             ->with(['fournisseur', 'serviceDemandeur', 'lignes.nomenclature', 'engagement'])
@@ -67,7 +63,6 @@ Route::middleware(['web', 'auth'])->group(function () {
         return BonCommandePdfService::telecharger($bonCommande, 'simple');
     })->name('bons-commande.pdf.download.simple');
 
-    // BC Complet
     Route::get('/bons-commande/{id}/pdf/preview-complet', function (int $id) {
         $bonCommande = BonCommande::withoutGlobalScope('exercice')
             ->with(['fournisseur', 'serviceDemandeur', 'lignes.nomenclature', 'engagement'])
@@ -82,7 +77,6 @@ Route::middleware(['web', 'auth'])->group(function () {
         return BonCommandePdfService::telecharger($bonCommande, 'complet');
     })->name('bons-commande.pdf.download.complet');
 
-    // BC Préimprimé Simple
     Route::get('/bons-commande/{id}/pdf/preview-simple-preimprime', function (int $id) {
         $bonCommande = BonCommande::withoutGlobalScope('exercice')
             ->with(['fournisseur', 'serviceDemandeur', 'lignes.nomenclature', 'engagement'])
@@ -98,8 +92,6 @@ Route::middleware(['web', 'auth'])->group(function () {
     })->name('bons-commande.pdf.download.simple-preimprime');
 
     // ── Décisions Administratives PDF ────────────────────────
-    // ✅ Même approche — bypass global scope exercice
-
     Route::get('/decisions-administratives/{id}/pdf/preview', function (int $id) {
         $decision = DecisionAdministrative::withoutGlobalScope('exercice')
             ->with(['personnel', 'fournisseur', 'typeDecision', 'exercice', 'budget', 'engagement'])
@@ -117,24 +109,16 @@ Route::middleware(['web', 'auth'])->group(function () {
     // ── Expressions de Besoins PDF ────────────────────────────
     Route::get('/expressions-besoins/{id}/pdf/preview', function (int $id) {
         $expressionBesoin = \App\Models\ExpressionBesoin::with([
-            'serviceDemandeur',
-            'responsableService',
-            'comptableMatieres',
-            'ordonnateur',
-            'lignes.article.uniteMesure',
-            'lignes.conditionnement',
+            'serviceDemandeur', 'responsableService', 'comptableMatieres',
+            'ordonnateur', 'lignes.article.uniteMesure', 'lignes.conditionnement',
         ])->findOrFail($id);
         return \App\Services\ExpressionBesoinPdfService::apercu($expressionBesoin);
     })->name('expressions-besoins.pdf.preview');
 
     Route::get('/expressions-besoins/{id}/pdf/download', function (int $id) {
         $expressionBesoin = \App\Models\ExpressionBesoin::with([
-            'serviceDemandeur',
-            'responsableService',
-            'comptableMatieres',
-            'ordonnateur',
-            'lignes.article.uniteMesure',
-            'lignes.conditionnement',
+            'serviceDemandeur', 'responsableService', 'comptableMatieres',
+            'ordonnateur', 'lignes.article.uniteMesure', 'lignes.conditionnement',
         ])->findOrFail($id);
         return \App\Services\ExpressionBesoinPdfService::telecharger($expressionBesoin);
     })->name('expressions-besoins.pdf.download');
@@ -146,8 +130,8 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/fiche-controle-engagements/{id}/pdf', [FicheControleEngagementsController::class, 'telechargerPdf'])
         ->name('fiche-controle-engagements.pdf');
 
-    // routes/web.php
-    Route::get('/bcr/{bcr}/apercu',      [App\Http\Controllers\BonCommandeRegiePdfController::class, 'apercu'])
+    // ── Bons de Commande Régie ────────────────────────────────
+    Route::get('/bcr/{bcr}/apercu', [App\Http\Controllers\BonCommandeRegiePdfController::class, 'apercu'])
         ->name('bcr.pdf.apercu')
         ->middleware(['auth']);
 
@@ -155,7 +139,7 @@ Route::middleware(['web', 'auth'])->group(function () {
         ->name('bcr.pdf.telecharger')
         ->middleware(['auth']);
 
-    // décaissements régie d'avance
+    // ── Décaissements Régie d'Avance ──────────────────────────
     Route::middleware(['auth'])->group(function () {
         Route::get(
             '/regie/{regie}/decaissement/{decaissement}/mandat/apercu',
@@ -167,6 +151,20 @@ Route::middleware(['web', 'auth'])->group(function () {
             [App\Http\Controllers\MandatDecaissementPdfController::class, 'telecharger']
         )->name('mandat.decaissement.telecharger');
     });
+
+    // ── Prévisions de Recettes — Export Excel & PDF ───────────
+    // ✅ Dans le groupe middleware web+auth pour sécuriser les téléchargements
+    // Ces routes sont appelées via ->url() depuis PrevisionRecetteResource
+    // (évite le problème de streaming dans Livewire/Filament actions)
+    Route::get(
+        '/prevision-recette/{id}/export/excel',
+        [App\Http\Controllers\PrevisionRecetteExportController::class, 'excel']
+    )->name('prevision-recette.export.excel');
+
+    Route::get(
+        '/prevision-recette/{id}/export/pdf',
+        [App\Http\Controllers\PrevisionRecetteExportController::class, 'pdf']
+    )->name('prevision-recette.export.pdf');
 });
 
 /*
