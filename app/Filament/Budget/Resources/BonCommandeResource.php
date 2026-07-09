@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\DB;
 
 class BonCommandeResource extends Resource
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = BonCommande::class;
 
     protected static ?string $navigationGroup = 'Commandes & Engagement';

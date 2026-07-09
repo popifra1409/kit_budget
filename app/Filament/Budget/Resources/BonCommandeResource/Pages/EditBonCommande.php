@@ -10,6 +10,7 @@ use Filament\Notifications\Notification;
 
 class EditBonCommande extends EditRecord
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = BonCommandeResource::class;
 
     // =========================================================
@@ -55,8 +56,8 @@ class EditBonCommande extends EditRecord
                 ->visible(
                     fn() =>
                     $this->record->engage
-                    && $this->record->peutEtreDesengage()
-                    && static::getResource()::canDesengager($this->record)
+                        && $this->record->peutEtreDesengage()
+                        && static::getResource()::canDesengager($this->record)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Annuler l\'engagement du bon de commande')
@@ -64,9 +65,9 @@ class EditBonCommande extends EditRecord
                     // ✅ Requête directe — contourne morphMap
                     $engagement = \App\Models\Engagement::where('engageable_id', $this->record->id)
                         ->where(function ($q) {
-                        $q->where('engageable_type', \App\Models\BonCommande::class)
-                            ->orWhere('engageable_type', 'bon_commande');
-                    })->first();
+                            $q->where('engageable_type', \App\Models\BonCommande::class)
+                                ->orWhere('engageable_type', 'bon_commande');
+                        })->first();
 
                     $numEngagement = $engagement?->numero ?? '—';
 
@@ -105,26 +106,26 @@ class EditBonCommande extends EditRecord
                 ->visible(
                     fn() =>
                     $this->record->peutEtreAnnule()
-                    && static::getResource()::canAnnuler($this->record)
+                        && static::getResource()::canAnnuler($this->record)
                 )
                 ->form([
                     Forms\Components\Placeholder::make('info_annulation')
                         ->label('')
                         ->content(
                             fn() => $this->record->engage
-                            ? new \Illuminate\Support\HtmlString(
-                                '<div style="background:#fef2f2;border:1px solid #dc2626;
+                                ? new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef2f2;border:1px solid #dc2626;
                                              border-radius:.5rem;padding:.75rem;
                                              color:#dc2626;font-weight:600;">
                                 ❌ Ce BC est engagé.<br>
                                 Veuillez d\'abord cliquer sur "Annuler l\'engagement",
                                 puis revenez annuler le BC.</div>'
-                            )
-                            : new \Illuminate\Support\HtmlString(
-                                '<div style="background:#fef9c3;border:1px solid #ca8a04;
+                                )
+                                : new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef9c3;border:1px solid #ca8a04;
                                              border-radius:.5rem;padding:.75rem;">
                                 ⚠️ Le bon de commande sera annulé. Il restera récupérable.</div>'
-                            )
+                                )
                         )
                         ->columnSpanFull(),
 
@@ -160,8 +161,8 @@ class EditBonCommande extends EditRecord
                 ->visible(
                     fn() =>
                     $this->record->statut === 'annule'
-                    && $this->record->peutEtreRecupere()
-                    && static::getResource()::canRecuperer($this->record)
+                        && $this->record->peutEtreRecupere()
+                        && static::getResource()::canRecuperer($this->record)
                 )
                 ->form([
                     Forms\Components\Placeholder::make('info_recuperation')

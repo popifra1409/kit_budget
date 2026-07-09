@@ -15,6 +15,7 @@ use App\Models\RegimeFiscal;
 
 class FournisseurResource extends Resource
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = Fournisseur::class;
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
     protected static ?string $navigationLabel = 'Fournisseurs';

@@ -13,6 +13,8 @@ use Filament\Notifications\Notification;
 
 class ViewBonCommande extends ViewRecord
 {
+
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = BonCommandeResource::class;
 
     protected ?array $verificationsCache = null;
@@ -875,5 +877,18 @@ class ViewBonCommande extends ViewRecord
                 ])
                 ->collapsible()->collapsed(),
         ]);
+    }
+
+    // Exemple dans ViewBonCommande.php
+    protected function getHeaderWidgets(): array
+    {
+        // Émettre le contexte vers le widget agent
+        $this->dispatch('agent-contexte', [
+            'page'        => 'bon_commande',
+            'record_id'   => $this->record->id,
+            'record_type' => 'bon_commande',
+            'erreurs'     => session('agent_erreurs', []),
+        ]);
+        return [];
     }
 }

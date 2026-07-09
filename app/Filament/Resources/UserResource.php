@@ -14,6 +14,7 @@ use Spatie\Permission\Models\Role;
 
 class UserResource extends Resource
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = User::class;
     protected static ?string $navigationIcon = 'heroicon-o-users';
     protected static ?string $navigationLabel = 'Utilisateurs';

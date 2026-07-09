@@ -10,6 +10,7 @@ use Filament\Actions;
 
 class CreateBonCommande extends CreateRecord
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = BonCommandeResource::class;
     /**
      * ===============================

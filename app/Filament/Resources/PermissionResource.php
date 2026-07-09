@@ -12,6 +12,7 @@ use Spatie\Permission\Models\Permission;
 
 class PermissionResource extends Resource
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = Permission::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-key';

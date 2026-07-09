@@ -558,7 +558,16 @@ class BonCommande extends Model
                 'date_validation',
                 'updated_by',
                 'updated_at',
-                'created_at'
+                'created_at',
+                'montant_ir',
+                'net_a_payer',
+                'net_a_percevoir',
+                'montant_ht',
+                'montant_tva',
+                'montant_ttc',
+                'statut_avant_annulation',
+                'mode_arrondi',
+                'type_engagement_id',
             ];
 
             // Vérifier si SEULEMENT des champs autorisés ont été modifiés
@@ -995,13 +1004,13 @@ class BonCommande extends Model
                 }
             }
 
-            // ✅ MODIFICATION ICI : Lier l'engagement au BC + mettre à jour les champs
-            $this->engagement_id = $engagement->id;
-            $this->engage = true;
-            $this->date_engagement = now();
-            $this->montant_engage = $this->montant_ttc;
-            $this->statut = 'engage';
-            $this->save();
+            $this->updateQuietly([
+                'engagement_id'   => $engagement->id,
+                'engage'          => true,
+                'date_engagement' => now(),
+                'montant_engage'  => $this->montant_ttc,
+                'statut'          => 'engage',
+            ]);
 
             \DB::commit();
 

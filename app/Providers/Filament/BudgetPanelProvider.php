@@ -23,6 +23,7 @@ use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
 use App\Filament\Pages\Auth\Login;
 use Filament\Navigation\MenuItem;
+use Illuminate\Support\Facades\Blade;
 
 class BudgetPanelProvider extends PanelProvider
 {
@@ -122,6 +123,7 @@ class BudgetPanelProvider extends PanelProvider
             ->widgets([
                 Widgets\AccountWidget::class,
                 \App\Filament\Widgets\WelcomeWidget::class,
+                // \App\Filament\Budget\Widgets\AgentBudgetaireWidget::class,
             ])
 
             ->pages([
@@ -130,6 +132,12 @@ class BudgetPanelProvider extends PanelProvider
             ])
 
             // ── Render hooks ─────────────────────────────────────────────
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn(): string => auth()->check()
+                    ? Blade::render('@livewire(\'agent-budgetaire-widget\')')
+                    : ''
+            )
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
                 fn(): HtmlString => $this->renderModuleSwitcher()

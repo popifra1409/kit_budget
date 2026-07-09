@@ -8,6 +8,7 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditFournisseur extends EditRecord
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = FournisseurResource::class;
 
     protected function getHeaderActions(): array

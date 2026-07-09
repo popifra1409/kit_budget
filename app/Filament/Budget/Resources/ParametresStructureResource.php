@@ -12,6 +12,7 @@ use Filament\Tables\Table;
 
 class ParametresStructureResource extends Resource
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = ParametresStructure::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';

@@ -13,6 +13,7 @@ use Filament\Tables\Table;
 
 class RoleResource extends Resource
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = Role::class;
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';
     protected static ?string $navigationLabel = 'Rôles';
@@ -119,14 +120,14 @@ class RoleResource extends Resource
                         ->label('Guide des niveaux')
                         ->content(new \Illuminate\Support\HtmlString(
                             '<div style="font-size:.8rem;line-height:1.8;color:var(--color-text-secondary);">' .
-                            '• <b>10</b> : Opérateurs, Service utilisateur<br>' .
-                            '• <b>20</b> : Comptable-matières<br>' .
-                            '• <b>30</b> : Chefs de service<br>' .
-                            '• <b>40</b> : Ordonnateur-matières<br>' .
-                            '• <b>60</b> : Contrôleur financier, Agence comptable<br>' .
-                            '• <b>70</b> : DAAF<br>' .
-                            '• <b>90</b> : Directeur Général<br>' .
-                            '• <b>100</b> : Super administrateur</div>'
+                                '• <b>10</b> : Opérateurs, Service utilisateur<br>' .
+                                '• <b>20</b> : Comptable-matières<br>' .
+                                '• <b>30</b> : Chefs de service<br>' .
+                                '• <b>40</b> : Ordonnateur-matières<br>' .
+                                '• <b>60</b> : Contrôleur financier, Agence comptable<br>' .
+                                '• <b>70</b> : DAAF<br>' .
+                                '• <b>90</b> : Directeur Général<br>' .
+                                '• <b>100</b> : Super administrateur</div>'
                         ))
                         ->columnSpanFull(),
                 ])
@@ -268,46 +269,48 @@ class RoleResource extends Resource
                                         ->label('')->relationship('permissions', 'name')
                                         ->options(
                                             Permission::where(function ($q) {
-                                                foreach ([
-                                                    'budget',
-                                                    'bon_commande',
-                                                    'engagement',
-                                                    'bordereau_engagement',
-                                                    'decision_administrative',
-                                                    'type_decision',
-                                                    'ordonnance_paiement',
-                                                    'memoire_depense',
-                                                    'recette_reelle',
-                                                    'prevision_recette',
-                                                    'virement_budgetaire',
-                                                    'fournisseur',
-                                                    'dossier_fournisseur',
-                                                    'piece_dossier',
-                                                    'transmission',
-                                                    'article',
-                                                    'stock',
-                                                    'fiche_stock',
-                                                    'expression_besoin',
-                                                    'reception',
-                                                    'ordre_entree',
-                                                    'bon_sortie',
-                                                    'ordre_sortie',
-                                                    'fiche_detenteur',
-                                                    'registre_consommation',
-                                                    'marche',
-                                                    'appel_offre',
-                                                    'offre',
-                                                    'caution',
-                                                    'avenant',
-                                                    'user',
-                                                    'role',
-                                                    'personnel',
-                                                    'service',
-                                                    'parametres',
-                                                    'exercice',
-                                                    'etat_config',
-                                                    'regime_fiscal',
-                                                ] as $kw) {
+                                                foreach (
+                                                    [
+                                                        'budget',
+                                                        'bon_commande',
+                                                        'engagement',
+                                                        'bordereau_engagement',
+                                                        'decision_administrative',
+                                                        'type_decision',
+                                                        'ordonnance_paiement',
+                                                        'memoire_depense',
+                                                        'recette_reelle',
+                                                        'prevision_recette',
+                                                        'virement_budgetaire',
+                                                        'fournisseur',
+                                                        'dossier_fournisseur',
+                                                        'piece_dossier',
+                                                        'transmission',
+                                                        'article',
+                                                        'stock',
+                                                        'fiche_stock',
+                                                        'expression_besoin',
+                                                        'reception',
+                                                        'ordre_entree',
+                                                        'bon_sortie',
+                                                        'ordre_sortie',
+                                                        'fiche_detenteur',
+                                                        'registre_consommation',
+                                                        'marche',
+                                                        'appel_offre',
+                                                        'offre',
+                                                        'caution',
+                                                        'avenant',
+                                                        'user',
+                                                        'role',
+                                                        'personnel',
+                                                        'service',
+                                                        'parametres',
+                                                        'exercice',
+                                                        'etat_config',
+                                                        'regime_fiscal',
+                                                    ] as $kw
+                                                ) {
                                                     $q->where('name', 'not like', "%{$kw}%");
                                                 }
                                                 $q->where('name', 'not like', 'access_module_%');

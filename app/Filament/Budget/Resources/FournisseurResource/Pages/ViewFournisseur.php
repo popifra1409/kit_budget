@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ViewRecord;
 
 class ViewFournisseur extends ViewRecord
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = FournisseurResource::class;
 
     protected function getHeaderActions(): array

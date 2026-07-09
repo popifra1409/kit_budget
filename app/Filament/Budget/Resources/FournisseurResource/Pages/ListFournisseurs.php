@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ListRecords;
 
 class ListFournisseurs extends ListRecords
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = FournisseurResource::class;
 
     protected function getHeaderActions(): array

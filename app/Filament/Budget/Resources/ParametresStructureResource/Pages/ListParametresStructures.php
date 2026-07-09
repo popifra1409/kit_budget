@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ListRecords;
 
 class ListParametresStructures extends ListRecords
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = ParametresStructureResource::class;
 
     protected function getHeaderActions(): array

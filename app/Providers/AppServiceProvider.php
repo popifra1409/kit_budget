@@ -111,5 +111,11 @@ class AppServiceProvider extends ServiceProvider
         FilamentAsset::register([
             Css::make('custom-theme', resource_path('css/filament/admin/theme.css')),
         ]);
+
+
+        \Livewire\Livewire::component(
+            'agent-budgetaire-widget',
+            \App\Filament\Budget\Widgets\AgentBudgetaireWidget::class
+        );
     }
 }

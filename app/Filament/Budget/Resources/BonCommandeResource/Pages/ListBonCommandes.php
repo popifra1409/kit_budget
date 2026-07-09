@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ListRecords;
 
 class ListBonCommandes extends ListRecords
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = BonCommandeResource::class;
 
     public function mount(): void

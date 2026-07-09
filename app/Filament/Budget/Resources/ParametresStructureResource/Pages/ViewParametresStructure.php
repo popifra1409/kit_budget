@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ViewRecord;
 
 class ViewParametresStructure extends ViewRecord
 {
+    use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static string $resource = ParametresStructureResource::class;
 
     protected function getHeaderActions(): array
