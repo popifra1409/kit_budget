@@ -403,12 +403,29 @@ class EngagementResource extends Resource
                             $record->statut === 'provisoire'
                                 && auth()->user()?->can('valider_engagement')
                         )
-                        ->requiresConfirmation()
                         ->modalHeading('Confirmer le passage en définitif')
-                        ->modalDescription(
-                            fn($record) =>
-                            "L'engagement {$record->numero} sera définitif et pourra recevoir des ordonnances."
-                        )
+                        ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
+                            // ✅ AVERTISSEMENT — vérifier la ligne budgétaire avant de valider
+                            '<div class="rounded-lg p-4 mb-3 bg-amber-50 dark:bg-amber-900/20 '
+                                . 'border border-amber-300 dark:border-amber-700 text-sm text-amber-800 dark:text-amber-200">'
+                                . '<div class="font-bold text-base mb-2">⚠️ Vérifiez la ligne d\'engagement budgétaire</div>'
+                                . '<div class="mb-2">Avant de confirmer, assurez-vous que la ligne budgétaire ci-dessous est correcte.</div>'
+                                . '<div class="bg-white dark:bg-gray-800 rounded p-3 border border-amber-200 font-mono text-xs mb-2">'
+                                . '📌 Engagement N° : <strong>' . $record->numero . '</strong><br>'
+                                . '💰 Montant : <strong>' . number_format($record->montant_engage, 0, ',', ' ') . ' FCFA</strong><br>'
+                                . '📋 Nomenclature : <strong>' . ($record->nomenclaturePrincipale?->code ?? 'N/A')
+                                . ' — ' . ($record->nomenclaturePrincipale?->libelle ?? 'Non définie') . '</strong>'
+                                . '</div>'
+                                . '<div class="text-xs italic">❌ Si la ligne est incorrecte, fermez cette fenêtre et modifiez l\engagement avant de valider.</div>'
+                                . '</div>'
+                                . '<div class="rounded-lg p-3 bg-green-50 dark:bg-green-900/20 border border-green-300 text-sm text-green-800 dark:text-green-200">'
+                                . '✅ Si la ligne est correcte, cliquez sur <strong>Confirmer</strong>.<br>'
+                                . 'L\'engagement deviendra <strong>définitif</strong> et pourra recevoir des ordonnances de paiement.'
+                                . '</div>'
+                        ))
+                        ->modalSubmitActionLabel('✅ Confirmer — la ligne est correcte')
+                        ->modalCancelActionLabel('❌ Annuler — je veux vérifier')
+                        ->modalWidth('xl')
                         ->action(function ($record) {
                             try {
                                 $record->passerDefinitif(auth()->user());

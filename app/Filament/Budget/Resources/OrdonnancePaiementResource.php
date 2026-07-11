@@ -340,22 +340,83 @@ class OrdonnancePaiementResource extends Resource
                             Notification::make()->title('Ordonnance émise')->success()->send();
                         }),
 
+                    // ════════════════════════════════════════════════
+                    // ✅ MARQUER PAYÉE — OP STANDARD UNIQUEMENT
+                    //    L'OPT (impôt) est payée automatiquement
+                    //    quand l'OP standard est marquée payée
+                    //    → pas de bouton séparé pour l'OPT
+                    // ════════════════════════════════════════════════
                     Tables\Actions\Action::make('marquer_payee')
                         ->label('Marquer payée')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
-                        ->visible(fn($record) => in_array($record->statut, ['emise', 'visee']))
+                        ->visible(
+                            fn($record) =>
+                            // Statut correct
+                            in_array($record->statut, ['emise', 'visee'])
+                                // OP standard uniquement (OPT payée automatiquement via OP)
+                                && $record->type_ordonnance === 'standard'
+                                // Permission dédiée OU permissions existantes en fallback
+                                && (
+                                    auth()->user()?->can('marquer_payee_ordonnance_paiement')
+                                    || auth()->user()?->can('valider_ordonnance_paiement')
+                                    || auth()->user()?->hasRole(['super_admin', 'admin', 'agence_comptable', 'daaf'])
+                                )
+                        )
+                        ->modalHeading(fn($record) => 'Marquer payée — ' . $record->numero)
+                        ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
+                            '<p class="text-sm text-red-700 font-semibold mb-2">'
+                                . '⚠️ Action irréversible — cette OP ne pourra plus être modifiée.</p>'
+                                . '<p class="text-sm mb-1">💰 <strong>'
+                                . number_format($record->montant, 0, ',', ' ')
+                                . ' FCFA</strong> — '
+                                . ($record->beneficiaire ?? '—')
+                                . '</p>'
+                                . '<p class="text-xs text-gray-500">📎 L\'OPT liée sera payée automatiquement.</p>'
+                        ))
+                        ->modalSubmitActionLabel('✅ Confirmer le paiement')
+                        ->modalCancelActionLabel('Annuler')
                         ->form([
                             Forms\Components\DatePicker::make('date_paiement')
                                 ->label('Date de paiement')->required()->default(now()),
                             Forms\Components\TextInput::make('reference_paiement')
-                                ->label('Référence de paiement')->required(),
+                                ->label('Référence de paiement')->required()
+                                ->placeholder('Ex: VIR-2026-00123 ou CHQ-456789'),
                         ])
                         ->action(function ($record, array $data) {
-                            $record->marquerPayee($data['reference_paiement']);
-                            $record->date_paiement = $data['date_paiement'];
-                            $record->save();
-                            Notification::make()->title('Paiement enregistré')->success()->send();
+                            try {
+                                DB::transaction(function () use ($record, $data) {
+                                    // ✅ Marquer l'OP standard payée
+                                    $record->marquerPayee($data['reference_paiement']);
+                                    $record->date_paiement = $data['date_paiement'];
+                                    $record->save();
+
+                                    // ✅ Marquer l'OPT liée payée automatiquement
+                                    //    OP et OPT partagent le même engagement_id
+                                    $opt = \App\Models\OrdonnancePaiement::where('engagement_id', $record->engagement_id)
+                                        ->where('type_ordonnance', 'impot')
+                                        ->first();
+
+                                    if ($opt && $opt->statut !== 'payee') {
+                                        $opt->marquerPayee($data['reference_paiement'] . '-IR');
+                                        $opt->date_paiement = $data['date_paiement'];
+                                        $opt->save();
+                                    }
+                                });
+
+                                Notification::make()
+                                    ->title('✅ Paiement enregistré')
+                                    ->success()
+                                    ->body('OP ' . $record->numero . ' payée. OPT liée mise à jour automatiquement.')
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('❌ Erreur')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
+                                    ->send();
+                            }
                         }),
 
                     // ════════════════════════════════════════════════

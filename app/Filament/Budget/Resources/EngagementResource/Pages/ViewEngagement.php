@@ -103,6 +103,8 @@ class ViewEngagement extends ViewRecord
                     $record->statut === 'definitif'
                         && $record->hasOrdonnancesPaiement()
                         && auth()->user()?->can('create_avenant_engagement')
+                        // ✅ Masqué si au moins une OP est marquée payée (irréversible)
+                        && !$record->ordonnancesPaiement()->where('statut', 'payee')->exists()
                 )
                 ->form([
                     Forms\Components\Placeholder::make('info')
