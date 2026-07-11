@@ -38,39 +38,42 @@ $lignesChunked->push(collect());
 
 $nombrePages = $lignesChunked->count();
 
-$montantLettres = $donnees['montant_lettres']
-?? $memoire->montant_lettres
-?? \App\Helpers\NombreEnLettres::montantCFA($memoire->montant_ttc ?? 0);
+// ✅ montant_lettres calculé depuis $totalTtc (cohérent avec l'affichage)
+//    sera recalculé après le foreach des totaux
+$montantLettresInput = $donnees['montant_lettres'] ?? $memoire->montant_lettres ?? null;
 
 // ── Taux depuis les lignes ────────────────────────────────
 $premiereLigne = $lignes->first();
 
-$totalNap = 0; $totalHt = 0; $totalTva = 0; $totalIr = 0; $totalTtc = 0;
+$totalNap = 0; $totalHt = 0; $totalTva = 0; $totalIr = 0;
 
 foreach ($lignes as $l) {
     $mht = (float)($l->montant_ht  ?? 0);
     $ir  = (float)($l->montant_ir  ?? 0);
     $tva = (float)($l->montant_tva ?? 0);
-    $ttc = (float)($l->montant_ttc ?? 0);
     $qte = max(1, (float)($l->quantite ?? 1));
 
-    // ✅ Priorité 1 : montant_net stocké
+    // ✅ NAP — 3 niveaux de fallback
     $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
-    // ✅ Priorité 2 : MHT - IR (si montant_net absent)
     if ($nap <= 0 && $mht > 0) $nap = $mht - $ir;
-    // ✅ Priorité 3 : recalculer depuis prix_unitaire
     if ($nap <= 0 && ($l->prix_unitaire ?? 0) > 0) {
         $mhtCalc = (float)$l->prix_unitaire * $qte;
         $tauxIr  = (float)($l->taux_ir ?? 5.5);
         $nap     = $mhtCalc * (1 - $tauxIr / 100);
     }
 
-    $totalNap += round($nap);
-    $totalHt  += round($mht);
-    $totalIr  += round($ir);
-    $totalTva += round($tva);
-    $totalTtc += round($ttc);
+    // ✅ Accumuler les valeurs DÉJÀ arrondies
+    //    pour que Σ colonnes = total affiché
+    $totalNap += (int) round($nap);
+    $totalHt  += (int) round($mht);
+    $totalIr  += (int) round($ir);
+    $totalTva += (int) round($tva);
 }
+
+// ✅ Total TTC = Total HT + Total TVA
+//    NE PAS sommer les montant_ttc individuels (accumule les erreurs d'arrondi)
+//    Même logique que BonCommande::calculerMontants()
+$totalTtc = $totalHt + $totalTva;
 
 $tauxTvaVal = (float) ($premiereLigne?->taux_tva ?? 19.25);
 $tauxIrVal = (float) ($premiereLigne?->taux_ir ?? 5.5);
@@ -88,6 +91,10 @@ $tauxIrCalc = round(($memoire->montant_ir / $memoire->montant_ht) * 100, 2);
 $tauxIrLabel = rtrim(rtrim(number_format($tauxIrCalc, 2, ',', ''), '0'), ',') . '%';
 }
 }
+
+// ✅ Montant en lettres depuis $totalTtc calculé
+$montantLettres = $montantLettresInput
+    ?? \App\Helpers\NombreEnLettres::montantCFA($totalTtc);
 
 // ── Pied de page : créateur et dates ─────────────────────
 $dateImpression = now()->format('d/m/Y à H:i');

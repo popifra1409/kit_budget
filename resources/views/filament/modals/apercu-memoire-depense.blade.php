@@ -211,10 +211,9 @@
          *
          * Cela couvre les anciens enregistrements où montant_net était 0 ou null.
          */
-        $totalHt = 0;
+        $totalHt  = 0;
         $totalTva = 0;
-        $totalIr = 0;
-        $totalTtc = 0;
+        $totalIr  = 0;
         $totalNap = 0;
 
         foreach ($lignes as $l) {
@@ -229,18 +228,19 @@
                 $nap = $mht - $ir;  // fallback : MHT - IR
             }
 
-            $totalHt += $mht;
-            $totalTva += $tva;
-            $totalIr += $ir;
-            $totalTtc += $ttc;
-            $totalNap += $nap;
+            // ✅ Accumuler les valeurs DÉJÀ arrondies
+            //    pour que Σ colonnes = total affiché (cohérence visuelle)
+            $totalHt  += (int) round($mht);
+            $totalTva += (int) round($tva);
+            $totalIr  += (int) round($ir);
+            // $totalTtc calculé après le foreach : HT + TVA
+            $totalNap += (int) round($nap);
         }
 
         // Arrondi final (une seule fois)
-        $totalHt = (int) round($totalHt, 0);
-        $totalTva = (int) round($totalTva, 0);
-        $totalIr = (int) round($totalIr, 0);
-        $totalTtc = (int) round($totalTtc, 0);
+        // ✅ Déjà arrondis dans le foreach — TTC = HT + TVA
+        //    Σ colonnes = total (cohérence visuelle garantie)
+        $totalTtc = $totalHt + $totalTva;
         $totalNap = (int) round($totalNap, 0);
     @endphp
 

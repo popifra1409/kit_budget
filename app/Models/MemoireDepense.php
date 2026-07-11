@@ -250,7 +250,7 @@ class MemoireDepense extends Model
             $totalHt  += (int) number_format((float)($l->montant_ht  ?? 0), 0, '.', '');
             $totalTva += (int) number_format((float)($l->montant_tva ?? 0), 0, '.', '');
             $totalIr  += (int) number_format((float)($l->montant_ir  ?? 0), 0, '.', '');
-            $totalTtc += (int) number_format((float)($l->montant_ttc ?? 0), 0, '.', '');
+            // totalTtc = HT + TVA après le foreach (pas Σ TTC individuels)
             $totalNap += (int) number_format(
                 (float)($l->montant_net ?? $l->net_a_payer ?? 0),
                 0,
@@ -262,7 +262,7 @@ class MemoireDepense extends Model
         $this->montant_ht  = $totalHt;
         $this->montant_tva = $totalTva;
         $this->montant_ir  = $totalIr;
-        $this->montant_ttc = $totalTtc;
+        $this->montant_ttc = $totalHt + $totalTva; // ✅ TTC = HT + TVA
         $this->montant_net = $totalNap;
 
         $this->montant_lettres = NombreEnLettres::convertir($this->montant_ttc);

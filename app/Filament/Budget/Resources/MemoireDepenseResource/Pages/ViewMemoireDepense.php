@@ -124,12 +124,19 @@ class ViewMemoireDepense extends ViewRecord
                 ->schema([
                     Infolists\Components\Grid::make(5)->schema([
 
+                        // ✅ Totaux calculés avec la même règle que les blades :
+                        //    Σ valeurs arrondies individuellement → cohérence colonnes/totaux
+                        //    TTC = Σ(round(HT)) + Σ(round(TVA)) → pas Σ(round(TTC))
+
                         Infolists\Components\TextEntry::make('total_ht')
                             ->label('Montant HT')
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_ht') ?: ($record->montant_ht ?? 0),
+                                    $record->lignes->reduce(
+                                        fn($carry, $l) => $carry + (int) round((float)($l->montant_ht ?? 0)),
+                                        0
+                                    ),
                                     0,
                                     ',',
                                     ' '
@@ -141,7 +148,10 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_tva') ?: ($record->montant_tva ?? 0),
+                                    $record->lignes->reduce(
+                                        fn($carry, $l) => $carry + (int) round((float)($l->montant_tva ?? 0)),
+                                        0
+                                    ),
                                     0,
                                     ',',
                                     ' '
@@ -151,15 +161,14 @@ class ViewMemoireDepense extends ViewRecord
 
                         Infolists\Components\TextEntry::make('total_ttc')
                             ->label('Montant TTC')
-                            ->getStateUsing(
-                                fn($record) =>
-                                number_format(
-                                    $record->lignes->sum('montant_ttc') ?: ($record->montant_ttc ?? 0),
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA'
-                            )
+                            ->getStateUsing(fn($record) => number_format(
+                                // ✅ TTC = Σ round(HT) + Σ round(TVA) — cohérent avec blades
+                                $record->lignes->reduce(fn($c, $l) => $c + (int) round((float)($l->montant_ht ?? 0)), 0)
+                                    + $record->lignes->reduce(fn($c, $l) => $c + (int) round((float)($l->montant_tva ?? 0)), 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' FCFA')
                             ->weight('bold')->color('primary'),
 
                         Infolists\Components\TextEntry::make('total_ir')
@@ -167,7 +176,10 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_ir') ?: ($record->montant_ir ?? 0),
+                                    $record->lignes->reduce(
+                                        fn($carry, $l) => $carry + (int) round((float)($l->montant_ir ?? 0)),
+                                        0
+                                    ),
                                     0,
                                     ',',
                                     ' '
@@ -180,9 +192,13 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_net')
-                                        ?: ($record->lignes->sum('net_a_payer')
-                                            ?: ($record->montant_net ?? 0)),
+                                    $record->lignes->reduce(function ($carry, $l) {
+                                        $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
+                                        if ($nap <= 0 && ($l->montant_ht ?? 0) > 0) {
+                                            $nap = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
+                                        }
+                                        return $carry + (int) round($nap);
+                                    }, 0),
                                     0,
                                     ',',
                                     ' '

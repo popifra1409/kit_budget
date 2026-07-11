@@ -364,16 +364,9 @@ class OrdonnancePaiementResource extends Resource
                                 )
                         )
                         ->modalHeading(fn($record) => 'Marquer payée — ' . $record->numero)
-                        ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
-                            '<p class="text-sm text-red-700 font-semibold mb-2">'
-                                . '⚠️ Action irréversible — cette OP ne pourra plus être modifiée.</p>'
-                                . '<p class="text-sm mb-1">💰 <strong>'
-                                . number_format($record->montant, 0, ',', ' ')
-                                . ' FCFA</strong> — '
-                                . ($record->beneficiaire ?? '—')
-                                . '</p>'
-                                . '<p class="text-xs text-gray-500">📎 L\'OPT liée sera payée automatiquement.</p>'
-                        ))
+                        ->modalDescription('⚠️ Action irréversible — Une OP payée ne peut plus être 
+    modifiée ni supprimée. L\'OPT (retenue IR) liée sera automatiquement payée.')
+                        ->modalWidth('md')
                         ->modalSubmitActionLabel('✅ Confirmer le paiement')
                         ->modalCancelActionLabel('Annuler')
                         ->form([
