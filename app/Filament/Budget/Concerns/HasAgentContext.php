@@ -7,30 +7,35 @@ trait HasAgentContext
     protected string $agentContextType = '';
     protected string $agentContextPage = '';
 
-    public function bootHasAgentContext(): void
-    {
-        if (empty($this->agentContextType) && isset($this->record)) {
-            $this->agentContextType = $this->detecterTypeRecord();
-        }
-        if (empty($this->agentContextPage)) {
-            $this->agentContextPage = $this->detecterPage();
-        }
-    }
-
+    // =========================================================
+    // ✅ UNIQUEMENT mountHasAgentContext — pas de boot()
+    //    boot() s'exécute avant l'initialisation de $table
+    //    sur ListRecords → "must not be accessed before initialization"
+    //    mount() s'exécute après que tout soit prêt
+    // =========================================================
     public function mountHasAgentContext(): void
     {
-        $this->envoyerContexteAgent();
+        // Sécurité — ne rien faire si le composant n'est pas prêt
+        try {
+            $this->envoyerContexteAgent();
+        } catch (\Throwable $e) {
+            // Silencieux — l'agent est optionnel, ne doit pas bloquer la page
+        }
     }
 
     public function envoyerContexteAgent(): void
     {
-        $record  = $this->record ?? null;
+        // ✅ isset() avant toute lecture de $this->record
+        $record  = isset($this->record) ? $this->record : null;
         $erreurs = session()->pull('agent_erreurs', []);
 
+        $type = $this->agentContextType ?: $this->detecterTypeRecord($record);
+        $page = $this->agentContextPage ?: $this->detecterPage($type);
+
         $this->dispatch('agent-contexte', [
-            'page'        => $this->agentContextPage ?: $this->detecterPage(),
+            'page'        => $page,
             'record_id'   => $record?->id,
-            'record_type' => $this->agentContextType ?: $this->detecterTypeRecord(),
+            'record_type' => $type,
             'erreurs'     => $erreurs,
             'statut'      => $record?->statut      ?? null,
             'montant'     => $record?->montant_ttc ?? $record?->montant_total ?? null,
@@ -38,34 +43,32 @@ trait HasAgentContext
         ]);
     }
 
-    // ✅ instanceof au lieu de match(::class) — évite le ParseError
-    protected function detecterTypeRecord(): string
+    // ✅ $record passé en paramètre (pas de $this->record direct)
+    protected function detecterTypeRecord($record = null): string
     {
-        if (!isset($this->record)) return '';
+        if (!$record) return '';
 
-        $r = $this->record;
+        if ($record instanceof \App\Models\BonCommande)            return 'bon_commande';
+        if ($record instanceof \App\Models\DecisionAdministrative) return 'decision_administrative';
+        if ($record instanceof \App\Models\Engagement)             return 'engagement';
+        if ($record instanceof \App\Models\OrdonnancePaiement)     return 'ordonnance_paiement';
+        if ($record instanceof \App\Models\MemoireDepense)         return 'memoire_depense';
+        if ($record instanceof \App\Models\BordereauEngagement)    return 'bordereau_engagement';
+        if ($record instanceof \App\Models\RegieAvance)            return 'regie_avance';
+        if ($record instanceof \App\Models\PrevisionRecette)       return 'prevision_recette';
+        if ($record instanceof \App\Models\LigneBudgetaire)        return 'ligne_budgetaire';
 
-        if ($r instanceof \App\Models\BonCommande)            return 'bon_commande';
-        if ($r instanceof \App\Models\DecisionAdministrative) return 'decision_administrative';
-        if ($r instanceof \App\Models\Engagement)             return 'engagement';
-        if ($r instanceof \App\Models\OrdonnancePaiement)     return 'ordonnance_paiement';
-        if ($r instanceof \App\Models\MemoireDepense)         return 'memoire_depense';
-        if ($r instanceof \App\Models\BordereauEngagement)    return 'bordereau_engagement';
-        if ($r instanceof \App\Models\RegieAvance)            return 'regie_avance';
-        if ($r instanceof \App\Models\PrevisionRecette)       return 'prevision_recette';
-        if ($r instanceof \App\Models\LigneBudgetaire)        return 'ligne_budgetaire';
-
-        return strtolower(class_basename($r));
+        return strtolower(class_basename($record));
     }
 
-    protected function detecterPage(): string
+    protected function detecterPage(string $type = ''): string
     {
         $class = class_basename(static::class);
 
-        if (str_contains($class, 'View'))   return 'vue_'      . $this->detecterTypeRecord();
-        if (str_contains($class, 'Edit'))   return 'edition_'  . $this->detecterTypeRecord();
-        if (str_contains($class, 'Create')) return 'creation_' . $this->detecterTypeRecord();
-        if (str_contains($class, 'List'))   return 'liste_'    . $this->detecterTypeRecord();
+        if (str_contains($class, 'View'))   return 'vue_'      . $type;
+        if (str_contains($class, 'Edit'))   return 'edition_'  . $type;
+        if (str_contains($class, 'Create')) return 'creation_' . $type;
+        if (str_contains($class, 'List'))   return 'liste_'    . $type;
 
         return strtolower($class);
     }

@@ -460,27 +460,15 @@ $decimales   = $modeArrondi ? 0 : 2;
 
         {{-- ── Récapitulatif ───────────────────────────────────────── --}}
         @php
-            // ✅ Totaux exacts = somme des valeurs arrondies par ligne
-            $totalHT = 0;
-            $totalTVA = 0;
-            $totalTTC = 0;
-            $totalIR = 0;
-            $totalTSR = 0;
-            $totalNet = 0;
-
-            foreach ($bc->lignes as $l) {
-                $totalHT += round((float) ($l->montant_ht ?? 0), $decimales);
-                $totalTVA += round((float) ($l->montant_tva ?? 0), $decimales);
-                $totalTtcL = round((float) ($l->montant_ttc ?? 0), $decimales);
-                $totalIRL = round((float) ($l->montant_ir ?? 0), $decimales);
-                $totalTSRL = round((float) ($l->montant_tsr ?? 0), $decimales);
-                $totalTTC += $totalTtcL;
-                $totalIR += $totalIRL;
-                $totalTSR += $totalTSRL;
-            }
-
-            // ✅ Net à payer = HT arrondi - IR arrondi - TSR arrondi
-            $totalNet = $totalHT - $totalIR - $totalTSR;
+            // ✅ Totaux lus depuis les colonnes DB du BC (source de vérité)
+            // calculerMontants() calcule depuis HT total → cohérence garantie
+            // Ne pas resommer les lignes individuelles (accumule les erreurs d'arrondi)
+            $totalHT  = (float)($bc->montant_ht      ?? 0);
+            $totalTVA = (float)($bc->montant_tva     ?? 0);
+            $totalTTC = (float)($bc->montant_ttc     ?? 0);
+            $totalIR  = (float)($bc->montant_ir      ?? 0);
+            $totalTSR = (float)($bc->montant_tsr     ?? 0);
+            $totalNet = (float)($bc->net_a_percevoir ?? $bc->net_a_payer ?? ($totalHT - $totalIR - $totalTSR));
         @endphp
 
         <div style="display:flex; justify-content:flex-end; margin-top:.5rem;">
