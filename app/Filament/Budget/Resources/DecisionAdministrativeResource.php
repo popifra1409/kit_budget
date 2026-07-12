@@ -1066,11 +1066,7 @@ class DecisionAdministrativeResource extends Resource
 
                                     return $memoireLie
                                         && $record->statut === 'brouillon'
-<<<<<<< HEAD
-                                        && (auth()->user()?->can('annuler_transformation_decision_administrative') || auth()->user()?->can('delete_decision_administrative'));
-=======
                                         && auth()->user()?->can('delete_decision_administrative');
->>>>>>> develop
                                 })
                                 ->modalHeading(fn($record) => 'Annuler la transformation — DA N° ' . $record->numero)
                                 ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
