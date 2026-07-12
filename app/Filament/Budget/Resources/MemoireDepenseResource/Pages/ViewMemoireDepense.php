@@ -129,7 +129,10 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_ht') ?: ($record->montant_ht ?? 0),
+                                    $record->lignes->reduce(
+                                        fn($c, $l) => $c + (int) round((float)($l->montant_ht ?? 0)),
+                                        0
+                                    ),
                                     0,
                                     ',',
                                     ' '
@@ -141,7 +144,10 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_tva') ?: ($record->montant_tva ?? 0),
+                                    $record->lignes->reduce(
+                                        fn($c, $l) => $c + (int) round((float)($l->montant_tva ?? 0)),
+                                        0
+                                    ),
                                     0,
                                     ',',
                                     ' '
@@ -151,15 +157,14 @@ class ViewMemoireDepense extends ViewRecord
 
                         Infolists\Components\TextEntry::make('total_ttc')
                             ->label('Montant TTC')
-                            ->getStateUsing(
-                                fn($record) =>
-                                number_format(
-                                    $record->lignes->sum('montant_ttc') ?: ($record->montant_ttc ?? 0),
-                                    0,
-                                    ',',
-                                    ' '
-                                ) . ' FCFA'
-                            )
+                            ->getStateUsing(fn($record) => number_format(
+                                // ✅ TTC = Σ round(HT) + Σ round(TVA) — cohérent avec blades
+                                $record->lignes->reduce(fn($c, $l) => $c + (int)round((float)($l->montant_ht  ?? 0)), 0)
+                                    + $record->lignes->reduce(fn($c, $l) => $c + (int)round((float)($l->montant_tva ?? 0)), 0),
+                                0,
+                                ',',
+                                ' '
+                            ) . ' FCFA')
                             ->weight('bold')->color('primary'),
 
                         Infolists\Components\TextEntry::make('total_ir')
@@ -167,7 +172,10 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_ir') ?: ($record->montant_ir ?? 0),
+                                    $record->lignes->reduce(
+                                        fn($c, $l) => $c + (int) round((float)($l->montant_ir ?? 0)),
+                                        0
+                                    ),
                                     0,
                                     ',',
                                     ' '
@@ -180,9 +188,13 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->sum('montant_net')
-                                        ?: ($record->lignes->sum('net_a_payer')
-                                            ?: ($record->montant_net ?? 0)),
+                                    $record->lignes->reduce(function ($c, $l) {
+                                        $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
+                                        if ($nap <= 0 && ($l->montant_ht ?? 0) > 0) {
+                                            $nap = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
+                                        }
+                                        return $c + (int) round($nap);
+                                    }, 0),
                                     0,
                                     ',',
                                     ' '
@@ -357,14 +369,25 @@ class ViewMemoireDepense extends ViewRecord
                 ->modalDescription(fn() => "Valider le mémoire {$this->record->numero} ?")
                 ->action(function () {
                     // ✅ Recalculer et persister les totaux depuis les lignes
-                    $lignes = $this->record->lignes;
+                    $lignes  = $this->record->lignes;
+                    $totalHt  = $lignes->reduce(fn($c, $l) => $c + (int)round((float)($l->montant_ht  ?? 0)), 0);
+                    $totalTva = $lignes->reduce(fn($c, $l) => $c + (int)round((float)($l->montant_tva ?? 0)), 0);
+                    $totalIr  = $lignes->reduce(fn($c, $l) => $c + (int)round((float)($l->montant_ir  ?? 0)), 0);
+                    $totalNap = $lignes->reduce(function ($c, $l) {
+                        $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
+                        if ($nap <= 0 && ($l->montant_ht ?? 0) > 0)
+                            $nap = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
+                        return $c + (int)round($nap);
+                    }, 0);
+
+                    // ✅ TTC = HT + TVA (cohérence avec blades)
                     $this->record->update([
                         'statut'      => 'valide',
-                        'montant_ht'  => $lignes->sum('montant_ht'),
-                        'montant_tva' => $lignes->sum('montant_tva'),
-                        'montant_ttc' => $lignes->sum('montant_ttc'),
-                        'montant_ir'  => $lignes->sum('montant_ir'),
-                        'montant_net' => $lignes->sum('montant_net') ?: $lignes->sum('net_a_payer'),
+                        'montant_ht'  => $totalHt,
+                        'montant_tva' => $totalTva,
+                        'montant_ttc' => $totalHt + $totalTva,
+                        'montant_ir'  => $totalIr,
+                        'montant_net' => $totalNap,
                     ]);
                     Notification::make()->title('✅ Mémoire validé')->success()->send();
                     $this->refreshFormData(['statut']);
