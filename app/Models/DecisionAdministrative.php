@@ -141,7 +141,7 @@ class DecisionAdministrative extends Model
                 ?? $decision->mode_saisie
                 ?? 'calcule';
 
-            if ($mode === 'forfait') return; 
+            if ($mode === 'forfait') return;
 
             // ✅ Calculer uniquement si montant_brut est présent
             if ((float) ($decision->montant_brut ?? 0) > 0) {
@@ -537,6 +537,7 @@ class DecisionAdministrative extends Model
     // ── Valider ───────────────────────────────────────────────
     public function valider(User $user): void
     {
+        $this->verifierPasEnTransmission('valider');
         if (!auth()->check() || !auth()->user()->can('valider_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission de valider cette décision.");
         }
@@ -561,6 +562,7 @@ class DecisionAdministrative extends Model
     // ── engagerBudget ─────────────────────────────────────────
     public function engagerBudget(int $nomenclatureId): Engagement
     {
+        $this->verifierPasEnTransmission('engager');
         if (!auth()->check() || !auth()->user()->can('engager_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission d'engager cette décision.");
         }
@@ -706,6 +708,8 @@ class DecisionAdministrative extends Model
     // ── annuler ───────────────────────────────────────────────
     public function annuler(?string $motif = null): void
     {
+        $this->verifierPasEnTransmission();
+
         if (!auth()->check() || !auth()->user()->can('annuler_decision_administrative')) {
             throw new \Exception("Vous n'avez pas la permission d'annuler cette décision.");
         }

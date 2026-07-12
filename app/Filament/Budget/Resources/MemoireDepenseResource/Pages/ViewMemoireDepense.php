@@ -492,6 +492,8 @@ class ViewMemoireDepense extends ViewRecord
                     fn() =>
                     $this->record->statut === 'valide'
                         && !$this->record->decision_administrative_id
+                        // ✅ Permission dédiée — pas n'importe qui peut dévalider
+                        && auth()->user()?->can('devalider_memoire_depense')
                 )
                 ->modalHeading('Dévalider le Mémoire de Dépense')
                 ->modalDescription(new \Illuminate\Support\HtmlString(

@@ -58,6 +58,14 @@ class MemoireDepenseResource extends Resource
         return auth()->check() && auth()->user()->can('transformer_memoire_depense_en_da');
     }
 
+    public static function canDevalider($record): bool
+    {
+        return auth()->check()
+            && auth()->user()->can('devalider_memoire_depense')
+            && $record->statut === 'valide'
+            && !$record->decision_administrative_id;
+    }
+
     protected static ?string $recordTitleAttribute = 'numero';
     public static function getGloballySearchableAttributes(): array
     {

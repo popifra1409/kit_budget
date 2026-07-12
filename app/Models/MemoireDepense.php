@@ -267,7 +267,7 @@ class MemoireDepense extends Model
 
         $this->montant_lettres = NombreEnLettres::convertir($this->montant_ttc);
     }
-    
+
     public function recalculerTotaux(): void
     {
         $this->calculerTotaux();
@@ -276,6 +276,8 @@ class MemoireDepense extends Model
 
     public function valider(): void
     {
+        $this->verifierPasEnTransmission('valider');
+
         $this->statut         = 'valide';
         $this->date_signature = now();
         $this->save();

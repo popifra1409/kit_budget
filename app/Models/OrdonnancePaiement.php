@@ -388,6 +388,8 @@ class OrdonnancePaiement extends Model
 
     public function marquerPayee(string $referencePaiement = null): void
     {
+        $this->verifierPasEnTransmission('payer');
+
         $this->statut             = 'payee';
         $this->date_paiement      = now();
         $this->reference_paiement = $referencePaiement;

@@ -15,7 +15,7 @@
 
                         <span
                             class="px-2 py-1 text-xs rounded-full bg-{{ $transmission->getStatutColor() }}-100 text-{{ $transmission->getStatutColor() }}-700">
-                            {{ ucfirst($transmission->statut) }}
+                            {{ $transmission->getStatutLabel() }}
                         </span>
                     </div>
 

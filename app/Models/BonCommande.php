@@ -897,6 +897,8 @@ class BonCommande extends Model
      */
     public function valider(User $user): void
     {
+        $this->verifierPasEnTransmission('valider');
+
         $this->statut = 'valide';
         $this->valide_par = $user->id;
         $this->date_validation = now();
@@ -908,6 +910,7 @@ class BonCommande extends Model
      */
     public function engagerBudget(?array $verifications = null): Engagement
     {
+        $this->verifierPasEnTransmission('engager');
         // ✅ Vérifications préalables
         if ($this->statut !== 'valide') {
             throw new \Exception("Le bon de commande doit être validé avant d'être engagé.");
@@ -1243,6 +1246,8 @@ class BonCommande extends Model
      */
     public function annuler(?string $motif = null): void
     {
+        $this->verifierPasEnTransmission('annuler');
+
         if ($this->statut === 'annule') {
             throw new \Exception("Ce bon de commande est déjà annulé.");
         }
