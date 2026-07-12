@@ -77,7 +77,17 @@ class DecisionAdministrativeResource extends Resource
     {
         return auth()->check() && auth()->user()->can('create_decision_administrative');
     }
+    // ✅ canEdit standard — utilisé par Filament pour les autorisations URL
+    //    Ne contient PAS de notification (appelé à chaque chargement de page)
+    //    La vérification MD lié est gérée dans ViewDecisionAdministrative
     public static function canEdit($record): bool
+    {
+        return static::canEditSansMD($record);
+    }
+
+    // ✅ canEditSansMD — vérifie les droits SANS vérifier le MD lié
+    //    Utilisé dans ViewDecisionAdministrative pour contrôler les boutons
+    public static function canEditSansMD($record): bool
     {
         if (!auth()->check()) return false;
         $user = auth()->user();
@@ -1056,7 +1066,11 @@ class DecisionAdministrativeResource extends Resource
 
                                     return $memoireLie
                                         && $record->statut === 'brouillon'
+<<<<<<< HEAD
                                         && (auth()->user()?->can('annuler_transformation_decision_administrative') || auth()->user()?->can('delete_decision_administrative'));
+=======
+                                        && auth()->user()?->can('delete_decision_administrative');
+>>>>>>> develop
                                 })
                                 ->modalHeading(fn($record) => 'Annuler la transformation — DA N° ' . $record->numero)
                                 ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(

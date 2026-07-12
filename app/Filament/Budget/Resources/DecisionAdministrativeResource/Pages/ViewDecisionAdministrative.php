@@ -15,6 +15,10 @@ class ViewDecisionAdministrative extends ViewRecord
 {
     protected static string $resource = DecisionAdministrativeResource::class;
 
+    // ✅ Cache — évite requêtes DB multiples par chargement de page
+    private ?\App\Models\MemoireDepense $_memoireLieCache = null;
+    private bool $_memoireLieCached = false;
+
     // =========================================================
     // HELPERS — morphMap compatible
     // =========================================================
@@ -102,14 +106,47 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->disabled()
                 ->visible(fn() => $this->estEnTransmission()),
 
-            // ── Modifier ─────────────────────────────────────
+
+            // ── 🔒 Bouton si DA liée à un MD (bloquant) ─────────
+            Actions\Action::make('modifier_bloque')
+                ->label('🔒 Modification impossible')
+                ->icon('heroicon-o-lock-closed')
+                ->color('warning')
+                ->outlined()
+                ->visible(function () {
+                    if ($this->record->statut !== 'brouillon') return false;
+                    return \App\Models\MemoireDepense::withoutGlobalScopes()
+                        ->where('decision_administrative_id', $this->record->id)
+                        ->exists();
+                })
+                ->modalHeading('Modification impossible')
+                ->modalDescription(function () {
+                    $md = \App\Models\MemoireDepense::withoutGlobalScopes()
+                        ->where('decision_administrative_id', $this->record->id)
+                        ->value('numero');
+                    return new \Illuminate\Support\HtmlString(
+                        '<div class="p-3 bg-amber-50 border border-amber-300 rounded text-sm text-amber-800">'
+                            . '🔒 Cette DA est liée au Mémoire <strong>' . $md . '</strong>.<br><br>'
+                            . 'Pour la modifier :<br>'
+                            . '&nbsp;1. Annulez ou supprimez cette DA<br>'
+                            . '&nbsp;2. Le mémoire sera remis en Brouillon<br>'
+                            . '&nbsp;3. Modifiez le mémoire puis retransformez-le'
+                            . '</div>'
+                    );
+                })
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Fermer'),
+
+            // ── Modifier (caché si DA liée à un MD) ──────────
             Actions\EditAction::make()
-                ->visible(
-                    fn() =>
-                    !$this->estEnTransmission()            // ✅
-                        && $this->record->statut === 'brouillon'
-                        && DecisionAdministrativeResource::canEdit($this->record)
-                ),
+                ->visible(function () {
+                    if ($this->estEnTransmission()) return false;
+                    if ($this->record->statut !== 'brouillon') return false;
+                    if (!DecisionAdministrativeResource::canEdit($this->record)) return false;
+                    return !\App\Models\MemoireDepense::withoutGlobalScopes()
+                        ->where('decision_administrative_id', $this->record->id)
+                        ->exists();
+                }),
 
             // ── Valider ──────────────────────────────────────
             Actions\Action::make('valider')
@@ -415,23 +452,35 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->form([
                     Forms\Components\Placeholder::make('warning')
                         ->label('')
-                        ->content(
-                            fn() => $this->record->engagee
-                                ? new \Illuminate\Support\HtmlString(
+                        ->content(function () {
+                            $memoire = $this->getMemoireLie();
+                            if ($this->record->engagee) {
+                                return new \Illuminate\Support\HtmlString(
                                     '<div class="rounded-lg p-3 text-sm font-semibold '
                                         . 'bg-red-50 dark:bg-red-900/30 text-red-700 '
                                         . 'border border-red-300">'
                                         . '❌ Cette décision est engagée. Annulez d\'abord l\'engagement.'
                                         . '</div>'
-                                )
-                                : new \Illuminate\Support\HtmlString(
-                                    '<div class="rounded-lg p-3 text-sm '
-                                        . 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-800 '
-                                        . 'border border-yellow-300">'
-                                        . '⚠️ La décision sera annulée. Elle restera récupérable.'
-                                        . '</div>'
-                                )
-                        )
+                                );
+                            }
+                            // ✅ Avertissement MD lié
+                            $html = '<div class="rounded-lg p-3 text-sm '
+                                . 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-800 '
+                                . 'border border-yellow-300 mb-2">'
+                                . '⚠️ La décision sera annulée. Elle restera récupérable.'
+                                . '</div>';
+                            if ($memoire) {
+                                $html .= '<div class="rounded-lg p-3 text-sm '
+                                    . 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 '
+                                    . 'border border-blue-300">'
+                                    . '📋 <strong>Cette DA est liée au Mémoire ' . $memoire->numero . '</strong><br>'
+                                    . 'L\'annulation va également :<br>'
+                                    . '&nbsp;&nbsp;1. Annuler la transformation du mémoire<br>'
+                                    . '&nbsp;&nbsp;2. Remettre le mémoire en <strong>Brouillon</strong> (modifiable)'
+                                    . '</div>';
+                            }
+                            return new \Illuminate\Support\HtmlString($html);
+                        })
                         ->columnSpanFull(),
 
                     Forms\Components\Textarea::make('motif')
@@ -441,9 +490,28 @@ class ViewDecisionAdministrative extends ViewRecord
                 ])
                 ->action(function (array $data) {
                     try {
-                        $this->record->annuler($data['motif'] ?? null);
-                        Notification::make()->title('✅ Décision annulée')->success()->send();
-                        $this->refreshFormData(['statut']);
+                        \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+                            // 1. Annuler la DA
+                            $this->record->annuler($data['motif'] ?? null);
+
+                            // ✅ 2. Si MD lié → le remettre en brouillon
+                            $this->reinitialiserMemoireLie($data['motif'] ?? null);
+                        });
+
+                        $memoire = null; // déjà réinitialisé
+                        $memoire = $this->getMemoireLie();
+                        Notification::make()
+                            ->title('✅ Décision annulée')
+                            ->success()
+                            ->body($memoire
+                                ? "Le Mémoire {$memoire->numero} est remis en Validé. "
+                                . "Allez sur le mémoire et cliquez 'Dévalider' pour le modifier."
+                                : 'La décision a été annulée.')
+                            ->persistent()
+                            ->send();
+                        $this->redirect(
+                            DecisionAdministrativeResource::getUrl('view', ['record' => $this->record->id])
+                        );
                     } catch (\Exception $e) {
                         Notification::make()
                             ->title('❌ ' . $e->getMessage())->danger()->persistent()->send();
@@ -547,15 +615,80 @@ class ViewDecisionAdministrative extends ViewRecord
                 ->visible(
                     fn() =>
                     $this->record->statut === 'brouillon'
-                        && !$this->estEnTransmission()          // ✅
+                        && !$this->estEnTransmission()
                         && DecisionAdministrativeResource::canDelete($this->record)
-                ),
+                )
+                // ✅ Avertissement + reset MD si DA liée à un MD
+                ->modalDescription(function () {
+                    $memoire = $this->getMemoireLie();
+                    if (!$memoire) {
+                        return 'Supprimer définitivement la décision ' . $this->record->numero . ' ?';
+                    }
+                    return new \Illuminate\Support\HtmlString(
+                        '<div class="rounded-lg p-3 text-sm bg-red-50 border border-red-300 '
+                            . 'text-red-800 mb-2">'
+                            . '⚠️ <strong>Suppression définitive</strong> de la DA '
+                            . $this->record->numero . '</div>'
+                            . '<div class="rounded-lg p-3 text-sm bg-blue-50 border border-blue-300 text-blue-800">'
+                            . '📋 <strong>Mémoire lié : ' . $memoire->numero . '</strong><br>'
+                            . 'La suppression va :<br>'
+                            . '&nbsp;&nbsp;1. Supprimer cette DA définitivement<br>'
+                            . '&nbsp;&nbsp;2. Remettre le mémoire en <strong>Brouillon</strong>'
+                            . '</div>'
+                    );
+                })
+                ->before(function () {
+                    // ✅ Remettre le MD en brouillon AVANT la suppression de la DA
+                    $this->reinitialiserMemoireLie('DA supprimée');
+                }),
         ];
     }
 
     // =========================================================
     // HELPER : Peut valider (créateur OU destinataire pour validation)
     // =========================================================
+    // ✅ Récupère le mémoire lié — avec cache pour éviter N+1
+    private function getMemoireLie(): ?\App\Models\MemoireDepense
+    {
+        if (!$this->_memoireLieCached) {
+            // ✅ withoutGlobalScopes() — évite le filtre exercice_id
+            //    qui empêche de trouver le MD d'un autre exercice
+            $this->_memoireLieCache = \App\Models\MemoireDepense::withoutGlobalScopes()
+                ->where('decision_administrative_id', $this->record->id)
+                ->first();
+            $this->_memoireLieCached = true;
+        }
+        return $this->_memoireLieCache;
+    }
+
+    // ✅ Étape 1 du workflow — Annuler la transformation
+    //
+    //    DA annulée → MD repasse à 'valide' (PAS directement brouillon)
+    //    Raison : séparer "annuler la transformation" de "dévalider le MD"
+    //    pour la traçabilité et la robustesse du workflow.
+    //
+    //    Ensuite l'utilisateur va sur le MD et clique "Dévalider"
+    //    pour le remettre en brouillon et le rendre modifiable.
+    private function reinitialiserMemoireLie(?string $motif = null): void
+    {
+        $memoire = $this->getMemoireLie();
+        if (!$memoire) return;
+
+        $memoire->updateQuietly([
+            // ✅ 'valide' et non 'brouillon' — workflow en 2 étapes
+            'statut'                     => 'valide',
+            'decision_administrative_id' => null,
+            'numero_decision'            => null,
+            'date_decision'              => null,
+            'observations'               => ($memoire->observations ?? '')
+                . "\n\n--- TRANSFORMATION ANNULÉE LE " . now()->format('d/m/Y H:i') . " ---\n"
+                . "DA annulée : {$this->record->numero}\n"
+                . ($motif ? "Motif : {$motif}\n" : '')
+                . "Par : " . auth()->user()->name
+                . "\n→ Allez sur le Mémoire et cliquez 'Dévalider' pour le modifier.",
+        ]);
+    }
+
     private function peutValider(): bool
     {
         if (!DecisionAdministrativeResource::canValider($this->record)) return false;
