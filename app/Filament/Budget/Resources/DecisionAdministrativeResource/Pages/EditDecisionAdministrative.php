@@ -4,6 +4,7 @@ namespace App\Filament\Budget\Resources\DecisionAdministrativeResource\Pages;
 
 use App\Filament\Budget\Resources\DecisionAdministrativeResource;
 use App\Filament\Budget\Resources\DecisionAdministrativeResource\Concerns\GereCalculsMontants;
+use App\Models\MemoireDepense;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;
@@ -14,6 +15,43 @@ class EditDecisionAdministrative extends EditRecord
     use GereCalculsMontants;
 
     protected static string $resource = DecisionAdministrativeResource::class;
+
+    // =========================================================
+    // ✅ BLOCAGE GARANTI — niveau mount()
+    //
+    // Fonctionne même si l'utilisateur accède à l'URL /edit
+    // directement depuis le navigateur.
+    //
+    // Si la DA est liée à un MD → redirect vers View + notification
+    // =========================================================
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        // ✅ withoutGlobalScopes() — évite le filtre exercice
+        $memoire = MemoireDepense::withoutGlobalScopes()
+            ->where('decision_administrative_id', $this->record->id)
+            ->first();
+
+        if ($memoire) {
+            Notification::make()
+                ->title('🔒 Modification impossible')
+                ->warning()
+                ->body(
+                    "Cette DA a été générée depuis le Mémoire {$memoire->numero}. "
+                        . "Pour la modifier : annulez ou supprimez la DA — "
+                        . "le mémoire sera automatiquement remis en Brouillon."
+                )
+                ->persistent()
+                ->send();
+
+            $this->redirect(
+                DecisionAdministrativeResource::getUrl('view', [
+                    'record' => $this->record->id,
+                ])
+            );
+        }
+    }
 
     protected function getHeaderActions(): array
     {
@@ -70,9 +108,7 @@ class EditDecisionAdministrative extends EditRecord
                                         . "(Dispo: " . number_format($lb->disponible_engagement, 0, ',', ' ') . " FCFA)"
                                 ]);
                         })
-                        ->required()
-                        ->searchable()
-                        ->preload()
+                        ->required()->searchable()->preload()
                         ->helperText('Sélectionner la ligne budgétaire'),
                 ])
                 ->action(function (array $data) {
@@ -126,9 +162,6 @@ class EditDecisionAdministrative extends EditRecord
         return $this->getResource()::getUrl('view', ['record' => $this->record]);
     }
 
-    /**
-     * ✅ Utilise preparerDonnees() du trait — identique à la création
-     */
     protected function mutateFormDataBeforeSave(array $data): array
     {
         return $this->preparerDonnees($data);

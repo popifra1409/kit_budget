@@ -77,7 +77,17 @@ class DecisionAdministrativeResource extends Resource
     {
         return auth()->check() && auth()->user()->can('create_decision_administrative');
     }
+    // ✅ canEdit standard — utilisé par Filament pour les autorisations URL
+    //    Ne contient PAS de notification (appelé à chaque chargement de page)
+    //    La vérification MD lié est gérée dans ViewDecisionAdministrative
     public static function canEdit($record): bool
+    {
+        return static::canEditSansMD($record);
+    }
+
+    // ✅ canEditSansMD — vérifie les droits SANS vérifier le MD lié
+    //    Utilisé dans ViewDecisionAdministrative pour contrôler les boutons
+    public static function canEditSansMD($record): bool
     {
         if (!auth()->check()) return false;
         $user = auth()->user();
@@ -1027,7 +1037,115 @@ class DecisionAdministrativeResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make(
-                    WorkflowActions::make(avecEngagement: true)
+                    array_merge(
+                        WorkflowActions::make(avecEngagement: true),
+                        [
+                            // ════════════════════════════════════════════════════
+                            // ✅ ANNULER LA TRANSFORMATION MD → DA
+                            //
+                            // Visible uniquement si :
+                            //   - La DA provient d'un mémoire de dépense
+                            //   - La DA est encore en brouillon (pas encore validée)
+                            //   - L'utilisateur a la permission de supprimer une DA
+                            //
+                            // Action :
+                            //   1. Supprime la DA
+                            //   2. Réinitialise le MD → statut=brouillon
+                            //      decision_administrative_id=null, numero_decision=null
+                            // ════════════════════════════════════════════════════
+                            Tables\Actions\Action::make('annuler_transformation')
+                                ->label('Annuler la transformation')
+                                ->icon('heroicon-o-arrow-uturn-left')
+                                ->color('danger')
+                                ->visible(function ($record) {
+                                    // Chercher si un MD est lié à cette DA
+                                    $memoireLie = \App\Models\MemoireDepense::where(
+                                        'decision_administrative_id',
+                                        $record->id
+                                    )->exists();
+
+                                    return $memoireLie
+                                        && $record->statut === 'brouillon'
+                                        && auth()->user()?->can('delete_decision_administrative');
+                                })
+                                ->modalHeading(fn($record) => 'Annuler la transformation — DA N° ' . $record->numero)
+                                ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
+                                    '<div class="rounded-lg p-3 mb-2 bg-red-50 dark:bg-red-900/20 '
+                                        . 'border border-red-300 text-sm text-red-800 dark:text-red-200">'
+                                        . '⚠️ <strong>Cette action va :</strong><br>'
+                                        . '• Supprimer la DA <strong>' . $record->numero . '</strong><br>'
+                                        . '• Remettre le Mémoire de Dépense lié en <strong>Brouillon</strong><br>'
+                                        . '• Permettre la re-transformation ou modification du mémoire'
+                                        . '</div>'
+                                        . '<div class="rounded-lg p-3 bg-amber-50 dark:bg-amber-900/20 '
+                                        . 'border border-amber-300 text-sm text-amber-800 dark:text-amber-200">'
+                                        . '📋 Le mémoire pourra être modifié et retransformé en DA.'
+                                        . '</div>'
+                                ))
+                                ->modalSubmitActionLabel('✅ Confirmer l\'annulation')
+                                ->modalCancelActionLabel('Annuler')
+                                ->requiresConfirmation()
+                                ->action(function ($record) {
+                                    try {
+                                        \Illuminate\Support\Facades\DB::transaction(function () use ($record) {
+
+                                            // ── 1. Trouver le mémoire lié ─────────────────
+                                            $memoire = \App\Models\MemoireDepense::where(
+                                                'decision_administrative_id',
+                                                $record->id
+                                            )->first();
+
+                                            if (!$memoire) {
+                                                throw new \Exception(
+                                                    "Aucun mémoire de dépense lié à cette DA."
+                                                );
+                                            }
+
+                                            $numeroDA = $record->numero;
+                                            $numeroMD = $memoire->numero;
+
+                                            // ── 2. Supprimer la DA ────────────────────────
+                                            $record->delete();
+
+                                            // ── 3. Réinitialiser le MD en brouillon ───────
+                                            $memoire->update([
+                                                'statut'                     => 'brouillon',
+                                                'decision_administrative_id' => null,
+                                                'numero_decision'            => null,
+                                                'date_decision'              => null,
+                                                'observations'               => ($memoire->observations ?? '')
+                                                    . "\n\n--- TRANSFORMATION ANNULÉE LE "
+                                                    . now()->format('d/m/Y H:i') . " ---\n"
+                                                    . "DA supprimée : {$numeroDA}\n"
+                                                    . "Par : " . auth()->user()->name,
+                                            ]);
+
+                                            \Illuminate\Support\Facades\Log::info(
+                                                "Transformation MD→DA annulée",
+                                                [
+                                                    'da_numero' => $numeroDA,
+                                                    'md_numero' => $numeroMD,
+                                                    'user'      => auth()->id(),
+                                                ]
+                                            );
+                                        });
+
+                                        Notification::make()
+                                            ->title('✅ Transformation annulée')
+                                            ->success()
+                                            ->body('La DA a été supprimée. Le mémoire est remis en brouillon.')
+                                            ->send();
+                                    } catch (\Exception $e) {
+                                        Notification::make()
+                                            ->title('❌ Erreur')
+                                            ->danger()
+                                            ->body($e->getMessage())
+                                            ->persistent()
+                                            ->send();
+                                    }
+                                }),
+                        ]
+                    )
                 )
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')

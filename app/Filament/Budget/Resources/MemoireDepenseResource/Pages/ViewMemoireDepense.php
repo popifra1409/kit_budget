@@ -124,19 +124,12 @@ class ViewMemoireDepense extends ViewRecord
                 ->schema([
                     Infolists\Components\Grid::make(5)->schema([
 
-                        // ✅ Totaux calculés avec la même règle que les blades :
-                        //    Σ valeurs arrondies individuellement → cohérence colonnes/totaux
-                        //    TTC = Σ(round(HT)) + Σ(round(TVA)) → pas Σ(round(TTC))
-
                         Infolists\Components\TextEntry::make('total_ht')
                             ->label('Montant HT')
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->reduce(
-                                        fn($carry, $l) => $carry + (int) round((float)($l->montant_ht ?? 0)),
-                                        0
-                                    ),
+                                    $record->lignes->sum('montant_ht') ?: ($record->montant_ht ?? 0),
                                     0,
                                     ',',
                                     ' '
@@ -148,10 +141,7 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->reduce(
-                                        fn($carry, $l) => $carry + (int) round((float)($l->montant_tva ?? 0)),
-                                        0
-                                    ),
+                                    $record->lignes->sum('montant_tva') ?: ($record->montant_tva ?? 0),
                                     0,
                                     ',',
                                     ' '
@@ -161,14 +151,15 @@ class ViewMemoireDepense extends ViewRecord
 
                         Infolists\Components\TextEntry::make('total_ttc')
                             ->label('Montant TTC')
-                            ->getStateUsing(fn($record) => number_format(
-                                // ✅ TTC = Σ round(HT) + Σ round(TVA) — cohérent avec blades
-                                $record->lignes->reduce(fn($c, $l) => $c + (int) round((float)($l->montant_ht ?? 0)), 0)
-                                    + $record->lignes->reduce(fn($c, $l) => $c + (int) round((float)($l->montant_tva ?? 0)), 0),
-                                0,
-                                ',',
-                                ' '
-                            ) . ' FCFA')
+                            ->getStateUsing(
+                                fn($record) =>
+                                number_format(
+                                    $record->lignes->sum('montant_ttc') ?: ($record->montant_ttc ?? 0),
+                                    0,
+                                    ',',
+                                    ' '
+                                ) . ' FCFA'
+                            )
                             ->weight('bold')->color('primary'),
 
                         Infolists\Components\TextEntry::make('total_ir')
@@ -176,10 +167,7 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->reduce(
-                                        fn($carry, $l) => $carry + (int) round((float)($l->montant_ir ?? 0)),
-                                        0
-                                    ),
+                                    $record->lignes->sum('montant_ir') ?: ($record->montant_ir ?? 0),
                                     0,
                                     ',',
                                     ' '
@@ -192,13 +180,9 @@ class ViewMemoireDepense extends ViewRecord
                             ->getStateUsing(
                                 fn($record) =>
                                 number_format(
-                                    $record->lignes->reduce(function ($carry, $l) {
-                                        $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
-                                        if ($nap <= 0 && ($l->montant_ht ?? 0) > 0) {
-                                            $nap = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
-                                        }
-                                        return $carry + (int) round($nap);
-                                    }, 0),
+                                    $record->lignes->sum('montant_net')
+                                        ?: ($record->lignes->sum('net_a_payer')
+                                            ?: ($record->montant_net ?? 0)),
                                     0,
                                     ',',
                                     ' '
@@ -491,6 +475,60 @@ class ViewMemoireDepense extends ViewRecord
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Fermer'),
 
+            // ══════════════════════════════════════════════════════
+            // ✅ DÉVALIDER — Étape 2 du workflow d'annulation DA
+            //
+            //  DA annulée → MD passe à 'valide' (étape 1 dans ViewDA)
+            //  Ici l'utilisateur peut dévalider pour modifier le MD
+            //
+            //  Visible : statut=valide ET pas de DA liée
+            // ══════════════════════════════════════════════════════
+            Action::make('devalider')
+                ->label('⬇️ Dévalider')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('warning')
+                ->outlined()
+                ->visible(
+                    fn() =>
+                    $this->record->statut === 'valide'
+                        && !$this->record->decision_administrative_id
+                )
+                ->modalHeading('Dévalider le Mémoire de Dépense')
+                ->modalDescription(new \Illuminate\Support\HtmlString(
+                    '<div class="p-3 bg-amber-50 border border-amber-300 rounded text-sm text-amber-800 mb-2">'
+                        . '⚠️ Le mémoire sera remis en <strong>Brouillon</strong> et pourra être modifié.'
+                        . '</div>'
+                        . '<div class="p-2 text-xs text-gray-500">'
+                        . '📋 Workflow : Mémoire Validé → Dévalider → Mémoire Brouillon → Modifier → Valider → Nouvelle DA'
+                        . '</div>'
+                ))
+                ->modalSubmitActionLabel('✅ Confirmer la dévalidation')
+                ->action(function () {
+                    try {
+                        $this->record->updateQuietly([
+                            'statut'       => 'brouillon',
+                            'observations' => ($this->record->observations ?? '')
+                                . "\n\n--- DÉVALIDÉ LE " . now()->format('d/m/Y H:i') . " ---\n"
+                                . "Par : " . auth()->user()->name,
+                        ]);
+
+                        \Filament\Notifications\Notification::make()
+                            ->title('✅ Mémoire remis en Brouillon')
+                            ->success()
+                            ->body('Le mémoire peut maintenant être modifié.')
+                            ->send();
+
+                        $this->redirect(
+                            static::getResource()::getUrl('edit', ['record' => $this->record->id])
+                        );
+                    } catch (\Exception $e) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('❌ ' . $e->getMessage())
+                            ->danger()->send();
+                    }
+                }),
+
+            // ── Transformer en DA ──────────────────────────────────
             Action::make('transformer_en_da')
                 ->label('Transformer en DA')
                 ->icon('heroicon-o-arrow-right-circle')->color('primary')
@@ -574,12 +612,35 @@ class ViewMemoireDepense extends ViewRecord
                         $exercice = \App\Models\Exercice::getActif();
                         if (!$exercice) throw new \Exception('Aucun exercice actif trouvé.');
 
-                        $lignes     = $this->record->lignes;
-                        $montantTtc = $lignes->sum('montant_ttc') ?: (float) $this->record->montant_ttc;
-                        $montantHt  = $lignes->sum('montant_ht')  ?: (float) $this->record->montant_ht;
-                        $montantTva = $lignes->sum('montant_tva') ?: (float) $this->record->montant_tva;
-                        $montantIr  = $lignes->sum('montant_ir')  ?: (float) $this->record->montant_ir;
-                        $montantNet = $lignes->sum('montant_net') ?: (float) $this->record->montant_net;
+                        $lignes = $this->record->lignes;
+
+                        // ✅ Même règle que les blades MD — accumuler valeurs pré-arrondies
+                        //    pour que les montants DA = montants affichés dans le mémoire
+                        $montantHt  = $lignes->reduce(
+                            fn($c, $l) => $c + (int) round((float)($l->montant_ht  ?? 0)),
+                            0
+                        ) ?: (int) round((float) $this->record->montant_ht);
+
+                        $montantTva = $lignes->reduce(
+                            fn($c, $l) => $c + (int) round((float)($l->montant_tva ?? 0)),
+                            0
+                        ) ?: (int) round((float) $this->record->montant_tva);
+
+                        $montantIr  = $lignes->reduce(
+                            fn($c, $l) => $c + (int) round((float)($l->montant_ir  ?? 0)),
+                            0
+                        ) ?: (int) round((float) $this->record->montant_ir);
+
+                        $montantNet = $lignes->reduce(function ($c, $l) {
+                            $nap = (float)($l->montant_net ?? $l->net_a_payer ?? 0);
+                            if ($nap <= 0 && ($l->montant_ht ?? 0) > 0) {
+                                $nap = (float)$l->montant_ht - (float)($l->montant_ir ?? 0);
+                            }
+                            return $c + (int) round($nap);
+                        }, 0) ?: (int) round((float) $this->record->montant_net);
+
+                        // ✅ TTC = HT + TVA (pas Σ TTC individuels — cohérence avec blades)
+                        $montantTtc = $montantHt + $montantTva;
                         $totalTaxes = $montantTva + $montantIr;
 
                         $premiereLigne = $lignes->first();
