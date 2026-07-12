@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -13,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class OrdonnancePaiement extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+    use HasFactory, SoftDeletes, LogsActivity, HasExercice;
 
     protected $table = 'ordonnances_paiement';
 
@@ -386,7 +388,7 @@ class OrdonnancePaiement extends Model
         $this->save();
     }
 
-    public function marquerPayee(string $referencePaiement = null): void
+    public function marquerPayee(?string $referencePaiement = null): void
     {
         $this->verifierPasEnTransmission('payer');
 
@@ -394,12 +396,25 @@ class OrdonnancePaiement extends Model
         $this->date_paiement      = now();
         $this->reference_paiement = $referencePaiement;
         $this->save();
+
+        \App\Models\ActivityLog::logAction($this, 'marquer_payee', [
+            'ancien_statut'       => 'emise',
+            'nouveau_statut'      => 'payee',
+            'reference_paiement'  => $referencePaiement,
+            'montant'             => $this->montant_net ?? $this->montant_brut,
+        ]);
     }
 
     public function annuler(): void
     {
+        $ancienStatut = $this->statut;
         $this->statut = 'annulee';
         $this->save();
+
+        \App\Models\ActivityLog::logAction($this, 'annuler', [
+            'ancien_statut'  => $ancienStatut,
+            'nouveau_statut' => 'annulee',
+        ]);
     }
 
     /*
@@ -430,5 +445,20 @@ class OrdonnancePaiement extends Model
             'annulee'   => 'danger',
             default     => 'secondary',
         };
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['statut', 'montant_brut', 'montant_net', 'montant_ir', 'date_paiement', 'reference_paiement'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => match ($event) {
+                'created' => "Ordonnance de Paiement créée : {$this->numero}",
+                'updated' => "Ordonnance de Paiement modifiée : {$this->numero}",
+                'deleted' => "Ordonnance de Paiement supprimée : {$this->numero}",
+                default   => "OP {$this->numero} — {$event}",
+            });
     }
 }

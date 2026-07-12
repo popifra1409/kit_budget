@@ -13,7 +13,7 @@ use App\Traits\GereTransmissions;
 class MemoireDepense extends Model
 {
     // ✅ Ajouter GereTransmissions dans le use
-    use HasFactory, SoftDeletes, GereTransmissions;
+    use HasFactory, SoftDeletes, LogsActivity, GereTransmissions;
 
     protected $table = 'memoires_depense';
 
@@ -278,9 +278,17 @@ class MemoireDepense extends Model
     {
         $this->verifierPasEnTransmission('valider');
 
+        $ancienStatut         = $this->statut;
         $this->statut         = 'valide';
         $this->date_signature = now();
         $this->save();
+
+        \App\Models\ActivityLog::logAction($this, 'valider', [
+            'ancien_statut'  => $ancienStatut,
+            'nouveau_statut' => 'valide',
+            'valide_par'     => auth()->user()?->name,
+            'montant_ttc'    => $this->montant_ttc,
+        ]);
     }
 
     // ====================================
@@ -378,5 +386,28 @@ class MemoireDepense extends Model
                 $memoire->calculerTotaux();
             }
         });
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'statut',
+                'montant_ht',
+                'montant_tva',
+                'montant_ir',
+                'montant_ttc',
+                'montant_net',
+                'decision_administrative_id',
+            ])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => match ($event) {
+                'created' => "Mémoire de Dépense créé : {$this->numero}",
+                'updated' => "Mémoire de Dépense modifié : {$this->numero}",
+                'deleted' => "Mémoire de Dépense supprimé : {$this->numero}",
+                default   => "MD {$this->numero} — {$event}",
+            });
     }
 }

@@ -108,6 +108,16 @@ class Transmission extends Model
             'reponse'         => $reponse,
             'date_traitement' => now(),
         ]);
+
+        // ✅ Log — clôture de transmission
+        \App\Models\ActivityLog::logAction($this, 'cloturer', [
+            'document_type'  => $this->document_type,
+            'document_id'    => $this->document_id,
+            'expediteur'     => $this->expediteur?->name,
+            'destinataire'   => $this->destinataire?->name,
+            'action_attendue' => $this->action_attendue,
+            'reponse'        => $reponse,
+        ]);
     }
 
     // ✅ FIX — statut 'retourne' au lieu de 'rejete'
@@ -161,7 +171,7 @@ class Transmission extends Model
         return match ($this->statut) {
             'en_attente' => 'warning',
             'traite'     => 'success',
-            'retourne'   => 'warning',   // ✅ ajouté
+            'retourne'   => 'warning', 
             'rejete'     => 'danger',
             'annule'     => 'gray',
             default      => 'secondary',

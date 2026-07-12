@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -172,6 +174,13 @@ class BonCommandeRegie extends Model
                     ),
             ]);
         });
+
+        \App\Models\ActivityLog::logAction($this, 'engager', [
+            'ancien_statut'  => 'non_engage',
+            'nouveau_statut' => 'engage',
+            'montant'        => $montantAEngager,
+            'pourcentage'    => $pourcentage,
+        ]);
     }
 
     public function desengager(): void
@@ -182,9 +191,26 @@ class BonCommandeRegie extends Model
 
         $this->provisionLigneRegie?->crediter($this->montant_ttc);
 
+        $montantLibere = $this->montant_engage;
         $this->updateQuietly([
             'engage'          => false,
             'date_engagement' => null,
         ]);
+
+        \App\Models\ActivityLog::logAction($this, 'desengager', [
+            'ancien_statut'  => 'engage',
+            'nouveau_statut' => 'non_engage',
+            'montant_libere' => $montantLibere,
+        ]);
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['statut', 'engage', 'montant_ttc', 'montant_engage', 'date_engagement'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => 'Doc ' . ($this->numero ?? '') . ' — ' . $event);
     }
 }

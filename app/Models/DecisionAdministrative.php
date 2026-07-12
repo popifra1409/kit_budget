@@ -543,10 +543,17 @@ class DecisionAdministrative extends Model
         }
 
         // ✅ updateQuietly → bypass saving → calculerMontants() jamais appelé
+        $ancienStatut = $this->statut;
         $this->updateQuietly([
             'statut'           => 'validee',
             'validee_par'      => $user->id,
             'date_validation'  => now(),
+        ]);
+
+        \App\Models\ActivityLog::logAction($this, 'valider', [
+            'ancien_statut'  => $ancienStatut,
+            'nouveau_statut' => 'validee',
+            'valide_par'     => $user->name,
         ]);
     }
 
@@ -658,6 +665,13 @@ class DecisionAdministrative extends Model
                 'montant'           => $this->montant_brut,
             ]);
 
+            \App\Models\ActivityLog::logAction($this, 'engager', [
+                'ancien_statut'  => 'validee',
+                'nouveau_statut' => 'engagee',
+                'montant'        => $this->montant_brut,
+                'engagement'     => $engagement->numero,
+            ]);
+
             return $engagement;
         } catch (\Exception $e) {
             \DB::rollBack();
@@ -703,6 +717,11 @@ class DecisionAdministrative extends Model
         ]);
 
         \Log::info("DA {$this->numero} désengagée — engagement supprimé définitivement");
+
+        \App\Models\ActivityLog::logAction($this, 'desengager', [
+            'ancien_statut'  => 'engagee',
+            'nouveau_statut' => 'validee',
+        ]);
     }
 
     // ── annuler ───────────────────────────────────────────────
@@ -738,6 +757,12 @@ class DecisionAdministrative extends Model
             ]);
             \DB::commit();
             \Log::info("DA {$this->numero} annulée", ['statut_avant' => $statutAvant]);
+
+            \App\Models\ActivityLog::logAction($this, 'annuler', [
+                'ancien_statut'  => $statutAvant,
+                'nouveau_statut' => 'annulee',
+                'motif'          => $motif ?? 'Non précisé',
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
             throw $e;
@@ -787,6 +812,12 @@ class DecisionAdministrative extends Model
             ]);
             \DB::commit();
             \Log::info("DA {$this->numero} récupérée — remise en brouillon");
+
+            \App\Models\ActivityLog::logAction($this, 'recuperer', [
+                'ancien_statut'  => 'annulee',
+                'nouveau_statut' => 'brouillon',
+                'motif'          => $motif ?? 'Non précisé',
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
             throw $e;
@@ -965,9 +996,27 @@ class DecisionAdministrative extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'montant_brut', 'montant_net'])
+            ->logOnly([
+                'statut',
+                'engagee',
+                'montant_brut',
+                'montant_ht',
+                'montant_tva',
+                'montant_ir',
+                'montant_net',
+                'montant_engage',
+                'engagement_id',
+                'validee_par',
+                'date_validation',
+            ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "Décision administrative {$eventName}");
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => match ($event) {
+                'created' => "Décision Administrative créée : {$this->numero}",
+                'updated' => "Décision Administrative modifiée : {$this->numero}",
+                'deleted' => "Décision Administrative supprimée : {$this->numero}",
+                default   => "DA {$this->numero} — {$event}",
+            });
     }
 }

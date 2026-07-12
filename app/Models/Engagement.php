@@ -292,6 +292,13 @@ class Engagement extends Model
         $this->engage_par      = $user->id;
         $this->date_validation = now();
         $this->save();
+
+        \App\Models\ActivityLog::logAction($this, 'valider', [
+            'ancien_statut'  => 'provisoire',
+            'nouveau_statut' => 'definitif',
+            'valide_par'     => $user->name,
+            'montant'        => $this->montant_engage,
+        ]);
     }
 
     public function peutCreerOrdonnances(): bool
@@ -374,6 +381,12 @@ class Engagement extends Model
             $this->forceDelete();
 
             DB::commit();
+
+            \App\Models\ActivityLog::logAction($this, 'annuler', [
+                'ancien_statut'  => $this->statut ?? 'provisoire',
+                'nouveau_statut' => 'supprime',
+                'montant'        => $this->montant_engage,
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error("Erreur annulation engagement", [
@@ -424,8 +437,23 @@ class Engagement extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'montant_engage', 'date_validation'])
-            ->logOnlyDirty();
+            ->logOnly([
+                'statut',
+                'montant_engage',
+                'date_validation',
+                'engage_par',
+                'nomenclature_principale_id',
+                'type_engagement_id',
+            ])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => match ($event) {
+                'created' => "Engagement créé : {$this->numero}",
+                'updated' => "Engagement modifié : {$this->numero}",
+                'deleted' => "Engagement supprimé : {$this->numero}",
+                default   => "Engagement {$this->numero} — {$event}",
+            });
     }
 
     public function hasOrdonnancesPaiement(): bool

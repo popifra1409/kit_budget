@@ -4,13 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Traits\HasExercice;
 
 class VirementBudgetaire extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+    use HasFactory, LogsActivity, SoftDeletes, HasExercice;
 
     protected $table = 'virements_budgetaires';
 
@@ -142,6 +144,13 @@ class VirementBudgetaire extends Model
         $this->valide_par = $user->id;
         $this->date_validation = now();
         $this->save();
+
+        \App\Models\ActivityLog::logAction($this, 'valider', [
+            'ancien_statut'  => 'en_attente',
+            'nouveau_statut' => 'approuve',
+            'approuve_par'   => $user->name,
+            'montant'        => $this->montant,
+        ]);
     }
 
     /**
@@ -182,6 +191,12 @@ class VirementBudgetaire extends Model
         $this->valide_par = $user->id;
         $this->date_validation = now();
         $this->save();
+
+        \App\Models\ActivityLog::logAction($this, 'annuler', [
+            'ancien_statut'  => 'approuve',
+            'nouveau_statut' => 'rejete',
+            'rejete_par'     => $user->name,
+        ]);
     }
 
     /**
@@ -206,5 +221,15 @@ class VirementBudgetaire extends Model
         // Marquer comme en attente
         $this->statut = 'en_attente';
         $this->save();
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['statut', 'montant', 'valide_par', 'date_validation', 'motif'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => 'Virement Budgétaire ' . ($this->numero ?? '') . ' — {$event}');
     }
 }

@@ -289,8 +289,11 @@ class RegieAvance extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['numero', 'libelle', 'statut', 'montant_alloue', 'montant_disponible'])
+            ->logOnly(['statut', 'montant_alloue', 'montant_disponible', 'montant_consomme', 'date_cloture'])
             ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => 'Régie Avance ' . ($this->numero ?? '') . ' — ' . $event)
             ->dontSubmitEmptyLogs();
     }
 }

@@ -440,6 +440,13 @@ class BonCommande extends Model
             \DB::commit();
 
             \Log::info("BC {$this->numero} récupéré — remis en brouillon");
+
+            // ✅ Log workflow
+            \App\Models\ActivityLog::logAction($this, 'recuperer', [
+                'ancien_statut'  => 'annule',
+                'nouveau_statut' => 'brouillon',
+                'motif'          => $motif ?? 'Non précisé',
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
             \Log::error("Erreur récupération BC {$this->numero} : " . $e->getMessage());
@@ -899,10 +906,18 @@ class BonCommande extends Model
     {
         $this->verifierPasEnTransmission('valider');
 
+        $ancienStatut = $this->statut;
         $this->statut = 'valide';
         $this->valide_par = $user->id;
         $this->date_validation = now();
         $this->save();
+
+        // ✅ Log workflow
+        \App\Models\ActivityLog::logAction($this, 'valider', [
+            'ancien_statut'  => $ancienStatut,
+            'nouveau_statut' => 'valide',
+            'valide_par'     => $user->name,
+        ]);
     }
 
     /**
@@ -1018,6 +1033,14 @@ class BonCommande extends Model
             \DB::commit();
 
             \Log::info("BC {$this->numero} engagé → Engagement {$engagement->numero} créé");
+
+            // ✅ Log workflow
+            \App\Models\ActivityLog::logAction($this, 'engager', [
+                'ancien_statut'  => 'valide',
+                'nouveau_statut' => 'engage',
+                'montant'        => $this->montant_ttc,
+                'engagement'     => $engagement->numero,
+            ]);
 
             return $engagement;
         } catch (\Exception $e) {
@@ -1212,6 +1235,14 @@ class BonCommande extends Model
             ]);
 
             \DB::commit();
+
+            // ✅ Log workflow
+            \App\Models\ActivityLog::logAction($this, 'desengager', [
+                'ancien_statut'  => 'engage',
+                'nouveau_statut' => 'valide',
+                'engagement'     => $engagement->numero ?? null,
+                'montant_libere' => $engagement->montant_engage ?? null,
+            ]);
         } catch (\Exception $e) {
             \DB::rollBack();
             \Log::error("Erreur désengagement BC", ['erreur' => $e->getMessage()]);
@@ -1289,6 +1320,13 @@ class BonCommande extends Model
             \Log::info("BC {$this->numero} annulé", [
                 'statut_avant' => $statutAvant,
                 'user' => auth()->id(),
+            ]);
+
+            // ✅ Log workflow
+            \App\Models\ActivityLog::logAction($this, 'annuler', [
+                'ancien_statut'  => $statutAvant,
+                'nouveau_statut' => 'annule',
+                'motif'          => $motif ?? 'Non précisé',
             ]);
         } catch (\Exception $e) {
             \DB::rollBack();
@@ -1374,9 +1412,29 @@ class BonCommande extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['numero', 'budget_id', 'exercice_id', 'statut', 'date_bordereau', 'montant_total'])
+            ->logOnly([
+                'statut',
+                'engage',
+                'montant_ttc',
+                'montant_ht',
+                'montant_tva',
+                'montant_ir',
+                'net_a_payer',
+                'montant_engage',
+                'engagement_id',
+                'valide_par',
+                'date_validation',
+                'mode_arrondi',
+                'objet',
+            ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
+            ->useLogName('workflow')
+            ->setDescriptionForEvent(fn(string $event) => match ($event) {
+                'created' => "Bon de commande créé : {$this->numero}",
+                'updated' => "Bon de commande modifié : {$this->numero}",
+                'deleted' => "Bon de commande supprimé : {$this->numero}",
+                default   => "BC {$this->numero} — {$event}",
+            });
     }
 }
