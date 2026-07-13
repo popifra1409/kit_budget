@@ -101,6 +101,7 @@ class BudgetPanelProvider extends PanelProvider
                 'Administration',
             ])
 
+
             // ── Découverte dans les sous-dossiers Budget/ ────────────────
             ->discoverResources(
                 in: app_path('Filament/Budget/Resources'),
@@ -124,6 +125,13 @@ class BudgetPanelProvider extends PanelProvider
                 Widgets\AccountWidget::class,
                 \App\Filament\Widgets\WelcomeWidget::class,
                 // \App\Filament\Budget\Widgets\AgentBudgetaireWidget::class,
+            ])
+
+            ->plugins([
+                \Hasnayeen\Themes\ThemesPlugin::make()
+                    ->canViewThemesPage(
+                        fn() => auth()->check() && (bool) auth()->user()->hasRole(['super_admin', 'admin'])
+                    ),
             ])
 
             ->pages([
@@ -175,6 +183,7 @@ class BudgetPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                \Hasnayeen\Themes\Http\Middleware\SetTheme::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
