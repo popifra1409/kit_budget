@@ -13,9 +13,12 @@
         "barryvdh/laravel-dompdf": "^3.1",
         "filament/filament": "^3.2",
         "hasnayeen/themes": "^3.0",
+        "infobip/infobip-api-php-client": "^6.2",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
+        "laravel/vonage-notification-channel": "^3.3",
         "maatwebsite/excel": "^3.1",
+        "netflie/whatsapp-cloud-api": "^4.0",
         "predis/predis": "^3.3",
         "spatie/laravel-activitylog": "^4.10",
         "spatie/laravel-permission": "^6.24"

@@ -10,12 +10,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use App\Traits\HasExercice;
+use App\Traits\GereTransmissions;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class OrdonnancePaiement extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, HasExercice;
+    use HasFactory, SoftDeletes, LogsActivity, HasExercice, GereTransmissions;
 
     protected $table = 'ordonnances_paiement';
 
@@ -46,6 +47,7 @@ class OrdonnancePaiement extends Model
         'statut',
         'date_paiement',
         'reference_paiement',
+        'mode_paiement',
         'observations',
         'metadata',
         'created_by',
@@ -388,20 +390,28 @@ class OrdonnancePaiement extends Model
         $this->save();
     }
 
-    public function marquerPayee(?string $referencePaiement = null): void
-    {
+    public function marquerPayee(
+        ?string $referencePaiement = null,
+        ?string $modePaiement      = null,
+        ?string $datePaiement      = null
+    ): void {
+        // ✅ Vérifier transmission (GereTransmissions maintenant disponible)
         $this->verifierPasEnTransmission('payer');
 
+        $ancienStatut             = $this->statut;
         $this->statut             = 'payee';
-        $this->date_paiement      = now();
+        $this->date_paiement      = $datePaiement ?? now();
         $this->reference_paiement = $referencePaiement;
+        $this->mode_paiement      = $modePaiement;
         $this->save();
 
         \App\Models\ActivityLog::logAction($this, 'marquer_payee', [
-            'ancien_statut'       => 'emise',
-            'nouveau_statut'      => 'payee',
-            'reference_paiement'  => $referencePaiement,
-            'montant'             => $this->montant_net ?? $this->montant_brut,
+            'ancien_statut'      => $ancienStatut,
+            'nouveau_statut'     => 'payee',
+            'reference_paiement' => $referencePaiement,
+            'mode_paiement'      => $modePaiement,
+            'montant'            => $this->montant_net ?? $this->montant_brut,
+            'type'               => $this->type_ordonnance,
         ]);
     }
 

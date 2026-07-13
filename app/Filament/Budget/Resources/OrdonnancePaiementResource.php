@@ -342,9 +342,7 @@ class OrdonnancePaiementResource extends Resource
 
                     // ════════════════════════════════════════════════
                     // ✅ MARQUER PAYÉE — OP STANDARD UNIQUEMENT
-                    //    L'OPT (impôt) est payée automatiquement
-                    //    quand l'OP standard est marquée payée
-                    //    → pas de bouton séparé pour l'OPT
+                    //    OP standard : paiement fournisseur/prestataire
                     // ════════════════════════════════════════════════
                     Tables\Actions\Action::make('marquer_payee')
                         ->label('Marquer payée')
@@ -371,36 +369,163 @@ class OrdonnancePaiementResource extends Resource
                         ->modalCancelActionLabel('Annuler')
                         ->form([
                             Forms\Components\DatePicker::make('date_paiement')
-                                ->label('Date de paiement')->required()->default(now()),
+                                ->label('Date de paiement')
+                                ->required()
+                                ->default(now()),
+
+                            // ✅ Mode de paiement — depuis ModePaiement (gérable dans Paramétrage)
+                            Forms\Components\Select::make('mode_paiement')
+                                ->label('Mode de paiement')
+                                ->options(
+                                    fn($record) =>
+                                    $record?->type_ordonnance === 'impot'
+                                        ? \App\Models\ModePaiement::optionsPourOPT()
+                                        : \App\Models\ModePaiement::optionsPourOP()
+                                )
+                                ->required()
+                                ->default('virement')
+                                ->native(false)
+                                ->helperText('Gérez les modes dans Paramétrage → Modes de paiement'),
+
                             Forms\Components\TextInput::make('reference_paiement')
-                                ->label('Référence de paiement')->required()
+                                ->label('Référence de paiement')
+                                ->required()
                                 ->placeholder('Ex: VIR-2026-00123 ou CHQ-456789'),
+
+                            Forms\Components\Textarea::make('observations_paiement')
+                                ->label('Observations')
+                                ->rows(2)
+                                ->placeholder('Informations complémentaires sur le paiement...')
+                                ->nullable(),
+
+                            // ✅ Mode de paiement OPT (reversement IR) — séparé de l'OP
+                            Forms\Components\Select::make('mode_paiement_opt')
+                                ->label('Mode reversement IR (OPT)')
+                                ->options(\App\Models\ModePaiement::optionsPourOPT())
+                                ->default('virement')
+                                ->native(false)
+                                ->helperText('Mode utilisé pour reverser la retenue IR à la DGI/Trésor')
+                                ->visible(
+                                    fn($record) =>
+                                    \App\Models\OrdonnancePaiement::where('engagement_id', $record?->engagement_id)
+                                        ->where('type_ordonnance', 'impot')
+                                        ->exists()
+                                ),
                         ])
                         ->action(function ($record, array $data) {
                             try {
                                 DB::transaction(function () use ($record, $data) {
-                                    // ✅ Marquer l'OP standard payée
-                                    $record->marquerPayee($data['reference_paiement']);
-                                    $record->date_paiement = $data['date_paiement'];
-                                    $record->save();
+                                    // ✅ Payer l'OP via marquerPayee() — GereTransmissions maintenant disponible
+                                    $record->marquerPayee(
+                                        $data['reference_paiement'],
+                                        $data['mode_paiement'],
+                                        $data['date_paiement']
+                                    );
+                                    if (!empty($data['observations_paiement'])) {
+                                        $record->updateQuietly([
+                                            'observations' => ($record->observations ?? '')
+                                                . '\n[Paiement] ' . $data['observations_paiement'],
+                                        ]);
+                                    }
 
-                                    // ✅ Marquer l'OPT liée payée automatiquement
-                                    //    OP et OPT partagent le même engagement_id
+                                    // ✅ Payer l'OPT liée SÉPARÉMENT
+                                    //    L'OPT peut avoir son propre mode/référence de reversement
                                     $opt = \App\Models\OrdonnancePaiement::where('engagement_id', $record->engagement_id)
                                         ->where('type_ordonnance', 'impot')
                                         ->first();
 
                                     if ($opt && $opt->statut !== 'payee') {
-                                        $opt->marquerPayee($data['reference_paiement'] . '-IR');
-                                        $opt->date_paiement = $data['date_paiement'];
-                                        $opt->save();
+                                        // OPT : référence IR distincte, mode par défaut = virement (reversement DGI)
+                                        $opt->marquerPayee(
+                                            $data['reference_paiement'] . '-IR',
+                                            $data['mode_paiement_opt'] ?? 'virement',
+                                            $data['date_paiement']
+                                        );
                                     }
                                 });
 
                                 Notification::make()
                                     ->title('✅ Paiement enregistré')
                                     ->success()
-                                    ->body('OP ' . $record->numero . ' payée. OPT liée mise à jour automatiquement.')
+                                    ->body('OP ' . $record->numero . ' payée ('
+                                        . $data['mode_paiement'] . ' — '
+                                        . $data['reference_paiement'] . ').'
+                                        . ($opt ?? false ? ' OPT liée mise à jour.' : ''))
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('❌ Erreur')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
+                                    ->send();
+                            }
+                        }),
+
+                    // ════════════════════════════════════════════════
+                    // ✅ MARQUER REVERSÉE — OPT (Retenue IR / impôt)
+                    //    Action séparée de l'OP standard
+                    //    Reversement à la DGI / Trésor Public
+                    // ════════════════════════════════════════════════
+                    Tables\Actions\Action::make('marquer_payee_opt')
+                        ->label('Reverser IR')
+                        ->icon('heroicon-o-building-library')
+                        ->color('warning')
+                        ->visible(
+                            fn($record) =>
+                            in_array($record->statut, ['emise', 'visee'])
+                                && $record->type_ordonnance === 'impot'
+                                && (
+                                    auth()->user()?->can('marquer_payee_ordonnance_paiement')
+                                    || auth()->user()?->hasRole(['super_admin', 'admin', 'agence_comptable', 'daaf'])
+                                )
+                        )
+                        ->modalHeading(fn($record) => 'Reverser retenue IR — ' . $record->numero)
+                        ->modalDescription('⚠️ Action irréversible — Reversement de la retenue fiscale à la DGI/Trésor.')
+                        ->modalWidth('md')
+                        ->modalSubmitActionLabel('✅ Confirmer le reversement')
+                        ->modalCancelActionLabel('Annuler')
+                        ->form([
+                            Forms\Components\DatePicker::make('date_paiement')
+                                ->label('Date de reversement')
+                                ->required()
+                                ->default(now()),
+
+                            Forms\Components\Select::make('mode_paiement')
+                                ->label('Mode de reversement')
+                                ->options(\App\Models\ModePaiement::optionsPourOPT())
+                                ->default('virement')
+                                ->required()
+                                ->native(false)
+                                ->helperText('Mode vers DGI / Trésor Public'),
+
+                            Forms\Components\TextInput::make('reference_paiement')
+                                ->label('Référence du reversement')
+                                ->required()
+                                ->placeholder('Ex: REV-IR-2026-00045'),
+
+                            Forms\Components\Textarea::make('observations_paiement')
+                                ->label('Observations')
+                                ->rows(2)
+                                ->nullable(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            try {
+                                $record->marquerPayee(
+                                    $data['reference_paiement'],
+                                    $data['mode_paiement'],
+                                    $data['date_paiement']
+                                );
+                                if (!empty($data['observations_paiement'])) {
+                                    $record->updateQuietly([
+                                        'observations' => ($record->observations ?? '')
+                                            . "\n[Reversement IR] " . $data['observations_paiement'],
+                                    ]);
+                                }
+                                Notification::make()
+                                    ->title('✅ Retenue IR reversée')
+                                    ->success()
+                                    ->body('OPT ' . $record->numero . ' — Réf: ' . $data['reference_paiement'])
                                     ->send();
                             } catch (\Exception $e) {
                                 Notification::make()
