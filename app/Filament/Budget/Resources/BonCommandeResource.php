@@ -194,7 +194,7 @@ class BonCommandeResource extends Resource
                             ->preload(),
 
                         Forms\Components\Select::make('fournisseur_id')
-                            ->label('Fournisseur')
+                            ->label(__("resource.bonCommandeResource.fournisseur_id"))
                             ->relationship('fournisseur', 'raison_sociale')
                             ->searchable()
                             ->preload()
