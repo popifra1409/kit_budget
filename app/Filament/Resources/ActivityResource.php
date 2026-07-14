@@ -50,6 +50,16 @@ class ActivityResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession()
+            ->groups([
+                Tables\Grouping\Group::make('event')
+                    ->label('Par evenement')
+                    ->collapsible()
+            ])
+            ->defaultGroup("event")
+            ->deferLoading()
             ->columns([
 
                 Tables\Columns\TextColumn::make('created_at')

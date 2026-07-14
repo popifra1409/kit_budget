@@ -649,6 +649,7 @@ class BonCommandeRegieResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
+            ->deferLoading()    
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° BCR/BCM')

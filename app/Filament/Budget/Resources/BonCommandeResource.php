@@ -1290,13 +1290,32 @@ class BonCommandeResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
+            ->groups([
+                Tables\Grouping\Group::make('statut')
+                    ->label('Par statut')
+                    ->collapsible()
+                    ->titlePrefixedWithLabel(false)
+                    ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
+                        'brouillon' => '📝 Brouillon',
+                        'valide'    => '✅ Validé',
+                        'engage'    => '💰 Engagé',
+                        'annule'    => '❌ Annulé',
+                        default     => ucfirst($record->statut),
+                    }),
+
+                Tables\Grouping\Group::make('typeEngagement.libelle')
+                    ->label('Par type engagement')
+                    ->collapsible()
+            ])
+            ->defaultGroup("statut")
+            ->deferLoading()
             ->columns([
 
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N° BC')->searchable()->sortable()->weight('bold')->copyable(),
+                    ->label('N° BC')->searchable(isIndividual: true)->sortable()->weight('bold')->copyable(),
 
                 Tables\Columns\TextColumn::make('fournisseur.raison_sociale')
-                    ->label('Fournisseur')->searchable()->limit(30)->wrap(),
+                    ->label('Fournisseur')->searchable(isIndividual: true)->limit(30)->wrap(),
 
                 Tables\Columns\TextColumn::make('serviceDemandeur.nom')
                     ->label('Service')->searchable()

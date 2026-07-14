@@ -82,6 +82,10 @@ class DecisionPrevisionnelleResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession()
+            ->deferLoading()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N°')->searchable()->sortable()->weight('bold')->copyable(),

@@ -199,6 +199,19 @@ class OrdonnancePaiementResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
+            ->groups([
+                Tables\Grouping\Group::make('statut')
+                    ->label('Par statut')
+                    ->collapsible()
+                    ->titlePrefixedWithLabel(false)
+                    ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
+                        'payee' => 'Payée',
+                        'emise'    => 'Émise',
+                        default     => ucfirst($record->statut),
+                    })
+            ])
+            ->defaultGroup("statut")
+            ->deferLoading()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° OP')

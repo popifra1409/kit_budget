@@ -485,6 +485,21 @@ class MemoireDepenseResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
+            ->groups([
+                Tables\Grouping\Group::make('statut')
+                    ->label('Par statut')
+                    ->collapsible()
+                    ->titlePrefixedWithLabel(false)
+                    ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
+                        'annule' => 'Annulé',
+                        'brouillon'    => 'Brouillon',
+                        'transforme'    => 'Transformé',
+                        'valide'    => 'Validée',
+                        default     => ucfirst($record->statut),
+                    })
+            ])
+            ->defaultGroup("statut")
+            ->deferLoading()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('Numéro')->searchable()->sortable()->weight('bold')->copyable(),

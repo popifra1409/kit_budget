@@ -145,6 +145,10 @@ class DossierFournisseurResource extends Resource
     {
         return $table
             ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession()
+            ->deferLoading()
+            
             ->columns([
                 Tables\Columns\TextColumn::make('numero_dossier')
                     ->label('N° Dossier')->searchable()->sortable()->weight('bold')->copyable(),

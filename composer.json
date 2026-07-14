@@ -20,6 +20,7 @@
         "maatwebsite/excel": "^3.1",
         "netflie/whatsapp-cloud-api": "^4.0",
         "predis/predis": "^3.3",
+        "pusher/pusher-php-server": "*",
         "spatie/laravel-activitylog": "^4.10",
         "spatie/laravel-permission": "^6.24"
     },

@@ -246,9 +246,22 @@ class EngagementResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
+            ->groups([
+                Tables\Grouping\Group::make('statut')
+                    ->label('Par statut')
+                    ->collapsible()
+                    ->titlePrefixedWithLabel(false)
+                    ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
+                        'provisoire' => 'Provisoire',
+                        'definitif'    => 'Définitif',
+                        default     => ucfirst($record->statut),
+                    })
+            ])
+            ->defaultGroup("statut")
+            ->deferLoading()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
-                    ->label('N° Engagement')->searchable()->sortable()->weight('bold')->copyable()->toggleable(),
+                    ->label('N° Engagement')->searchable(isIndividual: true)->sortable()->weight('bold')->copyable()->toggleable(),
                 Tables\Columns\TextColumn::make('engageable_type')
                     ->label('Source')->sortable()
                     ->formatStateUsing(fn($state) => match ($state) {
@@ -262,6 +275,7 @@ class EngagementResource extends Resource
                         'App\Models\DecisionAdministrative' => 'warning',
                         default                             => 'gray',
                     })->toggleable(),
+
                 Tables\Columns\TextColumn::make('document_source')
                     ->label('N° Document')
                     ->getStateUsing(fn($record) => $record->reference_document ?? $record->engageable?->numero ?? null)
