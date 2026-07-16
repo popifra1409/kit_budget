@@ -142,6 +142,8 @@ class BudgetPanelProvider extends PanelProvider
             ])
 
             ->pages([
+                \App\Filament\Budget\Pages\BudgetProgrammePage::class,
+                \App\Filament\Budget\Pages\SaisiePrevisionsBudgetProgrammePage::class,
                 \App\Filament\Pages\Dashboard::class,
                 \App\Filament\Budget\Pages\DashboardRegie::class,
             ])

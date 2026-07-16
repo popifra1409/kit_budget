@@ -179,6 +179,14 @@ Route::middleware(['web', 'auth'])->group(function () {
         '/prevision-recette/{id}/export/pdf',
         [App\Http\Controllers\PrevisionRecetteExportController::class, 'pdf']
     )->name('prevision-recette.export.pdf');
+
+    // Budget Programme Triennal — exports
+    Route::prefix('budget-programme')->name('budget-programme.')->middleware(['auth'])->group(function () {
+        Route::get('/export/excel', [\App\Http\Controllers\BudgetProgrammeExportController::class, 'exportExcel'])
+            ->name('export.excel');
+        Route::get('/preview', [\App\Http\Controllers\BudgetProgrammeExportController::class, 'preview'])
+            ->name('preview');
+    });
 });
 
 /*

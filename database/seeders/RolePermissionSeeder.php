@@ -203,6 +203,16 @@ class RolePermissionSeeder extends Seeder
             'imprimer_compte_emploi_regie',
             'generer_bon_commande_expression_besoin',
             'generer_expression_besoin_bon_commande',
+
+            // ── Budget Programme Triennal ──────────────────
+            'view_budget_programme',
+            'saisir_previsions_budget_programme',
+            'exporter_budget_programme',
+            'gerer_collectif_budgetaire',
+            'valider_collectif_budgetaire',
+
+            // ── Marquer payée OP ──────────────────────────
+            'marquer_payee_ordonnance_paiement',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -247,6 +257,12 @@ class RolePermissionSeeder extends Seeder
                 'access_module_portal',
                 'access_module_budget',
                 'view_budget',
+                'view_budget_programme',
+                'saisir_previsions_budget_programme',
+                'exporter_budget_programme',
+                'gerer_collectif_budgetaire',
+                'valider_collectif_budgetaire',
+                'marquer_payee_ordonnance_paiement',
                 'view_any_budget',
                 'view_prevision_recette',
                 'view_any_prevision_recette',
@@ -343,6 +359,12 @@ class RolePermissionSeeder extends Seeder
                 'telecharger_piece_dossier',
                 'view_all_dossiers',
                 'generer_expression_besoin_bon_commande',
+
+                // ── Budget Programme Triennal ──────────────
+                'view_budget_programme',
+                'saisir_previsions_budget_programme',
+                'exporter_budget_programme',
+                'marquer_payee_ordonnance_paiement',
             ],
             'chef_service_budget'
         );
@@ -478,6 +500,16 @@ class RolePermissionSeeder extends Seeder
                 'imprimer_etat_retenues_regie',
                 'imprimer_compte_emploi_regie',
                 'generer_expression_besoin_bon_commande',
+
+                // ── Budget Programme Triennal ──────────────
+                'view_budget_programme',
+                'saisir_previsions_budget_programme',
+                'exporter_budget_programme',
+                'gerer_collectif_budgetaire',
+                'valider_collectif_budgetaire',
+
+                // ── Paiement OP ───────────────────────────
+                'marquer_payee_ordonnance_paiement',
             ],
             'daaf'
         );
