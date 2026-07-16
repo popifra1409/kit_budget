@@ -311,10 +311,15 @@ class ViewBonCommande extends ViewRecord
                 ->icon('heroicon-o-arrow-uturn-left')->color('warning')
                 ->visible(
                     fn() =>
-                    !$this->estEnTransmission()
-                        && $this->record->engage
+                    $this->record->engage
+                        && !$this->estEnTransmission()
                         && $this->record->peutEtreDesengage()
-                        && static::getResource()::canDesengager($this->record)
+                        // ✅ Même logique que ViewDecisionAdministrative
+                        && (
+                            auth()->user()?->can('desengager_bon_commande')
+                            || auth()->user()?->can('annuler_engagement')
+                            || auth()->user()?->hasRole('super_admin')
+                        )
                 )
                 ->requiresConfirmation()
                 ->modalHeading("Annuler l'engagement")

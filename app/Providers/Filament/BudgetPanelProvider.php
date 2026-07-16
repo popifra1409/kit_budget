@@ -87,6 +87,13 @@ class BudgetPanelProvider extends PanelProvider
                     ->icon('heroicon-o-cog-6-tooth')
             ])
 
+            ->userMenuItems([
+                'langue' => \Filament\Navigation\MenuItem::make()
+                    ->label(fn() => app()->getLocale() === 'fr' ? '🇫🇷 Français' : '🇬🇧 English')
+                    ->icon('heroicon-o-language')
+                    ->url(fn() => route('locale.set', auth()->user()?->locale === 'en' ? 'fr' : 'en')),
+            ])
+
             // ── Navigation du module Budget ──────────────────────────────
             ->navigationGroups([
                 'Commandes & Engagement',
@@ -188,6 +195,8 @@ class BudgetPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 'module.access:budget',
+                // ✅ Après Authenticate — auth()->user() disponible
+                \App\Http\Middleware\SetLocale::class,
             ]);
     }
 

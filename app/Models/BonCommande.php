@@ -1146,9 +1146,11 @@ class BonCommande extends Model
 
     public function peutEtreDesengage(): bool
     {
-        if (!$this->engage || !$this->engagement_id) {
+        if (!$this->engage) {
             return false;
         }
+        // ✅ engagement_id peut être NULL si engagement créé avant ce champ
+        // On vérifie via la relation directe si engagement_id est absent
 
         // ✅ Vérifier via l'engagement
         if ($this->engagement && $this->engagement->ordonnancesPaiement()->count() > 0) {
