@@ -76,9 +76,7 @@ class CreateBonCommande extends CreateRecord
      */
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('edit', [
-            'record' => $this->record,
-        ]);
+        return $this->getResource()::getUrl('view', ['record' => $this->record]);
     }
 
     /**

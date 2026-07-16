@@ -317,6 +317,32 @@ $decimales   = $modeArrondi ? 0 : 2;
                 <label>Budget</label>
                 <span>{{ $bc->budget?->libelle ?? '—' }}</span>
             </div>
+            {{-- ✅ Ligne d'imputation budgétaire --}}
+            @php
+                $ligneImputation = null;
+                $engagement = $bc->engagement
+                    ?? \App\Models\Engagement::where('engageable_type', \App\Models\BonCommande::class)
+                        ->where('engageable_id', $bc->id)->first();
+                if ($engagement?->nomenclaturePrincipale) {
+                    $n = $engagement->nomenclaturePrincipale;
+                    $dateEng = \Carbon\Carbon::parse($engagement->date_engagement ?? now());
+                    $ligneImputation = $dateEng->year . '-'
+                        . $dateEng->format('m') . '-'
+                        . $n->code
+                        . ' (' . Str::limit($n->libelle, 40) . ')';
+                }
+            @endphp
+            @if($ligneImputation)
+            <div class="info-item" style="grid-column: span 2">
+                <label>📌 Ligne d'imputation budgétaire</label>
+                <span style="font-weight:600;color:#1e40af;">{{ $ligneImputation }}</span>
+            </div>
+            @elseif($bc->statut === 'brouillon')
+            <div class="info-item" style="grid-column: span 2">
+                <label>📌 Ligne d'imputation budgétaire</label>
+                <span style="color:#6b7280;font-style:italic;">Sera définie lors de l'engagement budgétaire</span>
+            </div>
+            @endif
             <div class="info-item">
                 <label>TVA</label>
                 <span>
