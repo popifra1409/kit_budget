@@ -671,23 +671,23 @@ class DecisionAdministrativeResource extends Resource
             ->persistSearchInSession()
             ->persistSortInSession()
             ->filtersFormWidth(\Filament\Support\Enums\MaxWidth::Small)
-            ->groups([
-                Tables\Grouping\Group::make('statut')
-                    ->label('Par statut')
-                    ->collapsible()
-                    ->titlePrefixedWithLabel(false)
-                    ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
-                        'brouillon' => '📝 Brouillon',
-                        'valide'    => '✅ Validé',
-                        'engage'    => '💰 Engagé',
-                        'annule'    => '❌ Annulé',
-                        default     => ucfirst($record->statut),
-                    }),
+            // ->groups([
+            //     Tables\Grouping\Group::make('statut')
+            //         ->label('Par statut')
+            //         ->collapsible()
+            //         ->titlePrefixedWithLabel(false)
+            //         ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
+            //             'brouillon' => '📝 Brouillon',
+            //             'valide'    => '✅ Validé',
+            //             'engage'    => '💰 Engagé',
+            //             'annule'    => '❌ Annulé',
+            //             default     => ucfirst($record->statut),
+            //         }),
 
-                Tables\Grouping\Group::make('typeDecision.libelle')
-                    ->label('Par type décision')
-                    ->collapsible()
-            ])
+            //     Tables\Grouping\Group::make('typeDecision.libelle')
+            //         ->label('Par type décision')
+            //         ->collapsible()
+            // ])
             ->defaultGroup("statut")
             ->deferLoading()
             ->columns([

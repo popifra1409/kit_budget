@@ -1290,24 +1290,24 @@ class BonCommandeResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
-            ->groups([
-                Tables\Grouping\Group::make('statut')
-                    ->label('Par statut')
-                    ->collapsible()
-                    ->titlePrefixedWithLabel(false)
-                    ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
-                        'brouillon' => '📝 Brouillon',
-                        'valide'    => '✅ Validé',
-                        'engage'    => '💰 Engagé',
-                        'annule'    => '❌ Annulé',
-                        default     => ucfirst($record->statut),
-                    }),
+            // ->groups([
+            //     Tables\Grouping\Group::make('statut')
+            //         ->label('Par statut')
+            //         ->collapsible()
+            //         ->titlePrefixedWithLabel(false)
+            //         ->getTitleFromRecordUsing(fn($record) => match ($record->statut) {
+            //             'brouillon' => '📝 Brouillon',
+            //             'valide'    => '✅ Validé',
+            //             'engage'    => '💰 Engagé',
+            //             'annule'    => '❌ Annulé',
+            //             default     => ucfirst($record->statut),
+            //         }),
 
-                Tables\Grouping\Group::make('typeEngagement.libelle')
-                    ->label('Par type engagement')
-                    ->collapsible()
-            ])
-            ->defaultGroup("statut")
+            //     Tables\Grouping\Group::make('typeEngagement.libelle')
+            //         ->label('Par type engagement')
+            //         ->collapsible()
+            // ])
+            // ->defaultGroup("statut")
             ->deferLoading()
             ->columns([
 
