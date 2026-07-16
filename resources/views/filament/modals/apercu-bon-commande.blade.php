@@ -317,32 +317,38 @@ $decimales   = $modeArrondi ? 0 : 2;
                 <label>Budget</label>
                 <span>{{ $bc->budget?->libelle ?? '—' }}</span>
             </div>
+
             {{-- ✅ Ligne d'imputation budgétaire --}}
             @php
-                $ligneImputation = null;
-                $engagement = $bc->engagement
-                    ?? \App\Models\Engagement::where('engageable_type', \App\Models\BonCommande::class)
-                        ->where('engageable_id', $bc->id)->first();
-                if ($engagement?->nomenclaturePrincipale) {
-                    $n = $engagement->nomenclaturePrincipale;
-                    $dateEng = \Carbon\Carbon::parse($engagement->date_engagement ?? now());
-                    $ligneImputation = $dateEng->year . '-'
-                        . $dateEng->format('m') . '-'
-                        . $n->code
-                        . ' (' . Str::limit($n->libelle, 40) . ')';
+                $nomenclature = null;
+                // 1. Depuis les lignes du BC (brouillon)
+                $premiereLigne = $bc->lignes->first();
+                if ($premiereLigne?->nomenclature) {
+                    $n = $premiereLigne->nomenclature;
+                    $nomenclature = $n->code . ' — ' . Str::limit($n->libelle ?? '', 50);
+                }
+                // 2. Depuis l'engagement (BC engagé)
+                if (!$nomenclature) {
+                    $engagement = $bc->engagement
+                        ?? \App\Models\Engagement::where('engageable_type', \App\Models\BonCommande::class)
+                            ->where('engageable_id', $bc->id)->first();
+                    if ($engagement?->nomenclaturePrincipale) {
+                        $n = $engagement->nomenclaturePrincipale;
+                        $nomenclature = $n->code . ' — ' . Str::limit($n->libelle ?? '', 50);
+                    }
                 }
             @endphp
-            @if($ligneImputation)
             <div class="info-item" style="grid-column: span 2">
                 <label>📌 Ligne d'imputation budgétaire</label>
-                <span style="font-weight:600;color:#1e40af;">{{ $ligneImputation }}</span>
+                @if($nomenclature)
+                    <span style="font-weight:600; color:#1e40af;">{{ $nomenclature }}</span>
+                @else
+                    <span style="color:#6b7280; font-style:italic;">
+                        {{ $bc->statut === 'brouillon' ? "Sera définie lors de l'engagement budgétaire" : '—' }}
+                    </span>
+                @endif
             </div>
-            @elseif($bc->statut === 'brouillon')
-            <div class="info-item" style="grid-column: span 2">
-                <label>📌 Ligne d'imputation budgétaire</label>
-                <span style="color:#6b7280;font-style:italic;">Sera définie lors de l'engagement budgétaire</span>
-            </div>
-            @endif
+
             <div class="info-item">
                 <label>TVA</label>
                 <span>

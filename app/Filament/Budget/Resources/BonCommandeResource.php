@@ -1914,10 +1914,12 @@ class BonCommandeResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListBonCommandes::route('/'),
+            'index'  => Pages\ListBonCommandes::route('/'),
             'create' => Pages\CreateBonCommande::route('/create'),
-            'edit' => Pages\EditBonCommande::route('/{record}/edit'),
-            'view' => Pages\ViewBonCommande::route('/{record}'),
+            'edit'   => Pages\EditBonCommande::route('/{record}/edit'),
+            'view'   => Pages\ViewBonCommande::route('/{record}'),
+            // ✅ Page aperçu avant validation
+            'apercu' => Pages\ApercuBonCommande::route('/{record}/apercu'),
         ];
     }
 }

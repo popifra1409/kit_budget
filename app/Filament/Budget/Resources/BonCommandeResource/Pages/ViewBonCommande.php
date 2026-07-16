@@ -186,6 +186,7 @@ class ViewBonCommande extends ViewRecord
                 }),
 
             // ── Valider ───────────────────────────────────────
+            // ✅ Valider → redirige vers Aperçu avant validation
             Actions\Action::make('valider')
                 ->label('Valider')
                 ->icon('heroicon-o-check-circle')->color('warning')
@@ -195,18 +196,9 @@ class ViewBonCommande extends ViewRecord
                         && $this->record->statut === 'brouillon'
                         && static::getResource()::canValider($this->record)
                 )
-                ->requiresConfirmation()
-                ->modalHeading('Valider le bon de commande')
-                ->modalDescription(fn() => "Valider le BC n° {$this->record->numero} ?")
-                ->action(function () {
-                    $this->record->valider(auth()->user());
-                    $this->record->refresh();
-                    Notification::make()
-                        ->title('✅ BC validé')->success()
-                        ->body("Le BC {$this->record->numero} a été validé.")
-                        ->send();
-                    $this->refreshFormData(['statut']);
-                }),
+                // ✅ Redirection vers page Aperçu (pas de modal)
+                ->url(fn() => static::getResource()::getUrl('apercu', ['record' => $this->record]))
+                ->openUrlInNewTab(false),
 
             // ── Engager ───────────────────────────────────────
             Actions\Action::make('engager')
@@ -311,15 +303,10 @@ class ViewBonCommande extends ViewRecord
                 ->icon('heroicon-o-arrow-uturn-left')->color('warning')
                 ->visible(
                     fn() =>
-                    $this->record->engage
-                        && !$this->estEnTransmission()
+                    !$this->estEnTransmission()
+                        && $this->record->engage
                         && $this->record->peutEtreDesengage()
-                        // ✅ Même logique que ViewDecisionAdministrative
-                        && (
-                            auth()->user()?->can('desengager_bon_commande')
-                            || auth()->user()?->can('annuler_engagement')
-                            || auth()->user()?->hasRole('super_admin')
-                        )
+                        && static::getResource()::canDesengager($this->record)
                 )
                 ->requiresConfirmation()
                 ->modalHeading("Annuler l'engagement")
