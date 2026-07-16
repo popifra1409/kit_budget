@@ -149,36 +149,16 @@ class ViewDecisionAdministrative extends ViewRecord
                 }),
 
             // ── Valider ──────────────────────────────────────
+            // ✅ Valider → page Aperçu DA avant confirmation
             Actions\Action::make('valider')
                 ->label('Valider')
                 ->icon('heroicon-o-check-circle')->color('warning')
                 ->visible(fn() => $this->peutValider())
-                ->requiresConfirmation()
-                ->modalHeading('Valider la décision')
-                ->modalDescription(
-                    fn() =>
-                    "Valider la décision pour {$this->record->getNomCompletPersonnel()} " .
-                        "d'un montant net de " .
-                        number_format($this->record->montant_net, 0, ',', ' ') . " FCFA ?"
-                )
-                ->action(function () {
-                    $this->record->valider(auth()->user());
-
-                    // Clôturer la transmission si c'était pour validation
-                    Transmission::where('document_id', $this->record->id)
-                        ->where('destinataire_id', auth()->id())
-                        ->where('statut', 'en_attente')
-                        ->where('action_attendue', 'validation')
-                        ->where(function ($q) {
-                            $q->where('document_type', get_class($this->record))
-                                ->orWhere('document_type', $this->morphAlias());
-                        })
-                        ->first()
-                        ?->traiter('Document validé');
-
-                    Notification::make()->title('✅ Décision validée')->success()->send();
-                    $this->refreshFormData(['statut']);
-                }),
+                ->url(fn() => \App\Filament\Budget\Resources\DecisionAdministrativeResource::getUrl(
+                    'apercu',
+                    ['record' => $this->record]
+                ))
+                ->openUrlInNewTab(false),
 
             // ── Engager ──────────────────────────────────────
             Actions\Action::make('engager')
@@ -258,12 +238,24 @@ class ViewDecisionAdministrative extends ViewRecord
                 }),
 
             // ── PDF ──────────────────────────────────────────
-            Actions\Action::make('pdf')
-                ->label('Générer PDF')
-                ->icon('heroicon-o-document-text')->color('gray')
-                ->visible(fn() => $this->record->statut !== 'brouillon')
-                ->url(fn() => route('decisions-administratives.pdf.preview', $this->record))
-                ->openUrlInNewTab(),
+            // ✅ Aperçu DA (remplace PDF inexistant)
+            Actions\Action::make('apercu')
+                ->label('Aperçu')
+                ->icon('heroicon-o-eye')->color('gray')
+                ->modalHeading(fn() => 'Aperçu — ' . $this->record->numero)
+                ->modalContent(fn() => view('filament.modals.apercu-decision-administrative', [
+                    'da' => $this->record->load([
+                        'personnel',
+                        'fournisseur',
+                        'budget',
+                        'typeDecision',
+                        'exercice',
+                        'engagement.nomenclaturePrincipale',
+                    ]),
+                ]))
+                ->modalSubmitActionLabel('Fermer')
+                ->modalCancelAction(false)
+                ->modalWidth('3xl'),
 
             // ── Transmettre ───────────────────────────────────
             Actions\Action::make('transmettre')
