@@ -15,7 +15,7 @@ use App\Models\DecisionAdministrative;
 use App\Models\ParametresStructure;
 use App\Http\Controllers\FicheControleEngagementsController;
 
-Route::get('/', [WelcomeController::class, 'index'])->name('welcome');
+Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
 Route::get('/compte-desactive', [CompteDesactiveController::class, 'index'])
     ->name('compte.desactive');
