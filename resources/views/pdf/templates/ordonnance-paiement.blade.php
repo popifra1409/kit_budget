@@ -309,17 +309,17 @@ $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
         .objet-titre {
             font-weight: bold;
             font-size: 7.5pt;
-            margin: 0;
+            margin-top: 10;
         }
 
         .objet-sub {
             font-size: 7pt;
             font-style: italic;
-            margin: 0;
+            margin-top: 2px;
         }
 
         .objet-text {
-            margin-top: 1px;
+            margin-top: 2px;
             font-size: 8.5pt;
             line-height: 1.05;
             word-break: break-word;
@@ -479,9 +479,9 @@ $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
 
                 <div>
                     <div style="border-bottom:2px solid #000; margin:0;"></div>
-                    <div style="margin-top:2px;">
+                    <div style="margin-top:10px;">
                         <div class="font-bold" style="font-size:7pt;">PIECES JOINTES:</div>
-                        <div style="margin-top:2px; font-size:5.5pt; line-height:1.3;">
+                        <div style="margin-top:2px; font-size:6.5pt; line-height:1.3;">
                             • Ordre de mission • Bulletin de solde • Lettre d'invitation<br>
                             • Photocopie du passport • Bon de commande administratif<br>
                             • Lettre commande • Convention ou Contrat • Facture Proforma<br>
@@ -700,9 +700,9 @@ $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
                 </div>
 
                 {{-- ✅ Hauteur réduite --}}
-                <table style="width:100%;">
+                <table style="width:100%;"> 
                     <tr>
-                        <td style="height:160px; width:40%; position:relative;">
+                        <td style="height:197px; width:40%; position:relative;">
                             <div style="position:absolute; top:50%; left:50%;
                             transform:translate(-50%,-50%) rotate(-30deg);
                             color:rgba(0,0,0,0.2); font-size:14px; white-space:nowrap;">
@@ -809,7 +809,7 @@ $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
                     </tr>
                 </table>
 
-                <div style="margin-bottom:6px; line-height:1.3;">
+                <div style="margin-bottom:35px; line-height:1.4;">
                     <div style="font-size:7.5pt;">
                         CNI N° _________________________ du _____________<br>
                         Délivrée par _______________________________<br>
@@ -837,7 +837,7 @@ $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
                 <div style="margin-top:6px;">
                     <div class="font-bold" style="font-size:7.5pt;">Yaoundé, le _____________</div>
                     <div class="font-tiny" style="font-style:italic;">Yaounde, the</div>
-                    <div style="margin-top:10px; text-align:right;">
+                    <div style="margin-top:10px; text-align:right; margin-bottom:70px;">
                         <div class="font-bold" style="font-size:7pt;">
                             (Signature et timbre de l'ordonnateur)
                         </div>
