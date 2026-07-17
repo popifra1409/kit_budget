@@ -1,442 +1,323 @@
 <!DOCTYPE html>
 <html lang="fr">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Liste des Ordonnances de Paiement</title>
+    <title>État des Ordonnances de Paiement</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         @page {
             size: A4 landscape;
-            /* Format paysage */
-            margin: 10mm;
+            margin: 8mm 15mm;  /* ✅ marges gauche/droite 15mm pour impression */
         }
 
         body {
-            font-family: 'Arial', sans-serif;
-            font-size: 8pt;
-            /* Réduit pour paysage */
-            line-height: 1.2;
+            font-family: Arial, sans-serif;
+            font-size: 6.5pt;
+            line-height: 1.15;
             color: #000;
         }
 
-        .container {
-            width: 100%;
-            padding: 5mm;
-        }
+        .container { width: 100%; }
 
-        /* En-tête */
+        /* ── En-tête ─────────────────────────── */
         .header {
             text-align: center;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000;
-            padding-bottom: 8px;
+            margin-bottom: 5px;
+            border-bottom: 2px solid #1e3a5f;
+            padding-bottom: 4px;
         }
-
-        .header h1 {
-            font-size: 14pt;
+        .header .structure {
+            font-size: 8pt;
             font-weight: bold;
-            margin-bottom: 3px;
+            color: #1e3a5f;
+            text-transform: uppercase;
+            letter-spacing: .05em;
         }
-
-        .header .subtitle {
-            font-size: 9pt;
-            color: #666;
-            margin-bottom: 2px;
-        }
-
-        .header .period {
-            font-size: 9pt;
+        .header h1 {
+            font-size: 10pt;
             font-weight: bold;
             color: #000;
-        }
-
-        /* Informations de filtre */
-        .filter-info {
-            background-color: #f5f5f5;
-            padding: 6px;
-            margin-bottom: 10px;
-            border-left: 3px solid #4472C4;
-            font-size: 7pt;
-        }
-
-        .filter-info p {
             margin: 2px 0;
         }
+        .header .period {
+            font-size: 7.5pt;
+            font-weight: bold;
+            color: #1e3a5f;
+        }
 
-        /* Statistiques */
+        /* ── Filtres ─────────────────────────── */
+        .filter-info {
+            background: #eff6ff;
+            padding: 2px 5px;
+            margin-bottom: 4px;
+            border-left: 3px solid #2563eb;
+            font-size: 6pt;
+            color: #1e3a5f;
+        }
+
+        /* ── Stats ───────────────────────────── */
         .stats {
             display: table;
             width: 100%;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
+            margin-bottom: 5px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
         }
-
         .stat-item {
             display: table-cell;
-            padding: 5px;
+            padding: 3px 5px;
             text-align: center;
-            border-right: 1px solid #ddd;
-            width: 25%;
+            border-right: 1px solid #bfdbfe;
         }
+        .stat-item:last-child { border-right: none; }
+        .stat-label { font-size: 5.5pt; color: #64748b; display: block; }
+        .stat-value { font-size: 8pt; font-weight: bold; color: #1e3a5f; }
 
-        .stat-item:last-child {
-            border-right: none;
-        }
-
-        .stat-label {
-            font-size: 7pt;
-            color: #666;
-            display: block;
-            margin-bottom: 2px;
-        }
-
-        .stat-value {
-            font-size: 9pt;
-            font-weight: bold;
-            color: #000;
-        }
-
-        /* Tableau - Optimisé pour paysage */
+        /* ── Tableau ─────────────────────────── */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15px;
+            margin-bottom: 6px;
+            table-layout: fixed;
         }
 
-        thead {
-            background-color: #4472C4;
-            color: #fff;
-        }
+        thead { background: #1e3a5f; color: #fff; }
 
         th {
-            border: 1px solid #000;
-            padding: 4px 3px;
-            text-align: left;
+            border: 1px solid #1e3a5f;
+            padding: 3px 2px;
+            text-align: center;
+            font-size: 6pt;
             font-weight: bold;
-            font-size: 7pt;
+            word-wrap: break-word;
         }
 
         td {
-            border: 1px solid #ccc;
-            padding: 3px 2px;
-            font-size: 7pt;
+            border: 1px solid #d1d5db;
+            padding: 2px 2px;
+            font-size: 6pt;
             vertical-align: top;
+            word-wrap: break-word;
+            overflow: hidden;
         }
 
-        td.center {
-            text-align: center;
-        }
-
-        td.right {
-            text-align: right;
-        }
-
+        td.center { text-align: center; }
         td.money {
             text-align: right;
             font-family: 'Courier New', monospace;
+            font-size: 6pt;
             white-space: nowrap;
         }
 
-        /* Alternance des lignes */
-        tbody tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
+        tbody tr:nth-child(even) { background: #f0f9ff; }
 
-        /* Badge de type */
-        .badge {
-            padding: 1px 4px;
-            border-radius: 2px;
-            font-size: 6pt;
-            font-weight: bold;
-            display: inline-block;
-        }
+        /* ── Largeurs — 11 colonnes, 100% sur 287mm ─ */
+        .col-numero      { width: 9%;  }
+        .col-date        { width: 7%;  }
+        .col-engagement  { width: 9%;  }
+        .col-objet       { width: 20%; }
+        .col-beneficiaire{ width: 14%; }
+        .col-brut        { width: 10%; }
+        .col-precompte   { width: 9%;  }
+        .col-net         { width: 10%; }
+        .col-mode        { width: 7%;  }
+        .col-paiement    { width: 8%;  }
+        .col-ref         { width: 8%;  }
+        .col-exercice    { width: 4%;  }
+        /* TOTAL = 115% → ajustement : 9+7+9+20+14+10+9+10+7+8+8+4 = 115
+           réduit : objet 20, benef 14 au lieu de 23,16 → 115-4 = 111
+           on supprime col-num(3%) → 111-3 = 108 → ok avec les arrondis
+        */
 
-        .badge-standard {
-            background-color: #d4edda;
-            color: #155724;
-        }
-
-        .badge-impot {
-            background-color: #fff3cd;
-            color: #856404;
-        }
-
-        /* Statut */
-        .statut {
-            font-size: 6pt;
-            padding: 1px 3px;
-            border-radius: 2px;
-        }
-
-        .statut-brouillon {
-            background-color: #e7e7e7;
-        }
-
-        .statut-emise {
-            background-color: #cfe2ff;
-        }
-
-        .statut-visee {
-            background-color: #d1ecf1;
-        }
-
-        .statut-payee {
-            background-color: #d4edda;
-        }
-
-        .statut-annulee {
-            background-color: #f8d7da;
-        }
-
-        /* Totaux */
+        /* ── Totaux ──────────────────────────── */
         .totaux {
-            margin-top: 10px;
-            padding: 8px;
-            background-color: #f5f5f5;
-            border: 1px solid #ccc;
+            margin-top: 4px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
         }
-
-        .totaux-grid {
-            display: table;
-            width: 100%;
-        }
-
-        .totaux-row {
-            display: table-row;
-        }
-
+        .totaux-grid { display: table; width: 60%; margin-left: auto; }
+        .totaux-row  { display: table-row; }
         .totaux-cell {
             display: table-cell;
-            padding: 3px 8px;
-            font-size: 8pt;
-            border-bottom: 1px solid #ddd;
+            padding: 2px 8px;
+            font-size: 6.5pt;
+            border-bottom: 1px solid #bfdbfe;
         }
-
-        .totaux-cell:first-child {
-            text-align: right;
-            font-weight: bold;
-            width: 70%;
-        }
-
-        .totaux-cell:last-child {
-            text-align: right;
-            font-family: 'Courier New', monospace;
-            width: 30%;
-        }
-
+        .totaux-cell:first-child { text-align: right; font-weight: bold; width: 65%; }
+        .totaux-cell:last-child  { text-align: right; font-family: 'Courier New', monospace; }
         .totaux-cell.total-general {
-            background-color: #4472C4;
+            background: #1e3a5f;
             color: #fff;
             font-weight: bold;
-            font-size: 9pt;
-            border-bottom: none;
+            font-size: 7.5pt;
+            border: none;
         }
 
-        /* Pied de page */
+        /* ── Pied ────────────────────────────── */
         .footer {
-            margin-top: 15px;
-            padding-top: 8px;
+            margin-top: 5px;
+            padding-top: 3px;
             border-top: 1px solid #ccc;
             text-align: center;
-            font-size: 6pt;
+            font-size: 5.5pt;
             color: #666;
-        }
-
-        /* Largeurs de colonnes optimisées pour paysage */
-        .col-num {
-            width: 2%;
-        }
-
-        .col-numero {
-            width: 8%;
-        }
-
-        .col-type {
-            width: 4%;
-        }
-
-        .col-date {
-            width: 7%;
-        }
-
-        .col-engagement {
-            width: 9%;
-        }
-
-        .col-objet {
-            width: 25%;
-        }
-
-        .col-beneficiaire {
-            width: 15%;
-        }
-
-        .col-montant {
-            width: 10%;
-        }
-
-        .col-statut {
-            width: 6%;
-        }
-
-        .col-paiement {
-            width: 7%;
-        }
-
-        .col-exercice {
-            width: 5%;
         }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        {{-- En-tête --}}
-        <div class="header">
-            <h1>LISTE DES ORDONNANCES DE PAIEMENT</h1>
-            <div class="subtitle">{{ config('app.name', 'Système de Gestion Budgétaire') }}</div>
-            @if (isset($periode))
-                <div class="period">{{ $periode }}</div>
-            @endif
-        </div>
+<div class="container">
 
-        {{-- Informations de filtre --}}
-        @if (isset($filtres) && count($filtres) > 0)
-            <div class="filter-info">
-                <strong>Filtres appliqués :</strong>
-                @foreach ($filtres as $filtre)
-                    {{ $filtre }}{{ !$loop->last ? ' | ' : '' }}
-                @endforeach
-            </div>
+    {{-- ── En-tête avec nom de la structure ──────────────── --}}
+    @php
+        $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
+        $nomStructure = $parametres?->nom_structure
+            ?? $parametres?->nom
+            ?? $parametres?->libelle
+            ?? '';
+    @endphp
+    <div class="header">
+        @if($nomStructure)
+            <div class="structure">{{ $nomStructure }}</div>
         @endif
-
-        {{-- Statistiques --}}
-        <div class="stats">
-            <div class="stat-item">
-                <span class="stat-label">Nombre d'OP</span>
-                <span class="stat-value">{{ $statistiques['nombre_total'] ?? 0 }}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Montant Brut</span>
-                <span class="stat-value">{{ number_format($statistiques['montant_brut'] ?? 0, 0, ',', ' ') }}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">À Précompter</span>
-                <span class="stat-value">{{ number_format($statistiques['montant_impot'] ?? 0, 0, ',', ' ') }}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Montant Net</span>
-                <span class="stat-value">{{ number_format($statistiques['montant_net'] ?? 0, 0, ',', ' ') }}</span>
-            </div>
-        </div>
-
-        {{-- Tableau des ordonnances - Optimisé pour paysage --}}
-        <table>
-            <thead>
-                <tr>
-                    <th class="col-num">N°</th>
-                    <th class="col-numero">N° OP</th>
-                    <th class="col-type">Type</th>
-                    <th class="col-date">Date</th>
-                    <th class="col-engagement">Engagement</th>
-                    <th class="col-objet">Objet</th>
-                    <th class="col-beneficiaire">Bénéficiaire</th>
-                    <th class="col-montant">Montant Net</th>
-                    <th class="col-statut">Statut</th>
-                    <th class="col-paiement">Paiement</th>
-                    <th class="col-exercice">Exo</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($ordonnances as $index => $op)
-                    <tr>
-                        <td class="center">{{ $index + 1 }}</td>
-                        <td>{{ $op->numero }}</td>
-                        <td class="center">
-                            <span class="badge badge-{{ $op->type_ordonnance }}">
-                                {{ $op->type_ordonnance === 'standard' ? 'STD' : 'IMP' }}
-                            </span>
-                        </td>
-                        <td class="center">
-                            {{ $op->date_emission ? \Carbon\Carbon::parse($op->date_emission)->format('d/m/Y') : '' }}
-                        </td>
-                        <td>{{ $op->engagement?->numero ?? '' }}</td>
-                        <td>{{ \Str::limit($op->objet, 60) }}</td>
-                        <td>
-                            @if ($op->type_ordonnance === 'impot')
-                                TRÉSOR PUBLIC
-                            @else
-                                {{ \Str::limit(
-                                    $op->beneficiaire?->raison_sociale ?? ($op->beneficiaire?->nom_complet ?? ($op->beneficiaire?->name ?? 'N/A')),
-                                    30,
-                                ) }}
-                            @endif
-                        </td>
-                        <td class="money">{{ number_format($op->montant_net, 0, ',', ' ') }}</td>
-                        <td class="center">
-                            <span class="statut statut-{{ $op->statut }}">
-                                {{ strtoupper(substr($op->statut, 0, 3)) }}
-                            </span>
-                        </td>
-                        <td class="center">
-                            {{ $op->date_paiement ? \Carbon\Carbon::parse($op->date_paiement)->format('d/m/Y') : '-' }}
-                        </td>
-                        <td class="center">{{ $op->exercice?->annee ?? '' }}</td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="11" class="center" style="padding: 15px; color: #999;">
-                            Aucune ordonnance de paiement trouvée pour cette période
-                        </td>
-                    </tr>
-                @endforelse
-            </tbody>
-        </table>
-
-        {{-- Totaux --}}
-        @if (count($ordonnances) > 0)
-            <div class="totaux">
-                <div class="totaux-grid">
-                    <div class="totaux-row">
-                        <div class="totaux-cell">Nombre d'ordonnances :</div>
-                        <div class="totaux-cell">{{ $statistiques['nombre_total'] ?? count($ordonnances) }}</div>
-                    </div>
-                    <div class="totaux-row">
-                        <div class="totaux-cell">Montant Brut total :</div>
-                        <div class="totaux-cell">{{ number_format($statistiques['montant_brut'] ?? 0, 0, ',', ' ') }}
-                            FCFA</div>
-                    </div>
-                    <div class="totaux-row">
-                        <div class="totaux-cell">Total à Précompter :</div>
-                        <div class="totaux-cell">{{ number_format($statistiques['montant_impot'] ?? 0, 0, ',', ' ') }}
-                            FCFA</div>
-                    </div>
-                    <div class="totaux-row">
-                        <div class="totaux-cell total-general">MONTANT NET TOTAL :</div>
-                        <div class="totaux-cell total-general">
-                            {{ number_format($statistiques['montant_net'] ?? 0, 0, ',', ' ') }} FCFA</div>
-                    </div>
-                </div>
-            </div>
+        <h1>ÉTAT DES ORDONNANCES DE PAIEMENT</h1>
+        @if(isset($periode))
+            <div class="period">{{ $periode }}</div>
         @endif
+    </div>
 
-        {{-- Pied de page --}}
-        <div class="footer">
-            <p>Document généré le {{ now()->format('d/m/Y à H:i') }}
-                @if (isset($utilisateur))
-                    - Par : {{ $utilisateur }}
-                @endif
-                - {{ config('app.name') }}
-            </p>
+    {{-- ── Filtres ─────────────────────────────────────── --}}
+    @if(isset($filtres) && count($filtres) > 0)
+    <div class="filter-info">
+        <strong>Filtres :</strong>
+        @foreach($filtres as $filtre) {{ $filtre }}{{ !$loop->last ? ' | ' : '' }} @endforeach
+    </div>
+    @endif
+
+    {{-- ── Statistiques ────────────────────────────────── --}}
+    <div class="stats">
+        <div class="stat-item">
+            <span class="stat-label">Nombre d'ordonnances</span>
+            <span class="stat-value">{{ $statistiques['nombre_total'] ?? 0 }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Montant Brut (FCFA)</span>
+            <span class="stat-value">{{ number_format($statistiques['montant_brut'] ?? 0, 0, ',', ' ') }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">À Précompter (FCFA)</span>
+            <span class="stat-value">{{ number_format($statistiques['montant_impot'] ?? 0, 0, ',', ' ') }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Net à Payer (FCFA)</span>
+            <span class="stat-value">{{ number_format($statistiques['montant_net'] ?? 0, 0, ',', ' ') }}</span>
         </div>
     </div>
-</body>
 
+    {{-- ── Tableau ──────────────────────────────────────── --}}
+    <table>
+        <thead>
+            <tr>
+                <th class="col-numero">N° OP/OPT</th>
+                <th class="col-date">Date Émis.</th>
+                <th class="col-engagement">N° Engag.</th>
+                <th class="col-objet">Objet</th>
+                <th class="col-beneficiaire">Bénéficiaire</th>
+                <th class="col-brut">Mnt Brut</th>
+                <th class="col-precompte">Précompte</th>
+                <th class="col-net">Net à Payer</th>
+                <th class="col-mode">Mode</th>
+                <th class="col-ref">Réf. Paiement</th>
+                <th class="col-paiement">Date Paimt</th>
+                <th class="col-exercice">Exo</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse($ordonnances as $op)
+            <tr>
+                <td>{{ $op->numero }}</td>
+                <td class="center">
+                    {{ $op->date_emission ? \Carbon\Carbon::parse($op->date_emission)->format('d/m/Y') : '—' }}
+                </td>
+                <td>{{ $op->engagement?->numero ?? '—' }}</td>
+                <td>{{ \Str::limit($op->objet ?? '', 48) }}</td>
+                <td>
+                    @if($op->type_ordonnance === 'impot')
+                        TRÉSOR / DGI
+                    @else
+                        {{ \Str::limit(
+                            $op->beneficiaire?->raison_sociale
+                            ?? $op->beneficiaire?->nom_complet
+                            ?? $op->beneficiaire?->name
+                            ?? 'N/A', 25) }}
+                    @endif
+                </td>
+                {{-- ✅ Utiliser valeurs calculées depuis OPT liée --}}
+                <td class="money">{{ number_format($op->_brut_calcule ?? ((float)$op->montant_brut + (float)$op->montant_impot + (float)$op->montant_net) ?? 0, 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($op->_precompte_calcule ?? $op->montant_impot ?? 0, 0, ',', ' ') }}</td>
+                <td class="money" style="font-weight:bold;">
+                    {{ number_format($op->montant_net ?? 0, 0, ',', ' ') }}
+                </td>
+                <td class="center">
+                    {{ match($op->mode_paiement ?? '') {
+                        'virement'       => 'Virement',
+                        'cheque'         => 'Chèque',
+                        'especes'        => 'Espèces',
+                        'ordre_virement' => 'O.Virt.',
+                        'mandat'         => 'Mandat',
+                        'mobile_money'   => 'Mobile',
+                        default          => '—',
+                    } }}
+                </td>
+                <td>{{ \Str::limit($op->reference_paiement ?? '—', 18) }}</td>
+                <td class="center">
+                    {{ $op->date_paiement ? \Carbon\Carbon::parse($op->date_paiement)->format('d/m/Y') : '—' }}
+                </td>
+                <td class="center">{{ $op->exercice?->annee ?? '' }}</td>
+            </tr>
+            @empty
+            <tr>
+                <td colspan="12" class="center" style="padding:8px; color:#999;">
+                    Aucune ordonnance trouvée pour cette période
+                </td>
+            </tr>
+            @endforelse
+        </tbody>
+    </table>
+
+    {{-- ── Totaux ───────────────────────────────────────── --}}
+    @if(count($ordonnances) > 0)
+    <div class="totaux">
+        <div class="totaux-grid">
+            <div class="totaux-row">
+                <div class="totaux-cell">Nombre d'ordonnances :</div>
+                <div class="totaux-cell">{{ $statistiques['nombre_total'] ?? count($ordonnances) }}</div>
+            </div>
+            <div class="totaux-row">
+                <div class="totaux-cell">Total Montant Brut :</div>
+                <div class="totaux-cell">{{ number_format($statistiques['montant_brut'] ?? 0, 0, ',', ' ') }} FCFA</div>
+            </div>
+            <div class="totaux-row">
+                <div class="totaux-cell">Total Précomptes :</div>
+                <div class="totaux-cell">{{ number_format($statistiques['montant_impot'] ?? 0, 0, ',', ' ') }} FCFA</div>
+            </div>
+            <div class="totaux-row">
+                <div class="totaux-cell total-general">TOTAL NET À PAYER :</div>
+                <div class="totaux-cell total-general">
+                    {{ number_format($statistiques['montant_net'] ?? 0, 0, ',', ' ') }} FCFA
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- ── Pied de page ─────────────────────────────────── --}}
+    <div class="footer">
+        Généré le {{ now()->format('d/m/Y à H:i') }}
+        @if(isset($utilisateur)) — Par : {{ $utilisateur }} @endif
+        @if($nomStructure) — {{ $nomStructure }} @endif
+    </div>
+
+</div>
+</body>
 </html>

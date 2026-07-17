@@ -817,35 +817,67 @@ class OrdonnancePaiementResource extends Resource
                     ->button()->color('info'),
 
                 Tables\Actions\ActionGroup::make([
+                    // ── OP Standard ─────────────────────────────────
                     Tables\Actions\Action::make('export_excel_standard')
-                        ->label('Export Excel OP Standard')
+                        ->label('Excel — OP Standard')
                         ->icon('heroicon-o-table-cells')->color('success')
                         ->form(static::formulaireExportMensuel())
-                        ->action(fn(array $data) => Excel::download(
-                            new OrdonnancesPaiementExport('standard', null, null, $data['mois'], $data['annee']),
-                            'OP_Standard_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
-                        )),
-
-                    Tables\Actions\Action::make('export_excel_impot')
-                        ->label('Export Excel OP Impôt')
-                        ->icon('heroicon-o-table-cells')->color('warning')
-                        ->form(static::formulaireExportMensuel())
-                        ->action(fn(array $data) => Excel::download(
-                            new OrdonnancesPaiementExport('impot', null, null, $data['mois'], $data['annee']),
-                            'OP_Impot_' . $data['mois'] . '_' . $data['annee'] . '.xlsx'
-                        )),
+                        ->action(function (array $data) {
+                            $statut   = $data['statut'] ?: null;
+                            $suffixe  = $statut ? '_' . strtoupper($statut) : '';
+                            $filename = 'OP_Standard_' . $data['mois'] . '_' . $data['annee'] . $suffixe . '.xlsx';
+                            return Excel::download(
+                                new OrdonnancesPaiementExport(
+                                    typeOrdonnance: 'standard',
+                                    mois: $data['mois'],
+                                    annee: $data['annee'],
+                                    statut: $statut,
+                                ),
+                                $filename
+                            );
+                        }),
 
                     Tables\Actions\Action::make('export_pdf_standard')
-                        ->label('Export PDF OP Standard')
+                        ->label('PDF — OP Standard')
                         ->icon('heroicon-o-document-text')->color('danger')
                         ->form(static::formulaireExportMensuel())
-                        ->action(fn(array $data) => static::exportPdf('standard', $data['mois'], $data['annee'])),
+                        ->action(fn(array $data) => static::exportPdf(
+                            'standard',
+                            $data['mois'],
+                            $data['annee'],
+                            $data['statut'] ?: null
+                        )),
+
+                    // ── OPT (Impôts) ──────────────────────────────────
+                    Tables\Actions\Action::make('export_excel_impot')
+                        ->label('Excel — OPT (Impôts)')
+                        ->icon('heroicon-o-table-cells')->color('warning')
+                        ->form(static::formulaireExportMensuel())
+                        ->action(function (array $data) {
+                            $statut   = $data['statut'] ?: null;
+                            $suffixe  = $statut ? '_' . strtoupper($statut) : '';
+                            $filename = 'OPT_Impot_' . $data['mois'] . '_' . $data['annee'] . $suffixe . '.xlsx';
+                            return Excel::download(
+                                new OrdonnancesPaiementExport(
+                                    typeOrdonnance: 'impot',
+                                    mois: $data['mois'],
+                                    annee: $data['annee'],
+                                    statut: $statut,
+                                ),
+                                $filename
+                            );
+                        }),
 
                     Tables\Actions\Action::make('export_pdf_impot')
-                        ->label('Export PDF OP Impôt')
+                        ->label('PDF — OPT (Impôts)')
                         ->icon('heroicon-o-document-text')->color('gray')
                         ->form(static::formulaireExportMensuel())
-                        ->action(fn(array $data) => static::exportPdf('impot', $data['mois'], $data['annee'])),
+                        ->action(fn(array $data) => static::exportPdf(
+                            'impot',
+                            $data['mois'],
+                            $data['annee'],
+                            $data['statut'] ?: null
+                        )),
                 ])
                     ->label('📥 Exports')
                     ->icon('heroicon-o-arrow-down-tray')
@@ -883,10 +915,32 @@ class OrdonnancePaiementResource extends Resource
         for ($i = date('Y'); $i >= date('Y') - 5; $i--) $anneeOptions[$i] = $i;
 
         return [
-            Forms\Components\Select::make('mois')->label('Mois')
-                ->options($moisOptions)->required()->default(date('m')),
-            Forms\Components\Select::make('annee')->label('Année')
-                ->options($anneeOptions)->required()->default(date('Y')),
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Select::make('mois')
+                    ->label('Mois')
+                    ->options($moisOptions)
+                    ->required()
+                    ->default(date('m')),
+
+                Forms\Components\Select::make('annee')
+                    ->label('Année')
+                    ->options($anneeOptions)
+                    ->required()
+                    ->default(date('Y')),
+            ]),
+
+            // ✅ Filtre par statut de paiement
+            Forms\Components\Select::make('statut')
+                ->label('Statut des ordonnances')
+                ->options([
+                    ''       => 'Tous les statuts',
+                    'payee'  => '✅ Payées uniquement',
+                    'emise'  => '⏳ Émises (non payées)',
+                    'visee'  => '👁️ Visées',
+                ])
+                ->default('')
+                ->native(false)
+                ->helperText('Filtrer par état de paiement pour obtenir le total correspondant'),
         ];
     }
 
@@ -969,15 +1023,31 @@ class OrdonnancePaiementResource extends Resource
     // EXPORTS PDF
     // ════════════════════════════════════════════════════════
 
-    protected static function exportPdf(string $type, string $mois, string $annee)
+    protected static function exportPdf(string $type, string $mois, string $annee, ?string $statut = null)
     {
         $ordonnances = OrdonnancePaiement::with(['engagement', 'beneficiaire', 'exercice'])
             ->where('type_ordonnance', $type)
             ->whereMonth('date_emission', $mois)
             ->whereYear('date_emission', $annee)
+            ->when($statut, fn($q) => $q->where('statut', $statut))
             ->orderBy('date_emission', 'desc')
             ->orderBy('numero', 'asc')
             ->get();
+
+        // ✅ Calculer montant_brut et montant_impot depuis l'OPT liée
+        //    car ces colonnes sont 0 en DB pour les OP standard
+        $engagementIds = $ordonnances->pluck('engagement_id')->filter()->unique();
+        $opts = OrdonnancePaiement::where('type_ordonnance', 'impot')
+            ->whereIn('engagement_id', $engagementIds)
+            ->get()
+            ->keyBy('engagement_id');
+
+        $ordonnances->each(function ($op) use ($opts) {
+            $opt = $opts->get($op->engagement_id);
+            $precompte = $opt ? (float) $opt->montant_net : (float) $op->montant_impot;
+            $op->_precompte_calcule = $precompte;
+            $op->_brut_calcule      = (float) $op->montant_net + $precompte;
+        });
 
         $moisNom = [
             '01' => 'Janvier',
@@ -998,19 +1068,30 @@ class OrdonnancePaiementResource extends Resource
             'ordonnances'  => $ordonnances,
             'statistiques' => [
                 'nombre_total'  => $ordonnances->count(),
-                'montant_brut'  => $ordonnances->sum('montant_brut'),
-                'montant_impot' => $ordonnances->sum('montant_impot'),
+                // ✅ Utiliser les valeurs calculées depuis OPT
+                'montant_brut'  => $ordonnances->sum('_brut_calcule'),
+                'montant_impot' => $ordonnances->sum('_precompte_calcule'),
                 'montant_net'   => $ordonnances->sum('montant_net'),
             ],
             'periode'     => $moisNom . ' ' . $annee,
-            'filtres'     => ['Type : ' . ($type === 'standard' ? 'OP Standard' : 'OP Impôt'), 'Période : ' . $moisNom . ' ' . $annee],
+            'filtres'     => [
+                'Type : ' . ($type === 'standard' ? 'OP Standard' : 'OPT (Impôts)'),
+                'Période : ' . $moisNom . ' ' . $annee,
+                $statut ? 'Statut : ' . match ($statut) {
+                    'payee'  => 'Payées uniquement',
+                    'emise'  => 'Émises (non payées)',
+                    'visee'  => 'Visées',
+                    default  => ucfirst($statut),
+                } : 'Tous les statuts',
+            ],
             'utilisateur' => auth()->user()->name,
         ])
             ->setPaper('a4', 'landscape')
             ->setOption('margin-top', 10)->setOption('margin-right', 10)
             ->setOption('margin-bottom', 10)->setOption('margin-left', 10);
 
-        $filename = 'Liste_OP_' . ($type === 'standard' ? 'Standard' : 'Impot') . '_' . $mois . '_' . $annee . '.pdf';
+        $suffixeStatut = $statut ? '_' . strtoupper($statut) : '';
+        $filename = 'Liste_OP_' . ($type === 'standard' ? 'Standard' : 'Impot') . '_' . $mois . '_' . $annee . $suffixeStatut . '.pdf';
         return response()->streamDownload(fn() => print($pdf->output()), $filename);
     }
 
