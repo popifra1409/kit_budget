@@ -376,7 +376,7 @@ class OrdonnancePaiementResource extends Resource
                         )
                         ->modalHeading(fn($record) => 'Marquer payée — ' . $record->numero)
                         ->modalDescription('⚠️ Action irréversible — Une OP payée ne peut plus être 
-    modifiée ni supprimée. L\'OPT (retenue IR) liée sera automatiquement payée.')
+    modifiée ni supprimée. L\'OPT (retenue IR) fera l\'objet d\'un paiement séparé.')
                         ->modalWidth('md')
                         ->modalSubmitActionLabel('✅ Confirmer le paiement')
                         ->modalCancelActionLabel('Annuler')
@@ -411,19 +411,6 @@ class OrdonnancePaiementResource extends Resource
                                 ->placeholder('Informations complémentaires sur le paiement...')
                                 ->nullable(),
 
-                            // ✅ Mode de paiement OPT (reversement IR) — séparé de l'OP
-                            Forms\Components\Select::make('mode_paiement_opt')
-                                ->label('Mode reversement IR (OPT)')
-                                ->options(\App\Models\ModePaiement::optionsPourOPT())
-                                ->default('virement')
-                                ->native(false)
-                                ->helperText('Mode utilisé pour reverser la retenue IR à la DGI/Trésor')
-                                ->visible(
-                                    fn($record) =>
-                                    \App\Models\OrdonnancePaiement::where('engagement_id', $record?->engagement_id)
-                                        ->where('type_ordonnance', 'impot')
-                                        ->exists()
-                                ),
                         ])
                         ->action(function ($record, array $data) {
                             try {
@@ -441,20 +428,9 @@ class OrdonnancePaiementResource extends Resource
                                         ]);
                                     }
 
-                                    // ✅ Payer l'OPT liée SÉPARÉMENT
-                                    //    L'OPT peut avoir son propre mode/référence de reversement
-                                    $opt = \App\Models\OrdonnancePaiement::where('engagement_id', $record->engagement_id)
-                                        ->where('type_ordonnance', 'impot')
-                                        ->first();
-
-                                    if ($opt && $opt->statut !== 'payee') {
-                                        // OPT : référence IR distincte, mode par défaut = virement (reversement DGI)
-                                        $opt->marquerPayee(
-                                            $data['reference_paiement'] . '-IR',
-                                            $data['mode_paiement_opt'] ?? 'virement',
-                                            $data['date_paiement']
-                                        );
-                                    }
+                                    // ✅ OPT NON payée automatiquement
+                                    //    Elle doit faire l'objet d'un paiement SÉPARÉ
+                                    //    via le bouton "Reverser IR" sur la ligne OPT
                                 });
 
                                 Notification::make()
@@ -462,8 +438,8 @@ class OrdonnancePaiementResource extends Resource
                                     ->success()
                                     ->body('OP ' . $record->numero . ' payée ('
                                         . $data['mode_paiement'] . ' — '
-                                        . $data['reference_paiement'] . ').'
-                                        . ($opt ?? false ? ' OPT liée mise à jour.' : ''))
+                                        . $data['reference_paiement'] . '). '
+                                        . 'L\'OPT liée doit être reversée séparément.')
                                     ->send();
                             } catch (\Exception $e) {
                                 Notification::make()
