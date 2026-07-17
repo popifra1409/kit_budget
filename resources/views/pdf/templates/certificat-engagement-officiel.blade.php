@@ -172,6 +172,7 @@ if ($engagement->engageable) {
                     + ((float) ($donneesSrc['montant_tsr'] ?? 0));
     } elseif ($engagement->estDecision()) {
         $totalTaxes = ((float) ($donneesSrc['montant_cnps']      ?? 0))
+                    + ((float) ($donneesSrc['montant_ir']      ?? 0))
                     + ((float) ($donneesSrc['montant_irnc']      ?? 0))
                     + ((float) ($donneesSrc['montant_tva']       ?? 0))
                     + ((float) ($donneesSrc['montant_redevance'] ?? 0))
