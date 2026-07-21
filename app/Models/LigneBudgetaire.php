@@ -28,6 +28,9 @@ class LigneBudgetaire extends Model
         'disponible_engagement',
         'disponible_ordonnancement',
         'observations',
+        'montant_initial',
+        'est_issue_collectif',
+        'collectif_creation_id',
     ];
 
     protected $casts = [
@@ -69,6 +72,18 @@ class LigneBudgetaire extends Model
      * Engagements via la table lignes_engagement (source de vérité)
      * Filtre les annulés et soft-deleted
      */
+
+    public function collectifCreation(): BelongsTo
+    {
+        return $this->belongsTo(CollectifBudgetaire::class, 'collectif_creation_id');
+    }
+
+    // Accesseur pour l'écart
+    public function getEcartAttribute(): float
+    {
+        return $this->budget_rectifie - $this->montant_initial;
+    }
+
     public function engagements()
     {
         $engagementIds = \DB::table('lignes_engagement')

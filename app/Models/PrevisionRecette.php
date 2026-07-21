@@ -66,6 +66,16 @@ class PrevisionRecette extends Model
         );
     }
 
+    public function collectifs(): HasMany
+    {
+        return $this->hasMany(CollectifBudgetaire::class, 'exercice_id', 'exercice_id');
+    }
+
+    public function collectifsAppliques()
+    {
+        return $this->belongsToMany(CollectifBudgetaire::class, 'prevision_recette_collectif');
+    }
+
     // ====================================
     // CALCULS - PRÉVISIONS
     // ====================================

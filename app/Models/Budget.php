@@ -159,4 +159,40 @@ class Budget extends Model
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn(string $eventName) => "Bordereau {$eventName}");
     }
+
+    // Relations avec le collectif budgetaire
+    public function collectifs(): HasMany
+    {
+        return $this->hasMany(CollectifBudgetaire::class, 'exercice_id', 'exercice_id');
+    }
+
+    public function collectifsAppliques()
+    {
+        return $this->belongsToMany(CollectifBudgetaire::class, 'budget_collectif');
+    }
+
+    public function recalculerTotaux(): void
+    {
+        $total = $this->lignesBudgetaires()->sum('budget_rectifie');
+        $this->total_rectifie = $total;
+        $this->save();
+    }
+
+    public function hasCollectifsAppliques(): bool
+    {
+        return CollectifBudgetaire::where('exercice_id', $this->exercice_id)
+            ->where('statut', 'adopte')
+            ->exists();
+    }
+
+    // Modifier estModifiable pour tenir compte des collectifs
+    public function estModifiable(): bool
+    {
+        // Si le budget est adopté et qu'au moins un collectif a été appliqué, on ne peut plus modifier directement
+        if ($this->statut === 'adopte' && $this->hasCollectifsAppliques()) {
+            return false;
+        }
+        // Sinon, on garde la logique existante (par exemple statut != 'cloture')
+        return $this->statut !== 'cloture';
+    }
 }

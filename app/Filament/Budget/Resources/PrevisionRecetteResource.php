@@ -17,6 +17,7 @@ use App\Models\Exercice;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Filament\Budget\Resources\RelationManagers\CollectifsAppliquesRelationManager;
 
 class PrevisionRecetteResource extends Resource
 {
@@ -192,6 +193,14 @@ class PrevisionRecetteResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('actif')->label('Actif')->boolean(),
+
+                Tables\Columns\TextColumn::make('collectifs_count')
+                    ->label('Collectifs')
+                    ->counts('collectifs')
+                    ->badge()
+                    ->color('primary')
+                    ->url(fn($record) => CollectifBudgetaireResource::getUrl('index', ['filters' => ['exercice_id' => $record->exercice_id]]))
+                    ->openUrlInNewTab(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('exercice_id')
@@ -221,18 +230,6 @@ class PrevisionRecetteResource extends Resource
                     Tables\Actions\ViewAction::make(),
                     Tables\Actions\EditAction::make(),
 
-                    // ── Export Excel ──────────────────────────────
-                    // ✅ FIX — ->url() + ->openUrlInNewTab() au lieu de ->action()
-                    //
-                    // CAUSE ERREUR 500 :
-                    //   return Excel::download() dans un ->action() Filament
-                    //   → Livewire intercepte la réponse via AJAX
-                    //   → Le fichier ne peut pas être streamé → erreur 500
-                    //
-                    // SOLUTION :
-                    //   ->url() génère un lien vers une route dédiée
-                    //   → le navigateur fait une requête HTTP normale (hors Livewire)
-                    //   → le fichier est téléchargé directement
                     Tables\Actions\Action::make('exportExcel')
                         ->label('Export Excel')
                         ->icon('heroicon-o-table-cells')
@@ -293,6 +290,7 @@ class PrevisionRecetteResource extends Resource
     {
         return [
             RelationManagers\LignesPrevisionsRelationManager::class,
+            CollectifsAppliquesRelationManager::class,
         ];
     }
 

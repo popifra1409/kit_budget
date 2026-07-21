@@ -19,6 +19,8 @@ use Maatwebsite\Excel\Facades\Excel;
 use PDF;
 use Filament\Notifications\Notification;
 
+use App\Filament\Budget\Resources\RelationManagers\CollectifsAppliquesRelationManager;
+
 class BudgetResource extends Resource
 {
     protected static ?string $model = Budget::class;
@@ -226,6 +228,15 @@ class BudgetResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('actif')->label('Actif')->boolean(),
+
+                Tables\Columns\TextColumn::make('collectifs_count')
+                    ->label('Collectifs')
+                    ->counts('collectifs')
+                    ->badge()
+                    ->color('primary')
+                    ->url(fn($record) => CollectifBudgetaireResource::getUrl('index', ['filters' => ['exercice_id' => $record->exercice_id]]))
+                    ->openUrlInNewTab(),
+
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('exercice_id')
@@ -346,6 +357,7 @@ class BudgetResource extends Resource
     {
         return [
             RelationManagers\LignesBudgetairesRelationManager::class,
+            CollectifsAppliquesRelationManager::class,
         ];
     }
 
