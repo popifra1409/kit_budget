@@ -136,6 +136,7 @@ class FicheControleEngagementsResource extends Resource
      */
     public static function getBudgetRectifieReel(LigneBudgetaire $record): float
     {
+        // ✅ budget_initial + Σ mouvements collectifs adoptés
         $base = (float) $record->budget_initial;
 
         // Ajouter les mouvements de collectifs adoptés

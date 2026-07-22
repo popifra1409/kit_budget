@@ -75,6 +75,21 @@ class MouvementCollectif extends Model
      */
     public function appliquer(): void
     {
+        // ✅ Garde — vérifier que le disponible ne sera pas négatif
+        if ($this->type === 'depense' && $this->ligne_depense_id) {
+            $ligne       = $this->ligneDepense;
+            $nouveauRectifie = \App\Filament\Budget\Resources\FicheControleEngagementsResource::getBudgetRectifieReel($ligne);
+            $disponible  = $nouveauRectifie - (float) $ligne->engage;
+            if ($disponible < 0 && $this->montant_modification > 0) {
+                // Réduction dangereuse — bloquer
+                throw new \Exception(
+                    "Ce mouvement rendrait le disponible négatif sur la ligne "
+                        . ($ligne->nomenclature?->code ?? $ligne->id)
+                        . " (disponible prévu : " . number_format($disponible, 0, ',', ' ') . " FCFA)"
+                );
+            }
+        }
+
         if ($this->type === 'virement') {
             // ✅ Déléguer à VirementBudgetaire::executer()
             if ($this->virement_budgetaire_id && $this->virementBudgetaire) {
@@ -106,9 +121,8 @@ class MouvementCollectif extends Model
                 } elseif ($this->ligne_depense_id) {
                     $ligne = $this->ligneDepense;
                     if ($ligne) {
-                        // Appliquer la modification
-                        $ligne->budget_rectifie += $this->montant_modification;
-                        $ligne->save();
+                        // ✅ Recalcul complet — budget_rectifie = initial + Σ collectifs adoptés
+                        \App\Filament\Budget\Resources\FicheControleEngagementsResource::recalculerLigne($ligne);
                     }
                 }
             } else { // recette
@@ -135,6 +149,25 @@ class MouvementCollectif extends Model
      */
     public function annuler(): void
     {
+        // ✅ Garde — vérifier que l'annulation ne rend pas le disponible négatif
+        if ($this->type === 'depense' && $this->ligne_depense_id && $this->montant_modification > 0) {
+            $ligne = $this->ligneDepense;
+            if ($ligne) {
+                // Après annulation, budget_rectifie sera réduit du montant du mouvement
+                $futureRectifie = (float) $ligne->budget_rectifie - (float) $this->montant_modification;
+                $futureDisponible = $futureRectifie - (float) $ligne->engage;
+                if ($futureDisponible < 0) {
+                    throw new \Exception(
+                        "Impossible d'annuler : le disponible de la ligne "
+                            . ($ligne->nomenclature?->code ?? $ligne->id)
+                            . " deviendrait négatif ("
+                            . number_format($futureDisponible, 0, ',', ' ')
+                            . " FCFA). Annulez ou réduisez les engagements d'abord."
+                    );
+                }
+            }
+        }
+
         // ✅ Virement : rejeter le VirementBudgetaire lié
         if ($this->type === 'virement') {
             if ($this->virement_budgetaire_id && $this->virementBudgetaire) {
@@ -165,8 +198,8 @@ class MouvementCollectif extends Model
             } elseif ($this->ligne_depense_id) {
                 $ligne = $this->ligneDepense;
                 if ($ligne) {
-                    $ligne->budget_rectifie -= $this->montant_modification;
-                    $ligne->save();
+                    // ✅ Recalcul complet — collectif annulé sera exclu du SUM
+                    \App\Filament\Budget\Resources\FicheControleEngagementsResource::recalculerLigne($ligne);
                 }
             }
         } else {
