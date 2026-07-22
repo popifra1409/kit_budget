@@ -81,7 +81,7 @@ class CollectifBudgetaire extends Model
     /**
      * Appliquer le collectif : met à jour les lignes de dépenses/recettes.
      */
-    public function appliquer(): void
+    public function appliquer(?User $user = null): void
     {
         if ($this->statut !== 'adopte') {
             throw new \Exception('Seul un collectif adopté peut être appliqué.');
@@ -89,19 +89,26 @@ class CollectifBudgetaire extends Model
 
         // Appliquer les mouvements sur les lignes
         foreach ($this->mouvements as $mouvement) {
-            $mouvement->appliquer();
+            $mouvement->appliquer($user);
         }
 
-        // Attacher les budgets impactés
+        // Attacher les budgets impactés (dépenses ET virements)
         $budgetIds = $this->mouvements
-            ->filter(fn($m) => $m->type === 'depense')
-            ->map(function ($m) {
-                if ($m->ligne_depense_id) {
-                    return $m->ligneDepense->budget_id;
-                } elseif ($m->nouvelle_ligne_depense_id) {
-                    return $m->nouvelleLigneDepense->budget_id;
+            ->flatMap(function ($m) {
+                if ($m->type === 'depense') {
+                    if ($m->ligne_depense_id) {
+                        return [$m->ligneDepense?->budget_id];
+                    } elseif ($m->nouvelle_ligne_depense_id) {
+                        return [$m->nouvelleLigneDepense?->budget_id];
+                    }
+                } elseif ($m->type === 'virement' && $m->virement_budgetaire_id) {
+                    $virement = $m->virementBudgetaire;
+                    return [
+                        $virement?->ligneSource?->budget_id,
+                        $virement?->ligneDestination?->budget_id,
+                    ];
                 }
-                return null;
+                return [];
             })
             ->filter()
             ->unique()

@@ -292,8 +292,19 @@ class MouvementsRelationManager extends RelationManager
                                 . ' — ' . $record->nouvelleLigneRecette->nomenclature->libelle
                                 : ($record->ligneRecette?->nomenclature?->code
                                     . ' — ' . ($record->ligneRecette?->nomenclature?->libelle ?? '—')),
-                            'virement' => '↓ ' . ($record->ligneSource?->nomenclature?->code ?? '?')
-                                . ' → ' . ($record->ligneDestination?->nomenclature?->code ?? '?'),
+                            'virement' => (function () use ($record) {
+                                $source = $record->ligneSource?->nomenclature?->code;
+                                $dest   = $record->ligneDestination?->nomenclature?->code;
+                                if ((!$source || !$dest) && $record->virement_budgetaire_id) {
+                                    $v = \App\Models\VirementBudgetaire::with([
+                                        'ligneSource.nomenclature',
+                                        'ligneDestination.nomenclature'
+                                    ])->find($record->virement_budgetaire_id);
+                                    $source = $source ?? ($v?->ligneSource?->nomenclature?->code ?? '?');
+                                    $dest   = $dest   ?? ($v?->ligneDestination?->nomenclature?->code ?? '?');
+                                }
+                                return '↓ ' . ($source ?? '?') . ' → ' . ($dest ?? '?');
+                            })(),
                             default => '—',
                         };
                     })
@@ -430,7 +441,80 @@ class MouvementsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                // ✅ Action Voir détail mouvement
+                Tables\Actions\Action::make('voir')
+                    ->label('Détail')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray')
+                    ->modalHeading(fn($record) => 'Détail du mouvement — ' . ucfirst($record->type))
+                    ->modalContent(function ($record) {
+                        $ligneSource      = null;
+                        $ligneDestination = null;
+                        $virement         = null;
+
+                        if ($record->type === 'virement' && $record->virement_budgetaire_id) {
+                            $virement = \App\Models\VirementBudgetaire::with([
+                                'ligneSource.nomenclature',
+                                'ligneDestination.nomenclature',
+                            ])->find($record->virement_budgetaire_id);
+                            $ligneSource      = $virement?->ligneSource;
+                            $ligneDestination = $virement?->ligneDestination;
+                        }
+
+                        $ligneDepense = $record->ligneDepense?->load('nomenclature')
+                            ?? $record->nouvelleLigneDepense?->load('nomenclature');
+                        $ligneRecette = $record->ligneRecette?->load('nomenclature')
+                            ?? $record->nouvelleLigneRecette?->load('nomenclature');
+
+                        return view('filament.modals.detail-mouvement-collectif', compact(
+                            'record',
+                            'virement',
+                            'ligneSource',
+                            'ligneDestination',
+                            'ligneDepense',
+                            'ligneRecette'
+                        ));
+                    })
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Fermer'),
+
+                Tables\Actions\EditAction::make()
+                    ->mutateRecordDataUsing(function (array $data, $record): array {
+                        // Le type 'virement' ne stocke pas ligne_source_id / ligne_destination_id
+                        // sur le modèle Mouvement — ces infos vivent dans VirementBudgetaire.
+                        // On les recharge ici pour que le formulaire d'édition soit pré-rempli.
+                        if ($record->type === 'virement' && $record->virement_budgetaire_id) {
+                            $virement = \App\Models\VirementBudgetaire::find($record->virement_budgetaire_id);
+
+                            if ($virement) {
+                                $data['ligne_source_id']      = $virement->ligne_source_id;
+                                $data['ligne_destination_id'] = $virement->ligne_destination_id;
+                                $data['montant_modification']  = $virement->montant;
+                                // Le motif stocké côté VirementBudgetaire est préfixé par
+                                // "[Collectif NUMERO] " — on l'enlève pour l'édition
+                                $data['motif'] = preg_replace(
+                                    '/^\[Collectif [^\]]+\]\s*/',
+                                    '',
+                                    $virement->motif ?? ($data['motif'] ?? '')
+                                );
+                            }
+                        }
+
+                        // Idem pour dépense/recette créées via 'ajouter_existante' ou 'creer_nouvelle' :
+                        // le formulaire attend mode_action + ligne_depense_id/ligne_recette_id,
+                        // mais seuls nouvelle_ligne_depense_id / nouvelle_ligne_recette_id sont stockés.
+                        if ($record->type === 'depense' && $record->nouvelle_ligne_depense_id) {
+                            $data['mode_action']     = 'modifier';
+                            $data['ligne_depense_id'] = $record->nouvelle_ligne_depense_id;
+                        }
+
+                        if ($record->type === 'recette' && $record->nouvelle_ligne_recette_id) {
+                            $data['mode_action']     = 'modifier';
+                            $data['ligne_recette_id'] = $record->nouvelle_ligne_recette_id;
+                        }
+
+                        return $data;
+                    }),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([

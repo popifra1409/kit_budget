@@ -73,7 +73,7 @@ class MouvementCollectif extends Model
     /**
      * Appliquer ce mouvement.
      */
-    public function appliquer(): void
+    public function appliquer(?User $user = null): void
     {
         // ✅ Garde — vérifier que le disponible ne sera pas négatif
         if ($this->type === 'depense' && $this->ligne_depense_id) {
@@ -93,7 +93,26 @@ class MouvementCollectif extends Model
         if ($this->type === 'virement') {
             // ✅ Déléguer à VirementBudgetaire::executer()
             if ($this->virement_budgetaire_id && $this->virementBudgetaire) {
-                $this->virementBudgetaire->executer();
+                $virement = $this->virementBudgetaire;
+
+                // Un virement issu d'un mouvement collectif est auto-approuvé
+                // au moment de l'adoption : pas de validation manuelle intermédiaire.
+                if ($virement->statut === 'en_attente') {
+                    $virement->statut = 'approuve';
+                    $virement->valide_par = $user?->id;
+                    $virement->date_validation = now();
+                    $virement->save();
+
+                    ActivityLog::logAction($virement, 'valider', [
+                        'ancien_statut'  => 'en_attente',
+                        'nouveau_statut' => 'approuve',
+                        'approuve_par'   => $user?->name ?? 'Système (adoption collectif)',
+                        'montant'        => $virement->montant,
+                        'contexte'       => 'Auto-approuvé via adoption du collectif budgétaire',
+                    ]);
+                }
+
+                $virement->executer();
             } else {
                 // Fallback direct si pas de VirementBudgetaire lié
                 $source  = $this->ligneSource;

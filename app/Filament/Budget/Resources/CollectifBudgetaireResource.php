@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class CollectifBudgetaireResource extends Resource
 {
@@ -95,7 +96,7 @@ class CollectifBudgetaireResource extends Resource
 
                         Forms\Components\TextInput::make('numero')
                             ->label('Numéro')
-                            ->disabled() 
+                            ->disabled()
                             ->helperText('Généré automatiquement'),
 
                         Forms\Components\TextInput::make('reference')
@@ -236,14 +237,25 @@ class CollectifBudgetaireResource extends Resource
                         ->modalDescription('Cette action appliquera les modifications sur les budgets et prévisions.')
                         ->visible(fn($record) => static::canAdopter($record))
                         ->action(function ($record) {
-                            $record->statut = 'adopte';
-                            $record->date_adoption = now();
-                            $record->save();
-                            $record->appliquer();
-                            Notification::make()
-                                ->title('Collectif adopté et appliqué avec succès')
-                                ->success()
-                                ->send();
+                            try {
+                                DB::transaction(function () use ($record) {
+                                    $record->statut = 'adopte';
+                                    $record->date_adoption = now();
+                                    $record->save();
+                                    $record->appliquer(auth()->user());
+                                });
+
+                                Notification::make()
+                                    ->title('Collectif adopté et appliqué avec succès')
+                                    ->success()
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('Adoption impossible')
+                                    ->body($e->getMessage())
+                                    ->danger()
+                                    ->send();
+                            }
                         }),
 
                     // Action pour annuler le collectif (si déjà adopté)

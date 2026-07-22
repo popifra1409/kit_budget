@@ -87,6 +87,14 @@ class NomenclatureBudgetaire extends Model
     }
 
     /**
+     * Relation : Groupe de nomenclature (ex: DÉPENSES DE FONCTIONNEMENT, RECETTES PROPRES...)
+     */
+    public function groupe(): BelongsTo
+    {
+        return $this->belongsTo(GroupeNomenclature::class, 'groupe_id');
+    }
+
+    /**
      * Relation : Tâche principale liée (sous-tâche uniquement)
      */
     public function tache(): HasOne
@@ -152,6 +160,14 @@ class NomenclatureBudgetaire extends Model
     }
 
     /**
+     * Scope : Par groupe de nomenclature
+     */
+    public function scopeGroupe($query, $groupeId)
+    {
+        return $query->where('groupe_id', $groupeId);
+    }
+
+    /**
      * Obtenir le chemin hiérarchique complet
      */
     public function getCheminComplet(): string
@@ -197,6 +213,18 @@ class NomenclatureBudgetaire extends Model
             if ($nomenclature->niveau === 'chapitre' && $nomenclature->parent_id) {
                 throw new \Exception("Un Chapitre ne peut pas avoir de parent");
             }
+
+            // Valider la cohérence type <-> groupe
+            if ($nomenclature->groupe_id) {
+                $groupe = GroupeNomenclature::find($nomenclature->groupe_id);
+
+                if ($groupe && $groupe->type !== $nomenclature->type) {
+                    throw new \Exception(
+                        "Le type de la ligne ('{$nomenclature->type}') ne correspond pas au type du groupe "
+                            . "'{$groupe->libelle}' ('{$groupe->type}')."
+                    );
+                }
+            }
         });
     }
 
@@ -240,5 +268,18 @@ class NomenclatureBudgetaire extends Model
 
         // Si on n'a pas trouvé d'article, fallback sur les 3 premiers caractères
         return substr($this->code, 0, 3);
+    }
+
+    /**
+     * Vérifie que le type de la ligne correspond au type de son groupe (si rattachée).
+     * Utile pour un contrôle en amont (FormRequest) sans déclencher d'exception.
+     */
+    public function typeCoherentAvecGroupe(): bool
+    {
+        if (!$this->groupe_id) {
+            return true; // pas de groupe = pas de contrainte
+        }
+
+        return $this->groupe?->type === $this->type;
     }
 }
