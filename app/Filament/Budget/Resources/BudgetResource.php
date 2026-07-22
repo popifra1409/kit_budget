@@ -55,16 +55,7 @@ class BudgetResource extends Resource
         $user = auth()->user();
         if (!$user?->can('update_budget')) return false;
 
-        if (!$record->estModifiable()) {
-            // Récupération sécurisée de l'année
-            $annee = is_object($record->exercice) ? $record->exercice->annee : $record->exercice;
-            Notification::make()
-                ->title('Budget verrouillé')->warning()
-                ->body("L'exercice {$annee} est verrouillé.")
-                ->send();
-            return false;
-        }
-        return true;
+        return $record->estModifiable();
     }
 
     public static function canDelete($record): bool
@@ -152,7 +143,7 @@ class BudgetResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()->with(['exercice', 'lignesBudgetaires']);
     }
 
     // ========================================

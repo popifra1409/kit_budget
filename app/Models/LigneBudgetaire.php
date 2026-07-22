@@ -142,6 +142,14 @@ class LigneBudgetaire extends Model
         return $this->hasMany(VirementBudgetaire::class, 'ligne_destination_id');
     }
 
+    public function getLibelleWithDisponibleAttribute()
+    {
+        $nom = $this->nomenclature;
+        $libelle = $nom ? "{$nom->code} - {$nom->libelle}" : 'N/A';
+        $dispo = number_format($this->disponible_engagement, 0, ',', ' ');
+        return "{$libelle} (Dispo: {$dispo} FCFA)";
+    }
+
     // =========================================================
     // RECALCUL DEPUIS LES DONNÉES RÉELLES
     // =========================================================

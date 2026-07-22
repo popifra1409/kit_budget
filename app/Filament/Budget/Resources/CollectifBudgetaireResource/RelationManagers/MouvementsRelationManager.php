@@ -4,92 +4,259 @@ namespace App\Filament\Budget\Resources\CollectifBudgetaireResource\RelationMana
 
 use App\Models\LigneBudgetaire;
 use App\Models\LignePrevisionRecette;
+use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Model;
 
 class MouvementsRelationManager extends RelationManager
 {
     protected static string $relationship = 'mouvements';
-
     protected static ?string $recordTitleAttribute = 'id';
 
     public function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Select::make('type')
-                    ->label('Type')
-                    ->options([
-                        'depense' => 'Dépense',
-                        'recette' => 'Recette',
-                    ])
-                    ->required()
-                    ->reactive()
-                    ->afterStateUpdated(fn($set) => $set('ligne_depense_id', null) && $set('ligne_recette_id', null) && $set('creer_nouvelle_ligne', false)),
+        return $form->schema([
 
-                // Sélection d'une ligne de dépense existante
-                Forms\Components\Select::make('ligne_depense_id')
-                    ->label('Ligne de dépense existante')
-                    ->options(fn() => LigneBudgetaire::with('nomenclature')
-                        ->get()
-                        ->mapWithKeys(fn($item) => [$item->id => $item->nomenclature?->libelle ?? 'N/A'])
-                        ->toArray())
-                    ->searchable()
-                    ->visible(fn($get) => $get('type') === 'depense')
-                    ->required(fn($get) => $get('type') === 'depense' && !$get('creer_nouvelle_ligne')),
+            // ── 1. Type de mouvement ─────────────────────────────
+            Forms\Components\Select::make('type')
+                ->label('Type de mouvement')
+                ->options([
+                    'depense'  => '💰 Dépense',
+                    'recette'  => '📥 Recette',
+                    'virement' => '↔️ Virement budgétaire',
+                ])
+                ->required()
+                ->live()
+                ->afterStateUpdated(function ($set) {
+                    $set('mode_action', null);
+                    $set('ligne_depense_id', null);
+                    $set('ligne_recette_id', null);
+                    $set('ligne_source_id', null);
+                    $set('ligne_destination_id', null);
+                    $set('nomenclature_existante_id', null);
+                    $set('nouveau_code', null);
+                    $set('nouveau_libelle', null);
+                    $set('montant_modification', null);
+                }),
 
-                // Sélection d'une ligne de recette existante
-                Forms\Components\Select::make('ligne_recette_id')
-                    ->label('Ligne de recette existante')
-                    ->options(fn() => LignePrevisionRecette::with('nomenclature')
-                        ->get()
-                        ->mapWithKeys(fn($item) => [$item->id => $item->nomenclature?->libelle ?? 'N/A'])
-                        ->toArray())
-                    ->searchable()
-                    ->visible(fn($get) => $get('type') === 'recette')
-                    ->required(fn($get) => $get('type') === 'recette' && !$get('creer_nouvelle_ligne')),
+            // ── 2. Mode d'action (dépense/recette uniquement) ────
+            Forms\Components\Select::make('mode_action')
+                ->label('Action souhaitée')
+                ->options([
+                    'modifier'         => '✏️ Modifier une ligne existante (augmentation / réduction)',
+                    'ajouter_existante' => '📋 Ajouter une nomenclature existante sans ligne budgétaire',
+                    'creer_nouvelle'   => '🆕 Créer une nouvelle nomenclature et la provisionner',
+                ])
+                ->required()
+                ->live()
+                ->visible(fn($get) => in_array($get('type'), ['depense', 'recette']))
+                ->afterStateUpdated(function ($set) {
+                    $set('ligne_depense_id', null);
+                    $set('ligne_recette_id', null);
+                    $set('nomenclature_existante_id', null);
+                    $set('nouveau_code', null);
+                    $set('nouveau_libelle', null);
+                    $set('montant_modification', null);
+                }),
 
-                // Créer une nouvelle ligne
-                Forms\Components\Toggle::make('creer_nouvelle_ligne')
-                    ->label('Créer une nouvelle ligne')
-                    ->reactive()
-                    ->visible(fn($get) => in_array($get('type'), ['depense', 'recette'])),
+            // ════════════════════════════════════════════════════
+            // CAS 1 : Modifier ligne existante
+            // ════════════════════════════════════════════════════
+            Forms\Components\Section::make('Ligne à modifier')
+                ->schema([
+                    Forms\Components\Select::make('ligne_depense_id')
+                        ->label('Ligne de dépense')
+                        ->options(fn() => LigneBudgetaire::with('nomenclature')
+                            ->get()
+                            ->mapWithKeys(fn($l) => [
+                                $l->id => ($l->nomenclature?->code ?? '?')
+                                    . ' — ' . ($l->nomenclature?->libelle ?? '?')
+                                    . ' | Disponible : '
+                                    . number_format($l->disponible_engagement ?? 0, 0, ',', ' ')
+                                    . ' FCFA'
+                            ]))
+                        ->searchable()
+                        ->preload()
+                        ->required()
+                        ->visible(fn($get) => $get('type') === 'depense'),
 
-                // Sous-formulaire pour nouvelle ligne de dépense
-                Forms\Components\Grid::make(2)
-                    ->schema([
-                        Forms\Components\TextInput::make('nouveau_code')->label('Code')->maxLength(50),
-                        Forms\Components\TextInput::make('nouveau_libelle')->label('Libellé')->maxLength(255),
-                        Forms\Components\TextInput::make('nouveau_montant')->label('Montant initial')->numeric()->prefix('FCFA'),
-                        // Si vous avez besoin de la nomenclature, ajoutez un select
-                    ])
-                    ->visible(fn($get) => $get('creer_nouvelle_ligne') && $get('type') === 'depense'),
+                    Forms\Components\Select::make('ligne_recette_id')
+                        ->label('Ligne de recette')
+                        ->options(fn() => LignePrevisionRecette::with('nomenclature')
+                            ->get()
+                            ->mapWithKeys(fn($l) => [
+                                $l->id => ($l->nomenclature?->code ?? '?')
+                                    . ' — ' . ($l->nomenclature?->libelle ?? '?')
+                            ]))
+                        ->searchable()
+                        ->preload()
+                        ->required()
+                        ->visible(fn($get) => $get('type') === 'recette'),
 
-                // Sous-formulaire pour nouvelle ligne de recette
-                Forms\Components\Grid::make(2)
-                    ->schema([
-                        Forms\Components\TextInput::make('nouveau_code_recette')->label('Code')->maxLength(50),
-                        Forms\Components\TextInput::make('nouveau_libelle_recette')->label('Libellé')->maxLength(255),
-                        Forms\Components\TextInput::make('nouveau_montant_recette')->label('Montant initial')->numeric()->prefix('FCFA'),
-                    ])
-                    ->visible(fn($get) => $get('creer_nouvelle_ligne') && $get('type') === 'recette'),
+                    Forms\Components\TextInput::make('montant_modification')
+                        ->label('Montant de la modification (FCFA)')
+                        ->numeric()
+                        ->prefix('FCFA')
+                        ->required()
+                        ->helperText('✅ Positif = augmentation | ❌ Négatif = réduction (ex: -500000)'),
+                ])
+                ->compact()
+                ->visible(fn($get) => $get('mode_action') === 'modifier'
+                    && in_array($get('type'), ['depense', 'recette'])),
 
-                // Montant de la modification
-                Forms\Components\TextInput::make('montant_modification')
-                    ->label('Montant de la modification')
-                    ->numeric()
-                    ->prefix('FCFA')
-                    ->required()
-                    ->helperText('Positif pour une augmentation, négatif pour une réduction.'),
+            // ════════════════════════════════════════════════════
+            // CAS 2 : Ajouter nomenclature existante sans ligne
+            // ════════════════════════════════════════════════════
+            Forms\Components\Section::make('Nomenclature à ajouter au budget')
+                ->schema([
+                    Forms\Components\Select::make('nomenclature_existante_id')
+                        ->label('Nomenclature budgétaire')
+                        ->options(function ($get) {
+                            $type = $get('type');
+                            $classe = $type === 'depense' ? '6' : '7';
+                            // Nomenclatures existantes SANS ligne dans le budget courant
+                            $dejaDansLeBudget = LigneBudgetaire::pluck('nomenclature_id')->toArray();
+                            return NomenclatureBudgetaire::where('classe', $classe)
+                                ->whereNotIn('id', $dejaDansLeBudget)
+                                ->orderBy('code')
+                                ->get()
+                                ->mapWithKeys(fn($n) => [
+                                    $n->id => "{$n->code} — {$n->libelle}"
+                                ]);
+                        })
+                        ->searchable()
+                        ->preload()
+                        ->required()
+                        ->helperText('Nomenclatures déjà créées mais sans ligne dans le budget actuel'),
 
-                Forms\Components\TextInput::make('motif')
-                    ->label('Motif')
-                    ->maxLength(255),
-            ]);
+                    Forms\Components\TextInput::make('montant_modification')
+                        ->label('Montant à provisionner (FCFA)')
+                        ->numeric()
+                        ->prefix('FCFA')
+                        ->minValue(0)
+                        ->required()
+                        ->helperText('Montant initial inscrit au budget rectifié'),
+                ])
+                ->compact()
+                ->visible(fn($get) => $get('mode_action') === 'ajouter_existante'
+                    && in_array($get('type'), ['depense', 'recette'])),
+
+            // ════════════════════════════════════════════════════
+            // CAS 3 : Créer nouvelle nomenclature + ligne
+            // ════════════════════════════════════════════════════
+            Forms\Components\Section::make('Nouvelle nomenclature budgétaire')
+                ->description('Cette nomenclature sera créée et provisionnée dans le budget rectifié')
+                ->schema([
+                    Forms\Components\Grid::make(3)->schema([
+                        Forms\Components\TextInput::make('nouveau_code')
+                            ->label('Code OHADA')
+                            ->required()
+                            ->maxLength(20)
+                            ->placeholder(fn($get) => $get('type') === 'depense' ? 'Ex: 621101' : 'Ex: 712001')
+                            ->helperText(fn($get) => $get('type') === 'depense'
+                                ? 'Classe 6 — Comptes de charges'
+                                : 'Classe 7 — Comptes de produits'),
+
+                        Forms\Components\Select::make('nouveau_niveau')
+                            ->label('Niveau')
+                            ->options([
+                                'chapitre'   => 'Chapitre (ex: 62)',
+                                'article'    => 'Article (ex: 621)',
+                                'paragraphe' => 'Paragraphe (ex: 621101)',
+                                'compte'     => 'Compte',
+                                'ligne'      => 'Ligne détaillée',
+                            ])
+                            ->default('paragraphe')
+                            ->required(),
+
+                        Forms\Components\Select::make('nouveau_parent_id')
+                            ->label('Rattacher à (parent)')
+                            ->placeholder('Aucun — niveau chapitre')
+                            ->options(function ($get) {
+                                $type = $get('type');
+                                $classe = $type === 'depense' ? '6' : '7';
+                                return NomenclatureBudgetaire::where('classe', $classe)
+                                    ->orderBy('code')
+                                    ->get()
+                                    ->mapWithKeys(fn($n) => [
+                                        $n->id => "{$n->code} — {$n->libelle} ({$n->niveau})"
+                                    ]);
+                            })
+                            ->searchable(),
+                    ]),
+
+                    Forms\Components\TextInput::make('nouveau_libelle')
+                        ->label('Libellé de la nomenclature')
+                        ->required()
+                        ->maxLength(255)
+                        ->columnSpanFull()
+                        ->placeholder('Ex: Indemnités de déplacement sur le terrain'),
+
+                    Forms\Components\TextInput::make('montant_modification')
+                        ->label('Montant à provisionner dans le budget rectifié (FCFA)')
+                        ->numeric()
+                        ->prefix('FCFA')
+                        ->minValue(0)
+                        ->required(),
+                ])
+                ->compact()
+                ->visible(fn($get) => $get('mode_action') === 'creer_nouvelle'
+                    && in_array($get('type'), ['depense', 'recette'])),
+
+            // ════════════════════════════════════════════════════
+            // VIREMENT budgétaire (source → destination)
+            // ════════════════════════════════════════════════════
+            Forms\Components\Section::make('Virement budgétaire')
+                ->description('Le montant est transféré de la ligne source vers la ligne destination')
+                ->schema([
+                    Forms\Components\Select::make('ligne_source_id')
+                        ->label('Ligne source (débite)')
+                        ->options(fn() => LigneBudgetaire::with('nomenclature')
+                            ->get()
+                            ->mapWithKeys(fn($l) => [
+                                $l->id => ($l->nomenclature?->code ?? '?')
+                                    . ' — ' . ($l->nomenclature?->libelle ?? '?')
+                                    . ' | Dispo: '
+                                    . number_format($l->disponible_engagement ?? 0, 0, ',', ' ')
+                                    . ' FCFA'
+                            ]))
+                        ->searchable()
+                        ->required(),
+
+                    Forms\Components\Select::make('ligne_destination_id')
+                        ->label('Ligne destination (créditée)')
+                        ->options(fn() => LigneBudgetaire::with('nomenclature')
+                            ->get()
+                            ->mapWithKeys(fn($l) => [
+                                $l->id => ($l->nomenclature?->code ?? '?')
+                                    . ' — ' . ($l->nomenclature?->libelle ?? '?')
+                            ]))
+                        ->searchable()
+                        ->required(),
+
+                    Forms\Components\TextInput::make('montant_modification')
+                        ->label('Montant du virement (FCFA)')
+                        ->numeric()
+                        ->prefix('FCFA')
+                        ->minValue(1)
+                        ->required(),
+                ])
+                ->compact()
+                ->visible(fn($get) => $get('type') === 'virement'),
+
+            // ── Motif (toujours visible) ─────────────────────────
+            Forms\Components\Textarea::make('motif')
+                ->label('Motif / Justification')
+                ->required()
+                ->rows(2)
+                ->maxLength(500)
+                ->placeholder('Justification budgétaire de ce mouvement...')
+                ->columnSpanFull()
+                ->visible(fn($get) => $get('type') !== null),
+        ]);
     }
 
     public function table(Table $table): Table
@@ -98,38 +265,177 @@ class MouvementsRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\BadgeColumn::make('type')
                     ->label('Type')
-                    ->colors(['warning' => 'depense', 'info' => 'recette']),
+                    ->colors([
+                        'warning' => 'depense',
+                        'info'    => 'recette',
+                        'primary' => 'virement',
+                    ])
+                    ->formatStateUsing(fn($state) => match ($state) {
+                        'depense'  => '💰 Dépense',
+                        'recette'  => '📥 Recette',
+                        'virement' => '↔️ Virement',
+                        default    => $state,
+                    }),
 
-                Tables\Columns\TextColumn::make('ligneDepense.nomenclature.libelle')
-                    ->label('Ligne dépense')
-                    ->visible(fn($record) => $record && $record->type === 'depense' && $record->ligneDepense),
-
-                Tables\Columns\TextColumn::make('ligneRecette.nomenclature.libelle')
-                    ->label('Ligne recette')
-                    ->visible(fn($record) => $record && $record->type === 'recette' && $record->ligneRecette),
-
-                Tables\Columns\TextColumn::make('nouvelleLigneDepense.nomenclature.libelle')
-                    ->label('Nouvelle ligne dépense')
-                    ->visible(fn($record) => $record && $record->type === 'depense' && $record->nouvelleLigneDepense),
-
-                Tables\Columns\TextColumn::make('nouvelleLigneRecette.nomenclature.libelle')
-                    ->label('Nouvelle ligne recette')
-                    ->visible(fn($record) => $record && $record->type === 'recette' && $record->nouvelleLigneRecette),
+                Tables\Columns\TextColumn::make('ligne_concernee')
+                    ->label('Ligne budgétaire')
+                    ->getStateUsing(function ($record) {
+                        if (!$record) return '—';
+                        return match ($record->type) {
+                            'depense' => $record->nouvelleLigneDepense?->nomenclature?->code
+                                ? '🆕 ' . $record->nouvelleLigneDepense->nomenclature->code
+                                . ' — ' . $record->nouvelleLigneDepense->nomenclature->libelle
+                                : ($record->ligneDepense?->nomenclature?->code
+                                    . ' — ' . ($record->ligneDepense?->nomenclature?->libelle ?? '—')),
+                            'recette' => $record->nouvelleLigneRecette?->nomenclature?->code
+                                ? '🆕 ' . $record->nouvelleLigneRecette->nomenclature->code
+                                . ' — ' . $record->nouvelleLigneRecette->nomenclature->libelle
+                                : ($record->ligneRecette?->nomenclature?->code
+                                    . ' — ' . ($record->ligneRecette?->nomenclature?->libelle ?? '—')),
+                            'virement' => '↓ ' . ($record->ligneSource?->nomenclature?->code ?? '?')
+                                . ' → ' . ($record->ligneDestination?->nomenclature?->code ?? '?'),
+                            default => '—',
+                        };
+                    })
+                    ->wrap()
+                    ->searchable(false),
 
                 Tables\Columns\TextColumn::make('montant_modification')
                     ->label('Montant')
                     ->money('XOF', true)
-                    ->color(fn($record) => $record ? ($record->montant_modification < 0 ? 'danger' : 'success') : 'gray'),
+                    ->color(fn($record) => $record && $record->montant_modification < 0 ? 'danger' : 'success'),
 
                 Tables\Columns\TextColumn::make('motif')
                     ->label('Motif')
-                    ->limit(50),
+                    ->limit(50)
+                    ->wrap(),
             ])
             ->filters([])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->after(function ($record, array $data) {
-                        $this->creerLigneSiNouvelle($record, $data);
+                    ->label('Ajouter un mouvement')
+                    ->mutateFormDataUsing(function (array $data): array {
+                        $collectif = $this->getOwnerRecord();
+                        $exercice  = $collectif->exercice;
+                        $type      = $data['type'];
+                        $mode      = $data['mode_action'] ?? 'modifier';
+
+                        // ── CAS 2 : Nomenclature existante sans ligne ──────
+                        if ($mode === 'ajouter_existante' && in_array($type, ['depense', 'recette'])) {
+                            if ($type === 'depense') {
+                                $budget = $exercice->budgets()->where('actif', true)->first();
+                                if (!$budget) throw new \Exception('Aucun budget actif trouvé.');
+
+                                // ✅ updateOrCreate — la ligne peut déjà exister
+                                $montant = (float) ($data['montant_modification'] ?? 0);
+                                $ligneExistante = LigneBudgetaire::where('budget_id', $budget->id)
+                                    ->where('nomenclature_id', $data['nomenclature_existante_id'])
+                                    ->first();
+
+                                if ($ligneExistante) {
+                                    // Ligne existante → modifier le budget_rectifie
+                                    // ✅ PAS de mise à jour immédiate — sera appliqué à l'adoption
+                                    $data['ligne_depense_id']          = $ligneExistante->id;
+                                    $data['nouvelle_ligne_depense_id'] = null;
+                                } else {
+                                    // Nouvelle ligne → créer
+                                    $ligne = LigneBudgetaire::create([
+                                        'budget_id'             => $budget->id,
+                                        'nomenclature_id'       => $data['nomenclature_existante_id'],
+                                        'budget_initial'        => $montant,
+                                        'budget_rectifie'       => $montant,
+                                        'est_issue_collectif'   => true,
+                                        'collectif_creation_id' => $collectif->id,
+                                    ]);
+                                    $data['nouvelle_ligne_depense_id'] = $ligne->id;
+                                    $data['ligne_depense_id'] = null;
+                                }
+                            } else {
+                                $prevision = \App\Models\PrevisionRecette::where('exercice_id', $exercice->id)->whereIn('statut', ['adopte', 'actif', 'valide'])->first();
+                                if (!$prevision) throw new \Exception('Aucune prévision de recettes active.');
+
+                                // ✅ Chercher puis incrémenter — évite DB::raw et contrainte unique
+                                $montant = (float) ($data['montant_modification'] ?? 0);
+                                $ligne = LignePrevisionRecette::where('prevision_recette_id', $prevision->id)
+                                    ->where('nomenclature_id', $data['nomenclature_existante_id'])
+                                    ->first();
+
+                                if ($ligne) {
+                                    // Ligne existante → incrémenter montant_rectifie
+                                    // ✅ PAS de mise à jour immédiate — sera appliqué à l'adoption
+                                    $data['ligne_recette_id']           = $ligne->id;
+                                    $data['nouvelle_ligne_recette_id']  = null;
+                                } else {
+                                    // Nouvelle ligne
+                                    $ligne = LignePrevisionRecette::create([
+                                        'prevision_recette_id'   => $prevision->id,
+                                        'nomenclature_id'        => $data['nomenclature_existante_id'],
+                                        'montant_initial'        => $montant,
+                                        'montant_rectifie'       => $montant,
+                                        'est_issue_collectif'    => true,
+                                        'collectif_creation_id'  => $collectif->id,
+                                    ]);
+                                    $data['nouvelle_ligne_recette_id'] = $ligne->id;
+                                    $data['ligne_recette_id']           = null;
+                                }
+                                $data['nouvelle_ligne_recette_id'] = $ligne->id;
+                                $data['ligne_recette_id']          = null;
+                            }
+                        }
+
+                        // ── CAS 3 : Nouvelle nomenclature + ligne ──────────
+                        elseif ($mode === 'creer_nouvelle' && in_array($type, ['depense', 'recette'])) {
+                            // Créer la nomenclature
+                            $nomenclature = NomenclatureBudgetaire::create([
+                                'code'      => $data['nouveau_code'],
+                                'libelle'   => $data['nouveau_libelle'],
+                                'classe'    => $type === 'depense' ? '6' : '7',
+                                'type'      => $type,
+                                'niveau'    => $data['nouveau_niveau'] ?? 'paragraphe',
+                                'parent_id' => $data['nouveau_parent_id'] ?? null,
+                                'actif'     => true,
+                            ]);
+
+                            if ($type === 'depense') {
+                                $budget = $exercice->budgets()->where('actif', true)->first();
+                                if (!$budget) throw new \Exception('Aucun budget actif trouvé.');
+
+                                $ligne = LigneBudgetaire::create([
+                                    'budget_id'              => $budget->id,
+                                    'nomenclature_id'        => $nomenclature->id,
+                                    'budget_initial'         => $data['montant_modification'] ?? 0,
+                                    'budget_rectifie'        => $data['montant_modification'] ?? 0,
+                                    'est_issue_collectif'    => true,
+                                    'collectif_creation_id'  => $collectif->id,
+                                ]);
+                                $data['nouvelle_ligne_depense_id'] = $ligne->id;
+                            } else {
+                                $prevision = \App\Models\PrevisionRecette::where('exercice_id', $exercice->id)->whereIn('statut', ['adopte', 'actif', 'valide'])->first();
+                                if (!$prevision) throw new \Exception('Aucune prévision de recettes active.');
+
+                                $ligne = LignePrevisionRecette::create([
+                                    'prevision_recette_id'   => $prevision->id,
+                                    'nomenclature_id'        => $nomenclature->id,
+                                    'montant_initial'        => $data['montant_modification'] ?? 0,
+                                    'montant_rectifie'       => $data['montant_modification'] ?? 0,
+                                    'est_issue_collectif'    => true,
+                                    'collectif_creation_id'  => $collectif->id,
+                                ]);
+                                $data['nouvelle_ligne_recette_id'] = $ligne->id;
+                            }
+                        }
+
+                        // Nettoyer les champs temporaires
+                        unset(
+                            $data['mode_action'],
+                            $data['nomenclature_existante_id'],
+                            $data['nouveau_code'],
+                            $data['nouveau_libelle'],
+                            $data['nouveau_niveau'],
+                            $data['nouveau_parent_id'],
+                        );
+
+                        return $data;
                     }),
             ])
             ->actions([
@@ -141,68 +447,5 @@ class MouvementsRelationManager extends RelationManager
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
-    }
-
-    /**
-     * Méthode utilitaire pour créer une nouvelle ligne (dépense ou recette)
-     * lorsqu'elle est demandée dans le formulaire.
-     */
-    private function creerLigneSiNouvelle($record, array $data): void
-    {
-        if (!isset($data['creer_nouvelle_ligne']) || !$data['creer_nouvelle_ligne']) {
-            return;
-        }
-
-        /** @var \App\Models\CollectifBudgetaire $collectif */
-        $collectif = $this->getOwnerRecord();
-        if (!$collectif) {
-            throw new \Exception('Aucun collectif parent trouvé.');
-        }
-
-        $exercice = $collectif->exercice;
-        if (!$exercice) {
-            throw new \Exception('Aucun exercice associé à ce collectif.');
-        }
-
-        if ($data['type'] === 'depense') {
-            // Récupérer le budget actif de l'exercice
-            $budget = $exercice->budgets()->where('actif', true)->first();
-            if (!$budget) {
-                throw new \Exception('Aucun budget actif trouvé pour cet exercice.');
-            }
-
-            $nouvelleLigne = LigneBudgetaire::create([
-                'budget_id'          => $budget->id,
-                'code'               => $data['nouveau_code'] ?? null,
-                'libelle'            => $data['nouveau_libelle'] ?? null,
-                'budget_initial'     => $data['nouveau_montant'] ?? 0,
-                'budget_rectifie'    => $data['nouveau_montant'] ?? 0,
-                'est_issue_collectif' => true,
-                'collectif_creation_id' => $collectif->id,
-                // Ajoutez d'autres champs comme 'nomenclature_id' si nécessaire
-            ]);
-
-            $record->nouvelle_ligne_depense_id = $nouvelleLigne->id;
-            $record->save();
-        } elseif ($data['type'] === 'recette') {
-            // Récupérer la prévision de recettes active de l'exercice
-            $prevision = $exercice->previsionRecettes()->where('actif', true)->first();
-            if (!$prevision) {
-                throw new \Exception('Aucune prévision de recettes active trouvée pour cet exercice.');
-            }
-
-            $nouvelleLigne = LignePrevisionRecette::create([
-                'prevision_recette_id' => $prevision->id,
-                'code'                 => $data['nouveau_code_recette'] ?? null,
-                'libelle'              => $data['nouveau_libelle_recette'] ?? null,
-                'montant_initial'      => $data['nouveau_montant_recette'] ?? 0,
-                'montant_rectifie'     => $data['nouveau_montant_recette'] ?? 0,
-                'est_issue_collectif'  => true,
-                'collectif_creation_id' => $collectif->id,
-            ]);
-
-            $record->nouvelle_ligne_recette_id = $nouvelleLigne->id;
-            $record->save();
-        }
     }
 }

@@ -19,6 +19,9 @@ class MouvementCollectif extends Model
         'ligne_recette_id',
         'nouvelle_ligne_depense_id',
         'nouvelle_ligne_recette_id',
+        // ✅ Colonnes virement
+        'ligne_source_id',
+        'ligne_destination_id',
         'montant_modification',
         'motif',
     ];
@@ -54,42 +57,66 @@ class MouvementCollectif extends Model
         return $this->belongsTo(LignePrevisionRecette::class, 'nouvelle_ligne_recette_id');
     }
 
+    public function ligneSource()
+    {
+        return $this->belongsTo(LigneBudgetaire::class, 'ligne_source_id');
+    }
+
+    public function ligneDestination()
+    {
+        return $this->belongsTo(LigneBudgetaire::class, 'ligne_destination_id');
+    }
+
     /**
      * Appliquer ce mouvement.
      */
     public function appliquer(): void
     {
-        if ($this->type === 'depense') {
-            if ($this->nouvelle_ligne_depense_id) {
-                // La nouvelle ligne a déjà été créée (lors de la création du mouvement)
-                // On marque juste qu'elle est issue du collectif
-                $ligne = $this->nouvelleLigneDepense;
-                if ($ligne) {
-                    $ligne->est_issue_collectif = true;
-                    $ligne->collectif_creation_id = $this->collectif_id;
-                    $ligne->save();
-                }
-            } elseif ($this->ligne_depense_id) {
-                $ligne = $this->ligneDepense;
-                if ($ligne) {
-                    // Appliquer la modification
-                    $ligne->budget_rectifie += $this->montant_modification;
-                    $ligne->save();
-                }
+        if ($this->type === 'virement') {
+            // Exécuter le virement sur les lignes source/destination
+            $source = $this->ligneSource;
+            $dest   = $this->ligneDestination;
+            $montant = $this->montant_modification;
+            if ($source->disponible_engagement < $montant) {
+                throw new \Exception("Fonds insuffisants sur la source");
             }
-        } else { // recette
-            if ($this->nouvelle_ligne_recette_id) {
-                $ligne = $this->nouvelleLigneRecette;
-                if ($ligne) {
-                    $ligne->est_issue_collectif = true;
-                    $ligne->collectif_creation_id = $this->collectif_id;
-                    $ligne->save();
+            $source->virements_sortants += $montant;
+            $source->save();
+            $dest->virements_entrants += $montant;
+            $dest->save();
+        } else {
+            if ($this->type === 'depense') {
+                if ($this->nouvelle_ligne_depense_id) {
+                    // La nouvelle ligne a déjà été créée (lors de la création du mouvement)
+                    // On marque juste qu'elle est issue du collectif
+                    $ligne = $this->nouvelleLigneDepense;
+                    if ($ligne) {
+                        $ligne->est_issue_collectif = true;
+                        $ligne->collectif_creation_id = $this->collectif_id;
+                        $ligne->save();
+                    }
+                } elseif ($this->ligne_depense_id) {
+                    $ligne = $this->ligneDepense;
+                    if ($ligne) {
+                        // Appliquer la modification
+                        $ligne->budget_rectifie += $this->montant_modification;
+                        $ligne->save();
+                    }
                 }
-            } elseif ($this->ligne_recette_id) {
-                $ligne = $this->ligneRecette;
-                if ($ligne) {
-                    $ligne->montant_rectifie += $this->montant_modification;
-                    $ligne->save();
+            } else { // recette
+                if ($this->nouvelle_ligne_recette_id) {
+                    $ligne = $this->nouvelleLigneRecette;
+                    if ($ligne) {
+                        $ligne->est_issue_collectif = true;
+                        $ligne->collectif_creation_id = $this->collectif_id;
+                        $ligne->save();
+                    }
+                } elseif ($this->ligne_recette_id) {
+                    $ligne = $this->ligneRecette;
+                    if ($ligne) {
+                        $ligne->montant_rectifie += $this->montant_modification;
+                        $ligne->save();
+                    }
                 }
             }
         }

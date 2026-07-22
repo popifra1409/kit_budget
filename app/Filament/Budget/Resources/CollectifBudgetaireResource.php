@@ -48,14 +48,8 @@ class CollectifBudgetaireResource extends Resource
     public static function canEdit($record): bool
     {
         if (!auth()->user()?->can('update_collectif_budgetaire')) return false;
-        if (!$record->estModifiable()) {
-            Notification::make()
-                ->title('Collectif non modifiable')->warning()
-                ->body("Ce collectif est en statut {$record->statut} et ne peut plus être modifié.")
-                ->send();
-            return false;
-        }
-        return true;
+        // ✅ Pas de notification ici — appelé trop souvent (chaque ligne du tableau)
+        return $record->estModifiable();
     }
 
     public static function canDelete($record): bool
@@ -65,15 +59,7 @@ class CollectifBudgetaireResource extends Resource
 
     public static function canEditRecord($record): bool
     {
-        $canEdit = static::canEdit($record);
-        if (!$canEdit && !$record->estModifiable()) {
-            Notification::make()
-                ->title('Collectif non modifiable')
-                ->warning()
-                ->body("Ce collectif est en statut {$record->statut} et ne peut plus être modifié.")
-                ->send();
-        }
-        return $canEdit;
+        return static::canEdit($record);
     }
 
     // Actions personnalisées
@@ -109,11 +95,13 @@ class CollectifBudgetaireResource extends Resource
 
                         Forms\Components\TextInput::make('numero')
                             ->label('Numéro')
-                            ->required()
-                            ->maxLength(50)
-                            ->unique(ignoreRecord: true)
-                            ->placeholder('CB-2026-001')
-                            ->helperText('Numéro unique du collectif'),
+                            ->disabled() 
+                            ->helperText('Généré automatiquement'),
+
+                        Forms\Components\TextInput::make('reference')
+                            ->label('Référence document')
+                            ->maxLength(100)
+                            ->helperText('Numéro de référence du document signé par le CA'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')
@@ -128,6 +116,15 @@ class CollectifBudgetaireResource extends Resource
 
                         Forms\Components\DatePicker::make('date_adoption')
                             ->label('Date d\'adoption')
+                            ->nullable(),
+
+                        Forms\Components\FileUpload::make('document_path')
+                            ->label('Document signé (optionnel)')
+                            ->disk('public') // ou votre disque
+                            ->directory('collectifs/documents')
+                            ->visibility('public')
+                            ->acceptedFileTypes(['application/pdf', 'image/*'])
+                            ->maxSize(5120) // 5MB
                             ->nullable(),
 
                         Forms\Components\Select::make('statut')
@@ -193,6 +190,16 @@ class CollectifBudgetaireResource extends Resource
                     ->counts('mouvements')
                     ->badge()
                     ->color('primary'),
+
+                Tables\Columns\TextColumn::make('reference')
+                    ->label('Réf. document')
+                    ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\IconColumn::make('document_path')
+                    ->label('Document')
+                    ->icon(fn($record) => $record->document_path ? 'heroicon-o-document' : 'heroicon-o-minus')
+                    ->color(fn($record) => $record->document_path ? 'success' : 'gray'),
 
                 Tables\Columns\TextColumn::make('createur.name')
                     ->label('Créé par')

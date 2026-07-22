@@ -163,7 +163,8 @@ class PrevisionRecette extends Model
     public function estModifiable(): bool
     {
         // D'abord vérifier le statut de la prévision
-        $modifiableParStatut = in_array($this->statut, ['elaboration', 'adopte']);
+        // adopte = lecture seule — modifications via collectif budgetaire uniquement
+        $modifiableParStatut = $this->statut === 'elaboration';
 
         if (!$modifiableParStatut) {
             return false;

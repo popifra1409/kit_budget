@@ -17,6 +17,8 @@ class CollectifBudgetaire extends Model
     protected $fillable = [
         'exercice_id',
         'numero',
+        'reference',
+        'document_path',
         'libelle',
         'date_collectif',
         'date_adoption',
@@ -24,11 +26,32 @@ class CollectifBudgetaire extends Model
         'observations',
         'created_by',
     ];
-
     protected $casts = [
         'date_collectif' => 'date',
         'date_adoption' => 'date',
     ];
+
+
+    // Génération automatique du numéro avant création
+    protected static function booted()
+    {
+        static::creating(function ($collectif) {
+            if (empty($collectif->numero)) {
+                $collectif->numero = self::generateNumero($collectif->exercice_id);
+            }
+        });
+    }
+
+    public static function generateNumero($exerciceId): string
+    {
+        $exercice = Exercice::find($exerciceId);
+        $year = $exercice ? $exercice->annee : date('Y');
+
+        // Compter les collectifs déjà créés pour cet exercice
+        $count = self::where('exercice_id', $exerciceId)->count() + 1;
+
+        return 'CB-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+    }
 
     public function exercice(): BelongsTo
     {
@@ -107,9 +130,9 @@ class CollectifBudgetaire extends Model
             $this->previsionRecettes()->syncWithoutDetaching($previsionIds);
         }
 
-        // Recalcul des totaux
-        $this->exercice->budgets->each->recalculerTotaux();
-        $this->exercice->previsionRecettes->each->recalculerTotaux();
+        // Recalcul des totaux — null-safe
+        $this->exercice->budgets?->each(fn($b) => method_exists($b, 'recalculerTotaux') ? $b->recalculerTotaux() : null);
+        $this->exercice->previsionRecettes?->each(fn($p) => method_exists($p, 'recalculerTotaux') ? $p->recalculerTotaux() : null);
     }
 
 

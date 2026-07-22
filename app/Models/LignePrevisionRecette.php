@@ -83,6 +83,14 @@ class LignePrevisionRecette extends Model
         );
     }
 
+    public function getLibelleWithRecouvreAttribute()
+    {
+        $nom = $this->nomenclature;
+        $libelle = $nom ? "{$nom->code} - {$nom->libelle}" : 'Sans nomenclature';
+        $recouvre = number_format($this->montant_recouvre ?? 0, 0, ',', ' ');
+        return "{$libelle} (Recouvré: {$recouvre} FCFA)";
+    }
+
     // ====================================
     // CALCULS
     // ====================================
