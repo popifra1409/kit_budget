@@ -23,6 +23,7 @@ class RolePermissionSeeder extends Seeder
             'bon_commande',
             'bordereau_engagement',
             'budget',
+            'collectif_budgetaire', // ← AJOUT
             'decision_administrative',
             'dossier_fournisseur',
             'engagement',
@@ -208,8 +209,10 @@ class RolePermissionSeeder extends Seeder
             'view_budget_programme',
             'saisir_previsions_budget_programme',
             'exporter_budget_programme',
-            'gerer_collectif_budgetaire',
-            'valider_collectif_budgetaire',
+            'gerer_collectif_budgetaire',       
+            'valider_collectif_budgetaire',     
+            'adopter_collectif_budgetaire',     
+            'annuler_collectif_budgetaire',     
 
             // ── Marquer payée OP ──────────────────────────
             'marquer_payee_ordonnance_paiement',
@@ -260,8 +263,10 @@ class RolePermissionSeeder extends Seeder
                 'view_budget_programme',
                 'saisir_previsions_budget_programme',
                 'exporter_budget_programme',
-                'gerer_collectif_budgetaire',
-                'valider_collectif_budgetaire',
+                'gerer_collectif_budgetaire',      // permis de gérer les collectifs
+                // On ne donne pas adopter/annuler à l'opérateur, seulement visualisation
+                'view_collectif_budgetaire',
+                'view_any_collectif_budgetaire',
                 'marquer_payee_ordonnance_paiement',
                 'view_any_budget',
                 'view_prevision_recette',
@@ -364,6 +369,11 @@ class RolePermissionSeeder extends Seeder
                 'view_budget_programme',
                 'saisir_previsions_budget_programme',
                 'exporter_budget_programme',
+                'gerer_collectif_budgetaire',
+                'valider_collectif_budgetaire',
+                'adopter_collectif_budgetaire',   // peut adopter
+                'view_any_collectif_budgetaire',
+                'view_collectif_budgetaire',
                 'marquer_payee_ordonnance_paiement',
             ],
             'chef_service_budget'
@@ -507,6 +517,10 @@ class RolePermissionSeeder extends Seeder
                 'exporter_budget_programme',
                 'gerer_collectif_budgetaire',
                 'valider_collectif_budgetaire',
+                'adopter_collectif_budgetaire',
+                'annuler_collectif_budgetaire',   // peut annuler
+                'view_any_collectif_budgetaire',
+                'view_collectif_budgetaire',
 
                 // ── Paiement OP ───────────────────────────
                 'marquer_payee_ordonnance_paiement',
@@ -569,6 +583,10 @@ class RolePermissionSeeder extends Seeder
                 'valider_bon_commande_regie',
                 'imprimer_etat_retenues_regie',
                 'imprimer_compte_emploi_regie',
+
+                // Collectifs (lecture uniquement ?)
+                'view_any_collectif_budgetaire',
+                'view_collectif_budgetaire',
             ],
             'controleur_financier'
         );
@@ -633,6 +651,14 @@ class RolePermissionSeeder extends Seeder
                 'view_bon_commande_regie',
                 'imprimer_etat_retenues_regie',
                 'imprimer_compte_emploi_regie',
+
+                // Collectifs
+                'view_any_collectif_budgetaire',
+                'view_collectif_budgetaire',
+                'gerer_collectif_budgetaire',
+                'valider_collectif_budgetaire',
+                'adopter_collectif_budgetaire',
+                'annuler_collectif_budgetaire',
             ],
             'directeur_general'
         );
@@ -709,6 +735,10 @@ class RolePermissionSeeder extends Seeder
                 'view_bon_commande_regie',
                 'imprimer_etat_retenues_regie',
                 'imprimer_compte_emploi_regie',
+
+                // Collectifs (lecture)
+                'view_any_collectif_budgetaire',
+                'view_collectif_budgetaire',
             ],
             'agence_comptable'
         );

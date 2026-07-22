@@ -64,6 +64,11 @@ class LigneBudgetaire extends Model
         });
     }
 
+    public function getLibelleAttribute()
+    {
+        return $this->nomenclature?->libelle ?? 'N/A';
+    }
+    
     // =========================================================
     // RELATIONS
     // =========================================================

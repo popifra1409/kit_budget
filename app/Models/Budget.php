@@ -173,8 +173,7 @@ class Budget extends Model
 
     public function recalculerTotaux(): void
     {
-        $total = $this->lignesBudgetaires()->sum('budget_rectifie');
-        $this->total_rectifie = $total;
+        $this->budget_total = $this->lignesBudgetaires->sum('budget_rectifie');
         $this->save();
     }
 

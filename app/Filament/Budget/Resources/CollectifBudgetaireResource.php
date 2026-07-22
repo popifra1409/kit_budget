@@ -8,20 +8,90 @@ use App\Models\CollectifBudgetaire;
 use App\Models\Exercice;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Notifications\Notification;
+use Illuminate\Database\Eloquent\Builder;
 
 class CollectifBudgetaireResource extends Resource
 {
     protected static ?string $model = CollectifBudgetaire::class;
-    protected static ?string $navigationIcon = 'heroicon-o-document-duplicate';
-    protected static ?string $navigationLabel = 'Collectifs Budgétaires';
-    protected static ?string $modelLabel = 'Collectif';
-    protected static ?string $pluralModelLabel = 'Collectifs Budgétaires';
+
+    // Navigation
+    protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
+    protected static ?string $navigationLabel = 'Collectifs budgétaires';
+    protected static ?string $modelLabel = 'Collectif budgétaire';
+    protected static ?string $pluralModelLabel = 'Collectifs budgétaires';
     protected static ?string $navigationGroup = 'Gestion Budgétaire';
     protected static ?int $navigationSort = 3;
+
+    // ========================================
+    // PERMISSIONS
+    // ========================================
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_collectif_budgetaire') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_collectif_budgetaire') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_collectif_budgetaire') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        if (!auth()->user()?->can('update_collectif_budgetaire')) return false;
+        if (!$record->estModifiable()) {
+            Notification::make()
+                ->title('Collectif non modifiable')->warning()
+                ->body("Ce collectif est en statut {$record->statut} et ne peut plus être modifié.")
+                ->send();
+            return false;
+        }
+        return true;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_collectif_budgetaire') && $record->estModifiable();
+    }
+
+    public static function canEditRecord($record): bool
+    {
+        $canEdit = static::canEdit($record);
+        if (!$canEdit && !$record->estModifiable()) {
+            Notification::make()
+                ->title('Collectif non modifiable')
+                ->warning()
+                ->body("Ce collectif est en statut {$record->statut} et ne peut plus être modifié.")
+                ->send();
+        }
+        return $canEdit;
+    }
+
+    // Actions personnalisées
+    public static function canAdopter($record): bool
+    {
+        return auth()->user()?->can('adopter_collectif_budgetaire')
+            && $record->statut === 'projet';
+    }
+
+    public static function canAnnuler($record): bool
+    {
+        return auth()->user()?->can('annuler_collectif_budgetaire')
+            && $record->statut === 'adopte';
+    }
+
+    // ========================================
+    // FORM
+    // ========================================
 
     public static function form(Form $form): Form
     {
@@ -40,13 +110,13 @@ class CollectifBudgetaireResource extends Resource
                         Forms\Components\TextInput::make('numero')
                             ->label('Numéro')
                             ->required()
-                            ->unique(ignoreRecord: true)
                             ->maxLength(50)
-                            ->placeholder('Ex: CB-2026-001')
+                            ->unique(ignoreRecord: true)
+                            ->placeholder('CB-2026-001')
                             ->helperText('Numéro unique du collectif'),
 
                         Forms\Components\TextInput::make('libelle')
-                            ->label('Objet')
+                            ->label('Libellé')
                             ->required()
                             ->maxLength(255)
                             ->columnSpanFull(),
@@ -68,7 +138,8 @@ class CollectifBudgetaireResource extends Resource
                                 'annule' => 'Annulé',
                             ])
                             ->required()
-                            ->default('projet'),
+                            ->default('projet')
+                            ->disabled(fn($record) => $record && !$record->estModifiable()),
 
                         Forms\Components\Textarea::make('observations')
                             ->label('Observations')
@@ -78,6 +149,10 @@ class CollectifBudgetaireResource extends Resource
                     ->columns(2),
             ]);
     }
+
+    // ========================================
+    // TABLE
+    // ========================================
 
     public static function table(Table $table): Table
     {
@@ -90,19 +165,15 @@ class CollectifBudgetaireResource extends Resource
                     ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('libelle')
-                    ->label('Objet')
+                    ->label('Libellé')
                     ->searchable()
-                    ->sortable()
                     ->limit(50)
                     ->wrap(),
 
-                Tables\Columns\BadgeColumn::make('exercice.annee')
+                Tables\Columns\TextColumn::make('exercice.annee')
                     ->label('Exercice')
                     ->sortable()
-                    ->colors([
-                        'success' => fn($record) => $record->exercice?->estActif(),
-                        'warning' => fn($record) => $record->exercice?->estCloture(),
-                    ]),
+                    ->badge(),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
@@ -110,13 +181,7 @@ class CollectifBudgetaireResource extends Resource
                         'secondary' => 'projet',
                         'success'   => 'adopte',
                         'danger'    => 'annule',
-                    ])
-                    ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'projet' => 'Projet',
-                        'adopte' => 'Adopté',
-                        'annule' => 'Annulé',
-                        default => $state,
-                    }),
+                    ]),
 
                 Tables\Columns\TextColumn::make('date_collectif')
                     ->label('Date')
@@ -129,9 +194,8 @@ class CollectifBudgetaireResource extends Resource
                     ->badge()
                     ->color('primary'),
 
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Créé le')
-                    ->dateTime('d/m/Y H:i')
+                Tables\Columns\TextColumn::make('createur.name')
+                    ->label('Créé par')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
@@ -139,7 +203,8 @@ class CollectifBudgetaireResource extends Resource
                     ->label('Exercice')
                     ->relationship('exercice', 'annee')
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->default(fn() => Exercice::getActif()?->id),
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
@@ -152,55 +217,61 @@ class CollectifBudgetaireResource extends Resource
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make(),
-                    Tables\Actions\EditAction::make()
-                        ->visible(fn($record) => $record->estModifiable()),
+                    Tables\Actions\EditAction::make(),
 
-                    // Action pour adopter/appliquer le collectif
+                    // Action pour adopter le collectif
                     Tables\Actions\Action::make('adopter')
                         ->label('Adopter')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->visible(fn($record) => $record->statut === 'projet')
+                        ->modalHeading('Adopter le collectif')
+                        ->modalDescription('Cette action appliquera les modifications sur les budgets et prévisions.')
+                        ->visible(fn($record) => static::canAdopter($record))
                         ->action(function ($record) {
+                            $record->statut = 'adopte';
+                            $record->date_adoption = now();
+                            $record->save();
                             $record->appliquer();
                             Notification::make()
-                                ->title('Collectif adopté')
-                                ->body('Le collectif a été appliqué avec succès.')
+                                ->title('Collectif adopté et appliqué avec succès')
                                 ->success()
                                 ->send();
                         }),
 
-                    // Action pour annuler le collectif
+                    // Action pour annuler le collectif (si déjà adopté)
                     Tables\Actions\Action::make('annuler')
                         ->label('Annuler')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->requiresConfirmation()
-                        ->visible(fn($record) => $record->statut === 'adopte')
+                        ->modalHeading('Annuler le collectif')
+                        ->modalDescription('Cette action annulera toutes les modifications apportées par ce collectif.')
+                        ->visible(fn($record) => static::canAnnuler($record))
                         ->action(function ($record) {
                             $record->annuler();
                             Notification::make()
-                                ->title('Collectif annulé')
-                                ->body('Le collectif a été annulé et les modifications ont été révoquées.')
-                                ->warning()
+                                ->title('Collectif annulé avec succès')
+                                ->success()
                                 ->send();
                         }),
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
-                    ->color('gray')
                     ->button()
                     ->size('sm'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('delete_collectif_budgetaire')),
+                    Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');
     }
+
+    // ========================================
+    // RELATIONS
+    // ========================================
 
     public static function getRelations(): array
     {
@@ -208,6 +279,10 @@ class CollectifBudgetaireResource extends Resource
             MouvementsRelationManager::class,
         ];
     }
+
+    // ========================================
+    // PAGES
+    // ========================================
 
     public static function getPages(): array
     {
@@ -218,11 +293,4 @@ class CollectifBudgetaireResource extends Resource
             'view' => Pages\ViewCollectifBudgetaire::route('/{record}'),
         ];
     }
-
-    // Permissions (à adapter)
-    public static function canViewAny(): bool
-    {
-        return auth()->user()?->can('view_any_collectif_budgetaire') ?? false;
-    }
-    // ... autres permissions
 }

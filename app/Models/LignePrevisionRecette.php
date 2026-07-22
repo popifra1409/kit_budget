@@ -39,6 +39,11 @@ class LignePrevisionRecette extends Model
         'actif' => 'boolean',
     ];
 
+    public function getLibelleAttribute()
+    {
+        return $this->nomenclature?->libelle ?? 'N/A';
+    }
+
     // ====================================
     // RELATIONS
     // ====================================

@@ -10,6 +10,8 @@ class MouvementCollectif extends Model
 {
     use HasFactory;
 
+    protected $table = 'mouvements_collectifs';
+
     protected $fillable = [
         'collectif_budgetaire_id',
         'type',
@@ -36,9 +38,9 @@ class MouvementCollectif extends Model
         return $this->belongsTo(LigneBudgetaire::class, 'ligne_depense_id');
     }
 
-    public function ligneRecette(): BelongsTo
+    public function ligneRecette()
     {
-        return $this->belongsTo(LignePrevision::class, 'ligne_recette_id');
+        return $this->belongsTo(LignePrevisionRecette::class, 'ligne_recette_id');
     }
 
     // Relations pour les nouvelles lignes créées
@@ -47,9 +49,9 @@ class MouvementCollectif extends Model
         return $this->belongsTo(LigneBudgetaire::class, 'nouvelle_ligne_depense_id');
     }
 
-    public function nouvelleLigneRecette(): BelongsTo
+    public function nouvelleLigneRecette()
     {
-        return $this->belongsTo(LignePrevision::class, 'nouvelle_ligne_recette_id');
+        return $this->belongsTo(LignePrevisionRecette::class, 'nouvelle_ligne_recette_id');
     }
 
     /**

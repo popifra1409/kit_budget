@@ -307,6 +307,14 @@ class PrevisionRecette extends Model
         return $nouvellePrevision;
     }
 
+    public function recalculerTotaux(): void
+    {
+        if (Schema::hasColumn('previsions_recettes', 'total_prevu')) {
+            $this->total_prevu = $this->lignesPrevisions()->sum('montant_rectifie');
+            $this->save();
+        }
+    }
+
     // ====================================
     // SCOPES
     // ====================================

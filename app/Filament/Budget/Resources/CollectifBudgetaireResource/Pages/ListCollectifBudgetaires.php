@@ -13,7 +13,9 @@ class ListCollectifBudgetaires extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+             ->label('Nouveau Collectif')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

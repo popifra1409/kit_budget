@@ -118,20 +118,33 @@ class CollectifBudgetaire extends Model
      */
     public function annuler(): void
     {
-        if ($this->statut !== 'adopte') {
-            return;
-        }
-
-        DB::transaction(function () {
+        if ($this->statut === 'adopte' && !$this->exercice->estCloture()) {
             foreach ($this->mouvements as $mouvement) {
                 $mouvement->annuler();
             }
             $this->statut = 'annule';
             $this->save();
-            // Recalculer les totaux
-            $this->exercice->budgets->each->recalculerTotaux();
-            $this->exercice->previsionRecettes->each->recalculerTotaux();
-        });
+
+            // Recalcul des totaux
+            if ($this->exercice) {
+                // Recalcul budgets
+                $budgets = $this->exercice->budgets;
+                if ($budgets) {
+                    foreach ($budgets as $budget) {
+                        $budget->recalculerTotaux();
+                    }
+                }
+                // Recalcul prévisions recettes
+                $previsions = $this->exercice->previsionRecettes;
+                if ($previsions) {
+                    foreach ($previsions as $prevision) {
+                        $prevision->recalculerTotaux();
+                    }
+                }
+            }
+        } else {
+            throw new \Exception('Impossible d\'annuler ce collectif.');
+        }
     }
 
     /**

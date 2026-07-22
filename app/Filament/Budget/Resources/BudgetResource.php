@@ -56,9 +56,11 @@ class BudgetResource extends Resource
         if (!$user?->can('update_budget')) return false;
 
         if (!$record->estModifiable()) {
+            // Récupération sécurisée de l'année
+            $annee = is_object($record->exercice) ? $record->exercice->annee : $record->exercice;
             Notification::make()
                 ->title('Budget verrouillé')->warning()
-                ->body("L'exercice {$record->exercice->annee} est {$record->exercice->statut}.")
+                ->body("L'exercice {$annee} est verrouillé.")
                 ->send();
             return false;
         }
@@ -179,7 +181,10 @@ class BudgetResource extends Resource
                     ->label('Libellé')->searchable()->sortable()->limit(50)->wrap(),
 
                 Tables\Columns\TextColumn::make('exercice')
-                    ->label('Exercice')->sortable()->badge()->color('info'),
+                    ->label('Exercice')
+                    ->sortable()
+                    ->badge()
+                    ->color('info'),
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
