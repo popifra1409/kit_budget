@@ -93,6 +93,16 @@ if ($nomenclature) {
                 + ($ligneBudgetaire->virements_entrants ?? 0)
                 - ($ligneBudgetaire->virements_sortants ?? 0)));
 
+        // ✅ Collectifs budgétaires ayant impacté cette ligne
+        $collectifsLigne = \App\Models\MouvementCollectif::where(function($q) use ($ligneBudgetaire) {
+                $q->where('ligne_depense_id', $ligneBudgetaire->id)
+                  ->orWhere('nouvelle_ligne_depense_id', $ligneBudgetaire->id);
+            })
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
+            ->with('collectif')
+            ->orderBy('created_at')
+            ->get();
+
         // ✅ PRIORITÉ 1 : snapshots figés au moment de l'engagement
         if ($engagement->snapshot_disponible_avant !== null) {
 
@@ -471,6 +481,32 @@ if ($createdAt) {
                 {{ number_format($dotationInitiale, 0, ',', ' ') }}
             </div>
         </div>
+
+        {{-- ✅ Collectifs budgétaires adoptés ayant modifié la ligne --}}
+        @if(isset($collectifsLigne) && $collectifsLigne->isNotEmpty())
+            @foreach($collectifsLigne as $index => $mouvement)
+            <div class="ligne-montant">
+                <div class="lm-label">
+                    Collectif budgétaire {{ $index + 1 }}
+                    ({{ $mouvement->collectif?->numero }}) :
+                </div>
+                <div class="lm-valeur">
+                    {{ ($mouvement->montant_modification >= 0 ? '+' : '') }}{{ number_format($mouvement->montant_modification, 0, ',', ' ') }}
+                </div>
+            </div>
+            @endforeach
+
+            {{-- Dotation finale = dotation initiale + Σ collectifs --}}
+            @php
+                $dotationFinale = $dotationInitiale + $collectifsLigne->sum('montant_modification');
+            @endphp
+            <div class="ligne-montant" style="font-weight:bold;">
+                <div class="lm-label">Dotation finale :</div>
+                <div class="lm-valeur">
+                    {{ number_format($dotationFinale, 0, ',', ' ') }}
+                </div>
+            </div>
+        @endif
 
         <div class="ligne-montant">
             <div class="lm-label">

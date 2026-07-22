@@ -71,7 +71,8 @@ class FicheControleEngagementsResource extends Resource
      */
     private static function getDisponibleReel(LigneBudgetaire $record): float
     {
-        return (float) $record->budget_initial - self::getTotalEngage($record);
+        // ✅ Utiliser budget_rectifie (inclut les collectifs budgétaires)
+        return (float) $record->budget_rectifie - self::getTotalEngage($record);
     }
 
     /**
@@ -117,12 +118,35 @@ class FicheControleEngagementsResource extends Resource
     public static function recalculerLigne(LigneBudgetaire $record): void
     {
         $totalEngage = self::getTotalEngage($record);
-        $disponible  = (float) $record->budget_initial - $totalEngage;
+
+        // ✅ Utiliser budget_rectifie (après collectifs budgétaires)
+        // budget_rectifie = budget_initial + Σ mouvements collectifs adoptés
+        $budgetRectifie = self::getBudgetRectifieReel($record);
+        $disponible     = $budgetRectifie - $totalEngage;
 
         $record->updateQuietly([
-            'engage'               => $totalEngage,
+            'engage'                => $totalEngage,
+            'budget_rectifie'       => $budgetRectifie,
             'disponible_engagement' => $disponible,
         ]);
+    }
+
+    /**
+     * ✅ Calcule le budget rectifié réel = budget_initial + Σ mouvements collectifs adoptés
+     */
+    public static function getBudgetRectifieReel(LigneBudgetaire $record): float
+    {
+        $base = (float) $record->budget_initial;
+
+        // Ajouter les mouvements de collectifs adoptés
+        $mouvements = \App\Models\MouvementCollectif::where(function ($q) use ($record) {
+            $q->where('ligne_depense_id', $record->id)
+                ->orWhere('nouvelle_ligne_depense_id', $record->id);
+        })
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
+            ->sum('montant_modification');
+
+        return $base + (float) $mouvements;
     }
 
     // ========================================
@@ -150,6 +174,24 @@ class FicheControleEngagementsResource extends Resource
 
                 Tables\Columns\TextColumn::make('budget_initial')
                     ->label('Dotation Initiale')->money('XAF')->sortable()->color('info'),
+
+                // ✅ Collectifs budgétaires adoptés
+                Tables\Columns\TextColumn::make('collectifs_montant')
+                    ->label('Dont Collectifs')
+                    ->getStateUsing(function ($record) {
+                        $total = \App\Models\MouvementCollectif::where(function ($q) use ($record) {
+                            $q->where('ligne_depense_id', $record->id)
+                                ->orWhere('nouvelle_ligne_depense_id', $record->id);
+                        })
+                            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
+                            ->sum('montant_modification');
+                        return $total != 0
+                            ? ($total > 0 ? '+' : '') . number_format($total, 0, ',', ' ') . ' FCFA'
+                            : '—';
+                    })
+                    ->color(fn($state) => str_starts_with($state ?? '', '+') ? 'success'
+                        : (str_starts_with($state ?? '', '-') ? 'danger' : 'gray'))
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 // ✅ CORRIGÉ — calcul dynamique depuis engagements actifs
                 Tables\Columns\TextColumn::make('total_engage_dynamique')

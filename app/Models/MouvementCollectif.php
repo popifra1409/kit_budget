@@ -30,7 +30,7 @@ class MouvementCollectif extends Model
 
     public function collectif(): BelongsTo
     {
-        return $this->belongsTo(CollectifBudgetaire::class);
+        return $this->belongsTo(CollectifBudgetaire::class, 'collectif_budgetaire_id');
     }
 
     // Relations pour les lignes existantes
@@ -88,46 +88,42 @@ class MouvementCollectif extends Model
                     throw new \Exception("Fonds insuffisants sur la ligne source");
                 }
                 $source->virements_sortants += $montant;
-                $source->saveQuietly();
+                $source->save();
                 $dest->virements_entrants += $montant;
-                $dest->saveQuietly();
+                $dest->save();
             }
         } else {
             if ($this->type === 'depense') {
                 if ($this->nouvelle_ligne_depense_id) {
-                    // ✅ Provisionner la nouvelle ligne avec le montant du mouvement
+                    // La nouvelle ligne a déjà été créée (lors de la création du mouvement)
+                    // On marque juste qu'elle est issue du collectif
                     $ligne = $this->nouvelleLigneDepense;
                     if ($ligne) {
-                        $ligne->budget_initial         = (float) $this->montant_modification;
-                        $ligne->budget_rectifie        = (float) $this->montant_modification;
-                        $ligne->est_issue_collectif    = true;
-                        $ligne->collectif_creation_id  = $this->collectif_budgetaire_id;
-                        $ligne->saveQuietly();
+                        $ligne->est_issue_collectif = true;
+                        $ligne->collectif_creation_id = $this->collectif_id;
+                        $ligne->save();
                     }
                 } elseif ($this->ligne_depense_id) {
                     $ligne = $this->ligneDepense;
                     if ($ligne) {
                         // Appliquer la modification
                         $ligne->budget_rectifie += $this->montant_modification;
-                        $ligne->saveQuietly();
+                        $ligne->save();
                     }
                 }
             } else { // recette
                 if ($this->nouvelle_ligne_recette_id) {
-                    // ✅ Provisionner la nouvelle ligne recette
                     $ligne = $this->nouvelleLigneRecette;
                     if ($ligne) {
-                        $ligne->montant_initial        = (float) $this->montant_modification;
-                        $ligne->montant_rectifie       = (float) $this->montant_modification;
-                        $ligne->est_issue_collectif    = true;
-                        $ligne->collectif_creation_id  = $this->collectif_budgetaire_id;
-                        $ligne->saveQuietly();
+                        $ligne->est_issue_collectif = true;
+                        $ligne->collectif_creation_id = $this->collectif_id;
+                        $ligne->save();
                     }
                 } elseif ($this->ligne_recette_id) {
                     $ligne = $this->ligneRecette;
                     if ($ligne) {
                         $ligne->montant_rectifie += $this->montant_modification;
-                        $ligne->saveQuietly();
+                        $ligne->save();
                     }
                 }
             }
