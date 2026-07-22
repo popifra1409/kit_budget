@@ -95,6 +95,16 @@ class BudgetPanelProvider extends PanelProvider
             ])
 
             // ── Navigation du module Budget ──────────────────────────────
+            ->navigationItems([
+                // ✅ Lien direct vers la page Thèmes — accessible même sans profil
+                \Filament\Navigation\NavigationItem::make('Apparence & Thèmes')
+                    ->url(fn() => route('filament.budget.pages.themes'))
+                    ->icon('heroicon-o-paint-brush')
+                    ->group('Paramétrage')
+                    ->sort(99)
+                    ->visible(fn() => auth()->check()
+                        && auth()->user()->hasRole(['super_admin', 'admin'])),
+            ])
             ->navigationGroups([
                 'Commandes & Engagement',
                 'Régies & Menu Dépenses',

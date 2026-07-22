@@ -326,58 +326,28 @@ class MouvementsRelationManager extends RelationManager
                                 $budget = $exercice->budgets()->where('actif', true)->first();
                                 if (!$budget) throw new \Exception('Aucun budget actif trouvé.');
 
-                                // ✅ updateOrCreate — la ligne peut déjà exister
-                                $montant = (float) ($data['montant_modification'] ?? 0);
-                                $ligneExistante = LigneBudgetaire::where('budget_id', $budget->id)
-                                    ->where('nomenclature_id', $data['nomenclature_existante_id'])
-                                    ->first();
-
-                                if ($ligneExistante) {
-                                    // Ligne existante → modifier le budget_rectifie
-                                    // ✅ PAS de mise à jour immédiate — sera appliqué à l'adoption
-                                    $data['ligne_depense_id']          = $ligneExistante->id;
-                                    $data['nouvelle_ligne_depense_id'] = null;
-                                } else {
-                                    // Nouvelle ligne → créer
-                                    $ligne = LigneBudgetaire::create([
-                                        'budget_id'             => $budget->id,
-                                        'nomenclature_id'       => $data['nomenclature_existante_id'],
-                                        'budget_initial'        => $montant,
-                                        'budget_rectifie'       => $montant,
-                                        'est_issue_collectif'   => true,
-                                        'collectif_creation_id' => $collectif->id,
-                                    ]);
-                                    $data['nouvelle_ligne_depense_id'] = $ligne->id;
-                                    $data['ligne_depense_id'] = null;
-                                }
+                                $ligne = LigneBudgetaire::create([
+                                    'budget_id'              => $budget->id,
+                                    'nomenclature_id'        => $data['nomenclature_existante_id'],
+                                    'budget_initial'         => $data['montant_modification'] ?? 0,
+                                    'budget_rectifie'        => $data['montant_modification'] ?? 0,
+                                    'est_issue_collectif'    => true,
+                                    'collectif_creation_id'  => $collectif->id,
+                                ]);
+                                $data['nouvelle_ligne_depense_id'] = $ligne->id;
+                                $data['ligne_depense_id']          = null;
                             } else {
-                                $prevision = \App\Models\PrevisionRecette::where('exercice_id', $exercice->id)->whereIn('statut', ['adopte', 'actif', 'valide'])->first();
+                                $prevision = $exercice->previsionRecettes()->where('actif', true)->first();
                                 if (!$prevision) throw new \Exception('Aucune prévision de recettes active.');
 
-                                // ✅ Chercher puis incrémenter — évite DB::raw et contrainte unique
-                                $montant = (float) ($data['montant_modification'] ?? 0);
-                                $ligne = LignePrevisionRecette::where('prevision_recette_id', $prevision->id)
-                                    ->where('nomenclature_id', $data['nomenclature_existante_id'])
-                                    ->first();
-
-                                if ($ligne) {
-                                    // Ligne existante → incrémenter montant_rectifie
-                                    // ✅ PAS de mise à jour immédiate — sera appliqué à l'adoption
-                                    $data['ligne_recette_id']           = $ligne->id;
-                                    $data['nouvelle_ligne_recette_id']  = null;
-                                } else {
-                                    // Nouvelle ligne
-                                    $ligne = LignePrevisionRecette::create([
-                                        'prevision_recette_id'   => $prevision->id,
-                                        'nomenclature_id'        => $data['nomenclature_existante_id'],
-                                        'montant_initial'        => $montant,
-                                        'montant_rectifie'       => $montant,
-                                        'est_issue_collectif'    => true,
-                                        'collectif_creation_id'  => $collectif->id,
-                                    ]);
-                                    $data['nouvelle_ligne_recette_id'] = $ligne->id;
-                                    $data['ligne_recette_id']           = null;
-                                }
+                                $ligne = LignePrevisionRecette::create([
+                                    'prevision_recette_id'   => $prevision->id,
+                                    'nomenclature_id'        => $data['nomenclature_existante_id'],
+                                    'montant_initial'        => $data['montant_modification'] ?? 0,
+                                    'montant_rectifie'       => $data['montant_modification'] ?? 0,
+                                    'est_issue_collectif'    => true,
+                                    'collectif_creation_id'  => $collectif->id,
+                                ]);
                                 $data['nouvelle_ligne_recette_id'] = $ligne->id;
                                 $data['ligne_recette_id']          = null;
                             }
@@ -410,7 +380,7 @@ class MouvementsRelationManager extends RelationManager
                                 ]);
                                 $data['nouvelle_ligne_depense_id'] = $ligne->id;
                             } else {
-                                $prevision = \App\Models\PrevisionRecette::where('exercice_id', $exercice->id)->whereIn('statut', ['adopte', 'actif', 'valide'])->first();
+                                $prevision = $exercice->previsionRecettes()->where('actif', true)->first();
                                 if (!$prevision) throw new \Exception('Aucune prévision de recettes active.');
 
                                 $ligne = LignePrevisionRecette::create([
@@ -423,6 +393,27 @@ class MouvementsRelationManager extends RelationManager
                                 ]);
                                 $data['nouvelle_ligne_recette_id'] = $ligne->id;
                             }
+                        }
+
+                        // ✅ Créer VirementBudgetaire en statut en_attente si type virement
+                        if (
+                            $data['type'] === 'virement'
+                            && !empty($data['ligne_source_id'])
+                            && !empty($data['ligne_destination_id'])
+                        ) {
+                            $ligneSource = LigneBudgetaire::find($data['ligne_source_id']);
+                            $virement = \App\Models\VirementBudgetaire::create([
+                                'exercice_id'          => $collectif->exercice_id,
+                                'budget_id'            => $ligneSource?->budget_id,
+                                'ligne_source_id'      => $data['ligne_source_id'],
+                                'ligne_destination_id' => $data['ligne_destination_id'],
+                                'montant'              => $data['montant_modification'],
+                                'date_virement'        => now(),
+                                'motif'                => '[Collectif ' . $collectif->numero . '] ' . ($data['motif'] ?? ''),
+                                'reference_decision'   => $collectif->numero,
+                                'statut'               => 'en_attente',
+                            ]);
+                            $data['virement_budgetaire_id'] = $virement->id;
                         }
 
                         // Nettoyer les champs temporaires

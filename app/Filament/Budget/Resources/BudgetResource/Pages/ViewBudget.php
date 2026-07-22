@@ -64,51 +64,51 @@ class ViewBudget extends ViewRecord
                     ->schema([
                         Infolists\Components\TextEntry::make('budget_total_initial')
                             ->label('Budget Initial')
-                            ->formatStateUsing(fn($record) => number_format($record->getBudgetTotalInitial(), 0, ',', ' ') . ' FCFA')
+                            ->getStateUsing(fn($record) => number_format($record->getBudgetTotalInitial(), 0, ',', ' ') . ' FCFA')
                             ->color('info')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold'),
 
                         Infolists\Components\TextEntry::make('budget_total_rectifie')
                             ->label('Budget Rectifié')
-                            ->formatStateUsing(fn($record) => number_format($record->getBudgetTotalRectifie(), 0, ',', ' ') . ' FCFA')
+                            ->getStateUsing(fn($record) => number_format($record->getBudgetTotalRectifie(), 0, ',', ' ') . ' FCFA')
                             ->color('success')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold'),
 
                         Infolists\Components\TextEntry::make('total_engage')
                             ->label('Total Engagé')
-                            ->formatStateUsing(fn($record) => number_format($record->getTotalEngage(), 0, ',', ' ') . ' FCFA')
+                            ->getStateUsing(fn($record) => number_format($record->getTotalEngage(), 0, ',', ' ') . ' FCFA')
                             ->color('warning')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
 
                         Infolists\Components\TextEntry::make('total_liquide')
                             ->label('Total Liquidé')
-                            ->formatStateUsing(fn($record) => number_format($record->getTotalLiquide(), 0, ',', ' ') . ' FCFA')
+                            ->getStateUsing(fn($record) => number_format($record->getTotalLiquide(), 0, ',', ' ') . ' FCFA')
                             ->color('primary')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
 
                         Infolists\Components\TextEntry::make('disponible_total')
                             ->label('Disponible Total')
-                            ->formatStateUsing(fn($record) => number_format($record->getDisponibleTotal(), 0, ',', ' ') . ' FCFA')
+                            ->getStateUsing(fn($record) => number_format($record->getDisponibleTotal(), 0, ',', ' ') . ' FCFA')
                             ->color('success')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
 
                         Infolists\Components\TextEntry::make('taux_engagement')
                             ->label('Taux d\'Engagement')
-                            ->formatStateUsing(fn($record) => number_format($record->getTauxEngagement(), 2) . '%')
+                            ->getStateUsing(fn($record) => number_format($record->getTauxEngagement(), 2) . '%')
                             ->color(fn($record) => $record->getTauxEngagement() >= 80 ? 'success' : 'warning')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
 
                         Infolists\Components\TextEntry::make('taux_execution')
                             ->label('Taux d\'Exécution')
-                            ->formatStateUsing(fn($record) => number_format($record->getTauxExecution(), 2) . '%')
+                            ->getStateUsing(fn($record) => number_format($record->getTauxExecution(), 2) . '%')
                             ->color(fn($record) => $record->getTauxExecution() >= 80 ? 'success' : ($record->getTauxExecution() >= 50 ? 'warning' : 'danger'))
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
 
                         Infolists\Components\TextEntry::make('nombre_lignes')
                             ->label('Nombre de Lignes')
-                            ->formatStateUsing(fn($record) => $record->lignesBudgetaires()->count())
+                            ->getStateUsing(fn($record) => $record->lignesBudgetaires()->count())
                             ->badge(),
                     ])
                     ->columns(4),

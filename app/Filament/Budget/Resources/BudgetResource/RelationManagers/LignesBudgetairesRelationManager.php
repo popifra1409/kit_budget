@@ -134,6 +134,59 @@ class LignesBudgetairesRelationManager extends RelationManager
                             : ($record->getTauxExecution() >= 50 ? 'warning' : 'danger')
                     )
                     ->toggleable(),
+
+                // ✅ Colonne — Opérations ayant modifié la ligne
+                Tables\Columns\TextColumn::make('operations')
+                    ->label('Opérations')
+                    ->getStateUsing(function ($record) {
+                        $ops = collect();
+
+                        // Mouvements collectifs (augmentation/réduction)
+                        $mouvements = \App\Models\MouvementCollectif::where('ligne_depense_id', $record->id)
+                            ->orWhere('nouvelle_ligne_depense_id', $record->id)
+                            ->with('collectif')
+                            ->get();
+
+                        foreach ($mouvements as $m) {
+                            if (!$m->collectif) continue;
+                            $signe  = $m->montant_modification >= 0 ? '+' : '';
+                            $ops->push(
+                                '📋 ' . $m->collectif->numero
+                                    . ' (' . $signe . number_format($m->montant_modification, 0, ',', ' ') . ' FCFA)'
+                                    . ' — ' . ucfirst($m->collectif->statut)
+                            );
+                        }
+
+                        // Virements sortants
+                        $virSortants = \App\Models\VirementBudgetaire::where('ligne_source_id', $record->id)
+                            ->whereIn('statut', ['execute', 'approuve'])
+                            ->get();
+                        foreach ($virSortants as $v) {
+                            $ops->push(
+                                '↓ ' . $v->numero
+                                    . ' (-' . number_format($v->montant, 0, ',', ' ') . ' FCFA)'
+                                    . ' — ' . ucfirst($v->statut)
+                            );
+                        }
+
+                        // Virements entrants
+                        $virEntrants = \App\Models\VirementBudgetaire::where('ligne_destination_id', $record->id)
+                            ->whereIn('statut', ['execute', 'approuve'])
+                            ->get();
+                        foreach ($virEntrants as $v) {
+                            $ops->push(
+                                '↑ ' . $v->numero
+                                    . ' (+' . number_format($v->montant, 0, ',', ' ') . ' FCFA)'
+                                    . ' — ' . ucfirst($v->statut)
+                            );
+                        }
+
+                        return $ops->isEmpty() ? '—' : $ops->implode("\n");
+                    })
+                    ->wrap()
+                    ->lineClamp(3)
+                    ->tooltip(fn($state) => $state !== '—' ? $state : null)
+                    ->toggleable(isToggledHiddenByDefault: false),
             ])
             ->filters([])
             ->headerActions([
@@ -194,6 +247,33 @@ class LignesBudgetairesRelationManager extends RelationManager
                     }),
             ])
             ->actions([
+                // ✅ Action Historique — détail complet des opérations
+                Tables\Actions\Action::make('historique')
+                    ->label('Historique')
+                    ->icon('heroicon-o-clock')
+                    ->color('gray')
+                    ->modalHeading(fn($record) => 'Historique — ' . ($record->nomenclature?->code ?? '') . ' ' . ($record->nomenclature?->libelle ?? ''))
+                    ->modalContent(function ($record) {
+                        $mouvements = \App\Models\MouvementCollectif::where('ligne_depense_id', $record->id)
+                            ->orWhere('nouvelle_ligne_depense_id', $record->id)
+                            ->with('collectif')
+                            ->orderByDesc('created_at')
+                            ->get();
+
+                        $virements = \App\Models\VirementBudgetaire::where('ligne_source_id', $record->id)
+                            ->orWhere('ligne_destination_id', $record->id)
+                            ->orderByDesc('created_at')
+                            ->get();
+
+                        return view('filament.modals.historique-ligne-budgetaire', compact(
+                            'record',
+                            'mouvements',
+                            'virements'
+                        ));
+                    })
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Fermer'),
+
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])

@@ -223,6 +223,38 @@ class VirementBudgetaire extends Model
         $this->save();
     }
 
+    /**
+     * Relation vers le mouvement collectif source
+     */
+    public function mouvementCollectif(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\MouvementCollectif::class, 'mouvement_collectif_id');
+    }
+
+    /**
+     * ✅ Créer un virement depuis un mouvement de collectif budgétaire
+     * Statut initial : en_attente (sera exécuté à l'adoption du collectif)
+     */
+    public static function creerDepuisCollectif(
+        \App\Models\MouvementCollectif $mouvement,
+        \App\Models\CollectifBudgetaire $collectif
+    ): self {
+        $ligneSource = \App\Models\LigneBudgetaire::find($mouvement->ligne_source_id);
+        if (!$ligneSource) throw new \Exception('Ligne source introuvable.');
+
+        return static::create([
+            'exercice_id'          => $collectif->exercice_id,
+            'budget_id'            => $ligneSource->budget_id,
+            'ligne_source_id'      => $mouvement->ligne_source_id,
+            'ligne_destination_id' => $mouvement->ligne_destination_id,
+            'montant'              => $mouvement->montant_modification,
+            'date_virement'        => now(),
+            'motif'                => '[Collectif ' . $collectif->numero . '] ' . $mouvement->motif,
+            'reference_decision'   => $collectif->numero,
+            'statut'               => 'en_attente',
+        ]);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
@@ -230,6 +262,6 @@ class VirementBudgetaire extends Model
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->useLogName('workflow')
-            ->setDescriptionForEvent(fn(string $event) => 'Virement Budgétaire ' . ($this->numero ?? '') . ' — {$event}');
+            ->setDescriptionForEvent(fn(string $event) => 'Virement Budgétaire ' . ($this->numero ?? '') . ' — ' . $event);
     }
 }
