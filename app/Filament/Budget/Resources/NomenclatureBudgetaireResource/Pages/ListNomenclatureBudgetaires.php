@@ -4,6 +4,7 @@ namespace App\Filament\Budget\Resources\NomenclatureBudgetaireResource\Pages;
 
 use App\Filament\Budget\Resources\NomenclatureBudgetaireResource;
 use Filament\Actions;
+use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
 
 class ListNomenclatureBudgetaires extends ListRecords
@@ -28,6 +29,31 @@ class ListNomenclatureBudgetaires extends ListRecords
             Actions\CreateAction::make()
                 ->label('Nouvelle nomenclature')
                 ->icon('heroicon-o-plus'),
+        ];
+    }
+
+    /**
+     * Onglets par type — le regroupement par "groupe de nomenclature"
+     * se fait ensuite à l'intérieur de chaque onglet via ->groups()
+     * défini dans NomenclatureBudgetaireResource::table().
+     */
+    public function getTabs(): array
+    {
+        return [
+            'tous' => Tab::make('Toutes')
+                ->badge(fn() => \App\Models\NomenclatureBudgetaire::count()),
+
+            'depense' => Tab::make('Dépenses')
+                ->icon('heroicon-o-arrow-trending-down')
+                ->badge(fn() => \App\Models\NomenclatureBudgetaire::where('type', 'depense')->count())
+                ->badgeColor('danger')
+                ->modifyQueryUsing(fn($query) => $query->where('type', 'depense')),
+
+            'recette' => Tab::make('Recettes')
+                ->icon('heroicon-o-arrow-trending-up')
+                ->badge(fn() => \App\Models\NomenclatureBudgetaire::where('type', 'recette')->count())
+                ->badgeColor('success')
+                ->modifyQueryUsing(fn($query) => $query->where('type', 'recette')),
         ];
     }
 }

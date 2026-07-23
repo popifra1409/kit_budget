@@ -32,6 +32,7 @@ class RolePermissionSeeder extends Seeder
             'fournisseur',
             'memoire_depense',
             'nomenclature_budgetaire',
+            'groupe_nomenclature', // ← AJOUT
             'ordonnance_paiement',
             'parametres_fournisseur',
             'parametres_structure',
@@ -209,10 +210,10 @@ class RolePermissionSeeder extends Seeder
             'view_budget_programme',
             'saisir_previsions_budget_programme',
             'exporter_budget_programme',
-            'gerer_collectif_budgetaire',       
-            'valider_collectif_budgetaire',     
-            'adopter_collectif_budgetaire',     
-            'annuler_collectif_budgetaire',     
+            'gerer_collectif_budgetaire',
+            'valider_collectif_budgetaire',
+            'adopter_collectif_budgetaire',
+            'annuler_collectif_budgetaire',
 
             // ── Marquer payée OP ──────────────────────────
             'marquer_payee_ordonnance_paiement',

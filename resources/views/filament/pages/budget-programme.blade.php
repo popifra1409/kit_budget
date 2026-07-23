@@ -74,7 +74,7 @@
             </thead>
 
             <tbody>
-            @php $currentChapter = null; $rowNum = 0; @endphp
+            @php $currentGroupe = null; $currentChapter = null; $rowNum = 0; @endphp
             @foreach($lignes as $ligne)
                 @php
                     $chapter = substr($ligne['imputation'], 0, 3);
@@ -82,6 +82,20 @@
                     $rowNum++;
                     $rowBg = $rowNum % 2 === 0 ? '#f8fafc' : 'white';
                 @endphp
+
+                {{-- Ligne d'en-tête de GROUPE (niveau au-dessus du chapitre) --}}
+                @if($isArticle && ($ligne['groupe_libelle'] ?? null) !== $currentGroupe)
+                    @php
+                        $currentGroupe = $ligne['groupe_libelle'] ?? 'Non classées / Hors groupe';
+                        $currentChapter = null; // force le réaffichage du 1er chapitre de ce groupe
+                        $estHorsGroupe = empty($ligne['groupe_id']);
+                    @endphp
+                    <tr style="background:{{ $estHorsGroupe ? '#fefce8' : '#0f172a' }}; font-weight:800; font-size:.78rem;">
+                        <td colspan="15" style="padding:.55rem .75rem; color:{{ $estHorsGroupe ? '#854d0e' : 'white' }}; text-transform:uppercase; letter-spacing:.03em;">
+                            {{ $estHorsGroupe ? '⚠️ ' : '📁 ' }}{{ $currentGroupe }}
+                        </td>
+                    </tr>
+                @endif
 
                 {{-- Ligne de chapitre --}}
                 @if($isArticle && $chapter !== $currentChapter)

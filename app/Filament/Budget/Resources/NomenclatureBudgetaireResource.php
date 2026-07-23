@@ -62,7 +62,7 @@ class NomenclatureBudgetaireResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()->with(['exercice', 'groupe']);
     }
 
     // ========================================
@@ -127,6 +127,41 @@ class NomenclatureBudgetaireResource extends Resource
                                     '7'     => '✓ Type défini automatiquement : Recette',
                                     '1'     => 'Ex: FONDS DE RESERVE peut être Recette ou Dépense selon le cas',
                                     default => 'Choisissez le type approprié pour cette nomenclature',
+                                };
+                            }),
+
+                        Forms\Components\Select::make('groupe_id')
+                            ->label('Groupe de nomenclature')
+                            ->options(function (callable $get) {
+                                $type = $get('type');
+
+                                return \App\Models\GroupeNomenclature::query()
+                                    ->actif()
+                                    ->when($type, fn($query) => $query->where('type', $type))
+                                    ->ordonne()
+                                    ->pluck('libelle', 'id');
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->helperText(
+                                fn(callable $get) => $get('type')
+                                    ? 'Seuls les groupes de type « ' . ($get('type') === 'depense' ? 'Dépense' : 'Recette') . ' » sont proposés.'
+                                    : 'Sélectionnez d\'abord la classe/le type pour filtrer les groupes disponibles.'
+                            )
+                            ->rule(function (callable $get) {
+                                return function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    if (!$value) {
+                                        return;
+                                    }
+
+                                    $groupe = \App\Models\GroupeNomenclature::find($value);
+                                    $type = $get('type');
+
+                                    if ($groupe && $type && $groupe->type !== $type) {
+                                        $fail("Le groupe sélectionné correspond au type '{$groupe->type}', "
+                                            . "incompatible avec le type '{$type}' choisi pour cette ligne.");
+                                    }
                                 };
                             }),
 
@@ -338,6 +373,13 @@ class NomenclatureBudgetaireResource extends Resource
                     ->label('Type')
                     ->colors(['danger' => 'depense', 'success' => 'recette']),
 
+                Tables\Columns\TextColumn::make('groupe.libelle')
+                    ->label('Groupe')
+                    ->placeholder('—')
+                    ->badge()
+                    ->color('gray')
+                    ->toggleable(),
+
                 Tables\Columns\BadgeColumn::make('niveau')
                     ->label('Niveau')
                     ->colors([
@@ -420,6 +462,12 @@ class NomenclatureBudgetaireResource extends Resource
                     ->label('Type')
                     ->options(['depense' => 'Dépense', 'recette' => 'Recette']),
 
+                Tables\Filters\SelectFilter::make('groupe_id')
+                    ->label('Groupe')
+                    ->relationship('groupe', 'libelle')
+                    ->searchable()
+                    ->preload(),
+
                 Tables\Filters\SelectFilter::make('niveau')
                     ->label('Niveau')
                     ->options([
@@ -456,6 +504,16 @@ class NomenclatureBudgetaireResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
+            ->groups([
+                Tables\Grouping\Group::make('groupe.libelle')
+                    ->label('Groupe de nomenclature')
+                    ->getTitleFromRecordUsing(fn($record) => $record->groupe?->libelle ?? '⚠️ Non classées / Hors groupe')
+                    ->getKeyFromRecordUsing(fn($record) => $record->groupe
+                        ? str_pad((string) $record->groupe->ordre, 4, '0', STR_PAD_LEFT) . '-' . $record->groupe->libelle
+                        : '9999-Hors groupe')
+                    ->collapsible(),
+            ])
+            ->defaultGroup('groupe.libelle')
             ->defaultSort('code', 'asc');
     }
 

@@ -40,6 +40,7 @@ class BudgetProgrammeService
         // ── Nomenclatures de fonctionnement ─────────────────
         $nomenclatures = NomenclatureBudgetaire::query()
             ->where('actif', true)
+            ->with('groupe')
             ->when(
                 $categorie === 'fonctionnement',
                 fn($q) => $q->where(function ($q) {
@@ -57,9 +58,12 @@ class BudgetProgrammeService
 
         foreach ($nomenclatures as $nomenclature) {
             $ligne = [
-                'imputation' => $nomenclature->code,
-                'rubrique'   => $nomenclature->libelle,
-                'niveau'     => strlen($nomenclature->code) <= 3 ? 'chapitre' : 'article',
+                'imputation'     => $nomenclature->code,
+                'rubrique'       => $nomenclature->libelle,
+                'niveau'         => strlen($nomenclature->code) <= 3 ? 'chapitre' : 'article',
+                'groupe_id'      => $nomenclature->groupe_id,
+                'groupe_libelle' => $nomenclature->groupe?->libelle ?? 'Non classées / Hors groupe',
+                'groupe_ordre'   => $nomenclature->groupe?->ordre ?? 9999,
             ];
 
             // Pour chaque année
@@ -88,6 +92,11 @@ class BudgetProgrammeService
 
             $lignes[] = $ligne;
         }
+
+        // ── Tri : groupe (ordre) puis code (pour garder le regroupement chapitre cohérent) ──
+        usort($lignes, function ($a, $b) {
+            return [$a['groupe_ordre'], $a['imputation']] <=> [$b['groupe_ordre'], $b['imputation']];
+        });
 
         return [
             'annees'          => $annees,
