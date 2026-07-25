@@ -17,6 +17,8 @@ use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use App\Models\Exercice;
 use Filament\Tables\Enums\ActionsPosition;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class RegieAvanceResource extends Resource
 {
@@ -58,6 +60,21 @@ class RegieAvanceResource extends Resource
         return auth()->user()?->can('delete_regie_avance')
             && $record->statut === 'actif'
             && $record->montant_depense == 0;
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'libelle', 'objet', 'statut'];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'libelle' => $record->libelle,
+            'objet' => $record->objet,
+            'statut' => $record->statut,
+            'type' => $record->type,
+        ];
     }
 
     // =========================================================
