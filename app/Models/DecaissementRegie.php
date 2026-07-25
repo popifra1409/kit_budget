@@ -94,10 +94,36 @@ class DecaissementRegie extends Model
     // ── Méthodes ──────────────────────────────────────────────
     public function recalculerDepenses(): void
     {
-        // ✅ Statuts considérés comme "réellement dépensés"
-        $statutsDepenses = ['livre', 'livre_partiellement', 'paye'];
+        // ✅ Mettre à jour montant_consomme sur chaque provision, en se basant
+        //    sur la traçabilité RÉELLE (provision_consommations pour les BCR
+        //    engagés en cascade + DepenseRegie pour les achats directs).
+        //    Remplace l'ancienne resommation par statut qui double-comptait
+        //    le TTC complet d'un BCR partiellement engagé.
+        $this->load('provisions');
 
-        // Dépenses directes (AchatDirect) rattachées à ce décaissement
+        foreach ($this->provisions as $prov) {
+            $consommeParBcr = \App\Models\ProvisionConsommation::where('provision_ligne_regie_id', $prov->id)
+                ->sum('montant');
+
+            $consommeParDepenseDirecte = \App\Models\DepenseRegie::where('provision_ligne_regie_id', $prov->id)
+                ->whereIn('statut', ['valide', 'paye'])
+                ->sum('montant_ttc');
+
+            $consommeProv = (float) $consommeParBcr + (float) $consommeParDepenseDirecte;
+
+            $prov->updateQuietly([
+                'montant_consomme'   => $consommeProv,
+                'montant_disponible' => $prov->montant_provisionne - $consommeProv,
+            ]);
+        }
+
+        // ✅ Mettre à jour le décaissement — dépenses réellement livrées/payées.
+        //    Basé sur la consommation RÉELLE en cascade (provision_consommations),
+        //    pas sur le TTC complet des BCR attribués à leur "provision principale"
+        //    (qui double/mal-comptait en cas de répartition sur plusieurs décaissements).
+        $statutsDepenses = ['livre', 'livre_partiellement', 'paye'];
+        $provisionIds    = $this->provisions->pluck('id');
+
         $totalDepense = $this->depenses()
             ->whereIn('statut', ['valide', 'paye'])
             ->sum('montant_ttc');
@@ -106,52 +132,26 @@ class DecaissementRegie extends Model
             ->whereIn('statut', ['valide', 'paye'])
             ->sum('montant_ir');
 
-        // ✅ BCR réellement dépensés : uniquement livre/paye — PAS valide
-        $bcrDepenses = \App\Models\BonCommandeRegie::whereHas(
-            'provisionLigneRegie',
-            fn($q) => $q->where('decaissement_regie_id', $this->id)
-        )
-            ->whereIn('statut', $statutsDepenses)
-            ->get();
+        // Consommations BCR réellement imputées aux provisions de CE décaissement,
+        // limitées aux BCR au statut "réellement dépensé" — et pondérées à l'IR
+        // proportionnellement à la part prise sur ce décaissement.
+        $consommationsBcr = \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
+            ->with('bonCommandeRegie')
+            ->get()
+            ->filter(fn($c) => $c->bonCommandeRegie && in_array($c->bonCommandeRegie->statut, $statutsDepenses));
 
-        $totalBcr   = $bcrDepenses->sum('montant_ttc');
-        $totalIrBcr = $bcrDepenses->sum('montant_ir');
-
-        // ✅ BCR engagés (valide + engage) = montant réservé mais pas encore payé
-        $bcrEngage = \App\Models\BonCommandeRegie::whereHas(
-            'provisionLigneRegie',
-            fn($q) => $q->where('decaissement_regie_id', $this->id)
-        )
-            ->where('statut', 'valide')
-            ->where('engage', true)
-            ->sum('montant_ttc');
-
+        $totalBcr   = (float) $consommationsBcr->sum('montant');
+        $totalIrBcr = (float) $consommationsBcr->sum(function ($c) {
+            $bcr = $c->bonCommandeRegie;
+            if ((float) $bcr->montant_ttc <= 0) {
+                return 0;
+            }
+            // Part d'IR proportionnelle au montant réellement pris sur ce décaissement
+            return (float) $c->montant * ((float) $bcr->montant_ir / (float) $bcr->montant_ttc);
+        });
         $totalDepenseGlobal = $totalDepense + $totalBcr;
         $totalIr            = $totalIrDepenses + $totalIrBcr;
 
-        // ✅ Mettre à jour montant_consomme sur chaque provision
-        $this->load('provisions');
-        foreach ($this->provisions as $prov) {
-            $consommeProv =
-                \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
-                ->whereIn('statut', $statutsDepenses)
-                ->sum('montant_ttc')
-                + \App\Models\DepenseRegie::where('provision_ligne_regie_id', $prov->id)
-                ->whereIn('statut', ['valide', 'paye'])
-                ->sum('montant_ttc');
-
-            $engageProv = \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
-                ->where('statut', 'valide')
-                ->where('engage', true)
-                ->sum('montant_ttc');
-
-            $prov->updateQuietly([
-                'montant_consomme'   => $consommeProv,
-                'montant_disponible' => $prov->montant_provisionne - $consommeProv,
-            ]);
-        }
-
-        // ✅ Mettre à jour le décaissement
         $this->updateQuietly([
             'montant_depense'     => $totalDepenseGlobal,
             'montant_ir_collecte' => $totalIr,

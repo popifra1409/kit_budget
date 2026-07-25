@@ -130,44 +130,93 @@ class BonCommandeRegie extends Model
         return $this->belongsTo(ProvisionLigneRegie::class, 'provision_ligne_regie_id');
     }
 
-    // ── Engagement ────────────────────────────────────────────────
+    // ── Engagement (en cascade sur toutes les provisions de la ligne) ──
     public function engager(
         ?float  $montantPartiel = null,
         float   $pourcentage    = 100,
         ?string $commentaire    = null
     ): void {
-        if ($this->engage) {
-            throw new \Exception("Ce BCR est déjà engagé.");
-        }
-
         $montantAEngager = $montantPartiel ?? (float) $this->montant_ttc;
+        $dejaEngage      = (float) ($this->montant_engage ?? 0);
 
-        $provision = $this->provisionLigneRegie;
-        if (!$provision) {
-            throw new \Exception("Aucune provision associée à ce BCR.");
-        }
-
-        if ($montantAEngager > $provision->montant_disponible) {
+        // ✅ Autorise l'engagement incrémental (solde progressif) au lieu
+        //    de bloquer dès qu'une première tranche a été engagée.
+        if ($dejaEngage + $montantAEngager > (float) $this->montant_ttc + 0.01) {
             throw new \Exception(
-                "Provision insuffisante. Disponible : "
-                    . number_format($provision->montant_disponible, 0, ',', ' ')
-                    . " FCFA — Demandé : "
-                    . number_format($montantAEngager, 0, ',', ' ') . " FCFA"
+                "Le montant déjà engagé (" . number_format($dejaEngage, 0, ',', ' ') . " FCFA) "
+                    . "+ ce montant (" . number_format($montantAEngager, 0, ',', ' ') . " FCFA) "
+                    . "dépasserait le montant TTC du bon de commande ("
+                    . number_format((float) $this->montant_ttc, 0, ',', ' ') . " FCFA)."
             );
         }
 
-        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provision) {
-            // ── Débiter la provision ──────────────────────────────
-            $provision->increment('montant_consomme', $montantAEngager);
+        if (!$this->ligne_regie_avance_id) {
+            throw new \Exception("Aucune ligne de régie associée à ce BCR.");
+        }
 
-            // ── Marquer le BCR comme engagé ───────────────────────
+        // ── Cascade : toutes les provisions de cette ligne, tous décaissements
+        //    "versés", triées par ordre chronologique (le plus ancien d'abord)
+        $provisions = ProvisionLigneRegie::where('ligne_regie_avance_id', $this->ligne_regie_avance_id)
+            ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
+            ->with('decaissement')
+            ->get()
+            ->sortBy(fn($p) => [
+                $p->decaissement?->date_decaissement?->format('Y-m-d') ?? '9999-99-99',
+                $p->decaissement?->numero ?? '',
+            ])
+            ->values();
+
+        $totalDisponible = (float) $provisions->sum('montant_disponible');
+
+        if ($montantAEngager > $totalDisponible) {
+            throw new \Exception(
+                "Provision insuffisante sur l'ensemble des décaissements de cette ligne. "
+                    . "Disponible cumulé : " . number_format($totalDisponible, 0, ',', ' ') . " FCFA — "
+                    . "Demandé : " . number_format($montantAEngager, 0, ',', ' ') . " FCFA"
+            );
+        }
+
+        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provisions, $dejaEngage) {
+            $restant = $montantAEngager;
+            $premiereProvisionUtilisee = null;
+
+            foreach ($provisions as $provision) {
+                if ($restant <= 0.001) {
+                    break;
+                }
+
+                $pris = min($restant, (float) $provision->montant_disponible);
+
+                if ($pris <= 0) {
+                    continue;
+                }
+
+                // ✅ debiter() met à jour montant_consomme ET montant_disponible correctement
+                $provision->debiter($pris);
+
+                \App\Models\ProvisionConsommation::create([
+                    'provision_ligne_regie_id' => $provision->id,
+                    'bon_commande_regie_id'    => $this->id,
+                    'montant'                  => $pris,
+                ]);
+
+                $premiereProvisionUtilisee ??= $provision->id;
+                $restant -= $pris;
+            }
+
+            $nouveauMontantEngage = $dejaEngage + $montantAEngager;
+            $montantTtc           = (float) $this->montant_ttc;
+
             $this->updateQuietly([
-                'engage'               => true,
-                'montant_engage'       => $montantAEngager,
-                'pourcentage_engage'   => $pourcentage,
-                'reste_a_engager'      => (float) $this->montant_ttc - $montantAEngager,
-                'date_engagement'      => now(),
-                'observations'         => ($this->observations ?? '')
+                'provision_ligne_regie_id' => $this->provision_ligne_regie_id ?? $premiereProvisionUtilisee,
+                'engage'                   => true,
+                'montant_engage'           => $nouveauMontantEngage,
+                'pourcentage_engage'       => $montantTtc > 0
+                    ? round(($nouveauMontantEngage / $montantTtc) * 100, 2)
+                    : 100,
+                'reste_a_engager'          => max(0, $montantTtc - $nouveauMontantEngage),
+                'date_engagement'          => $this->date_engagement ?? now(),
+                'observations'             => ($this->observations ?? '')
                     . ($commentaire
                         ? "\n[Engagement {$pourcentage}% — " . now()->format('d/m/Y') . "] " . $commentaire
                         : ''
@@ -176,7 +225,7 @@ class BonCommandeRegie extends Model
         });
 
         \App\Models\ActivityLog::logAction($this, 'engager', [
-            'ancien_statut'  => 'non_engage',
+            'ancien_statut'  => $dejaEngage > 0 ? 'partiellement_engage' : 'non_engage',
             'nouveau_statut' => 'engage',
             'montant'        => $montantAEngager,
             'pourcentage'    => $pourcentage,
@@ -189,19 +238,32 @@ class BonCommandeRegie extends Model
             throw new \Exception("Ce BCR n'est pas engagé.");
         }
 
-        $this->provisionLigneRegie?->crediter($this->montant_ttc);
+        \DB::transaction(function () {
+            // ✅ Crédite chaque provision exactement du montant qui lui avait
+            //    été pris (peut concerner plusieurs décaissements à la fois)
+            $consommations = \App\Models\ProvisionConsommation::where('bon_commande_regie_id', $this->id)->get();
 
-        $montantLibere = $this->montant_engage;
-        $this->updateQuietly([
-            'engage'          => false,
-            'date_engagement' => null,
-        ]);
+            foreach ($consommations as $consommation) {
+                $consommation->provisionLigneRegie?->crediter((float) $consommation->montant);
+                $consommation->delete();
+            }
 
-        \App\Models\ActivityLog::logAction($this, 'desengager', [
-            'ancien_statut'  => 'engage',
-            'nouveau_statut' => 'non_engage',
-            'montant_libere' => $montantLibere,
-        ]);
+            $montantLibere = $this->montant_engage;
+
+            $this->updateQuietly([
+                'engage'             => false,
+                'montant_engage'     => 0,
+                'pourcentage_engage' => 0,
+                'reste_a_engager'    => 0,
+                'date_engagement'    => null,
+            ]);
+
+            \App\Models\ActivityLog::logAction($this, 'desengager', [
+                'ancien_statut'  => 'engage',
+                'nouveau_statut' => 'non_engage',
+                'montant_libere' => $montantLibere,
+            ]);
+        });
     }
 
     public function getActivitylogOptions(): LogOptions

@@ -52,6 +52,11 @@ class ProvisionLigneRegie extends Model
         return $this->hasMany(DepenseRegie::class, 'provision_ligne_regie_id');
     }
 
+    public function consommations(): HasMany
+    {
+        return $this->hasMany(ProvisionConsommation::class, 'provision_ligne_regie_id');
+    }
+
     // ── Méthodes ──────────────────────────────────────────────
     public function peutEngager(float $montant): bool
     {

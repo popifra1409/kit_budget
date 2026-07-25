@@ -649,7 +649,7 @@ class BonCommandeRegieResource extends Resource
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
-            ->deferLoading()    
+            ->deferLoading()
             ->columns([
                 Tables\Columns\TextColumn::make('numero')
                     ->label('N° BCR/BCM')
@@ -868,13 +868,24 @@ class BonCommandeRegieResource extends Resource
                             fn($record) =>
                             $record
                                 && $record->statut === 'valide'
-                                && !$record->engage
+                                && ((float) $record->montant_ttc - (float) ($record->montant_engage ?? 0)) > 0.01
                                 && auth()->user()?->can('valider_bon_commande_regie')
                         )
                         ->form(function ($record) {
-                            $prov       = $record->provisionLigneRegie;
-                            $montantTtc = (float) $record->montant_ttc;
-                            $disponible = (float) ($prov?->montant_disponible ?? 0);
+                            $prov         = $record->provisionLigneRegie;
+                            $montantTtc   = (float) $record->montant_ttc;
+                            $dejaEngage   = (float) ($record->montant_engage ?? 0);
+                            $montantRestant = max(0, $montantTtc - $dejaEngage);
+
+                            // ✅ Disponibilité CUMULÉE sur toutes les provisions
+                            //    (tous décaissements "versés") de la même ligne —
+                            //    et non plus une seule provision isolée.
+                            $disponible = (float) \App\Models\ProvisionLigneRegie::where(
+                                'ligne_regie_avance_id',
+                                $record->ligne_regie_avance_id
+                            )
+                                ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
+                                ->sum('montant_disponible');
 
                             return [
                                 Forms\Components\Placeholder::make('info_bcr')
@@ -882,7 +893,9 @@ class BonCommandeRegieResource extends Resource
                                     ->content(new \Illuminate\Support\HtmlString(
                                         '<div style="background:#f1f5f9;padding:.75rem;border-radius:.5rem;font-size:.82rem;line-height:1.8;">'
                                             . "<strong>Montant TTC total :</strong> " . number_format($montantTtc, 0, ',', ' ') . " FCFA<br>"
-                                            . "<strong>Provision disponible :</strong> " . number_format($disponible, 0, ',', ' ') . " FCFA<br>"
+                                            . ($dejaEngage > 0 ? "<strong>Déjà engagé :</strong> " . number_format($dejaEngage, 0, ',', ' ') . " FCFA<br>" : '')
+                                            . "<strong>Reste à engager :</strong> " . number_format($montantRestant, 0, ',', ' ') . " FCFA<br>"
+                                            . "<strong>Provision disponible (cumul décaissements) :</strong> " . number_format($disponible, 0, ',', ' ') . " FCFA<br>"
                                             . "<strong>Ligne :</strong> " . ($prov?->ligneRegie?->nomenclature?->code ?? '—')
                                             . " — " . ($prov?->ligneRegie?->nomenclature?->libelle ?? '—')
                                             . '</div>'
@@ -892,7 +905,7 @@ class BonCommandeRegieResource extends Resource
                                 Forms\Components\Radio::make('mode_engagement')
                                     ->label('Mode d\'engagement')
                                     ->options([
-                                        'total'   => '💯 Total — engager la totalité du TTC',
+                                        'total'   => '💯 Total — engager la totalité du reste (' . number_format($montantRestant, 0, ',', ' ') . ' FCFA)',
                                         'partiel' => '📊 Partiel — engager un pourcentage ou un montant',
                                     ])
                                     ->default('total')
@@ -928,7 +941,7 @@ class BonCommandeRegieResource extends Resource
                                         Forms\Components\TextInput::make('montant_fixe')
                                             ->label('Montant à engager (FCFA)')
                                             ->numeric()->prefix('FCFA')
-                                            ->minValue(1)->maxValue($montantTtc)
+                                            ->minValue(1)->maxValue($montantRestant)
                                             ->live(onBlur: true)
                                             ->afterStateUpdated(function ($state, Forms\Set $set) use ($montantTtc) {
                                                 $pct = $montantTtc > 0 ? round(((float) $state / $montantTtc) * 100, 2) : 0;
@@ -986,39 +999,40 @@ class BonCommandeRegieResource extends Resource
                         ->modalWidth('xl')
                         ->action(function ($record, array $data) {
                             try {
-                                $montantTtc = (float) $record->montant_ttc;
+                                $montantTtc     = (float) $record->montant_ttc;
+                                $dejaEngage     = (float) ($record->montant_engage ?? 0);
+                                $montantRestant = max(0, $montantTtc - $dejaEngage);
 
                                 if ($data['mode_engagement'] === 'total') {
-                                    $montantAEngager = $montantTtc;
+                                    $montantAEngager = $montantRestant;
                                 } elseif (($data['type_partiel'] ?? 'pourcentage') === 'pourcentage') {
                                     $montantAEngager = round(
                                         $montantTtc * ((float) ($data['pourcentage'] ?? 100) / 100),
                                         2
                                     );
                                 } else {
-                                    $montantAEngager = (float) ($data['montant_fixe'] ?? $montantTtc);
+                                    $montantAEngager = (float) ($data['montant_fixe'] ?? $montantRestant);
                                 }
 
-                                $pourcentage = $montantTtc > 0
+                                $pourcentageDeCetEngagement = $montantTtc > 0
                                     ? round(($montantAEngager / $montantTtc) * 100, 2)
                                     : 100;
 
+                                // ✅ engager() gère lui-même la cascade multi-provisions
+                                //    et persiste les montants cumulés — pas de forceFill après.
                                 $record->engager(
                                     montantPartiel: $montantAEngager,
-                                    pourcentage: $pourcentage,
+                                    pourcentage: $pourcentageDeCetEngagement,
                                     commentaire: $data['commentaire'] ?? null
                                 );
 
-                                $record->forceFill([
-                                    'montant_engage'     => $montantAEngager,
-                                    'pourcentage_engage' => $pourcentage,
-                                    'reste_a_engager'    => $montantTtc - $montantAEngager,
-                                ])->save();
+                                $record->refresh();
+                                $pourcentageTotal = (float) $record->pourcentage_engage;
+                                $estPartiel       = $pourcentageTotal < 100;
 
-                                $estPartiel = $pourcentage < 100;
                                 $msg = $estPartiel
-                                    ? "⚡ BCR engagé partiellement à {$pourcentage}% ("
-                                    . number_format($montantAEngager, 0, ',', ' ') . " FCFA sur "
+                                    ? "⚡ BCR engagé à {$pourcentageTotal}% au total ("
+                                    . number_format($record->montant_engage, 0, ',', ' ') . " FCFA sur "
                                     . number_format($montantTtc, 0, ',', ' ') . " FCFA TTC)"
                                     : '✅ BCR engagé totalement — provision débitée';
 
@@ -1115,41 +1129,57 @@ class BonCommandeRegieResource extends Resource
                         )
                         ->modalHeading('Marquer le BCR comme payé')
                         ->action(function ($record, array $data) {
-                            DB::transaction(function () use ($record, $data) {
-                                $pct   = (float) ($record->pourcentage_engage ?? 100);
-                                $reste = (float) ($record->reste_a_engager    ?? 0);
+                            try {
+                                DB::transaction(function () use ($record, $data) {
+                                    $reste = (float) ($record->reste_a_engager ?? 0);
 
-                                if ($reste > 0 && ($data['solder_engagement'] ?? true)) {
-                                    try {
+                                    if ($reste > 0 && ($data['solder_engagement'] ?? true)) {
+                                        // ✅ engager() gère la cascade et persiste les montants
+                                        //    cumulés lui-même — plus de forceFill après.
                                         $record->engager(
                                             montantPartiel: $reste,
-                                            pourcentage: 100 - $pct,
+                                            pourcentage: 100,
                                             commentaire: 'Solde automatique avant paiement'
                                         );
-                                        $record->updateQuietly([
-                                            'montant_engage'     => $record->montant_ttc,
-                                            'pourcentage_engage' => 100,
-                                            'reste_a_engager'    => 0,
-                                        ]);
-                                    } catch (\Exception $e) {
-                                        \Log::warning('Solde engagement BCR: ' . $e->getMessage());
+                                        $record->refresh();
                                     }
-                                }
 
-                                $record->update(['statut' => 'paye']);
+                                    $record->update(['statut' => 'paye']);
 
-                                $prov = $record->provisionLigneRegie;
-                                if ($prov?->decaissement) {
-                                    $prov->decaissement->load('provisions');
-                                    $prov->decaissement->recalculerDepenses();
-                                }
-                            });
+                                    // Recalculer tous les décaissements impactés (peut y en avoir
+                                    // plusieurs si le solde a consommé sur plusieurs provisions)
+                                    $decaissementIds = \App\Models\ProvisionConsommation::where(
+                                        'bon_commande_regie_id',
+                                        $record->id
+                                    )
+                                        ->with('provisionLigneRegie')
+                                        ->get()
+                                        ->pluck('provisionLigneRegie.decaissement_regie_id')
+                                        ->filter()
+                                        ->unique();
 
-                            Notification::make()
-                                ->title('✅ BCR payé')
-                                ->success()
-                                ->body('Dépenses du décaissement recalculées.')
-                                ->send();
+                                    foreach ($decaissementIds as $decaissementId) {
+                                        $decaissement = \App\Models\DecaissementRegie::find($decaissementId);
+                                        if ($decaissement) {
+                                            $decaissement->load('provisions');
+                                            $decaissement->recalculerDepenses();
+                                        }
+                                    }
+                                });
+
+                                Notification::make()
+                                    ->title('✅ BCR payé')
+                                    ->success()
+                                    ->body('Dépenses du/des décaissement(s) recalculées.')
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('❌ Impossible de marquer comme payé')
+                                    ->body($e->getMessage())
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+                            }
                         }),
 
                     // ── Annuler ───────────────────────────────────────
