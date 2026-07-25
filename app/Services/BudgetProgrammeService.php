@@ -121,10 +121,7 @@ class BudgetProgrammeService
 
         if ($exerciceId) {
             $prevision = \App\Models\LigneBudgetaire::where('nomenclature_id', $nomenclatureId)
-                ->where('budget_id', function ($q) use ($exerciceId) {
-                    $q->select('id')->from('budgets')
-                        ->where('exercice_id', $exerciceId)->limit(1);
-                })
+                ->whereHas('budget', fn($q) => $q->where('exercice_id', $exerciceId))
                 ->value('budget_initial');
 
             if ($prevision !== null) return (float) $prevision;

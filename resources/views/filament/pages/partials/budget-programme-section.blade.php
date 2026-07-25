@@ -41,7 +41,16 @@
             </thead>
 
             <tbody>
-            @php $currentGroupe = null; $currentChapter = null; $rowNum = 0; @endphp
+            @php
+                $currentGroupe = null;
+                $currentChapter = null;
+                $rowNum = 0;
+                $sousTotal = null;
+                $champsSousTotal = [
+                    'prev_n_2', 'real_n_2', 'prev_n_1', 'real_n_1', 'prev_n', 'real_n',
+                    'prev_n1', 'prev_n2', 'total_n1_n2', 'total_n_n1_n2',
+                ];
+            @endphp
             @forelse($lignes as $ligne)
                 @php
                     $chapter = substr($ligne['imputation'], 0, 3);
@@ -51,10 +60,14 @@
                 @endphp
 
                 @if($isArticle && ($ligne['groupe_libelle'] ?? null) !== $currentGroupe)
+                    @if($sousTotal !== null)
+                        @include('filament.pages.partials.budget-programme-soustotal-row', ['sousTotal' => $sousTotal, 'groupeLibelle' => $currentGroupe])
+                    @endif
                     @php
                         $currentGroupe = $ligne['groupe_libelle'] ?? 'Non classées / Hors groupe';
                         $currentChapter = null;
                         $estHorsGroupe = empty($ligne['groupe_id']);
+                        $sousTotal = array_fill_keys($champsSousTotal, 0);
                     @endphp
                     <tr style="background:{{ $estHorsGroupe ? '#fefce8' : '#0f172a' }}; font-weight:800; font-size:.78rem;">
                         <td colspan="15" style="padding:.55rem .75rem; color:{{ $estHorsGroupe ? '#854d0e' : 'white' }}; text-transform:uppercase; letter-spacing:.03em;">
@@ -130,6 +143,13 @@
                         @if(($ligne['total_n_n1_n2'] ?? 0) > 0) {{ number_format($ligne['total_n_n1_n2'], 0, ',', ' ') }} @else — @endif
                     </td>
                 </tr>
+                @php
+                    if ($sousTotal !== null) {
+                        foreach ($champsSousTotal as $champ) {
+                            $sousTotal[$champ] += (float) ($ligne[$champ] ?? 0);
+                        }
+                    }
+                @endphp
             @empty
                 <tr>
                     <td colspan="15" style="padding:1rem; text-align:center; color:#94a3b8; font-style:italic;">
@@ -137,6 +157,9 @@
                     </td>
                 </tr>
             @endforelse
+            @if($sousTotal !== null)
+                @include('filament.pages.partials.budget-programme-soustotal-row', ['sousTotal' => $sousTotal, 'groupeLibelle' => $currentGroupe])
+            @endif
             </tbody>
 
             @if(!empty($total))
