@@ -21,7 +21,7 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
     public int    $anneeRef;
     public int    $anneeN1;
     public int    $anneeN2;
-    public string $categorie   = 'fonctionnement';
+    public string $type        = 'depense';   // 'depense' ou 'recette'
     public array  $previsions  = [];    // [nomenclature_id => ['n1' => montant, 'n2' => montant]]
     public bool   $isLoading   = false;
 
@@ -30,6 +30,20 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
         $this->anneeRef = (int) request('annee', Exercice::getActif()?->annee ?? now()->year);
         $this->anneeN1  = $this->anneeRef + 1;
         $this->anneeN2  = $this->anneeRef + 2;
+        $this->type     = in_array(request('type'), ['depense', 'recette']) ? request('type') : 'depense';
+        $this->chargerPrevisions();
+    }
+
+    /**
+     * Basculer entre saisie des dépenses et des recettes
+     */
+    public function changerType(string $type): void
+    {
+        if (!in_array($type, ['depense', 'recette'])) {
+            return;
+        }
+
+        $this->type = $type;
         $this->chargerPrevisions();
     }
 
@@ -38,7 +52,7 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
         // Charger les prévisions déjà saisies pour N+1 et N+2
         $existantes = PrevisionBudgetProgramme::whereIn('annee', [$this->anneeN1, $this->anneeN2])
             ->where('type', 'prevision')
-            ->where('categorie', $this->categorie)
+            ->where('categorie', $this->type)
             ->get();
 
         $this->previsions = [];
@@ -67,7 +81,7 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
                         (int) $annee,
                         'prevision',
                         (float) $montant,
-                        $this->categorie
+                        $this->type
                     );
                     $count++;
                 }
@@ -76,7 +90,7 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
 
         Notification::make()->success()
             ->title("✅ {$count} prévisions sauvegardées")
-            ->body("Prévisions {$this->anneeN1} et {$this->anneeN2} enregistrées.")
+            ->body("Prévisions {$this->type} pour {$this->anneeN1} et {$this->anneeN2} enregistrées.")
             ->send();
     }
 
@@ -88,6 +102,12 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('changer_type')
+                ->label($this->type === 'depense' ? '💸 Dépenses' : '💰 Recettes')
+                ->color($this->type === 'depense' ? 'danger' : 'success')
+                ->icon('heroicon-o-arrows-right-left')
+                ->action(fn() => $this->changerType($this->type === 'depense' ? 'recette' : 'depense')),
+
             Action::make('sauvegarder')
                 ->label('💾 Sauvegarder')
                 ->color('success')
@@ -101,12 +121,19 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
         ];
     }
 
+    /**
+     * Nomenclatures du type courant (depense/recette), triées et groupées
+     * par groupe de nomenclature (avec fallback "Non classées / Hors groupe").
+     */
     public function getNomenclaturesProperty()
     {
-        return NomenclatureBudgetaire::where('code', 'like', '6%')
+        return NomenclatureBudgetaire::where('type', $this->type)
+            ->where('actif', true)
+            ->with('groupe')
             ->orderBy('code')
             ->get()
-            ->groupBy(fn($n) => substr($n->code, 0, 3));
+            ->sortBy(fn($n) => sprintf('%04d-%s', $n->groupe?->ordre ?? 9999, $n->code))
+            ->groupBy(fn($n) => $n->groupe?->libelle ?? 'Non classées / Hors groupe');
     }
 
     public static function getUrl(array $parameters = [], bool $isAbsolute = true, ?string $panel = null, ?\Illuminate\Database\Eloquent\Model $tenant = null): string

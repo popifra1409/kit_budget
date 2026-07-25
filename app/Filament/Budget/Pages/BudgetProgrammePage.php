@@ -24,7 +24,6 @@ class BudgetProgrammePage extends Page
     protected static string  $view = 'filament.pages.budget-programme';
 
     public int    $anneeRef;
-    public string $categorie = 'fonctionnement';
     public array  $donnees   = [];
 
     public function mount(): void
@@ -37,7 +36,7 @@ class BudgetProgrammePage extends Page
     public function chargerDonnees(): void
     {
         $service      = new BudgetProgrammeService();
-        $this->donnees = $service->collecterDonnees($this->anneeRef, $this->categorie);
+        $this->donnees = $service->collecterDonnees($this->anneeRef);
     }
 
     protected function getHeaderActions(): array
@@ -55,26 +54,25 @@ class BudgetProgrammePage extends Page
                             ->pluck('annee', 'annee')->toArray())
                         ->default($this->anneeRef)
                         ->required(),
-                    Forms\Components\Select::make('categorie')
-                        ->label('Catégorie')
-                        ->options([
-                            'fonctionnement' => 'Dépenses de Fonctionnement',
-                            'investissement' => 'Dépenses d\'Investissement',
-                        ])
-                        ->default($this->categorie),
                 ])
                 ->action(function (array $data) {
                     $this->anneeRef  = (int) $data['annee'];
-                    $this->categorie = $data['categorie'];
                     $this->chargerDonnees();
                 }),
 
-            // ✅ Saisir les prévisions N+1 et N+2
-            Action::make('saisir_previsions')
-                ->label('Saisir prévisions N+1/N+2')
+            // ✅ Saisir les prévisions N+1 et N+2 — Dépenses
+            Action::make('saisir_previsions_depenses')
+                ->label('Saisir prévisions Dépenses')
                 ->icon('heroicon-o-pencil-square')
-                ->color('warning')
-                ->url(fn() => route('filament.budget.pages.saisie-previsions-budget-programme-page', ['annee' => $this->anneeRef])),
+                ->color('danger')
+                ->url(fn() => route('filament.budget.pages.saisie-previsions-budget-programme-page', ['annee' => $this->anneeRef, 'type' => 'depense'])),
+
+            // ✅ Saisir les prévisions N+1 et N+2 — Recettes
+            Action::make('saisir_previsions_recettes')
+                ->label('Saisir prévisions Recettes')
+                ->icon('heroicon-o-pencil-square')
+                ->color('success')
+                ->url(fn() => route('filament.budget.pages.saisie-previsions-budget-programme-page', ['annee' => $this->anneeRef, 'type' => 'recette'])),
 
             // ✅ Export Excel
             Action::make('export_excel')

@@ -223,6 +223,17 @@ class GroupeNomenclatureResource extends Resource
     }
 
     // ========================================
+    // RELATIONS
+    // ========================================
+
+    public static function getRelations(): array
+    {
+        return [
+            GroupeNomenclatureResource\RelationManagers\LignesNomenclatureRelationManager::class,
+        ];
+    }
+
+    // ========================================
     // PAGES
     // ========================================
 
@@ -231,6 +242,7 @@ class GroupeNomenclatureResource extends Resource
         return [
             'index'  => Pages\ListGroupeNomenclatures::route('/'),
             'create' => Pages\CreateGroupeNomenclature::route('/create'),
+            'view'   => Pages\ViewGroupeNomenclature::route('/{record}'),
             'edit'   => Pages\EditGroupeNomenclature::route('/{record}/edit'),
         ];
     }

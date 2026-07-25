@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Exercice;
 use App\Models\Engagement;
 use App\Models\NomenclatureBudgetaire;
+use App\Models\PrevisionRecette;
+use App\Models\LignePrevisionRecette;
 use App\Models\PrevisionBudgetProgramme;
 use Illuminate\Support\Collection;
 
@@ -12,47 +14,51 @@ use Illuminate\Support\Collection;
  * ══════════════════════════════════════════════════════════
  * Service — Budget Programme Triennal
  *
- * Génère le tableau des dépenses de fonctionnement sur
- * le plan triennal (N-2, N-1, N, N+1, N+2)
+ * Génère le tableau des dépenses ET des recettes sur le plan
+ * triennal (N-2, N-1, N, N+1, N+2), organisé par groupe de
+ * nomenclature (FONCT/AVANTAG/INVEST pour les dépenses,
+ * RPROP/SUBV/EMPR/DONS pour les recettes).
  * ══════════════════════════════════════════════════════════
  */
 class BudgetProgrammeService
 {
     /**
-     * Collecter toutes les données pour l'export
+     * Collecter toutes les données pour l'export — dépenses ET recettes
      *
      * @param int $anneeRef  Année de référence (ex: 2026)
-     * @param string $categorie 'fonctionnement' ou 'investissement'
      */
-    public function collecterDonnees(int $anneeRef, string $categorie = 'fonctionnement'): array
+    public function collecterDonnees(int $anneeRef): array
     {
         $annees = [
-            'n_2'  => $anneeRef - 2,  // Ex: 2024
-            'n_1'  => $anneeRef - 1,  // Ex: 2025
-            'n'    => $anneeRef,       // Ex: 2026
-            'n1'   => $anneeRef + 1,  // Ex: 2027
-            'n2'   => $anneeRef + 2,  // Ex: 2028
+            'n_2' => $anneeRef - 2,
+            'n_1' => $anneeRef - 1,
+            'n'   => $anneeRef,
+            'n1'  => $anneeRef + 1,
+            'n2'  => $anneeRef + 2,
         ];
 
-        // ── Exercices concernés ──────────────────────────────
         $exercices = Exercice::whereIn('annee', array_values($annees))->get()->keyBy('annee');
 
-        // ── Nomenclatures de fonctionnement ─────────────────
+        return [
+            'annees'          => $annees,
+            'annee_reference' => $anneeRef,
+            'depenses'        => $this->collecterSection('depense', $annees, $exercices, $anneeRef),
+            'recettes'        => $this->collecterSection('recette', $annees, $exercices, $anneeRef),
+        ];
+    }
+
+    /**
+     * Construit les lignes pour un type donné ('depense' ou 'recette'),
+     * groupées et triées par groupe de nomenclature.
+     */
+    private function collecterSection(string $type, array $annees, Collection $exercices, int $anneeRef): array
+    {
         $nomenclatures = NomenclatureBudgetaire::query()
             ->where('actif', true)
+            ->where('type', $type)
             ->with('groupe')
-            ->when(
-                $categorie === 'fonctionnement',
-                fn($q) => $q->where(function ($q) {
-                    // Codes commençant par 6 (charges) pour fonctionnement
-                    $q->where('code', 'like', '6%');
-                })
-            )
             ->orderBy('code')
             ->get();
-
-        // ── Regroupement par chapitre ─────────────────────────
-        $chapitres = $nomenclatures->groupBy(fn($n) => substr($n->code, 0, 3));
 
         $lignes = [];
 
@@ -66,69 +72,60 @@ class BudgetProgrammeService
                 'groupe_ordre'   => $nomenclature->groupe?->ordre ?? 9999,
             ];
 
-            // Pour chaque année
             foreach ($annees as $key => $annee) {
                 $exercice = $exercices[$annee] ?? null;
 
-                // ── Prévision ────────────────────────────────
-                $prevision = $this->getPrevision($nomenclature->id, $annee, $exercice?->id);
+                $prevision = $type === 'depense'
+                    ? $this->getPrevision($nomenclature->id, $annee, $exercice?->id)
+                    : $this->getPrevisionRecette($nomenclature->id, $annee, $exercice?->id);
                 $ligne["prev_{$key}"] = $prevision;
 
-                // ── Réalisation ──────────────────────────────
                 if ($annee <= $anneeRef) {
-                    $realisation = $this->getRealisation($nomenclature->id, $annee, $exercice?->id);
+                    $realisation = $type === 'depense'
+                        ? $this->getRealisation($nomenclature->id, $annee, $exercice?->id)
+                        : $this->getRealisationRecette($nomenclature->id, $annee, $exercice?->id);
                     $ligne["real_{$key}"] = $realisation;
-
-                    // Taux d'exécution
-                    $ligne["taux_{$key}"] = $prevision > 0
-                        ? round($realisation / $prevision, 4)
-                        : null;
+                    $ligne["taux_{$key}"] = $prevision > 0 ? round($realisation / $prevision, 4) : null;
                 }
             }
 
-            // ── Totaux triennaux ─────────────────────────────
             $ligne['total_n1_n2']   = ($ligne['prev_n1'] ?? 0) + ($ligne['prev_n2'] ?? 0);
             $ligne['total_n_n1_n2'] = ($ligne['prev_n'] ?? 0) + ($ligne['prev_n1'] ?? 0) + ($ligne['prev_n2'] ?? 0);
 
             $lignes[] = $ligne;
         }
 
-        // ── Tri : groupe (ordre) puis code (pour garder le regroupement chapitre cohérent) ──
+        // Tri : groupe (ordre) puis code — garde le regroupement chapitre cohérent à l'intérieur
         usort($lignes, function ($a, $b) {
             return [$a['groupe_ordre'], $a['imputation']] <=> [$b['groupe_ordre'], $b['imputation']];
         });
 
         return [
-            'annees'          => $annees,
-            'annee_reference' => $anneeRef,
-            'categorie'       => $categorie,
-            'lignes'          => $lignes,
-            'chapitres'       => $this->collecterChapitres($lignes),
-            'total_general'   => $this->calculerTotalGeneral($lignes, $annees),
+            'lignes'        => $lignes,
+            'total_general' => $this->calculerTotalGeneral($lignes, $annees),
         ];
     }
 
     /**
-     * Récupérer la prévision (depuis PrevisionBudgetProgramme ou LigneBudgetaire)
+     * Prévision DÉPENSE (depuis PrevisionBudgetProgramme ou LigneBudgetaire)
      */
     private function getPrevision(int $nomenclatureId, int $annee, ?int $exerciceId): float
     {
-        // 1. Chercher dans PrevisionBudgetProgramme (saisie manuelle ou calculée)
         $prevision = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
             ->where('annee', $annee)
             ->where('type', 'prevision')
+            ->where('categorie', 'depense')
             ->value('montant');
 
         if ($prevision !== null) return (float) $prevision;
 
-        // 2. Fallback : chercher dans LigneBudgetaire si exercice existe
         if ($exerciceId) {
             $prevision = \App\Models\LigneBudgetaire::where('nomenclature_id', $nomenclatureId)
                 ->where('budget_id', function ($q) use ($exerciceId) {
                     $q->select('id')->from('budgets')
                         ->where('exercice_id', $exerciceId)->limit(1);
                 })
-                ->value('budget_initial'); // ✅ colonne réelle dans lignes_budgetaires
+                ->value('budget_initial');
 
             if ($prevision !== null) return (float) $prevision;
         }
@@ -137,21 +134,20 @@ class BudgetProgrammeService
     }
 
     /**
-     * Récupérer la réalisation depuis les engagements/dépenses réels
+     * Réalisation DÉPENSE depuis les engagements réels
      */
     private function getRealisation(int $nomenclatureId, int $annee, ?int $exerciceId): float
     {
         if (!$exerciceId) return 0.0;
 
-        // 1. Chercher dans PrevisionBudgetProgramme (si saisie manuelle)
         $realisation = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
             ->where('annee', $annee)
             ->where('type', 'realisation')
+            ->where('categorie', 'depense')
             ->value('montant');
 
         if ($realisation !== null) return (float) $realisation;
 
-        // 2. Calculer depuis les engagements réels de l'exercice
         $realisation = Engagement::where('exercice_id', $exerciceId)
             ->where('nomenclature_principale_id', $nomenclatureId)
             ->where('statut', 'definitif')
@@ -160,17 +156,60 @@ class BudgetProgrammeService
         return (float) ($realisation ?? 0);
     }
 
-    private function collecterChapitres(array $lignes): array
+    /**
+     * Prévision RECETTE (depuis PrevisionBudgetProgramme ou LignePrevisionRecette)
+     *
+     * ⚠️ Suppose que LignePrevisionRecette::montant_prevu_initial est le montant
+     *    prévisionnel initial (par analogie avec LigneBudgetaire::budget_initial).
+     */
+    private function getPrevisionRecette(int $nomenclatureId, int $annee, ?int $exerciceId): float
     {
-        $chapitres = [];
-        foreach ($lignes as $ligne) {
-            $code = substr($ligne['imputation'], 0, 3);
-            if (!isset($chapitres[$code])) {
-                $chapitres[$code] = ['code' => $code, 'lignes' => []];
-            }
-            $chapitres[$code]['lignes'][] = $ligne;
+        $prevision = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
+            ->where('annee', $annee)
+            ->where('type', 'prevision')
+            ->where('categorie', 'recette')
+            ->value('montant');
+
+        if ($prevision !== null) return (float) $prevision;
+
+        if ($exerciceId) {
+            $previsionRecetteIds = PrevisionRecette::where('exercice_id', $exerciceId)->pluck('id');
+
+            $prevision = LignePrevisionRecette::where('nomenclature_id', $nomenclatureId)
+                ->whereIn('prevision_recette_id', $previsionRecetteIds)
+                ->value('montant_prevu_initial');
+
+            if ($prevision !== null) return (float) $prevision;
         }
-        return $chapitres;
+
+        return 0.0;
+    }
+
+    /**
+     * Réalisation RECETTE — montant réellement recouvré
+     *
+     * ⚠️ Utilise LignePrevisionRecette::montant_recouvre (déjà agrégé via
+     *    calculerMontantRecouvre() depuis les recettes réelles mensuelles).
+     */
+    private function getRealisationRecette(int $nomenclatureId, int $annee, ?int $exerciceId): float
+    {
+        if (!$exerciceId) return 0.0;
+
+        $realisation = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
+            ->where('annee', $annee)
+            ->where('type', 'realisation')
+            ->where('categorie', 'recette')
+            ->value('montant');
+
+        if ($realisation !== null) return (float) $realisation;
+
+        $previsionRecetteIds = PrevisionRecette::where('exercice_id', $exerciceId)->pluck('id');
+
+        $realisation = LignePrevisionRecette::where('nomenclature_id', $nomenclatureId)
+            ->whereIn('prevision_recette_id', $previsionRecetteIds)
+            ->sum('montant_recouvre');
+
+        return (float) ($realisation ?? 0);
     }
 
     private function calculerTotalGeneral(array $lignes, array $annees): array
