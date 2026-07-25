@@ -269,6 +269,24 @@ class DecisionAdministrative extends Model
         return $this->hasMany(\App\Models\RegieAvance::class, 'decision_administrative_id');
     }
 
+    /**
+     * ✅ Vérifie si cette DA est la décision source d'une Régie d'Avance
+     *    ou d'un Menu Dépense (même table, distingués par le champ 'type').
+     */
+    public function estSourceRegieOuMenu(): bool
+    {
+        return $this->regiesAvances()->exists();
+    }
+
+    /**
+     * Retourne le premier enregistrement lié (régie ou menu dépense),
+     * pour construire un message explicite à l'utilisateur.
+     */
+    public function getRegieOuMenuLie(): ?\App\Models\RegieAvance
+    {
+        return $this->regiesAvances()->first();
+    }
+
     // =========================================================
     // SCOPES
     // =========================================================
@@ -690,6 +708,19 @@ class DecisionAdministrative extends Model
             throw new \Exception("Cette décision n'est pas engagée.");
         }
 
+        // ✅ Blocage définitif : une DA source d'une Régie d'Avance ou d'un
+        //    Menu Dépense ne peut en aucun cas être désengagée.
+        if ($this->estSourceRegieOuMenu()) {
+            $lien = $this->getRegieOuMenuLie();
+            $typeLibelle = $lien?->type === 'menu_depense' ? 'un Menu Dépense' : 'une Régie d\'Avance';
+
+            throw new \Exception(
+                "❌ Désengagement impossible : cette décision est liée à {$typeLibelle}"
+                    . ($lien ? " (N° {$lien->numero})" : '')
+                    . " et ne peut en aucun cas être désengagée."
+            );
+        }
+
         $engagement = \App\Models\Engagement::where('engageable_id', $this->id)
             ->where(function ($q) {
                 $q->where('engageable_type', static::class)
@@ -827,6 +858,12 @@ class DecisionAdministrative extends Model
     // ── estModifiable ─────────────────────────────────────────
     public function estModifiable(): bool
     {
+        // ✅ Une DA source d'une Régie d'Avance ou d'un Menu Dépense
+        //    ne peut plus jamais être modifiée ni supprimée.
+        if ($this->estSourceRegieOuMenu()) {
+            return false;
+        }
+
         return in_array($this->statut, ['brouillon', 'validee']);
     }
 
@@ -890,20 +927,6 @@ class DecisionAdministrative extends Model
         });
     }
 
-    // =========================================================
-    // TRANSMISSIONS
-    // =========================================================
-    // public function estEnCoursDeTransmission(): bool
-    // {
-    //     return $this->transmissions()->where('statut', 'en_attente')->exists();
-    // }
-
-    // public function estDestinataireActuel(): bool
-    // {
-    //     $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
-    //     return $t && $t->destinataire_id === auth()->id();
-    // }
-
     public function peutEtreVuPar(?int $userId = null): bool
     {
         $userId = $userId ?? auth()->id();
@@ -912,54 +935,12 @@ class DecisionAdministrative extends Model
         return $this->estDestinataireActuel();
     }
 
-    // public function transmettreA(
-    //     User $destinataire,
-    //     string $actionAttendue,
-    //     ?string $commentaire = null,
-    //     array $metadata = []
-    // ): Transmission {
-    //     if ($this->estEnCoursDeTransmission()) {
-    //         throw new \Exception('Cette décision est déjà en cours de transmission.');
-    //     }
-    //     $transmission = new Transmission([
-    //         'document_type'      => static::class,
-    //         'document_id'        => $this->id,
-    //         'expediteur_id'      => auth()->id(),
-    //         'destinataire_id'    => $destinataire->id,
-    //         'action_attendue'    => $actionAttendue,
-    //         'commentaire'        => $commentaire,
-    //         'statut'             => 'en_attente',
-    //         'priorite'           => $metadata['priorite'] ?? 'normale',
-    //         'date_limite'        => $metadata['date_limite'] ?? null,
-    //         'date_transmission'  => now(),
-    //     ]);
-    //     $transmission->save();
-    //     activity()->performedOn($this)->causedBy(auth()->user())
-    //         ->withProperties(['destinataire' => $destinataire->name])
-    //         ->log('Décision transmise');
-    //     return $transmission;
-    // }
-
-    // public function cloturerTransmission(?string $reponse = null): void
-    // {
-    //     $t = $this->transmissions()->where('statut', 'en_attente')->latest()->first();
-    //     if (!$t || $t->destinataire_id !== auth()->id()) {
-    //         throw new \Exception("Vous n'êtes pas le destinataire de cette transmission.");
-    //     }
-    //     $t->update(['statut' => 'traite', 'date_traitement' => now(), 'reponse' => $reponse]);
-    //     activity()->performedOn($this)->causedBy(auth()->user())->log('Transmission clôturée');
-    // }
-
     public function peutEtreTransmis(): bool
     {
         if ($this->estEnCoursDeTransmission()) return false;
         return in_array($this->statut, ['brouillon', 'valide']);
     }
 
-    // public function transmissionEnCours(): ?Transmission
-    // {
-    //     return $this->transmissions()->where('statut', 'en_attente')->latest()->first();
-    // }
 
     public function aEteTransmis(): bool
     {
@@ -972,23 +953,6 @@ class DecisionAdministrative extends Model
             ->orderBy('created_at', 'desc')->get();
     }
 
-    // protected function estEnTransmission(): bool
-    // {
-    //     // ✅ Via la méthode du trait HasWorkflow — évite les problèmes de morphMap
-    //     return $this->record->estEnCoursDeTransmission();
-    // }
-
-    // protected function estDestinataire(): bool
-    // {
-    //     // ✅ Via la méthode du trait HasWorkflow
-    //     return $this->record->estDestinataireActuel();
-    // }
-
-    // protected function transmissionEnCours(): ?Transmission
-    // {
-    //     // ✅ Via la relation morphMany du trait
-    //     return $this->record->transmissionEnCours();
-    // }
 
     // =========================================================
     // ACTIVITY LOG

@@ -521,6 +521,8 @@ class ViewDecisionAdministrative extends ViewRecord
                         && !$this->estEnTransmission()
                         // ✅ Vérification permission ajoutée
                         && auth()->user()?->can('annuler_engagement')
+                        // ✅ Masqué si la DA est source d'une Régie d'Avance ou d'un Menu Dépense
+                        && !$this->record->estSourceRegieOuMenu()
                 )
                 ->requiresConfirmation()
                 ->modalHeading("Annuler l'engagement")
