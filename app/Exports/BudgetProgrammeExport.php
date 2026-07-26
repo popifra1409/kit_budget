@@ -17,7 +17,7 @@ class BudgetProgrammeExport implements WithMultipleSheets
     {
         return [
             new BudgetProgrammeDepensesSheet($this->anneeRef, $this->titre, $this->structure),
-            // new BudgetProgrammeRecettesSheet($this->anneeRef, $this->titre, $this->structure),
+            new BudgetProgrammeRecettesSheet($this->anneeRef, $this->titre, $this->structure),
         ];
     }
 }

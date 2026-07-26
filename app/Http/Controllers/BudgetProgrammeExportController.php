@@ -31,8 +31,7 @@ class BudgetProgrammeExportController extends Controller
     public function preview(Request $request)
     {
         $annee    = (int) $request->get('annee', now()->year);
-        $categorie = $request->get('categorie', 'fonctionnement');
-        $donnees  = $this->service->collecterDonnees($annee, $categorie);
+        $donnees  = $this->service->collecterDonnees($annee);
 
         return response()->json($donnees);
     }

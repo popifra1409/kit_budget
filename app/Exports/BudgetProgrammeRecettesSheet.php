@@ -10,13 +10,11 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Color;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Maatwebsite\Excel\Events\AfterSheet;
 
-class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, WithColumnWidths, WithEvents
+class BudgetProgrammeRecettesSheet implements FromArray, WithTitle, WithStyles, WithColumnWidths, WithEvents
 {
     private array $donnees;
     private int   $anneeRef;
@@ -33,18 +31,18 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
 
     public function title(): string
     {
-        return 'DEPENSES';
+        return 'RECETTES';
     }
 
     public function array(): array
     {
-        $d      = $this->donnees;
-        $annees = $d['annees'];
-        $depenses = $d['depenses'] ?? ['lignes' => [], 'total_general' => []];
-        $rows   = [];
+        $d       = $this->donnees;
+        $annees  = $d['annees'];
+        $recettes = $d['recettes'] ?? ['lignes' => [], 'total_general' => []];
+        $rows    = [];
 
         // ── TITRE ────────────────────────────────────────────
-        $rows[] = [$this->structure . ' — ' . $this->titre . ' — DÉPENSES'];
+        $rows[] = [$this->structure . ' — ' . $this->titre . ' — RECETTES'];
         $rows[] = ['Budget Programme ' . ($annees['n_2']) . '-' . ($annees['n2'])];
         $rows[] = [];
 
@@ -84,12 +82,11 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
         ];
 
         // ── LIGNES DE DONNÉES (groupées par groupe de nomenclature) ─
-        foreach ($depenses['lignes'] as $ligne) {
-            $chapter   = substr($ligne['imputation'], 0, 3);
-            $isArticle = strlen($ligne['imputation']) > 3;
+        foreach ($recettes['lignes'] as $ligne) {
+            $chapter       = substr($ligne['imputation'], 0, 3);
+            $isArticle     = strlen($ligne['imputation']) > 3;
             $groupeLibelle = $ligne['groupe_libelle'] ?? 'Non classées / Hors groupe';
 
-            // Changement de groupe : imprimer le sous-total précédent puis l'en-tête du nouveau groupe
             if ($isArticle && $groupeLibelle !== $currentGroupe) {
                 if ($sousTotal !== null) {
                     $rows[] = $this->ligneSousTotal('SOUS-TOTAL — ' . $currentGroupe, $sousTotal);
@@ -101,7 +98,6 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
                 $rows[] = [($ligne['groupe_id'] ? '' : '⚠️'), strtoupper($currentGroupe)];
             }
 
-            // Insérer en-tête de chapitre si changement
             if ($chapter !== $currentChapter && $isArticle) {
                 $nom = \App\Models\NomenclatureBudgetaire::where('code', $chapter)->value('libelle')
                     ?? "Chapitre {$chapter}";
@@ -134,17 +130,16 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
             }
         }
 
-        // Sous-total du tout dernier groupe
         if ($sousTotal !== null) {
             $rows[] = $this->ligneSousTotal('SOUS-TOTAL — ' . $currentGroupe, $sousTotal);
         }
 
         // ── LIGNE TOTAL GÉNÉRAL ───────────────────────────────
         $rows[] = [];
-        $tg = $depenses['total_general'] ?? [];
+        $tg = $recettes['total_general'] ?? [];
         $rows[] = [
             '',
-            'TOTAL GÉNÉRAL DES DÉPENSES',
+            'TOTAL GÉNÉRAL DES RECETTES',
             $tg['prev_n_2']  ?? 0,
             $tg['real_n_2']  ?? 0,
             '',
@@ -163,9 +158,6 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
         return $rows;
     }
 
-    /**
-     * Construit une ligne de sous-total à partir de l'accumulateur d'un groupe.
-     */
     private function ligneSousTotal(string $libelle, array $sousTotal): array
     {
         return [
@@ -190,40 +182,38 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
     public function columnWidths(): array
     {
         return [
-            'A' => 14,   // Imputation
-            'B' => 52,   // Rubrique
-            'C' => 18,   // Prévis N-2
-            'D' => 18,   // Réalis N-2
-            'E' => 8,    // %
-            'F' => 18,   // Prévis N-1
-            'G' => 18,   // Réalis N-1
-            'H' => 8,    // %
-            'I' => 18,   // Prévis N
-            'J' => 18,   // Réalis N
-            'K' => 8,    // %
-            'L' => 18,   // Prévis N+1
-            'M' => 18,   // Prévis N+2
-            'N' => 22,   // Total N+1/N+2
-            'O' => 25,   // Total N/N+1/N+2
+            'A' => 14,
+            'B' => 52,
+            'C' => 18,
+            'D' => 18,
+            'E' => 8,
+            'F' => 18,
+            'G' => 18,
+            'H' => 8,
+            'I' => 18,
+            'J' => 18,
+            'K' => 8,
+            'L' => 18,
+            'M' => 18,
+            'N' => 22,
+            'O' => 25,
         ];
     }
 
     public function styles(Worksheet $sheet): array
     {
         return [
-            // Titre
             1 => [
-                'font'      => ['bold' => true, 'size' => 13, 'color' => ['rgb' => '1e3a5f']],
+                'font'      => ['bold' => true, 'size' => 13, 'color' => ['rgb' => '166534']],
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             ],
             2 => [
                 'font'      => ['bold' => true, 'size' => 11],
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             ],
-            // En-tête colonnes (ligne 4)
             4 => [
                 'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 9],
-                'fill'      => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => '1e3a5f']],
+                'fill'      => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => '166534']],
                 'alignment' => [
                     'horizontal' => Alignment::HORIZONTAL_CENTER,
                     'vertical'   => Alignment::VERTICAL_CENTER,
@@ -241,31 +231,25 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
                 $lastRow = $sheet->getHighestRow();
                 $numFormat = '#,##0';
 
-                // Formater toutes les colonnes numériques
                 $numCols = ['C', 'D', 'F', 'G', 'I', 'J', 'L', 'M', 'N', 'O'];
                 foreach ($numCols as $col) {
                     $sheet->getStyle("{$col}5:{$col}{$lastRow}")
                         ->getNumberFormat()->setFormatCode($numFormat);
                 }
 
-                // Merger le titre sur toutes les colonnes
                 $sheet->mergeCells('A1:O1');
                 $sheet->mergeCells('A2:O2');
 
-                // Hauteur des lignes d'en-tête
                 $sheet->getRowDimension(1)->setRowHeight(25);
                 $sheet->getRowDimension(4)->setRowHeight(35);
 
-                // Figer les 4 premières lignes et les 2 premières colonnes
                 $sheet->freezePane('C5');
 
-                // Style total général (dernière ligne)
                 $sheet->getStyle("A{$lastRow}:O{$lastRow}")->applyFromArray([
                     'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => '1e3a5f']],
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => '166534']],
                 ]);
 
-                // Bordures globales
                 $sheet->getStyle("A4:O{$lastRow}")->applyFromArray([
                     'borders' => [
                         'allBorders' => [
@@ -275,16 +259,13 @@ class BudgetProgrammeDepensesSheet implements FromArray, WithTitle, WithStyles, 
                     ],
                 ]);
 
-                // Colonnes prévisions N+1/N+2 en jaune (à saisir)
                 $sheet->getStyle("L5:M{$lastRow}")->applyFromArray([
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => 'FFFDE7']],
                 ]);
 
-                // Colonne rubrique — alignement gauche
                 $sheet->getStyle("B5:B{$lastRow}")
                     ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-                // Police générale
                 $sheet->getStyle("A1:O{$lastRow}")
                     ->getFont()->setName('Arial')->setSize(9);
             },
