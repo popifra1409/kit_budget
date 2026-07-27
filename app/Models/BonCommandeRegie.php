@@ -166,7 +166,10 @@ class BonCommandeRegie extends Model
             ])
             ->values();
 
-        $totalDisponible = (float) $provisions->sum('montant_disponible');
+        // ✅ On ne compte que les disponibilités POSITIVES : un décaissement en
+        //    négatif (dépassement historique) ne doit jamais réduire ce qui est
+        //    réellement disponible sur un AUTRE décaissement de la même ligne.
+        $totalDisponible = (float) $provisions->sum(fn($p) => max(0, (float) $p->montant_disponible));
 
         if ($montantAEngager > $totalDisponible) {
             throw new \Exception(

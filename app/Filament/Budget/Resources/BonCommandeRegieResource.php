@@ -1093,61 +1093,93 @@ class BonCommandeRegieResource extends Resource
                         ->icon('heroicon-o-banknotes')->color('success')
                         ->visible(fn($record) => $record && $record->statut === 'livre')
                         ->form(function ($record) {
-                            $pct   = (float) ($record->pourcentage_engage ?? 100);
-                            $reste = (float) ($record->reste_a_engager    ?? 0);
+                            $montantTtc = (float) $record->montant_ttc;
+                            $dejaEngage = (float) ($record->montant_engage ?? 0);
+                            $reste      = max(0, $montantTtc - $dejaEngage);
 
-                            if ($pct >= 100 || $reste <= 0) return [];
+                            if ($reste <= 0.01) {
+                                return []; // déjà soldé à 100%, rien à saisir
+                            }
+
+                            $disponible = (float) \App\Models\ProvisionLigneRegie::where(
+                                'ligne_regie_avance_id',
+                                $record->ligne_regie_avance_id
+                            )
+                                ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
+                                ->sum('montant_disponible');
 
                             return [
-                                Forms\Components\Placeholder::make('alerte_partiel')
+                                Forms\Components\Placeholder::make('info_paiement')
                                     ->label('')
                                     ->content(new \Illuminate\Support\HtmlString(
-                                        '<div style="background:#fef9c3;border:1px solid #ca8a04;
-                                border-radius:.5rem;padding:.75rem;font-size:.85rem;line-height:1.8;">'
-                                            . "⚠️ <strong>Engagement partiel non soldé</strong><br>"
-                                            . "Engagé : <strong>{$pct}% ("
-                                            . number_format($record->montant_engage, 0, ',', ' ') . " FCFA)</strong><br>"
-                                            . "Reste non engagé : <strong style='color:#dc2626;'>"
-                                            . number_format($reste, 0, ',', ' ') . " FCFA (" . (100 - $pct) . "%)</strong><br>"
-                                            . "Cochez ci-dessous pour solder automatiquement avant paiement."
+                                        '<div style="background:#fef9c3;border:1px solid #ca8a04;'
+                                            . 'border-radius:.5rem;padding:.75rem;font-size:.85rem;line-height:1.8;">'
+                                            . "📦 <strong>Livré</strong> — le paiement peut se faire en plusieurs fois "
+                                            . "jusqu'au solde complet.<br>"
+                                            . "Déjà engagé/payé : <strong>" . number_format($dejaEngage, 0, ',', ' ') . " FCFA</strong><br>"
+                                            . "Reste à payer : <strong style='color:#dc2626;'>" . number_format($reste, 0, ',', ' ') . " FCFA</strong><br>"
+                                            . "Provision disponible (cumul décaissements) : <strong>" . number_format($disponible, 0, ',', ' ') . " FCFA</strong>"
                                             . '</div>'
                                     ))
                                     ->columnSpanFull(),
 
-                                Forms\Components\Toggle::make('solder_engagement')
-                                    ->label('Solder le reste avant paiement (' . number_format($reste, 0, ',', ' ') . ' FCFA)')
-                                    ->default(true)
-                                    ->helperText('Engagera automatiquement le montant restant depuis la provision')
+                                Forms\Components\Radio::make('mode_paiement')
+                                    ->label('Montant à payer maintenant')
+                                    ->options([
+                                        'total'   => '💯 Solder le reste — ' . number_format($reste, 0, ',', ' ') . ' FCFA',
+                                        'partiel' => '➗ Paiement partiel (continuer plus tard)',
+                                    ])
+                                    ->default('total')
+                                    ->live()
+                                    ->columnSpanFull(),
+
+                                Forms\Components\TextInput::make('montant_partiel')
+                                    ->label('Montant à payer maintenant (FCFA)')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->maxValue($reste)
+                                    ->visible(fn(callable $get) => $get('mode_paiement') === 'partiel')
+                                    ->required(fn(callable $get) => $get('mode_paiement') === 'partiel'),
+
+                                Forms\Components\Textarea::make('commentaire')
+                                    ->label('Commentaire (optionnel)')
+                                    ->rows(2)
                                     ->columnSpanFull(),
                             ];
                         })
-                        ->requiresConfirmation(
-                            fn($record) =>
-                            !$record
-                                || (float) ($record->pourcentage_engage ?? 100) >= 100
-                                || (float) ($record->reste_a_engager ?? 0) <= 0
-                        )
+                        ->requiresConfirmation()
                         ->modalHeading('Marquer le BCR comme payé')
                         ->action(function ($record, array $data) {
                             try {
                                 DB::transaction(function () use ($record, $data) {
-                                    $reste = (float) ($record->reste_a_engager ?? 0);
+                                    $montantTtc = (float) $record->montant_ttc;
+                                    $dejaEngage = (float) ($record->montant_engage ?? 0);
+                                    $reste      = max(0, $montantTtc - $dejaEngage);
 
-                                    if ($reste > 0 && ($data['solder_engagement'] ?? true)) {
+                                    if ($reste > 0.01) {
+                                        $montantAPayer = ($data['mode_paiement'] ?? 'total') === 'total'
+                                            ? $reste
+                                            : (float) ($data['montant_partiel'] ?? $reste);
+
                                         // ✅ engager() gère la cascade et persiste les montants
                                         //    cumulés lui-même — plus de forceFill après.
                                         $record->engager(
-                                            montantPartiel: $reste,
-                                            pourcentage: 100,
-                                            commentaire: 'Solde automatique avant paiement'
+                                            montantPartiel: $montantAPayer,
+                                            pourcentage: $montantTtc > 0 ? round($montantAPayer / $montantTtc * 100, 2) : 100,
+                                            commentaire: $data['commentaire'] ?? 'Paiement enregistré'
                                         );
                                         $record->refresh();
                                     }
 
-                                    $record->update(['statut' => 'paye']);
+                                    // ✅ Ne passe en statut final 'paye' que si réellement soldé
+                                    //    à 100% — sinon reste en 'livre' pour permettre un
+                                    //    paiement ultérieur (livraison totale ≠ paiement total).
+                                    $resteApres = max(0, (float) $record->montant_ttc - (float) $record->montant_engage);
+                                    if ($resteApres <= 0.01) {
+                                        $record->update(['statut' => 'paye']);
+                                    }
 
-                                    // Recalculer tous les décaissements impactés (peut y en avoir
-                                    // plusieurs si le solde a consommé sur plusieurs provisions)
+                                    // Recalculer tous les décaissements impactés
                                     $decaissementIds = \App\Models\ProvisionConsommation::where(
                                         'bon_commande_regie_id',
                                         $record->id
@@ -1167,10 +1199,18 @@ class BonCommandeRegieResource extends Resource
                                     }
                                 });
 
+                                $record->refresh();
+                                $estSolde = $record->statut === 'paye';
+                                $resteFinal = max(0, (float) $record->montant_ttc - (float) $record->montant_engage);
+
                                 Notification::make()
-                                    ->title('✅ BCR payé')
+                                    ->title($estSolde ? '✅ BCR payé intégralement' : '💰 Paiement partiel enregistré')
+                                    ->body($estSolde
+                                        ? 'Le BCR est maintenant soldé à 100%.'
+                                        : 'Reste à payer : ' . number_format($resteFinal, 0, ',', ' ')
+                                        . ' FCFA. Le BCR reste en statut "Livré" — cliquez à nouveau sur '
+                                        . '"Marquer payé" pour continuer le paiement.')
                                     ->success()
-                                    ->body('Dépenses du/des décaissement(s) recalculées.')
                                     ->send();
                             } catch (\Exception $e) {
                                 Notification::make()
