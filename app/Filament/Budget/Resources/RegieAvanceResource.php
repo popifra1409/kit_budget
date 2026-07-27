@@ -541,6 +541,26 @@ class RegieAvanceResource extends Resource
                         ->modalHeading(fn($record) => 'Compte d\'Emploi — ' . $record->numero)
                         ->modalWidth('2xl')
                         ->form([
+                            Forms\Components\Select::make('decaissement_id')
+                                ->label('Décaissement / Tranche')
+                                ->options(fn($record) => $record->decaissements()
+                                    ->orderBy('numero')
+                                    ->get()
+                                    ->mapWithKeys(fn($d) => [$d->id => "{$d->numero} — {$d->libelle_tranche}"]))
+                                ->required()
+                                ->live()
+                                ->afterStateUpdated(function ($state, callable $set) {
+                                    $d = \App\Models\DecaissementRegie::find($state);
+                                    if ($d) {
+                                        $set('numero_tranche', $d->libelle_tranche);
+                                        if ($d->date_decaissement) {
+                                            $set('date_debut', $d->date_decaissement->format('Y-m-d'));
+                                        }
+                                    }
+                                })
+                                ->helperText('Seules les dépenses réellement imputées à ce décaissement seront incluses (traçabilité exacte, y compris pour un bon réparti sur plusieurs tranches).')
+                                ->columnSpanFull(),
+
                             Forms\Components\Grid::make(2)->schema([
                                 Forms\Components\DatePicker::make('date_debut')
                                     ->label('Période — Début')
@@ -588,12 +608,44 @@ class RegieAvanceResource extends Resource
                                 ->where('est_defaut', true)
                                 ->first();
 
-                            $depenses = \App\Models\BonCommandeRegie::where('regie_avance_id', $record->id)
-                                ->whereIn('statut', $data['statuts'] ?? ['paye', 'valide'])
-                                ->whereBetween('date_emission', [$data['date_debut'], $data['date_fin']])
-                                ->with('fournisseur')
-                                ->orderBy('date_emission')
-                                ->get();
+                            $decaissement = \App\Models\DecaissementRegie::with('provisions')->find($data['decaissement_id']);
+                            $provisionIds = $decaissement?->provisions->pluck('id') ?? collect();
+                            $statutsFiltre = $data['statuts'] ?? ['paye', 'valide'];
+
+                            // ✅ Basé sur provision_consommations (traçabilité réelle) —
+                            //    un BCR réparti sur plusieurs tranches n'apparaît ici que
+                            //    pour la part réellement prise sur CE décaissement.
+                            $depenses = \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
+                                ->with('bonCommandeRegie.fournisseur')
+                                ->get()
+                                ->map(function ($c) {
+                                    $bcr = $c->bonCommandeRegie;
+                                    if (!$bcr) return null;
+
+                                    $ratio = (float) $bcr->montant_ttc > 0
+                                        ? ((float) $c->montant / (float) $bcr->montant_ttc)
+                                        : 0;
+
+                                    return (object) [
+                                        'numero'         => $bcr->numero . ($ratio < 0.999 ? ' (part.)' : ''),
+                                        'statut'         => $bcr->statut,
+                                        'date_emission'  => $bcr->date_emission,
+                                        'fournisseur'    => $bcr->fournisseur,
+                                        'montant_ttc'    => round((float) $bcr->montant_ttc * $ratio, 2),
+                                        'montant_tva'    => round((float) $bcr->montant_tva * $ratio, 2),
+                                        'montant_ir'     => round((float) $bcr->montant_ir * $ratio, 2),
+                                        'net_a_payer'    => round((float) $bcr->net_a_payer * $ratio, 2),
+                                    ];
+                                })
+                                ->filter()
+                                ->filter(fn($d) => in_array($d->statut, $statutsFiltre))
+                                ->filter(function ($d) use ($data) {
+                                    if (!$d->date_emission) return true;
+                                    $de = \Carbon\Carbon::parse($d->date_emission);
+                                    return $de->between($data['date_debut'], $data['date_fin']);
+                                })
+                                ->sortBy('date_emission')
+                                ->values();
 
                             $lignesApurement = collect(explode("\n", $data['texte_apurement'] ?? ''))
                                 ->map(fn($l) => trim($l))
@@ -640,6 +692,26 @@ class RegieAvanceResource extends Resource
                         ->modalHeading(fn($record) => 'État Retenues Fiscales — ' . $record->numero)
                         ->modalWidth('lg')
                         ->form([
+                            Forms\Components\Select::make('decaissement_id')
+                                ->label('Décaissement / Tranche')
+                                ->options(fn($record) => $record->decaissements()
+                                    ->orderBy('numero')
+                                    ->get()
+                                    ->mapWithKeys(fn($d) => [$d->id => "{$d->numero} — {$d->libelle_tranche}"]))
+                                ->required()
+                                ->live()
+                                ->afterStateUpdated(function ($state, callable $set) {
+                                    $d = \App\Models\DecaissementRegie::find($state);
+                                    if ($d) {
+                                        $set('numero_tranche', $d->libelle_tranche);
+                                        if ($d->date_decaissement) {
+                                            $set('date_debut', $d->date_decaissement->format('Y-m-d'));
+                                        }
+                                    }
+                                })
+                                ->helperText('Seules les retenues réellement imputées à ce décaissement seront incluses.')
+                                ->columnSpanFull(),
+
                             Forms\Components\Grid::make(2)->schema([
                                 Forms\Components\DatePicker::make('date_debut')
                                     ->label('Période — Début')
@@ -671,13 +743,45 @@ class RegieAvanceResource extends Resource
                                 ->where('est_defaut', true)
                                 ->first();
 
-                            $depenses = \App\Models\BonCommandeRegie::where('regie_avance_id', $record->id)
-                                ->whereIn('statut', $data['statuts'] ?? ['paye', 'valide'])
-                                ->whereBetween('date_emission', [$data['date_debut'], $data['date_fin']])
-                                ->where('montant_ir', '>', 0)
-                                ->with('fournisseur')
-                                ->orderBy('date_emission')
-                                ->get();
+                            $decaissement = \App\Models\DecaissementRegie::with('provisions')->find($data['decaissement_id']);
+                            $provisionIds = $decaissement?->provisions->pluck('id') ?? collect();
+                            $statutsFiltre = $data['statuts'] ?? ['paye', 'valide'];
+
+                            // ✅ Basé sur provision_consommations (traçabilité réelle) —
+                            //    un BCR réparti sur plusieurs tranches n'apparaît ici que
+                            //    pour la part réellement prise sur CE décaissement.
+                            $depenses = \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
+                                ->with('bonCommandeRegie.fournisseur')
+                                ->get()
+                                ->map(function ($c) {
+                                    $bcr = $c->bonCommandeRegie;
+                                    if (!$bcr) return null;
+
+                                    $ratio = (float) $bcr->montant_ttc > 0
+                                        ? ((float) $c->montant / (float) $bcr->montant_ttc)
+                                        : 0;
+
+                                    return (object) [
+                                        'numero'         => $bcr->numero . ($ratio < 0.999 ? ' (part.)' : ''),
+                                        'statut'         => $bcr->statut,
+                                        'date_emission'  => $bcr->date_emission,
+                                        'fournisseur'    => $bcr->fournisseur,
+                                        'montant_ttc'    => round((float) $bcr->montant_ttc * $ratio, 2),
+                                        'montant_tva'    => round((float) $bcr->montant_tva * $ratio, 2),
+                                        'montant_ir'     => round((float) $bcr->montant_ir * $ratio, 2),
+                                        'net_a_payer'    => round((float) $bcr->net_a_payer * $ratio, 2),
+                                    ];
+                                })
+                                ->filter()
+                                ->filter(fn($d) => in_array($d->statut, $statutsFiltre))
+                                ->filter(fn($d) => $d->montant_ir > 0)
+                                ->filter(function ($d) use ($data) {
+                                    if (!$d->date_emission) return true;
+                                    $de = \Carbon\Carbon::parse($d->date_emission);
+                                    return $de->between($data['date_debut'], $data['date_fin']);
+                                })
+                                ->sortBy('date_emission')
+                                ->values();
 
                             $totaux = [
                                 'ttc' => $depenses->sum('montant_ttc'),

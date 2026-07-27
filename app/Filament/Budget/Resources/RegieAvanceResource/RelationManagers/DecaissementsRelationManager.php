@@ -336,32 +336,27 @@ class DecaissementsRelationManager extends RelationManager
                     ->modalHeading('Apurer la tranche')
                     ->modalDescription(fn($record) => new \Illuminate\Support\HtmlString(
                         (function () use ($record) {
-                            $statutsDepenses = ['livre', 'livre_partiellement', 'paye'];
+                            // ✅ Utilise la méthode centralisée (cascade-aware, basée sur
+                            //    provision_consommations) au lieu de resommer les BCR
+                            //    par leur "provision principale" — évite toute divergence
+                            //    avec ce qui est réellement enregistré.
                             $record->load('provisions');
+                            $record->recalculerDepenses();
+                            $record->refresh();
 
-                            $totalDepense = 0;
-                            $totalIr      = 0;
-                            $totalEngage  = 0;
+                            $totalDepense = (float) $record->montant_depense;
+                            $totalIr      = (float) $record->montant_ir_collecte;
+                            $solde        = (float) $record->montant_solde;
 
+                            // Engagé en cours (non livré/payé) — informatif uniquement
+                            $totalEngage = 0;
                             foreach ($record->provisions as $prov) {
-                                $bcrs = \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
-                                    ->whereIn('statut', $statutsDepenses)
-                                    ->get();
-
-                                $depenses = \App\Models\DepenseRegie::where('provision_ligne_regie_id', $prov->id)
-                                    ->whereIn('statut', ['valide', 'paye'])
-                                    ->get();
-
-                                $totalDepense += $bcrs->sum('montant_ttc') + $depenses->sum('montant_ttc');
-                                $totalIr      += $bcrs->sum('montant_ir')  + $depenses->sum('montant_ir');
-
                                 $totalEngage += \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
                                     ->where('statut', 'valide')
                                     ->where('engage', true)
                                     ->sum('montant_ttc');
                             }
 
-                            $solde        = ($record->montant_accorde ?? 0) - $totalDepense;
                             $couleurSolde = $solde < 0 ? 'color:#dc2626;' : 'color:#16a34a;';
 
                             return '<div class="text-sm text-slate-800 dark:text-slate-200" style="line-height:2;">'
