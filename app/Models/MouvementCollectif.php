@@ -22,10 +22,14 @@ class MouvementCollectif extends Model
         'montant_modification',
         'motif',
         'virement_budgetaire_id', // ✅ VirementBudgetaire lié
+        'statut',
+        'date_annulation',
+        'annule_par',
     ];
 
     protected $casts = [
         'montant_modification' => 'decimal:2',
+        'date_annulation'      => 'datetime',
     ];
 
     public function collectif(): BelongsTo
@@ -58,6 +62,11 @@ class MouvementCollectif extends Model
     public function virementBudgetaire()
     {
         return $this->belongsTo(VirementBudgetaire::class, 'virement_budgetaire_id');
+    }
+
+    public function annulateur()
+    {
+        return $this->belongsTo(User::class, 'annule_par');
     }
 
     public function ligneSource()
@@ -97,18 +106,24 @@ class MouvementCollectif extends Model
 
                 // Un virement issu d'un mouvement collectif est auto-approuvé
                 // au moment de l'adoption : pas de validation manuelle intermédiaire.
-                if ($virement->statut === 'en_attente') {
+                if (in_array($virement->statut, ['en_attente', 'rejete'])) {
+                    $ancienStatut = $virement->statut;
                     $virement->statut = 'approuve';
                     $virement->valide_par = $user?->id;
                     $virement->date_validation = now();
+                    // ✅ Synchronise le montant du virement avec celui du mouvement
+                    //    (utile si le montant a été modifié via corriger())
+                    $virement->montant = $this->montant_modification;
                     $virement->save();
 
                     ActivityLog::logAction($virement, 'valider', [
-                        'ancien_statut'  => 'en_attente',
+                        'ancien_statut'  => $ancienStatut,
                         'nouveau_statut' => 'approuve',
                         'approuve_par'   => $user?->name ?? 'Système (adoption collectif)',
                         'montant'        => $virement->montant,
-                        'contexte'       => 'Auto-approuvé via adoption du collectif budgétaire',
+                        'contexte'       => $ancienStatut === 'rejete'
+                            ? 'Ré-approuvé automatiquement suite à la correction d\'un mouvement collectif'
+                            : 'Auto-approuvé via adoption du collectif budgétaire',
                     ]);
                 }
 
@@ -130,12 +145,17 @@ class MouvementCollectif extends Model
             if ($this->type === 'depense') {
                 if ($this->nouvelle_ligne_depense_id) {
                     // La nouvelle ligne a déjà été créée (lors de la création du mouvement)
-                    // On marque juste qu'elle est issue du collectif
                     $ligne = $this->nouvelleLigneDepense;
                     if ($ligne) {
-                        $ligne->est_issue_collectif = true;
-                        $ligne->collectif_creation_id = $this->collectif_id;
-                        $ligne->save();
+                        // ✅ Restaure explicitement les montants (symétrique à annuler())
+                        //    pour que la réapplication après correction fonctionne.
+                        $ligne->updateQuietly([
+                            'est_issue_collectif'   => true,
+                            'collectif_creation_id' => $this->collectif_id,
+                            'budget_initial'        => $this->montant_modification,
+                            'budget_rectifie'       => $this->montant_modification,
+                            'montant_initial'       => $this->montant_modification,
+                        ]);
                     }
                 } elseif ($this->ligne_depense_id) {
                     $ligne = $this->ligneDepense;
@@ -148,9 +168,12 @@ class MouvementCollectif extends Model
                 if ($this->nouvelle_ligne_recette_id) {
                     $ligne = $this->nouvelleLigneRecette;
                     if ($ligne) {
-                        $ligne->est_issue_collectif = true;
-                        $ligne->collectif_creation_id = $this->collectif_id;
-                        $ligne->save();
+                        $ligne->updateQuietly([
+                            'est_issue_collectif'   => true,
+                            'collectif_creation_id' => $this->collectif_id,
+                            'montant_prevu_initial' => $this->montant_modification,
+                            'montant_rectifie'      => $this->montant_modification,
+                        ]);
                     }
                 } elseif ($this->ligne_recette_id) {
                     $ligne = $this->ligneRecette;
@@ -161,13 +184,48 @@ class MouvementCollectif extends Model
                 }
             }
         }
+
+        // ✅ Mouvement (re)devient actif — utile pour la réapplication après correction
+        $this->updateQuietly([
+            'statut'          => 'actif',
+            'date_annulation' => null,
+            'annule_par'      => null,
+        ]);
     }
 
     /**
-     * Annuler ce mouvement.
+     * Corriger ce mouvement : change le montant puis le réapplique.
+     * Le mouvement doit d'abord avoir été annulé.
      */
-    public function annuler(): void
+    public function corriger(float $nouveauMontant, ?User $user = null, ?string $motifCorrection = null): void
     {
+        if ($this->statut !== 'annule') {
+            throw new \Exception(
+                "Ce mouvement doit d'abord être annulé avant de pouvoir être corrigé."
+            );
+        }
+
+        $this->motif = ($this->motif ?? '')
+            . "\n[Correction — " . now()->format('d/m/Y H:i') . "] "
+            . "Montant modifié de " . number_format((float) $this->montant_modification, 0, ',', ' ')
+            . " à " . number_format($nouveauMontant, 0, ',', ' ') . " FCFA"
+            . ($motifCorrection ? " — {$motifCorrection}" : '');
+        $this->montant_modification = $nouveauMontant;
+        $this->save();
+
+        $this->appliquer($user);
+    }
+
+    /**
+     * Annuler ce mouvement (et lui seul — les autres mouvements du même
+     * collectif restent inchangés).
+     */
+    public function annuler(?User $user = null): void
+    {
+        if ($this->statut === 'annule') {
+            throw new \Exception("Ce mouvement est déjà annulé.");
+        }
+
         // ✅ Garde — vérifier que l'annulation ne rend pas le disponible négatif
         if ($this->type === 'depense' && $this->ligne_depense_id && $this->montant_modification > 0) {
             $ligne = $this->ligneDepense;
@@ -199,20 +257,44 @@ class MouvementCollectif extends Model
                 $virement->statut    = 'rejete';
                 $virement->save();
             }
+
+            $this->updateQuietly([
+                'statut'          => 'annule',
+                'date_annulation' => now(),
+                'annule_par'      => $user?->id,
+            ]);
             return;
         }
 
         if ($this->type === 'depense') {
             if ($this->nouvelle_ligne_depense_id) {
-                // Supprimer la ligne créée ? Ou la désactiver ?
                 $ligne = $this->nouvelleLigneDepense;
                 if ($ligne) {
-                    // Option: on pourrait la supprimer, mais on préfère la marquer comme issue d'un collectif annulé
-                    $ligne->est_issue_collectif = false;
-                    $ligne->collectif_creation_id = null;
-                    $ligne->save();
-                    // Ou on la supprime purement et simplement
-                    // $ligne->delete();
+                    // ✅ Garde — cette ligne n'existe QUE grâce à ce collectif ;
+                    //    si elle a déjà des engagements, on ne peut pas
+                    //    l'annuler sans perdre la traçabilité comptable.
+                    if ((float) $ligne->engage > 0) {
+                        throw new \Exception(
+                            "Impossible d'annuler : la ligne "
+                                . ($ligne->nomenclature?->code ?? $ligne->id)
+                                . " créée par ce collectif a déjà des engagements ("
+                                . number_format($ligne->engage, 0, ',', ' ')
+                                . " FCFA). Désengagez d'abord."
+                        );
+                    }
+
+                    // ✅ Remise à zéro complète — sans ce collectif, cette ligne
+                    //    ne doit plus peser sur le budget total (sinon elle
+                    //    continue de fausser les statistiques du tableau de bord
+                    //    même après annulation).
+                    $ligne->updateQuietly([
+                        'est_issue_collectif'   => false,
+                        'collectif_creation_id' => null,
+                        'budget_initial'        => 0,
+                        'budget_rectifie'       => 0,
+                        'montant_initial'       => 0,
+                        'disponible_engagement' => 0,
+                    ]);
                 }
             } elseif ($this->ligne_depense_id) {
                 $ligne = $this->ligneDepense;
@@ -225,9 +307,23 @@ class MouvementCollectif extends Model
             if ($this->nouvelle_ligne_recette_id) {
                 $ligne = $this->nouvelleLigneRecette;
                 if ($ligne) {
-                    $ligne->est_issue_collectif = false;
-                    $ligne->collectif_creation_id = null;
-                    $ligne->save();
+                    // ✅ Même garde que pour les dépenses, côté recouvrement
+                    if ((float) $ligne->montant_recouvre > 0) {
+                        throw new \Exception(
+                            "Impossible d'annuler : la ligne "
+                                . ($ligne->nomenclature?->code ?? $ligne->id)
+                                . " créée par ce collectif a déjà du recouvrement enregistré ("
+                                . number_format($ligne->montant_recouvre, 0, ',', ' ')
+                                . " FCFA)."
+                        );
+                    }
+
+                    $ligne->updateQuietly([
+                        'est_issue_collectif'    => false,
+                        'collectif_creation_id'  => null,
+                        'montant_prevu_initial'  => 0,
+                        'montant_rectifie'       => 0,
+                    ]);
                 }
             } elseif ($this->ligne_recette_id) {
                 $ligne = $this->ligneRecette;
@@ -237,5 +333,11 @@ class MouvementCollectif extends Model
                 }
             }
         }
+
+        $this->updateQuietly([
+            'statut'          => 'annule',
+            'date_annulation' => now(),
+            'annule_par'      => $user?->id,
+        ]);
     }
 }

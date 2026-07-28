@@ -7,6 +7,7 @@ use App\Models\LignePrevisionRecette;
 use App\Models\NomenclatureBudgetaire;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -15,6 +16,19 @@ class MouvementsRelationManager extends RelationManager
 {
     protected static string $relationship = 'mouvements';
     protected static ?string $recordTitleAttribute = 'id';
+
+    /**
+     * ✅ Par défaut, Filament passe cette RelationManager en lecture seule
+     *    dès que CollectifBudgetaireResource::canEdit() renvoie false pour
+     *    le collectif parent (ce qui est le cas dès qu'il est 'adopte').
+     *    On désactive ce comportement automatique : c'est chaque action
+     *    individuelle (Ajouter, Annuler ce mouvement, Corriger...) qui gère
+     *    finement sa propre visibilité selon le statut du collectif.
+     */
+    public function isReadOnly(): bool
+    {
+        return false;
+    }
 
     public function form(Form $form): Form
     {
@@ -263,6 +277,17 @@ class MouvementsRelationManager extends RelationManager
     {
         return $table
             ->columns([
+                Tables\Columns\BadgeColumn::make('statut')
+                    ->label('Statut mvt.')
+                    ->colors([
+                        'success' => 'actif',
+                        'danger'  => 'annule',
+                    ])
+                    ->formatStateUsing(fn($state) => $state === 'annule' ? '❌ Annulé' : '✅ Actif')
+                    ->tooltip(fn($record) => $record->statut === 'annule'
+                        ? "Annulé le " . $record->date_annulation?->format('d/m/Y H:i') . " par " . ($record->annulateur?->name ?? '—')
+                        : null),
+
                 Tables\Columns\BadgeColumn::make('type')
                     ->label('Type')
                     ->colors([
@@ -438,6 +463,45 @@ class MouvementsRelationManager extends RelationManager
                         );
 
                         return $data;
+                    })
+                    ->visible(fn() => $this->getOwnerRecord()->statut !== 'annule')
+                    ->after(function ($record) {
+                        $collectif = $this->getOwnerRecord();
+
+                        // ✅ Un collectif 'projet' sera appliqué globalement à son
+                        //    adoption (comportement inchangé). Mais s'il est déjà
+                        //    'adopte', ce nouveau mouvement doit être appliqué
+                        //    immédiatement — sinon il resterait sans effet réel
+                        //    sur le budget tant que personne ne le déclenche.
+                        if ($collectif->statut === 'adopte') {
+                            try {
+                                $record->appliquer(auth()->user());
+
+                                Notification::make()
+                                    ->title('✅ Mouvement ajouté et appliqué immédiatement')
+                                    ->body('Ce collectif étant déjà adopté, le mouvement a été appliqué directement sur le budget.')
+                                    ->success()
+                                    ->send();
+                            } catch (\Exception $e) {
+                                // ✅ L'application a échoué (ex: disponible insuffisant) —
+                                //    marquer le mouvement comme non-effectif plutôt que de
+                                //    le laisser 'actif' par défaut sans effet réel.
+                                $record->updateQuietly([
+                                    'statut'          => 'annule',
+                                    'date_annulation' => now(),
+                                    'annule_par'      => auth()->id(),
+                                ]);
+
+                                Notification::make()
+                                    ->title('⚠️ Mouvement créé mais NON appliqué')
+                                    ->body('Erreur : ' . $e->getMessage()
+                                        . ' — Le mouvement existe mais n\'a aucun effet sur le budget. '
+                                        . 'Utilisez "Corriger" pour resaisir un montant valide et l\'appliquer.')
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+                            }
+                        }
                     }),
             ])
             ->actions([
@@ -479,6 +543,7 @@ class MouvementsRelationManager extends RelationManager
                     ->modalCancelActionLabel('Fermer'),
 
                 Tables\Actions\EditAction::make()
+                    ->visible(fn() => $this->getOwnerRecord()->statut === 'projet')
                     ->mutateRecordDataUsing(function (array $data, $record): array {
                         // Le type 'virement' ne stocke pas ligne_source_id / ligne_destination_id
                         // sur le modèle Mouvement — ces infos vivent dans VirementBudgetaire.
@@ -515,11 +580,96 @@ class MouvementsRelationManager extends RelationManager
 
                         return $data;
                     }),
-                Tables\Actions\DeleteAction::make(),
+
+                // ✅ Annuler CE mouvement précis (le collectif reste adopté,
+                //    les autres mouvements ne sont pas affectés)
+                Tables\Actions\Action::make('annulerMouvement')
+                    ->label('Annuler ce mouvement')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut !== 'annule'
+                            && $record->collectif?->statut === 'adopte'
+                            && auth()->user()?->can('update_collectif_budgetaire')
+                    )
+                    ->requiresConfirmation()
+                    ->modalHeading('Annuler ce mouvement')
+                    ->modalDescription('Seul ce mouvement sera annulé — son effet sur le budget sera inversé. Les autres mouvements de ce collectif ne sont pas affectés. Impossible si des engagements ont déjà été pris sur la ligne concernée.')
+                    ->action(function ($record) {
+                        try {
+                            $record->annuler(auth()->user());
+                            Notification::make()
+                                ->title('✅ Mouvement annulé')
+                                ->body('Vous pouvez maintenant le corriger via le bouton "Corriger".')
+                                ->success()
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('❌ Annulation impossible')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                // ✅ Corriger un mouvement déjà annulé — resaisir le montant
+                //    puis le réappliquer automatiquement.
+                Tables\Actions\Action::make('corrigerMouvement')
+                    ->label('Corriger')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('warning')
+                    ->visible(
+                        fn($record) =>
+                        $record->statut === 'annule'
+                            && $record->collectif?->statut === 'adopte'
+                            && auth()->user()?->can('update_collectif_budgetaire')
+                    )
+                    ->form([
+                        Forms\Components\TextInput::make('nouveau_montant')
+                            ->label('Nouveau montant')
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->required()
+                            ->default(fn($record) => $record->montant_modification),
+
+                        Forms\Components\Textarea::make('motif_correction')
+                            ->label('Motif de la correction')
+                            ->rows(2)
+                            ->placeholder('Ex : erreur de saisie initiale, montant corrigé suite à vérification...'),
+                    ])
+                    ->requiresConfirmation()
+                    ->modalHeading('Corriger ce mouvement')
+                    ->modalDescription('Le nouveau montant sera appliqué immédiatement sur la ligne concernée.')
+                    ->action(function ($record, array $data) {
+                        try {
+                            $record->corriger(
+                                (float) $data['nouveau_montant'],
+                                auth()->user(),
+                                $data['motif_correction'] ?? null
+                            );
+                            Notification::make()
+                                ->title('✅ Mouvement corrigé et réappliqué')
+                                ->success()
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('❌ Correction impossible')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn() => $this->getOwnerRecord()->statut === 'projet'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn() => $this->getOwnerRecord()->statut === 'projet'),
                 ]),
             ]);
     }
