@@ -494,9 +494,12 @@ class ViewBonCommande extends ViewRecord
 
                     \DB::beginTransaction();
                     try {
-                        Transmission::where('document_type', get_class($this->record))
-                            ->where('document_id', $this->record->id)
+                        Transmission::where('document_id', $this->record->id)
                             ->where('statut', 'en_attente')
+                            ->where(function ($q) {
+                                $q->where('document_type', get_class($this->record))
+                                    ->orWhere('document_type', $this->morphAlias());
+                            })
                             ->get()
                             ->each(fn($t) => $t->annuler('Remplacée'));
 

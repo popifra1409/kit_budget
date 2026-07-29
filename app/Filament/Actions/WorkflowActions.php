@@ -56,6 +56,7 @@ class WorkflowActions
             self::rappelerTransmission(),  // ✅ Juste après transmettre
             self::retourner(),
             self::cloturer(),
+            self::forcerCloture(),
             self::historique(),
             self::annuler(),              // ✅ NOUVEAU
             self::supprimer(),            // ✅ NOUVEAU
@@ -632,6 +633,49 @@ class WorkflowActions
                     Notification::make()
                         ->title('✅ Transmission clôturée')
                         ->success()->send();
+                } catch (\Exception $e) {
+                    Notification::make()
+                        ->title('❌ ' . $e->getMessage())
+                        ->danger()->send();
+                }
+            });
+    }
+
+    /**
+     * ✅ NOUVEAU — Clôture forcée réservée aux admins, visible uniquement
+     * quand le document est en transmission mais que l'utilisateur connecté
+     * N'EST PAS le destinataire réel (sinon "Clôturer" suffit déjà).
+     */
+    private static function forcerCloture(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('forcer_cloture_transmission')
+            ->label('Forcer la clôture (Admin)')
+            ->icon('heroicon-o-shield-exclamation')
+            ->color('danger')
+            ->visible(
+                fn($record) =>
+                self::estEnTransmission($record)
+                    && !self::estDestinataire($record)
+                    && (auth()->user()?->hasAnyRole(['super_admin', 'admin']) ?? false)
+            )
+            ->form([
+                Forms\Components\Textarea::make('motif')
+                    ->label('Motif de la clôture forcée')
+                    ->required()
+                    ->rows(3)
+                    ->helperText('Obligatoire — cette action est tracée dans l\'historique et notifiée au destinataire et à l\'expéditeur d\'origine.'),
+            ])
+            ->requiresConfirmation()
+            ->modalHeading('⚠️ Forcer la clôture de cette transmission')
+            ->modalDescription('Cette action clôture la transmission à la place du destinataire réel. Réservé aux cas exceptionnels (destinataire absent, erreur d\'aiguillage...).')
+            ->action(function ($record, array $data) {
+                try {
+                    $record->forcerClotureTransmission($data['motif']);
+                    Notification::make()
+                        ->title('✅ Transmission clôturée de force')
+                        ->warning()
+                        ->body('Cette action a été tracée dans l\'historique.')
+                        ->send();
                 } catch (\Exception $e) {
                     Notification::make()
                         ->title('❌ ' . $e->getMessage())

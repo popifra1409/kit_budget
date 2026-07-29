@@ -213,6 +213,62 @@ trait HasWorkflow
     }
 
     /**
+     * ✅ NOUVEAU — Clôture forcée par un administrateur, à la place du
+     * destinataire réel. Réservé aux cas exceptionnels (destinataire
+     * absent, erreur d'aiguillage...). Entièrement tracé.
+     */
+    public function forcerClotureTransmission(string $motif): void
+    {
+        $transmission = $this->transmissionEnCours();
+        if (!$transmission) {
+            throw new \Exception("Aucune transmission en cours à clôturer.");
+        }
+
+        $admin = auth()->user();
+        if (!$admin) {
+            throw new \Exception("Utilisateur non authentifié.");
+        }
+
+        $destinataireInitial = $transmission->destinataire;
+        $expediteurInitial   = $transmission->expediteur;
+
+        $transmission->updateQuietly([
+            'statut'          => 'traite',
+            'reponse'         => "[⚠️ Clôture forcée par {$admin->name}] {$motif}",
+            'date_traitement' => now(),
+        ]);
+
+        try {
+            \App\Models\ActivityLog::logAction($transmission, 'cloturer_force', [
+                'document_type'      => $transmission->document_type,
+                'document_id'        => $transmission->document_id,
+                'destinataire_prevu' => $destinataireInitial?->name,
+                'expediteur'         => $expediteurInitial?->name,
+                'force_par'          => $admin->name,
+                'motif'              => $motif,
+            ]);
+        } catch (\Exception $e) {
+            \Log::warning('Log clôture forcée échoué', ['error' => $e->getMessage()]);
+        }
+
+        // Notifier le destinataire prévu ET l'expéditeur d'origine
+        foreach (array_filter([$destinataireInitial, $expediteurInitial]) as $user) {
+            try {
+                \Filament\Notifications\Notification::make()
+                    ->title('⚠️ Transmission clôturée par un administrateur')
+                    ->warning()
+                    ->body(
+                        'Le document ' . ($this->numero ?? '')
+                            . " a été clôturé de force par {$admin->name}. Motif : {$motif}"
+                    )
+                    ->sendToDatabase($user);
+            } catch (\Exception $e) {
+                \Log::warning('Notification clôture forcée échouée', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    /**
      * ✅ Émetteur peut rappeler sa transmission dans le délai configuré
      */
     public function peutAnnulerSaTransmission(?int $delaiMinutes = null): bool
@@ -303,7 +359,7 @@ trait HasWorkflow
         $transmission = $this->transmissionEnCours();
         return $transmission?->estEnRetard() ?? false;
     }
-    
+
     public function getNombreTransmissions(): int
     {
         return $this->transmissions()->count();
