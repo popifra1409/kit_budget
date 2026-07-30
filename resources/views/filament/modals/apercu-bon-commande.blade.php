@@ -320,27 +320,54 @@ $decimales   = $modeArrondi ? 0 : 2;
 
             {{-- ✅ Ligne d'imputation budgétaire --}}
             @php
+                // ✅ PRIORITÉ 1 — nomenclature_commune_id est la vraie source de
+                // vérité (utilisée pour l'engagement), pas les lignes individuelles.
                 $nomenclature = null;
-                // 1. Depuis les lignes du BC (brouillon)
-                $premiereLigne = $bc->lignes->first();
-                if ($premiereLigne?->nomenclature) {
-                    $n = $premiereLigne->nomenclature;
+                $nomenclatureMultiple = false;
+                $nomenclaturesDistinctes = collect();
+
+                if ($bc->nomenclature_commune_id && $bc->nomenclatureCommune) {
+                    $n = $bc->nomenclatureCommune;
                     $nomenclature = $n->code . ' — ' . Str::limit($n->libelle ?? '', 50);
-                }
-                // 2. Depuis l'engagement (BC engagé)
-                if (!$nomenclature) {
-                    $engagement = $bc->engagement
-                        ?? \App\Models\Engagement::where('engageable_type', \App\Models\BonCommande::class)
-                            ->where('engageable_id', $bc->id)->first();
-                    if ($engagement?->nomenclaturePrincipale) {
-                        $n = $engagement->nomenclaturePrincipale;
+                } else {
+                    // Fallback 1 — regarder toutes les lignes (pas seulement la 1ère)
+                    $nomenclaturesDistinctes = $bc->lignes
+                        ->map(fn($l) => $l->nomenclature)
+                        ->filter()
+                        ->unique('id')
+                        ->values();
+
+                    if ($nomenclaturesDistinctes->count() === 1) {
+                        $n = $nomenclaturesDistinctes->first();
                         $nomenclature = $n->code . ' — ' . Str::limit($n->libelle ?? '', 50);
+                    } elseif ($nomenclaturesDistinctes->count() > 1) {
+                        $nomenclatureMultiple = true;
+                    } else {
+                        // Fallback 2 — depuis l'engagement (BC déjà engagé)
+                        $engagement = $bc->engagement
+                            ?? \App\Models\Engagement::where('engageable_type', \App\Models\BonCommande::class)
+                                ->where('engageable_id', $bc->id)->first();
+                        if ($engagement?->nomenclaturePrincipale) {
+                            $n = $engagement->nomenclaturePrincipale;
+                            $nomenclature = $n->code . ' — ' . Str::limit($n->libelle ?? '', 50);
+                        }
                     }
                 }
             @endphp
             <div class="info-item" style="grid-column: span 2">
                 <label>📌 Ligne d'imputation budgétaire</label>
-                @if($nomenclature)
+                @if($nomenclatureMultiple)
+                    <div>
+                        <span style="font-weight:600; color:#854d0e;">
+                            ⚠️ {{ $nomenclaturesDistinctes->count() }} imputations distinctes
+                        </span>
+                        <div style="font-size:.72rem; color:#475569; margin-top:.2rem; line-height:1.5;">
+                            @foreach($nomenclaturesDistinctes as $n)
+                                • <strong>{{ $n->code }}</strong> — {{ Str::limit($n->libelle ?? '', 40) }}<br>
+                            @endforeach
+                        </div>
+                    </div>
+                @elseif($nomenclature)
                     <span style="font-weight:600; color:#1e40af;">{{ $nomenclature }}</span>
                 @else
                     <span style="color:#6b7280; font-style:italic;">

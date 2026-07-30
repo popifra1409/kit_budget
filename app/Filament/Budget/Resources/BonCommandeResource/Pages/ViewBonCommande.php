@@ -33,28 +33,51 @@ class ViewBonCommande extends ViewRecord
     // =========================================================
     // HELPERS TRANSMISSION
     // =========================================================
+
+    /**
+     * ✅ Retourne l'alias morphMap du modèle, ou le FQCN si aucun alias
+     *    n'est configuré. Indispensable : les transmissions créées via
+     *    la relation morphMany stockent l'ALIAS (ex: 'bon_commande'),
+     *    pas le nom de classe complet — sans ce fallback, aucune requête
+     *    directe sur Transmission::document_type ne matche quoi que ce soit.
+     */
+    protected function morphAlias(): string
+    {
+        $map = \Illuminate\Database\Eloquent\Relations\Relation::morphMap();
+        return array_search(get_class($this->record), $map) ?: get_class($this->record);
+    }
+
     protected function estEnTransmission(): bool
     {
-        return Transmission::where('document_type', get_class($this->record))
-            ->where('document_id', $this->record->id)
+        return Transmission::where('document_id', $this->record->id)
             ->where('statut', 'en_attente')
+            ->where(function ($q) {
+                $q->where('document_type', get_class($this->record))
+                    ->orWhere('document_type', $this->morphAlias());
+            })
             ->exists();
     }
 
     protected function estDestinataire(): bool
     {
-        return Transmission::where('document_type', get_class($this->record))
-            ->where('document_id', $this->record->id)
+        return Transmission::where('document_id', $this->record->id)
             ->where('destinataire_id', auth()->id())
             ->where('statut', 'en_attente')
+            ->where(function ($q) {
+                $q->where('document_type', get_class($this->record))
+                    ->orWhere('document_type', $this->morphAlias());
+            })
             ->exists();
     }
 
     protected function transmissionEnCours(): ?Transmission
     {
-        return Transmission::where('document_type', get_class($this->record))
-            ->where('document_id', $this->record->id)
+        return Transmission::where('document_id', $this->record->id)
             ->where('statut', 'en_attente')
+            ->where(function ($q) {
+                $q->where('document_type', get_class($this->record))
+                    ->orWhere('document_type', $this->morphAlias());
+            })
             ->with('destinataire', 'expediteur')
             ->latest('date_transmission')
             ->first();
