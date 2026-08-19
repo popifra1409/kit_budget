@@ -19,6 +19,8 @@ class BonCommandeRegie extends Model
         'regie_avance_id',
         'depense_regie_id',
         'numero',
+        'numero_facture_definitive',
+        'date_facture_definitive',
         'date_emission',
         'objet',
         'fournisseur_id',
@@ -43,7 +45,8 @@ class BonCommandeRegie extends Model
     ];
 
     protected $casts = [
-        'date_emission' => 'date',
+        'date_emission'             => 'date',
+        'date_facture_definitive'   => 'date',
         'montant_ht'    => 'decimal:2',
         'montant_tva'   => 'decimal:2',
         'montant_ttc'   => 'decimal:2',

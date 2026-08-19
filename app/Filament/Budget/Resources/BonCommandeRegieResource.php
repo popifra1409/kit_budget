@@ -655,6 +655,13 @@ class BonCommandeRegieResource extends Resource
                     ->label('N° BCR/BCM')
                     ->searchable()->sortable()->weight('bold')->copyable(),
 
+                Tables\Columns\TextColumn::make('numero_facture_definitive')
+                    ->label('N° Facture')
+                    ->placeholder('⚠️ Non renseigné')
+                    ->color(fn($state) => $state ? null : 'warning')
+                    ->searchable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('regieAvance.numero')
                     ->label('Régie')->badge()->color('info')->searchable(),
 
@@ -837,6 +844,42 @@ class BonCommandeRegieResource extends Resource
 
                     Tables\Actions\ViewAction::make(),
                     Tables\Actions\EditAction::make(),
+
+                    // ── Saisir n° facture définitive ───────────────────
+                    Tables\Actions\Action::make('saisirFactureDefinitive')
+                        ->label(fn($record) => $record->numero_facture_definitive
+                            ? 'Modifier n° facture'
+                            : '🧾 Saisir n° facture')
+                        ->icon('heroicon-o-document-text')
+                        ->color(fn($record) => $record->numero_facture_definitive ? 'gray' : 'warning')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && in_array($record->statut, ['livre', 'paye'])
+                                && auth()->user()?->can('valider_bon_commande_regie')
+                        )
+                        ->form([
+                            Forms\Components\TextInput::make('numero_facture_definitive')
+                                ->label('N° de facture (inscrit sur la facture physique du fournisseur)')
+                                ->required()
+                                ->maxLength(100)
+                                ->default(fn($record) => $record->numero_facture_definitive),
+
+                            Forms\Components\DatePicker::make('date_facture_definitive')
+                                ->label('Date de la facture')
+                                ->default(fn($record) => $record->date_facture_definitive ?? now()),
+                        ])
+                        ->action(function ($record, array $data) {
+                            $record->update([
+                                'numero_facture_definitive' => $data['numero_facture_definitive'],
+                                'date_facture_definitive'   => $data['date_facture_definitive'] ?? null,
+                            ]);
+
+                            Notification::make()
+                                ->title('🧾 N° facture enregistré')
+                                ->success()
+                                ->send();
+                        }),
 
                     // ── Valider ───────────────────────────────────────
                     Tables\Actions\Action::make('valider')
@@ -1097,8 +1140,22 @@ class BonCommandeRegieResource extends Resource
                             $dejaEngage = (float) ($record->montant_engage ?? 0);
                             $reste      = max(0, $montantTtc - $dejaEngage);
 
+                            $champFacture = [
+                                Forms\Components\TextInput::make('numero_facture_definitive')
+                                    ->label('N° de facture définitive (fournisseur)')
+                                    ->default(fn() => $record->numero_facture_definitive)
+                                    ->helperText('Le numéro inscrit sur la facture physique du fournisseur — nécessaire pour le Compte d\'Emploi.')
+                                    ->maxLength(100),
+
+                                Forms\Components\DatePicker::make('date_facture_definitive')
+                                    ->label('Date de la facture')
+                                    ->default(fn() => $record->date_facture_definitive)
+                                    ->maxDate(now()),
+                            ];
+
                             if ($reste <= 0.01) {
-                                return []; // déjà soldé à 100%, rien à saisir
+                                // Déjà soldé à 100% — on ne propose que la saisie de la facture
+                                return $champFacture;
                             }
 
                             $disponible = (float) \App\Models\ProvisionLigneRegie::where(
@@ -1108,7 +1165,7 @@ class BonCommandeRegieResource extends Resource
                                 ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
                                 ->sum('montant_disponible');
 
-                            return [
+                            return array_merge([
                                 Forms\Components\Placeholder::make('info_paiement')
                                     ->label('')
                                     ->content(new \Illuminate\Support\HtmlString(
@@ -1145,13 +1202,22 @@ class BonCommandeRegieResource extends Resource
                                     ->label('Commentaire (optionnel)')
                                     ->rows(2)
                                     ->columnSpanFull(),
-                            ];
+                            ], $champFacture);
                         })
                         ->requiresConfirmation()
                         ->modalHeading('Marquer le BCR comme payé')
                         ->action(function ($record, array $data) {
                             try {
                                 DB::transaction(function () use ($record, $data) {
+                                    // ✅ Enregistrer la facture définitive dès que saisie —
+                                    //    indépendamment du solde (utile même en paiement partiel).
+                                    if (array_key_exists('numero_facture_definitive', $data) || array_key_exists('date_facture_definitive', $data)) {
+                                        $record->update([
+                                            'numero_facture_definitive' => $data['numero_facture_definitive'] ?? $record->numero_facture_definitive,
+                                            'date_facture_definitive'   => $data['date_facture_definitive'] ?? $record->date_facture_definitive,
+                                        ]);
+                                    }
+
                                     $montantTtc = (float) $record->montant_ttc;
                                     $dejaEngage = (float) ($record->montant_engage ?? 0);
                                     $reste      = max(0, $montantTtc - $dejaEngage);

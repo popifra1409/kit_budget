@@ -627,7 +627,9 @@ class RegieAvanceResource extends Resource
                                         : 0;
 
                                     return (object) [
-                                        'numero'         => $bcr->numero . ($ratio < 0.999 ? ' (part.)' : ''),
+                                        'numero'         => $bcr->numero_facture_definitive
+                                            ? $bcr->numero_facture_definitive . ($ratio < 0.999 ? ' (part.)' : '')
+                                            : '⚠️ ' . $bcr->numero . ' (facture non renseignée)',
                                         'statut'         => $bcr->statut,
                                         'date_emission'  => $bcr->date_emission,
                                         'fournisseur'    => $bcr->fournisseur,
@@ -762,7 +764,9 @@ class RegieAvanceResource extends Resource
                                         : 0;
 
                                     return (object) [
-                                        'numero'         => $bcr->numero . ($ratio < 0.999 ? ' (part.)' : ''),
+                                        'numero'         => $bcr->numero_facture_definitive
+                                            ? $bcr->numero_facture_definitive . ($ratio < 0.999 ? ' (part.)' : '')
+                                            : '⚠️ ' . $bcr->numero . ' (facture non renseignée)',
                                         'statut'         => $bcr->statut,
                                         'date_emission'  => $bcr->date_emission,
                                         'fournisseur'    => $bcr->fournisseur,
