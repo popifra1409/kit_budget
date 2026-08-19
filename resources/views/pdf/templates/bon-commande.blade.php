@@ -6,6 +6,10 @@ $bonCommande = $donnees['_raw'];
 $parametres  = \App\Models\ParametresStructure::where('actif', true)->first();
 $etatConfig  = $donnees['_etat_config'] ?? null;
 
+// ✅ Un BCR/BCM (régie d'avance) n'a pas de ligne d'imputation nomenclature
+//    budgétaire classique — il consomme une provision de régie.
+$estBonCommandeRegie = $bonCommande instanceof \App\Models\BonCommandeRegie;
+
 if ($etatConfig instanceof \App\Models\EtatConfig) {
     $entete = $etatConfig->getEntete($parametres);
 } else {
@@ -78,23 +82,25 @@ $nomenclatureCode = null; $nomenclatureLib = null;
 $anneeImputation  = now()->year; $moisImputation = now()->format('m');
 $codeArticle = null; $ligneImputation = null;
 $engagementBC = null;
-if ($bonCommande->engagement_id)
-    $engagementBC = \App\Models\Engagement::with('nomenclaturePrincipale','exercice')->find($bonCommande->engagement_id);
-if (!$engagementBC)
-    $engagementBC = \App\Models\Engagement::with('nomenclaturePrincipale','exercice')
-        ->where('engageable_type','App\Models\BonCommande')->where('engageable_id',$bonCommande->id)->first();
-if ($engagementBC?->nomenclaturePrincipale) {
-    $nomenclatureCode = $engagementBC->nomenclaturePrincipale->code;
-    $nomenclatureLib  = $engagementBC->nomenclaturePrincipale->libelle;
-    $codeArticle      = $engagementBC->nomenclaturePrincipale->getCodeArticle()??substr($nomenclatureCode,0,6)??null;
-    $dateEng          = \Carbon\Carbon::parse($engagementBC->date_engagement);
-    $anneeImputation  = $engagementBC->exercice?->annee ?? $dateEng->year;
-    $moisImputation   = $dateEng->format('m');
-}
-if ($nomenclatureCode) {
-    $pa = ($codeArticle && $codeArticle !== $nomenclatureCode) ? $codeArticle.'-' : '';
-    $ligneImputation = $anneeImputation.'-'.$moisImputation.'-'.$pa.$nomenclatureCode;
-    if ($nomenclatureLib) $ligneImputation .= ' ('.strtoupper($nomenclatureLib).')';
+if (!$estBonCommandeRegie) {
+    if ($bonCommande->engagement_id)
+        $engagementBC = \App\Models\Engagement::with('nomenclaturePrincipale','exercice')->find($bonCommande->engagement_id);
+    if (!$engagementBC)
+        $engagementBC = \App\Models\Engagement::with('nomenclaturePrincipale','exercice')
+            ->where('engageable_type','App\Models\BonCommande')->where('engageable_id',$bonCommande->id)->first();
+    if ($engagementBC?->nomenclaturePrincipale) {
+        $nomenclatureCode = $engagementBC->nomenclaturePrincipale->code;
+        $nomenclatureLib  = $engagementBC->nomenclaturePrincipale->libelle;
+        $codeArticle      = $engagementBC->nomenclaturePrincipale->getCodeArticle()??substr($nomenclatureCode,0,6)??null;
+        $dateEng          = \Carbon\Carbon::parse($engagementBC->date_engagement);
+        $anneeImputation  = $engagementBC->exercice?->annee ?? $dateEng->year;
+        $moisImputation   = $dateEng->format('m');
+    }
+    if ($nomenclatureCode) {
+        $pa = ($codeArticle && $codeArticle !== $nomenclatureCode) ? $codeArticle.'-' : '';
+        $ligneImputation = $anneeImputation.'-'.$moisImputation.'-'.$pa.$nomenclatureCode;
+        if ($nomenclatureLib) $ligneImputation .= ' ('.strtoupper($nomenclatureLib).')';
+    }
 }
 
 $lignesChunked = collect([$bonCommande->lignes]);
@@ -274,7 +280,7 @@ if (isset($pdf)) {
                 </tr>
             </table>
         </div>
-        @if ($ligneImputation)
+        @if ($ligneImputation && !$estBonCommandeRegie)
             <div class="ligne-imputation"><strong>Ligne d'imputation budgétaire :</strong> {{ $ligneImputation }}</div>
         @endif
 
