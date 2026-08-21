@@ -19,6 +19,7 @@
         "laravel/vonage-notification-channel": "^3.3",
         "maatwebsite/excel": "^3.1",
         "netflie/whatsapp-cloud-api": "^4.0",
+        "phpoffice/phpword": "^1.4",
         "predis/predis": "^3.3",
         "pusher/pusher-php-server": "*",
         "spatie/laravel-activitylog": "^4.10",

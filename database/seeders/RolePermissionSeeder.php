@@ -33,6 +33,7 @@ class RolePermissionSeeder extends Seeder
             'memoire_depense',
             'nomenclature_budgetaire',
             'groupe_nomenclature', // ← AJOUT
+            'facture_proforma', // ← AJOUT
             'ordonnance_paiement',
             'parametres_fournisseur',
             'parametres_structure',
