@@ -763,6 +763,9 @@ class BonCommandeRegieResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
+                // ✅ Voir/filtrer les BCR supprimés (SoftDeletes)
+                Tables\Filters\TrashedFilter::make(),
+
                 Tables\Filters\Filter::make('periode')
                     ->form([
                         Forms\Components\Select::make('periode')
@@ -1317,6 +1320,54 @@ class BonCommandeRegieResource extends Resource
                                 'reste_a_engager'    => 0,
                             ]);
                             Notification::make()->title('BCR annulé')->warning()->send();
+                        }),
+
+                    // ── Réactiver un BCR annulé → retour en brouillon ──
+                    Tables\Actions\Action::make('reactiver')
+                        ->label('↩ Réactiver en brouillon')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('gray')
+                        ->visible(
+                            fn($record) =>
+                            $record
+                                && $record->statut === 'annule'
+                                && auth()->user()?->can('annuler_bon_commande_regie')
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Réactiver ce BCR')
+                        ->modalDescription('Le BCR repasse en brouillon, modifiable normalement. Aucun engagement n\'est restauré (il était à 0 au moment de l\'annulation).')
+                        ->action(function ($record) {
+                            $record->update([
+                                'statut'       => 'brouillon',
+                                'observations' => ($record->observations ?? '')
+                                    . "\n--- RÉACTIVÉ (depuis annulé) " . now()->format('d/m/Y') . " par "
+                                    . (auth()->user()?->name ?? '?') . " ---",
+                            ]);
+                            Notification::make()
+                                ->title('✅ BCR réactivé en brouillon')
+                                ->success()
+                                ->send();
+                        }),
+
+                    // ── Restaurer un BCR supprimé (corbeille) → brouillon ──
+                    Tables\Actions\RestoreAction::make()
+                        ->label('♻ Restaurer en brouillon')
+                        ->visible(
+                            fn($record) =>
+                            $record?->trashed()
+                                && auth()->user()?->can('delete_bon_commande_regie')
+                        )
+                        ->after(function ($record) {
+                            $record->update([
+                                'statut'       => 'brouillon',
+                                'observations' => ($record->observations ?? '')
+                                    . "\n--- RESTAURÉ depuis la corbeille " . now()->format('d/m/Y') . " par "
+                                    . (auth()->user()?->name ?? '?') . " ---",
+                            ]);
+                            Notification::make()
+                                ->title('✅ BCR restauré en brouillon')
+                                ->success()
+                                ->send();
                         }),
 
                     // ── Sous-menu PDF (BCA) ─────────────────────────────
