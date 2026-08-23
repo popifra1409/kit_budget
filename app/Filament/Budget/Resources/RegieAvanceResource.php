@@ -496,43 +496,12 @@ class RegieAvanceResource extends Resource
                             Notification::make()->title('✅ Régie clôturée')->success()->send();
                         }),
 
-                    // ── Réapprovisionner ──────────────────────────
-                    Tables\Actions\Action::make('reapprovisionner')
-                        ->label('Réapprovisionner')
-                        ->icon('heroicon-o-arrow-path')
-                        ->color('primary')
-                        ->visible(
-                            fn($record) =>
-                            $record->statut === 'actif'
-                                && auth()->user()?->can('reapprovisionner_regie_avance')
-                        )
-                        ->modalHeading('Réapprovisionner la régie')
-                        ->form([
-                            Forms\Components\Select::make('decision_administrative_id')
-                                ->label('Nouvelle DA engagée')
-                                ->options(function () {
-                                    return \App\Models\DecisionAdministrative::where('statut', 'engagee')
-                                        ->get()
-                                        ->mapWithKeys(fn($da) => [
-                                            $da->id => "{$da->numero} — {$da->objet} "
-                                                . "(" . number_format($da->montant_net, 0, ',', ' ') . " FCFA)"
-                                        ]);
-                                })
-                                ->helperText('DA engagée source — les montants seront pré-remplis')
-                                ->required()
-                                ->searchable(),
-                        ])
-                        ->action(function ($record, array $data) {
-                            $da = \App\Models\DecisionAdministrative::findOrFail(
-                                $data['decision_administrative_id']
-                            );
-                            $record->reapprovisionner($da);
-                            Notification::make()
-                                ->title('✅ Régie réapprovisionnée')
-                                ->success()
-                                ->body("+ " . number_format($da->montant_net, 0, ',', ' ') . " FCFA")
-                                ->send();
-                        }),
+                    // ✅ "Réapprovisionner" retiré — utilisait l'ancienne
+                    //    RegieAvance::reapprovisionner() qui incrémentait les
+                    //    totaux SANS créer l'association MenuDepenseDecision
+                    //    ni la ligne mini-budget correspondante. Désormais,
+                    //    le seul chemin correct est l'onglet "Décision source
+                    //    (DA engagée)" sur la fiche de la régie.
                     // ── État Compte d'Emploi ───────────────────────────────────────
                     Tables\Actions\Action::make('etat_compte_emploi')
                         ->label('📄 Compte d\'Emploi')
