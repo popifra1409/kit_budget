@@ -82,7 +82,7 @@ class DecisionSourceRavRelationManager extends RelationManager
                         $set('ligne_budgetaire_id', $lb?->id);
                     }
                 })
-                ->helperText('Une seule DA source pour une RAV.')
+                ->helperText('Vous pouvez associer plusieurs DA au fil du temps (réapprovisionnements successifs).')
                 ->columnSpanFull(),
 
             Forms\Components\Hidden::make('nomenclature_id'),
@@ -201,14 +201,10 @@ class DecisionSourceRavRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->label('➕ Associer la DA source')
+                    ->label('➕ Associer une DA source')
                     ->visible(
                         fn() =>
                         $this->getOwnerRecord()?->statut === 'actif'
-                            && MenuDepenseDecision::where(
-                                'regie_avance_id',
-                                $this->getOwnerRecord()?->id
-                            )->count() === 0
                             && auth()->user()?->can('update_regie_avance')
                     )
                     ->using(function (array $data): MenuDepenseDecision {
@@ -255,31 +251,42 @@ class DecisionSourceRavRelationManager extends RelationManager
                             'montant_da'                 => $montant,
                         ]);
 
-                        // ── 2. Créer la ligne mini-budget ─────────
+                        // ── 2. Créer OU incrémenter la ligne mini-budget ──
+                        //    ✅ Si une ligne existe déjà pour cette nomenclature
+                        //    (réapprovisionnement sur la même ligne), on ADDITIONNE
+                        //    le nouveau montant — firstOrCreate() l'ignorait
+                        //    silencieusement, ce qui masquait le réapprovisionnement.
                         if ($nomId && $montant > 0) {
-                            LigneRegieAvance::firstOrCreate(
-                                [
-                                    'regie_avance_id' => $regie->id,
-                                    'nomenclature_id' => $nomId,
-                                ],
-                                [
+                            $ligne = LigneRegieAvance::where([
+                                'regie_avance_id' => $regie->id,
+                                'nomenclature_id' => $nomId,
+                            ])->first();
+
+                            if ($ligne) {
+                                $ligne->increment('montant_alloue', $montant);
+                                $ligne->increment('montant_disponible', $montant);
+                            } else {
+                                LigneRegieAvance::create([
+                                    'regie_avance_id'     => $regie->id,
+                                    'nomenclature_id'     => $nomId,
                                     'ligne_budgetaire_id' => $lbId,
                                     'montant_alloue'      => $montant,
                                     'montant_consomme'    => 0,
                                     'montant_disponible'  => $montant,
-                                ]
-                            );
+                                ]);
+                            }
                         }
 
-                        // ── 3. ✅ Mettre à jour la régie via DB::table
-                        // pour contourner tout observer/global scope
+                        // ── 3. ✅ Mettre à jour la régie via DB::table —
+                        //    ADDITIONNER (pas écraser), puisqu'il peut déjà y
+                        //    avoir un ou plusieurs apports précédents.
                         DB::table('regies_avances')
                             ->where('id', $regie->id)
                             ->update([
+                                // Garde une trace de la DA la plus récente (informatif)
                                 'decision_administrative_id' => $daId,
-                                'montant_alloue'             => $montant,
-                                'montant_disponible'         => $montant,
-                                // Sync encaisse_annuelle si pas encore renseignée
+                                'montant_alloue'             => $regie->montant_alloue + $montant,
+                                'montant_disponible'         => $regie->montant_disponible + $montant,
                                 'encaisse_annuelle'          => $regie->encaisse_annuelle > 0
                                     ? $regie->encaisse_annuelle
                                     : $montant,
@@ -313,29 +320,48 @@ class DecisionSourceRavRelationManager extends RelationManager
                             && auth()->user()?->can('update_regie_avance')
                     )
                     ->using(function (MenuDepenseDecision $record): void {
-                        $regie = $this->getOwnerRecord();
+                        $regie   = $this->getOwnerRecord();
+                        $montant = (float) $record->montant_da;
 
-                        // ── Supprimer la ligne mini-budget ────────
-                        LigneRegieAvance::where([
+                        // ── Décrémenter la ligne mini-budget (jamais sous 0) ──
+                        $ligne = LigneRegieAvance::where([
                             'regie_avance_id' => $regie->id,
                             'nomenclature_id' => $record->nomenclature_id,
-                        ])->where('montant_consomme', 0)->delete();
+                        ])->first();
+
+                        if ($ligne && $ligne->montant_consomme == 0) {
+                            $nouvelAlloue = max(0, (float) $ligne->montant_alloue - $montant);
+                            if ($nouvelAlloue <= 0.01) {
+                                $ligne->delete();
+                            } else {
+                                $ligne->update([
+                                    'montant_alloue'     => $nouvelAlloue,
+                                    'montant_disponible' => $nouvelAlloue,
+                                ]);
+                            }
+                        }
 
                         $record->delete();
 
-                        // ── Réinitialiser la régie via DB::table ──
+                        // ── Décrémenter la régie (jamais sous 0) ──────
+                        $autresAssociations = MenuDepenseDecision::where('regie_avance_id', $regie->id)->exists();
+
                         DB::table('regies_avances')
                             ->where('id', $regie->id)
                             ->update([
-                                'decision_administrative_id' => null,
-                                'montant_alloue'             => 0,
-                                'montant_disponible'         => 0,
-                                'updated_at'                 => now(),
+                                'decision_administrative_id' => $autresAssociations
+                                    ? MenuDepenseDecision::where('regie_avance_id', $regie->id)
+                                    ->latest()->value('decision_administrative_id')
+                                    : null,
+                                'montant_alloue'     => max(0, $regie->montant_alloue - $montant),
+                                'montant_disponible' => max(0, $regie->montant_disponible - $montant),
+                                'updated_at'          => now(),
                             ]);
 
                         Log::info('DA source dissociée de la RAV', [
                             'regie_id' => $regie->id,
                             'da_id'    => $record->decision_administrative_id,
+                            'montant_retire' => $montant,
                         ]);
                     })
                     ->successNotification(

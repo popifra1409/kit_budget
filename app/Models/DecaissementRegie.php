@@ -12,6 +12,7 @@ class DecaissementRegie extends Model
 
     protected $fillable = [
         'regie_avance_id',
+        'decision_administrative_id',
         'numero',
         'trimestre',
         'libelle_tranche',
@@ -70,6 +71,11 @@ class DecaissementRegie extends Model
     public function provisions(): HasMany
     {
         return $this->hasMany(ProvisionLigneRegie::class, 'decaissement_regie_id');
+    }
+
+    public function decisionAdministrative(): BelongsTo
+    {
+        return $this->belongsTo(DecisionAdministrative::class, 'decision_administrative_id');
     }
 
     // ── Numérotation ──────────────────────────────────────────
@@ -167,6 +173,97 @@ class DecaissementRegie extends Model
 
             $regie->updateQuietly([
                 'montant_depense' => $totalDepenseRegie,
+            ]);
+        }
+    }
+
+    // =========================================================
+    // ✅ CRÉER LES PROVISIONS AUTOMATIQUEMENT — déplacé depuis
+    // DecaissementsRelationManager pour être réutilisable (notamment
+    // par RegieAvance::reapprovisionner(), qui crée une tranche sans
+    // passer par l'action "Accorder & Verser" du RelationManager).
+    // =========================================================
+    public function creerProvisions(RegieAvance $regie, float $montantAccorde): void
+    {
+        $lignes = $regie->lignes()->with('nomenclature')->get();
+
+        if ($lignes->isEmpty()) {
+            return;
+        }
+
+        // ── RAV : 1 seule ligne → provision automatique totale ──
+        if ($regie->type === 'rav' || $lignes->count() === 1) {
+            $ligne = $lignes->first();
+
+            $existante = ProvisionLigneRegie::where([
+                'decaissement_regie_id' => $this->id,
+                'ligne_regie_avance_id' => $ligne->id,
+            ])->first();
+
+            if (!$existante) {
+                ProvisionLigneRegie::create([
+                    'decaissement_regie_id' => $this->id,
+                    'ligne_regie_avance_id' => $ligne->id,
+                    'montant_provisionne'   => $montantAccorde,
+                    'montant_consomme'      => 0,
+                    'montant_disponible'    => $montantAccorde,
+                ]);
+            }
+
+            return;
+        }
+
+        // ── Menu Dépense : N lignes → répartition proportionnelle ──
+        $totalAlloue = $lignes->sum('montant_alloue');
+
+        if ($totalAlloue <= 0) {
+            $montantParLigne = round($montantAccorde / $lignes->count(), 2);
+            foreach ($lignes as $index => $ligne) {
+                $montant = ($index === $lignes->count() - 1)
+                    ? $montantAccorde - ($montantParLigne * ($lignes->count() - 1))
+                    : $montantParLigne;
+
+                $this->creerOuMettreAJourProvision($ligne, $montant);
+            }
+            return;
+        }
+
+        $totalCree   = 0;
+        $lignesArray = $lignes->values();
+
+        foreach ($lignesArray as $index => $ligne) {
+            $proportion = (float) $ligne->montant_alloue / $totalAlloue;
+
+            if ($index === $lignesArray->count() - 1) {
+                $montant = round($montantAccorde - $totalCree, 2);
+            } else {
+                $montant = round($montantAccorde * $proportion, 2);
+            }
+
+            $totalCree += $montant;
+            $this->creerOuMettreAJourProvision($ligne, $montant);
+        }
+    }
+
+    public function creerOuMettreAJourProvision(LigneRegieAvance $ligne, float $montant): void
+    {
+        $existante = ProvisionLigneRegie::where([
+            'decaissement_regie_id' => $this->id,
+            'ligne_regie_avance_id' => $ligne->id,
+        ])->first();
+
+        if ($existante) {
+            $existante->updateQuietly([
+                'montant_provisionne' => $montant,
+                'montant_disponible'  => $montant - $existante->montant_consomme,
+            ]);
+        } else {
+            ProvisionLigneRegie::create([
+                'decaissement_regie_id' => $this->id,
+                'ligne_regie_avance_id' => $ligne->id,
+                'montant_provisionne'   => $montant,
+                'montant_consomme'      => 0,
+                'montant_disponible'    => $montant,
             ]);
         }
     }
