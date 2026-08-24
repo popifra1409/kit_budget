@@ -182,7 +182,9 @@ class BonCommandeRegie extends Model
             );
         }
 
-        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provisions, $dejaEngage) {
+        $decaissementsImpactes = collect();
+
+        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provisions, $dejaEngage, &$decaissementsImpactes) {
             $restant = $montantAEngager;
             $premiereProvisionUtilisee = null;
 
@@ -205,6 +207,8 @@ class BonCommandeRegie extends Model
                     'bon_commande_regie_id'    => $this->id,
                     'montant'                  => $pris,
                 ]);
+
+                $decaissementsImpactes->push($provision->decaissement_regie_id);
 
                 $premiereProvisionUtilisee ??= $provision->id;
                 $restant -= $pris;
@@ -230,6 +234,19 @@ class BonCommandeRegie extends Model
             ]);
         });
 
+        // ✅ CORRECTIF STRUCTUREL — resynchronise systématiquement chaque
+        //    décaissement impacté depuis provision_consommations (source de
+        //    vérité), au lieu de faire confiance aux seuls incréments de
+        //    debiter(). C'est ce qui empêche montant_consomme de dériver
+        //    silencieusement après des engagements partiels répétés.
+        foreach ($decaissementsImpactes->unique() as $decaissementId) {
+            $decaissement = \App\Models\DecaissementRegie::find($decaissementId);
+            if ($decaissement) {
+                $decaissement->load('provisions');
+                $decaissement->recalculerDepenses();
+            }
+        }
+
         \App\Models\ActivityLog::logAction($this, 'engager', [
             'ancien_statut'  => $dejaEngage > 0 ? 'partiellement_engage' : 'non_engage',
             'nouveau_statut' => 'engage',
@@ -244,13 +261,18 @@ class BonCommandeRegie extends Model
             throw new \Exception("Ce BCR n'est pas engagé.");
         }
 
-        \DB::transaction(function () {
+        $decaissementsImpactes = collect();
+
+        \DB::transaction(function () use (&$decaissementsImpactes) {
             // ✅ Crédite chaque provision exactement du montant qui lui avait
             //    été pris (peut concerner plusieurs décaissements à la fois)
-            $consommations = \App\Models\ProvisionConsommation::where('bon_commande_regie_id', $this->id)->get();
+            $consommations = \App\Models\ProvisionConsommation::where('bon_commande_regie_id', $this->id)
+                ->with('provisionLigneRegie')
+                ->get();
 
             foreach ($consommations as $consommation) {
                 $consommation->provisionLigneRegie?->crediter((float) $consommation->montant);
+                $decaissementsImpactes->push($consommation->provisionLigneRegie?->decaissement_regie_id);
                 $consommation->delete();
             }
 
@@ -270,6 +292,17 @@ class BonCommandeRegie extends Model
                 'montant_libere' => $montantLibere,
             ]);
         });
+
+        // ✅ Même correctif structurel qu'à l'engagement : resynchronise
+        //    depuis la source de vérité plutôt que de faire confiance aux
+        //    seuls incréments de crediter().
+        foreach ($decaissementsImpactes->filter()->unique() as $decaissementId) {
+            $decaissement = \App\Models\DecaissementRegie::find($decaissementId);
+            if ($decaissement) {
+                $decaissement->load('provisions');
+                $decaissement->recalculerDepenses();
+            }
+        }
     }
 
     public function getActivitylogOptions(): LogOptions
