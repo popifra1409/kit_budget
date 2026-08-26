@@ -132,22 +132,14 @@ class FicheControleEngagementsResource extends Resource
     }
 
     /**
-     * ✅ Calcule le budget rectifié réel = budget_initial + Σ mouvements collectifs adoptés
+     * ✅ Délègue au modèle LigneBudgetaire::getBudgetRectifieReel() — source
+     *    de vérité UNIQUE, désormais partagée avec calculerMontants() (appelée
+     *    à chaque sauvegarde). Évite d'avoir deux formules différentes qui
+     *    se contredisent selon quel code touche la ligne en dernier.
      */
     public static function getBudgetRectifieReel(LigneBudgetaire $record): float
     {
-        // ✅ budget_initial + Σ mouvements collectifs adoptés
-        $base = (float) $record->budget_initial;
-
-        // Ajouter les mouvements de collectifs adoptés
-        $mouvements = \App\Models\MouvementCollectif::where(function ($q) use ($record) {
-            $q->where('ligne_depense_id', $record->id)
-                ->orWhere('nouvelle_ligne_depense_id', $record->id);
-        })
-            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
-            ->sum('montant_modification');
-
-        return $base + (float) $mouvements;
+        return $record->getBudgetRectifieReel();
     }
 
     // ========================================

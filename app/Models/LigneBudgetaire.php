@@ -277,11 +277,55 @@ class LigneBudgetaire extends Model
     // =========================================================
     // CALCULS
     // =========================================================
+
+    /**
+     * ✅ SOURCE DE VÉRITÉ UNIQUE pour le budget rectifié — utilisée à la fois
+     * ici (à chaque sauvegarde du modèle) et par FicheControleEngagementsResource
+     * (Aperçu, PDF, Recalculer). Avant cette harmonisation, ces deux endroits
+     * utilisaient des formules différentes (l'une ignorait les collectifs,
+     * l'autre ignorait les virements), ce qui pouvait écraser silencieusement
+     * l'effet d'un virement dès qu'on générait la fiche de contrôle.
+     *
+     * budget_rectifie = budget_initial
+     *                 + Σ virements EXÉCUTÉS (entrants - sortants)
+     *                 + Σ mouvements de collectifs ADOPTÉS de type "dépense"
+     *                   (nouvelle ligne / modification directe — jamais les
+     *                   virements, déjà comptés ci-dessus pour éviter le
+     *                   double comptage, qu'ils soient manuels ou issus
+     *                   d'un collectif : un virement de collectif devient un
+     *                   VirementBudgetaire à statut 'execute' comme un autre).
+     */
+    public function getBudgetRectifieReel(): float
+    {
+        $base = (float) $this->budget_initial;
+
+        if (!$this->id) {
+            // Ligne pas encore enregistrée — aucun virement/collectif possible
+            return $base;
+        }
+
+        $virementsEntrants = \App\Models\VirementBudgetaire::where('ligne_destination_id', $this->id)
+            ->where('statut', 'execute')
+            ->sum('montant');
+
+        $virementsSortants = \App\Models\VirementBudgetaire::where('ligne_source_id', $this->id)
+            ->where('statut', 'execute')
+            ->sum('montant');
+
+        $mouvements = \App\Models\MouvementCollectif::where(function ($q) {
+            $q->where('ligne_depense_id', $this->id)
+                ->orWhere('nouvelle_ligne_depense_id', $this->id);
+        })
+            ->where('type', 'depense')
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
+            ->sum('montant_modification');
+
+        return $base + (float) $virementsEntrants - (float) $virementsSortants + (float) $mouvements;
+    }
+
     public function calculerMontants(): void
     {
-        $this->budget_rectifie = (float) $this->budget_initial
-            + (float) $this->virements_entrants
-            - (float) $this->virements_sortants;
+        $this->budget_rectifie = $this->getBudgetRectifieReel();
 
         $this->disponible_engagement     = (float) $this->budget_rectifie - (float) $this->engage;
         $this->disponible_ordonnancement = (float) $this->engage - (float) $this->ordonne;
