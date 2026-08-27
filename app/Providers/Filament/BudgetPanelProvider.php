@@ -64,7 +64,7 @@ class BudgetPanelProvider extends PanelProvider
             ])
 
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
-            ->brandName(($fournisseur->nom_logiciel ?? 'Budget Manager') . ' — Budget')
+            ->brandName(($fournisseur->nom_logiciel ?? 'SIGB') . ' — Budget')
             ->brandLogo(function () use ($fournisseur) {
                 $logo = $fournisseur->logo_url;
                 if (!$logo)
@@ -167,7 +167,7 @@ class BudgetPanelProvider extends PanelProvider
             )
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderModuleSwitcher()
+                fn(): HtmlString => $this->renderModuleSwitcher('budget')
             )
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
@@ -215,18 +215,19 @@ class BudgetPanelProvider extends PanelProvider
     // =========================================================================
     // SWITCHER DE MODULE — pill-tabs dans le header
     // =========================================================================
-    private function renderModuleSwitcher(): HtmlString
+    private function renderModuleSwitcher(string $active = 'budget'): HtmlString
     {
         $modules = [
             'budget' => ['label' => 'Budget', 'icon' => '💰', 'url' => '/budget'],
             'comptable' => ['label' => 'Comptable', 'icon' => '📒', 'url' => '/comptable'],
             'marches' => ['label' => 'Marchés', 'icon' => '📋', 'url' => '/marches'],
+            'planification' => ['label' => 'Planification', 'icon' => '🎯', 'url' => '/planification'],
         ];
 
         $html = '<div class="flex items-center gap-1 me-3 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">';
 
         foreach ($modules as $key => $module) {
-            $isActive = $key === 'budget';
+            $isActive = $key === $active;
             $activeClass = $isActive
                 ? 'bg-white dark:bg-gray-700 shadow-sm font-semibold text-gray-900 dark:text-white'
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60';

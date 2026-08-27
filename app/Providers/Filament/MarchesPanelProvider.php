@@ -53,7 +53,7 @@ class MarchesPanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('Budget Suite — Marchés')
+            ->brandName('SIGB — Marchés')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([
@@ -102,9 +102,10 @@ class MarchesPanelProvider extends PanelProvider
     private function renderSwitcher(string $active): HtmlString
     {
         $modules = [
-            'budget'    => ['💰', 'Budget',    '/budget'],
-            'comptable' => ['📦', 'Matières', '/comptable'],
-            'marches'   => ['📋', 'Marchés',   '/marches'],
+            'budget'         => ['💰', 'Budget',        '/budget'],
+            'comptable'      => ['📦', 'Matières',      '/comptable'],
+            'marches'        => ['📋', 'Marchés',       '/marches'],
+            'planification'  => ['🎯', 'Planification', '/planification'],
         ];
 
         $html  = '<div class="flex items-center gap-2 me-2">';

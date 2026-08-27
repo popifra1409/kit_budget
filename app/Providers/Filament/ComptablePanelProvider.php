@@ -52,13 +52,13 @@ class ComptablePanelProvider extends PanelProvider
             ->login(Login::class)
             ->profile()
             ->colors([
-                'primary' => Color::hex('#059669'),  // Vert matières
+                'primary' => Color::hex('#059669'),
                 'success' => Color::hex('#16a34a'),
                 'danger'  => Color::hex('#dc2626'),
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('Comptabilité Matières')
+            ->brandName('SIGB — Comptabilité Matières')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
@@ -133,9 +133,10 @@ class ComptablePanelProvider extends PanelProvider
     private function renderSwitcher(string $active): HtmlString
     {
         $modules = [
-            'budget'    => ['💰', 'Budget',    '/budget'],
-            'comptable' => ['📦', 'Matières',  '/comptable'],
-            'marches'   => ['📋', 'Marchés',   '/marches'],
+            'budget'         => ['💰', 'Budget',        '/budget'],
+            'comptable'      => ['📦', 'Matières',      '/comptable'],
+            'marches'        => ['📋', 'Marchés',       '/marches'],
+            'planification'  => ['🎯', 'Planification', '/planification'],
         ];
 
         $html  = '<div class="flex items-center gap-2 me-2">';

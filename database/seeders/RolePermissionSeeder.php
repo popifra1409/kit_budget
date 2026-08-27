@@ -85,10 +85,21 @@ class RolePermissionSeeder extends Seeder
 
         $modulesMarches = [];
 
+        // ====================================================
+        // 2bis. MODULES CRUD — Planification Stratégique
+        // ====================================================
+        $modulesPlanification = [
+            'csp_ministere_sante',
+            'plan_strategique_ep',
+            'sous_programme_ep',
+            'activite_planification',
+            'indicateur',
+        ];
+
         // ── Créer permissions CRUD (firstOrCreate = non destructif) ──
         $this->command->info('📝 Création permissions CRUD...');
         $permsCrudCreees = 0;
-        foreach (array_merge($modulesBudget, $modulesComptable, $modulesMarches) as $module) {
+        foreach (array_merge($modulesBudget, $modulesComptable, $modulesMarches, $modulesPlanification) as $module) {
             foreach (['view', 'view_any', 'create', 'update', 'delete'] as $action) {
                 $created = Permission::firstOrCreate([
                     'name'       => "{$action}_{$module}",
@@ -218,6 +229,18 @@ class RolePermissionSeeder extends Seeder
 
             // ── Marquer payée OP ──────────────────────────
             'marquer_payee_ordonnance_paiement',
+
+            // ── Module Planification Stratégique ───────────
+            'access_module_planification',
+            'transmettre_plan_strategique_ep',
+            'valider_plan_strategique_ep',
+            'retourner_plan_strategique_ep',
+            'cloturer_plan_strategique_ep',
+            'transmettre_sous_programme_ep',
+            'valider_sous_programme_ep',
+            'retourner_sous_programme_ep',
+            'saisir_valeur_indicateur',
+            'valider_valeur_indicateur',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -934,6 +957,47 @@ class RolePermissionSeeder extends Seeder
                 'view_my_transmissions',
             ],
             'chef_service_marches'
+        );
+
+        // ── RESPONSABLE PLANIFICATION STRATÉGIQUE ─────────────────────
+        $this->ajouterPermissionsRole(
+            Role::firstOrCreate(['name' => 'responsable_planification', 'guard_name' => 'web']),
+            [
+                'access_module_portal',
+                'access_module_planification',
+                'view_any_csp_ministere_sante',
+                'view_csp_ministere_sante',
+                'create_csp_ministere_sante',
+                'update_csp_ministere_sante',
+                'view_any_plan_strategique_ep',
+                'view_plan_strategique_ep',
+                'create_plan_strategique_ep',
+                'update_plan_strategique_ep',
+                'transmettre_plan_strategique_ep',
+                'valider_plan_strategique_ep',
+                'retourner_plan_strategique_ep',
+                'cloturer_plan_strategique_ep',
+                'view_any_sous_programme_ep',
+                'view_sous_programme_ep',
+                'create_sous_programme_ep',
+                'update_sous_programme_ep',
+                'transmettre_sous_programme_ep',
+                'valider_sous_programme_ep',
+                'retourner_sous_programme_ep',
+                'view_any_activite_planification',
+                'view_activite_planification',
+                'create_activite_planification',
+                'update_activite_planification',
+                'view_any_indicateur',
+                'view_indicateur',
+                'create_indicateur',
+                'update_indicateur',
+                'saisir_valeur_indicateur',
+                'valider_valeur_indicateur',
+                'transmettre_document',
+                'view_my_transmissions',
+            ],
+            'responsable_planification'
         );
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

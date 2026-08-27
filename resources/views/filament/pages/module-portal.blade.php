@@ -78,16 +78,25 @@
         }
 
         /* ── Grille ────────────────────────────────────────────────── */
+        /* Adaptative : 4 cartes sur une ligne en grand ecran,
+           2x2 sur tablette, 1 colonne sur mobile. S'ajuste
+           automatiquement si un futur module est ajoute. */
         .modules-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
             gap: .875rem;
             width: 100%;
-            max-width: 900px;
+            max-width: 1100px;
             margin: 0 auto;
         }
 
-        @media (max-width: 680px) {
+        @media (max-width: 900px) {
+            .modules-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 560px) {
             .modules-grid {
                 grid-template-columns: 1fr;
             }
@@ -341,10 +350,11 @@
     @php
         $user = auth()->user();
         $isSuperAdmin = $user->hasRole(['super_admin', 'admin']);
+        $canPlanification = $isSuperAdmin || $user->can('access_module_planification');
         $canBudget = $isSuperAdmin || $user->can('access_module_budget');
         $canComptable = $isSuperAdmin || $user->can('access_module_comptable');
         $canMarches = $isSuperAdmin || $user->can('access_module_marches');
-        $modulesActifs = collect([$canBudget, $canComptable, $canMarches])->filter()->count();
+        $modulesActifs = collect([$canPlanification, $canBudget, $canComptable, $canMarches])->filter()->count();
     @endphp
 
     {{-- Toast accès refusé --}}
@@ -372,7 +382,7 @@
                 <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
                     <circle cx="4" cy="4" r="3" />
                 </svg>
-                Budget Suite &mdash; Portail applicatif
+                SIGB &mdash; Portail applicatif
             </div>
             <h1 class="portal-title">Choisissez votre <span>module de gestion</span></h1>
             <p class="portal-sub">Chaque module dispose de sa propre interface. Votre session est partagée entre les
@@ -382,14 +392,67 @@
         {{-- Grille --}}
         <div class="modules-grid">
 
-            {{-- MODULE 01 : Budget --}}
+            {{-- MODULE 01 : Planification Stratégique --}}
+            @if($canPlanification)
+                <a href="/planification" class="mod-card"
+                    style="--c:linear-gradient(90deg,#028090,#02c39a);--cc:#028090;--s:rgba(2,128,144,.22);--ib:rgba(2,128,144,.1);--is:rgba(2,128,144,.2);--tb:rgba(2,128,144,.08);--tc:#014e57;--tbo:rgba(2,128,144,.2)">
+                    <div class="mod-header">
+                        <div class="mod-icon">🎯</div>
+                        <div>
+                            <div class="mod-num">Module 01</div>
+                            <div class="mod-title">Planification Stratégique</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc">Cadrage stratégique du secteur santé, CSP ministériel, plans stratégiques et
+                        sous-programmes de l'établissement.</div>
+                    <div class="mod-tags">
+                        <span class="mod-tag">CSP</span>
+                        <span class="mod-tag">Plans Stratégiques</span>
+                        <span class="mod-tag">Sous-Programmes</span>
+                        <span class="mod-tag">Activités</span>
+                    </div>
+                    <div class="mod-cta">
+                        Accéder au module
+                        <svg class="mod-cta-arrow" width="14" height="14" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                    </div>
+                </a>
+            @else
+                <div class="mod-card-locked" title="Accès non autorisé — contactez votre administrateur">
+                    <div class="mod-header">
+                        <div class="mod-icon" style="opacity:.4;">🎯</div>
+                        <div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 01</div>
+                            <div class="mod-title mod-title-locked">Planification Stratégique</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc" style="color:#94a3b8;">Accès restreint à ce module.</div>
+                    <div class="mod-tags">
+                        <span class="mod-tag"
+                            style="background:rgba(148,163,184,.08);color:#94a3b8;border-color:rgba(148,163,184,.2);">Accès
+                            restreint</span>
+                    </div>
+                    <div class="mod-locked-msg">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        Contacter l'administrateur
+                    </div>
+                </div>
+            @endif
+
+            {{-- MODULE 02 : Budget --}}
             @if($canBudget)
                 <a href="/budget" class="mod-card"
                     style="--c:linear-gradient(90deg,#0ea5e9,#38bdf8);--cc:#0ea5e9;--s:rgba(14,165,233,.22);--ib:rgba(14,165,233,.1);--is:rgba(14,165,233,.2);--tb:rgba(14,165,233,.08);--tc:#0369a1;--tbo:rgba(14,165,233,.2)">
                     <div class="mod-header">
                         <div class="mod-icon">💰</div>
                         <div>
-                            <div class="mod-num">Module 01</div>
+                            <div class="mod-num">Module 02</div>
                             <div class="mod-title">Gestion Budgétaire</div>
                         </div>
                     </div>
@@ -415,7 +478,7 @@
                     <div class="mod-header">
                         <div class="mod-icon" style="opacity:.4;">💰</div>
                         <div>
-                            <div class="mod-num" style="color:#94a3b8;">Module 01</div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 02</div>
                             <div class="mod-title mod-title-locked">Gestion Budgétaire</div>
                         </div>
                     </div>
@@ -435,14 +498,14 @@
                 </div>
             @endif
 
-            {{-- MODULE 02 : Comptabilité Matières --}}
+            {{-- MODULE 03 : Comptabilité Matières --}}
             @if($canComptable)
                 <a href="/comptable" class="mod-card"
                     style="--c:linear-gradient(90deg,#059669,#34d399);--cc:#059669;--s:rgba(5,150,105,.22);--ib:rgba(5,150,105,.1);--is:rgba(5,150,105,.2);--tb:rgba(5,150,105,.08);--tc:#065f46;--tbo:rgba(5,150,105,.2)">
                     <div class="mod-header">
                         <div class="mod-icon">📦</div>
                         <div>
-                            <div class="mod-num">Module 02</div>
+                            <div class="mod-num">Module 03</div>
                             <div class="mod-title">Comptabilité Matières</div>
                         </div>
                     </div>
@@ -468,7 +531,7 @@
                     <div class="mod-header">
                         <div class="mod-icon" style="opacity:.4;">📦</div>
                         <div>
-                            <div class="mod-num" style="color:#94a3b8;">Module 02</div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 03</div>
                             <div class="mod-title mod-title-locked">Comptabilité Matières</div>
                         </div>
                     </div>
@@ -488,14 +551,14 @@
                 </div>
             @endif
 
-            {{-- MODULE 03 : Marchés Publics --}}
+            {{-- MODULE 04 : Marchés Publics --}}
             @if($canMarches)
                 <a href="/marches" class="mod-card"
                     style="--c:linear-gradient(90deg,#7c3aed,#a78bfa);--cc:#7c3aed;--s:rgba(124,58,237,.22);--ib:rgba(124,58,237,.1);--is:rgba(124,58,237,.2);--tb:rgba(124,58,237,.08);--tc:#4c1d95;--tbo:rgba(124,58,237,.2)">
                     <div class="mod-header">
                         <div class="mod-icon">📋</div>
                         <div>
-                            <div class="mod-num">Module 03</div>
+                            <div class="mod-num">Module 04</div>
                             <div class="mod-title">Marchés Publics</div>
                         </div>
                     </div>
@@ -521,7 +584,7 @@
                     <div class="mod-header">
                         <div class="mod-icon" style="opacity:.4;">📋</div>
                         <div>
-                            <div class="mod-num" style="color:#94a3b8;">Module 03</div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 04</div>
                             <div class="mod-title mod-title-locked">Marchés Publics</div>
                         </div>
                     </div>

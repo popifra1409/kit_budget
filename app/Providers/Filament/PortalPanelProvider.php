@@ -51,7 +51,7 @@ class PortalPanelProvider extends PanelProvider
             ->path('portal')
             ->default()
             ->login(Login::class)
-            ->brandName('Budget Suite')
+            ->brandName('SIGB')
             ->favicon(asset('images/favicon.png'))
             ->colors(['primary' => \Filament\Support\Colors\Color::hex('#0ea5e9')])
 

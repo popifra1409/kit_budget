@@ -8,4 +8,5 @@ return [
     App\Providers\Filament\BudgetPanelProvider::class,
     App\Providers\Filament\ComptablePanelProvider::class,
     App\Providers\Filament\MarchesPanelProvider::class,
+    App\Providers\Filament\PlanificationPanelProvider::class,
 ];
