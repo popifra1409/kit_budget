@@ -158,6 +158,13 @@ class PlanStrategiqueEpResource extends Resource
             ]);
     }
 
+    public static function getRelations(): array
+    {
+        return [
+            \App\Filament\Planification\Resources\PlanStrategiqueEpResource\RelationManagers\SousProgrammesRelationManager::class,
+        ];
+    }
+
     public static function getPages(): array
     {
         return [

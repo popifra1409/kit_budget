@@ -13,7 +13,9 @@ class ListCspMinistereSantes extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nouveau Cadre')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

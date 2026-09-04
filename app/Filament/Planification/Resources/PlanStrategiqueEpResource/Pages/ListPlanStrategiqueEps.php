@@ -12,6 +12,8 @@ class ListPlanStrategiqueEps extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [Actions\CreateAction::make()
+            ->label('Nouveau Plan')
+            ->icon('heroicon-o-plus'),];
     }
 }

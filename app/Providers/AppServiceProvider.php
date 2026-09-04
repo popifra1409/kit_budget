@@ -98,6 +98,12 @@ class AppServiceProvider extends ServiceProvider
             'depense_regie'             => \App\Models\DepenseRegie::class,
             'provision_ligne_regie'     => \App\Models\ProvisionLigneRegie::class,
 
+            // Module Planification Stratégique
+            'csp_ministere_sante'    => \App\Models\CspMinistereSante::class,
+            'plan_strategique_ep'    => \App\Models\PlanStrategiqueEp::class,
+            'sous_programme_ep'      => \App\Models\SousProgrammeEp::class,
+            'action_sous_programme'  => \App\Models\ActionSousProgramme::class,
+
         ]);
 
         DecisionAdministrative::observe(DecisionAdministrativeObserver::class);

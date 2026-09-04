@@ -23,7 +23,7 @@ class RolePermissionSeeder extends Seeder
             'bon_commande',
             'bordereau_engagement',
             'budget',
-            'collectif_budgetaire', // ← AJOUT
+            'collectif_budgetaire',
             'decision_administrative',
             'dossier_fournisseur',
             'engagement',
@@ -32,8 +32,8 @@ class RolePermissionSeeder extends Seeder
             'fournisseur',
             'memoire_depense',
             'nomenclature_budgetaire',
-            'groupe_nomenclature', // ← AJOUT
-            'facture_proforma', // ← AJOUT
+            'groupe_nomenclature',
+            'facture_proforma',
             'ordonnance_paiement',
             'parametres_fournisseur',
             'parametres_structure',
@@ -92,6 +92,7 @@ class RolePermissionSeeder extends Seeder
             'csp_ministere_sante',
             'plan_strategique_ep',
             'sous_programme_ep',
+            'action_sous_programme',
             'activite_planification',
             'indicateur',
         ];
@@ -241,6 +242,9 @@ class RolePermissionSeeder extends Seeder
             'retourner_sous_programme_ep',
             'saisir_valeur_indicateur',
             'valider_valeur_indicateur',
+            'transmettre_action_sous_programme',
+            'valider_action_sous_programme',
+            'retourner_action_sous_programme',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -996,6 +1000,13 @@ class RolePermissionSeeder extends Seeder
                 'valider_valeur_indicateur',
                 'transmettre_document',
                 'view_my_transmissions',
+                'view_any_action_sous_programme',
+                'view_action_sous_programme',
+                'create_action_sous_programme',
+                'update_action_sous_programme',
+                'transmettre_action_sous_programme',
+                'valider_action_sous_programme',
+                'retourner_action_sous_programme',
             ],
             'responsable_planification'
         );
