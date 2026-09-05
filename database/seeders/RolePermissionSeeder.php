@@ -93,7 +93,7 @@ class RolePermissionSeeder extends Seeder
             'plan_strategique_ep',
             'sous_programme_ep',
             'action_sous_programme',
-            'activite_planification',
+            'projet_strategique',
             'indicateur',
         ];
 
@@ -245,6 +245,11 @@ class RolePermissionSeeder extends Seeder
             'transmettre_action_sous_programme',
             'valider_action_sous_programme',
             'retourner_action_sous_programme',
+            'transmettre_projet_strategique',
+            'valider_projet_strategique',
+            'retourner_projet_strategique',
+            'saisir_valeur_indicateur',
+            'valider_valeur_indicateur',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -1007,6 +1012,19 @@ class RolePermissionSeeder extends Seeder
                 'transmettre_action_sous_programme',
                 'valider_action_sous_programme',
                 'retourner_action_sous_programme',
+                'view_any_projet_strategique',
+                'view_projet_strategique',
+                'create_projet_strategique',
+                'update_projet_strategique',
+                'transmettre_projet_strategique',
+                'valider_projet_strategique',
+                'retourner_projet_strategique',
+                'view_any_indicateur',
+                'view_indicateur',
+                'create_indicateur',
+                'update_indicateur',
+                'saisir_valeur_indicateur',
+                'valider_valeur_indicateur',
             ],
             'responsable_planification'
         );

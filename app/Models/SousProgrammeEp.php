@@ -57,4 +57,9 @@ class SousProgrammeEp extends Model
     {
         return $this->hasMany(ActionSousProgramme::class, 'sous_programme_ep_id');
     }
+
+    public function indicateurs(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(Indicateur::class, 'indicateurable');
+    }
 }

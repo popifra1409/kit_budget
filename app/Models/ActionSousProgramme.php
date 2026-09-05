@@ -53,8 +53,13 @@ class ActionSousProgramme extends Model
         return $this->belongsTo(User::class, 'responsable_id');
     }
 
-    public function activites(): HasMany
+    public function projetsStrategiques(): HasMany
     {
-        return $this->hasMany(Activite::class, 'action_sous_programme_id');
+        return $this->hasMany(ProjetStrategique::class, 'action_sous_programme_id');
+    }
+
+    public function indicateurs(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(Indicateur::class, 'indicateurable');
     }
 }

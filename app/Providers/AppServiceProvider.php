@@ -103,6 +103,7 @@ class AppServiceProvider extends ServiceProvider
             'plan_strategique_ep'    => \App\Models\PlanStrategiqueEp::class,
             'sous_programme_ep'      => \App\Models\SousProgrammeEp::class,
             'action_sous_programme'  => \App\Models\ActionSousProgramme::class,
+            'projet_strategique'     => \App\Models\ProjetStrategique::class,
 
         ]);
 

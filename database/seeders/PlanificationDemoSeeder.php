@@ -8,6 +8,7 @@ use App\Models\ParametresStructure;
 use App\Models\PlanStrategiqueEp;
 use App\Models\SousProgrammeEp;
 use Illuminate\Database\Seeder;
+use App\Models\ProjetStrategique;
 
 /**
  * Seeder de demonstration base sur l'exemple concret du
@@ -83,6 +84,33 @@ class PlanificationDemoSeeder extends Seeder
                 'statut' => 'en_vigueur',
             ]
         );
+
+        $action1 = ActionSousProgramme::where('code', '01')->first();
+        $action2 = ActionSousProgramme::where('code', '02')->first();
+
+        if ($action1) {
+            ProjetStrategique::firstOrCreate(
+                ['code' => 'PST-MOBILIER-2026'],
+                [
+                    'action_sous_programme_id' => $action1->id,
+                    'libelle' => 'Acquisition du mobilier de bureau',
+                    'description' => "Acquisition de mobilier de bureau pour l'amélioration du cadre de travail.",
+                    'statut' => 'en_cours',
+                ]
+            );
+        }
+
+        if ($action2) {
+            ProjetStrategique::firstOrCreate(
+                ['code' => 'PST-LITS-2026'],
+                [
+                    'action_sous_programme_id' => $action2->id,
+                    'libelle' => 'Acquisition des lits d\'hospitalisation',
+                    'description' => "Acquisition de lits d'hospitalisation.",
+                    'statut' => 'en_cours',
+                ]
+            );
+        }
 
         $this->command->info('✔ Données de démonstration Planification (CSP/PSP/Sous-programme/Actions) créées.');
     }

@@ -1,8 +1,9 @@
 <?php
 
-namespace App\Filament\Planification\Resources\SousProgrammeEpResource\RelationManagers;
+namespace App\Filament\Planification\Resources\ActionSousProgrammeResource\RelationManagers;
 
-use App\Models\ActionSousProgramme;
+use App\Models\Activite;
+use App\Models\ProjetStrategique;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -10,11 +11,11 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 
-class ActionsRelationManager extends RelationManager
+class ProjetsStrategiquesRelationManager extends RelationManager
 {
-    protected static string $relationship = 'actions';
+    protected static string $relationship = 'projetsStrategiques';
 
-    protected static ?string $title = 'Actions';
+    protected static ?string $title = 'Activités / Projets';
 
     protected static ?string $recordTitleAttribute = 'libelle';
 
@@ -22,14 +23,20 @@ class ActionsRelationManager extends RelationManager
     {
         return $form->schema([
             Forms\Components\TextInput::make('code')
-                ->label('Code (ex: 01, 02)')
-                ->required()->unique(ignoreRecord: true)->maxLength(10),
+                ->required()->maxLength(50),
             Forms\Components\TextInput::make('libelle')
                 ->required()->maxLength(255),
             Forms\Components\Textarea::make('description')->columnSpanFull(),
+            Forms\Components\DatePicker::make('date_debut_prevue'),
+            Forms\Components\DatePicker::make('date_fin_prevue')->afterOrEqual('date_debut_prevue'),
             Forms\Components\Select::make('responsable_id')
                 ->label('Responsable')
                 ->options(User::pluck('name', 'id'))
+                ->searchable(),
+            Forms\Components\Select::make('activite_budgetaire_id')
+                ->label('Activité budgétaire liée (optionnel)')
+                ->helperText("Traduction de ce projet dans la nomenclature budgétaire du module Budget, si déjà codifiée.")
+                ->options(Activite::pluck('libelle', 'id'))
                 ->searchable(),
         ])->columns(2);
     }
@@ -42,39 +49,33 @@ class ActionsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('code'),
                 Tables\Columns\TextColumn::make('libelle')->searchable(),
                 Tables\Columns\TextColumn::make('responsable.name')->label('Responsable'),
+                Tables\Columns\TextColumn::make('date_debut_prevue')->date()->label('Début prévu'),
+                Tables\Columns\TextColumn::make('date_fin_prevue')->date()->label('Fin prévue'),
                 Tables\Columns\BadgeColumn::make('statut')->colors([
                     'gray' => 'brouillon',
                     'warning' => 'en_transmission',
-                    'success' => ['valide', 'en_vigueur'],
-                    'danger' => 'cloture',
+                    'info' => 'en_cours',
+                    'success' => ['valide', 'realise'],
+                    'danger' => 'abandonne',
                 ]),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->visible(fn() => auth()->user()->can('create_action_sous_programme')),
+                    ->visible(fn() => auth()->user()->can('create_projet_strategique')),
             ])
             ->actions([
-                Tables\Actions\Action::make('gererProjets')
-                    ->label('Gérer les activités/projets')
-                    ->icon('heroicon-o-bolt')
-                    ->color('gray')
-                    ->url(
-                        fn(ActionSousProgramme $record) =>
-                        \App\Filament\Planification\Resources\ActionSousProgrammeResource::getUrl('edit', ['record' => $record])
-                    ),
-
                 Tables\Actions\EditAction::make()
                     ->visible(
-                        fn(ActionSousProgramme $record) =>
-                        auth()->user()->can('update_action_sous_programme') && $record->estModifiable()
+                        fn(ProjetStrategique $record) =>
+                        auth()->user()->can('update_projet_strategique') && $record->estModifiable()
                     ),
 
                 Tables\Actions\Action::make('transmettre')
                     ->label('Transmettre')
                     ->icon('heroicon-o-paper-airplane')
                     ->visible(
-                        fn(ActionSousProgramme $record) =>
-                        $record->peutEtreTransmis() && auth()->user()->can('transmettre_action_sous_programme')
+                        fn(ProjetStrategique $record) =>
+                        $record->peutEtreTransmis() && auth()->user()->can('transmettre_projet_strategique')
                     )
                     ->form([
                         Forms\Components\Select::make('destinataire_id')
@@ -89,7 +90,7 @@ class ActionsRelationManager extends RelationManager
                             ])->required(),
                         Forms\Components\Textarea::make('commentaire'),
                     ])
-                    ->action(function (ActionSousProgramme $record, array $data) {
+                    ->action(function (ProjetStrategique $record, array $data) {
                         $record->transmettreA(
                             User::findOrFail($data['destinataire_id']),
                             $data['action_attendue'],
@@ -103,11 +104,11 @@ class ActionsRelationManager extends RelationManager
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->visible(
-                        fn(ActionSousProgramme $record) =>
-                        $record->estDestinataireActuel() && auth()->user()->can('valider_action_sous_programme')
+                        fn(ProjetStrategique $record) =>
+                        $record->estDestinataireActuel() && auth()->user()->can('valider_projet_strategique')
                     )
                     ->requiresConfirmation()
-                    ->action(function (ActionSousProgramme $record) {
+                    ->action(function (ProjetStrategique $record) {
                         $record->cloturerTransmission('Validé');
                         $record->update(['statut' => 'valide']);
                     }),
@@ -117,14 +118,25 @@ class ActionsRelationManager extends RelationManager
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('danger')
                     ->visible(
-                        fn(ActionSousProgramme $record) =>
-                        $record->estDestinataireActuel() && auth()->user()->can('retourner_action_sous_programme')
+                        fn(ProjetStrategique $record) =>
+                        $record->estDestinataireActuel() && auth()->user()->can('retourner_projet_strategique')
                     )
                     ->form([Forms\Components\Textarea::make('motif')->required()])
                     ->action(
-                        fn(ActionSousProgramme $record, array $data) =>
+                        fn(ProjetStrategique $record, array $data) =>
                         $record->retournerPourCorrection($data['motif'])
                     ),
+
+                Tables\Actions\Action::make('marquerRealise')
+                    ->label('Marquer réalisé')
+                    ->icon('heroicon-o-flag')
+                    ->color('success')
+                    ->visible(
+                        fn(ProjetStrategique $record) =>
+                        $record->statut === 'en_cours' && auth()->user()->can('update_projet_strategique')
+                    )
+                    ->requiresConfirmation()
+                    ->action(fn(ProjetStrategique $record) => $record->update(['statut' => 'realise'])),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
