@@ -31,6 +31,10 @@ class ActionsRelationManager extends RelationManager
                 ->label('Responsable')
                 ->options(User::pluck('name', 'id'))
                 ->searchable(),
+            Forms\Components\Select::make('action_budgetaire_id')
+                ->label('Action budgétaire liée (codification)')
+                ->options(\App\Models\Action::pluck('libelle', 'id'))
+                ->searchable(),
         ])->columns(2);
     }
 

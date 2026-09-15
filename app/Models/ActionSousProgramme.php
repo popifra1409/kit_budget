@@ -62,4 +62,9 @@ class ActionSousProgramme extends Model
     {
         return $this->morphMany(Indicateur::class, 'indicateurable');
     }
+
+    public function actionBudgetaire(): BelongsTo
+    {
+        return $this->belongsTo(Action::class, 'action_budgetaire_id');
+    }
 }

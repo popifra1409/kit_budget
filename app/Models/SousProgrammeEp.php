@@ -33,6 +33,19 @@ class SousProgrammeEp extends Model
             $model->created_by ??= auth()->id();
             $model->numero ??= static::genererNumero();
         });
+
+        static::saving(function (self $model) {
+            if ($model->programme_budgetaire_id) {
+                $programme = Programme::find($model->programme_budgetaire_id);
+                if ($programme && $programme->niveau !== 'programme') {
+                    throw new \InvalidArgumentException(
+                        "Un Sous-Programme stratégique ne peut être lié qu'à un Programme budgétaire "
+                            . "de niveau 'programme' (codes type 413, 414...), pas à un niveau 'sous_programme' "
+                            . "(qui est une subdivision de gestion interne sans rapport avec le plan stratégique)."
+                    );
+                }
+            }
+        });
     }
 
     public static function genererNumero(): string
@@ -61,5 +74,10 @@ class SousProgrammeEp extends Model
     public function indicateurs(): \Illuminate\Database\Eloquent\Relations\MorphMany
     {
         return $this->morphMany(Indicateur::class, 'indicateurable');
+    }
+
+    public function programmeBudgetaire(): BelongsTo
+    {
+        return $this->belongsTo(Programme::class, 'programme_budgetaire_id');
     }
 }

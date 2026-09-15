@@ -31,6 +31,15 @@ class SousProgrammesRelationManager extends RelationManager
                 ->label('Responsable')
                 ->options(User::pluck('name', 'id'))
                 ->searchable(),
+            Forms\Components\Select::make('programme_budgetaire_id')
+                ->label('Programme budgétaire lié (codification)')
+                ->helperText("Uniquement les Programmes de niveau national (codes 413, 414...), pas les sous-programmes de gestion interne.")
+                ->options(
+                    \App\Models\Programme::where('niveau', 'programme')
+                        ->get()
+                        ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"])
+                )
+                ->searchable(),
         ])->columns(2);
     }
 
