@@ -15,6 +15,7 @@ use App\Models\DecisionAdministrative;
 use App\Models\ParametresStructure;
 use App\Http\Controllers\FicheControleEngagementsController;
 use App\Http\Controllers\Planification\RapportController;
+use App\Http\Controllers\Programmation\RapportPpaController;
 
 Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
@@ -203,6 +204,17 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('activites-sous-programme.pdf');
             Route::get('/activites-sous-programme/{sousProgramme}/excel', [RapportController::class, 'activitesSousProgrammeExcel'])
                 ->name('activites-sous-programme.excel');
+        });
+
+    // ── Rapport PPA (Tableau 11 — guide d'arrimage des EP) ──
+    Route::prefix('programmation/rapports')
+        ->name('programmation.rapports.')
+        ->middleware(['module.access:programmation'])
+        ->group(function () {
+            Route::get('/ppa/{ppa}/pdf', [RapportPpaController::class, 'pdf'])
+                ->name('ppa.pdf');
+            Route::get('/ppa/{ppa}/excel', [RapportPpaController::class, 'excel'])
+                ->name('ppa.excel');
         });
 });
 
