@@ -37,6 +37,35 @@ trait HasCommonPanelBootstrap
     }
 
     /**
+     * Plugin de gestion des thèmes (clair/sombre/personnalisé), identique
+     * sur tous les panels.
+     */
+    protected function commonPlugins(): array
+    {
+        return [
+            \Hasnayeen\Themes\ThemesPlugin::make()
+                ->canViewThemesPage(
+                    fn() => auth()->check() && (bool) auth()->user()->hasRole(['super_admin', 'admin'])
+                ),
+        ];
+    }
+
+    /**
+     * Lien de navigation direct vers la page Thèmes du panel courant.
+     * A fusionner avec les navigationItems() propres a chaque module,
+     * pas a utiliser seul (sinon ecrase les items existants).
+     */
+    protected function commonThemeNavigationItem(string $panelId): \Filament\Navigation\NavigationItem
+    {
+        return \Filament\Navigation\NavigationItem::make('Apparence & Thèmes')
+            ->url(fn() => route("filament.{$panelId}.pages.themes"))
+            ->icon('heroicon-o-paint-brush')
+            ->group('Paramétrage')
+            ->sort(99)
+            ->visible(fn() => auth()->check() && auth()->user()->hasRole(['super_admin', 'admin']));
+    }
+
+    /**
      * Pile de middleware standard, identique sur tous les panels module.
      */
     protected function commonMiddleware(): array
@@ -51,6 +80,7 @@ trait HasCommonPanelBootstrap
             SubstituteBindings::class,
             DisableBladeIconComponents::class,
             DispatchServingFilamentEvent::class,
+            \Hasnayeen\Themes\Http\Middleware\SetTheme::class,
         ];
     }
 

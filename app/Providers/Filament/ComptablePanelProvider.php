@@ -19,6 +19,8 @@ use Filament\Widgets;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use App\Filament\Pages\Auth\Login;
+use Hasnayeen\Themes\ThemesPlugin;
+use Filament\Navigation\NavigationItem;
 
 /**
  * ComptablePanelProvider — Module Comptabilité Matières
@@ -62,17 +64,24 @@ class ComptablePanelProvider extends PanelProvider
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
-            // ── Cycle de vie complet des biens ───────────────────────────
             ->navigationGroups([
-                'Référentiels',           // Catégories, fournisseurs, localisations
-                'Acquisition des biens',            // Bons de commande, réception, PV
-                'Affectation & Mise en service', // Attribution aux services/agents
-                'Suivi & Inventaire',     // Mouvements, mutations, états
-                'Entretien & Réparation', // Bons de travaux, maintenances
-                'Amortissement',          // Tableaux, dotations annuelles
-                'Aliénation',             // Cession, mise au rebut, perte, don
-                'Rapports & États',       // États de parc, fiches d'inventaire
-                'Paramétrage',            // Configuration du module
+                'Référentiels',
+                'Acquisition des biens',
+                'Affectation & Mise en service',
+                'Suivi & Inventaire',
+                'Entretien & Réparation',
+                'Amortissement',
+                'Aliénation',
+                'Rapports & États',
+                'Paramétrage',
+            ])
+            ->navigationItems([
+                NavigationItem::make('Apparence & Thèmes')
+                    ->url(fn() => route('filament.comptable.pages.themes'))
+                    ->icon('heroicon-o-paint-brush')
+                    ->group('Paramétrage')
+                    ->sort(99)
+                    ->visible(fn() => auth()->check() && auth()->user()->hasRole(['super_admin', 'admin'])),
             ])
 
             ->discoverResources(
@@ -94,6 +103,12 @@ class ComptablePanelProvider extends PanelProvider
                 \App\Filament\Comptable\Widgets\ActionsRequisesWidget::class,
                 \App\Filament\Comptable\Widgets\MouvementsStockWidget::class,
                 \App\Filament\Comptable\Widgets\TopArticlesConsommesWidget::class,
+            ])
+            ->plugins([
+                ThemesPlugin::make()
+                    ->canViewThemesPage(
+                        fn() => auth()->check() && (bool) auth()->user()->hasRole(['super_admin', 'admin'])
+                    ),
             ])
 
             ->renderHook(
@@ -122,6 +137,7 @@ class ComptablePanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                \Hasnayeen\Themes\Http\Middleware\SetTheme::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

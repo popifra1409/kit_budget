@@ -19,6 +19,8 @@ use Filament\Widgets;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use App\Filament\Pages\Auth\Login;
+use Hasnayeen\Themes\ThemesPlugin;
+use Filament\Navigation\NavigationItem;
 
 class MarchesPanelProvider extends PanelProvider
 {
@@ -56,6 +58,7 @@ class MarchesPanelProvider extends PanelProvider
             ->brandName('SIGB — Marchés')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
+
             ->navigationGroups([
                 'Planification',
                 'Appels d\'Offres',
@@ -63,8 +66,17 @@ class MarchesPanelProvider extends PanelProvider
                 'Contrats & Avenants',
                 'Suivi d\'Exécution',
                 'Paiements Marchés',
-                'Paramétrage Marchés',
+                'Paramétrage',
             ])
+            ->navigationItems([
+                NavigationItem::make('Apparence & Thèmes')
+                    ->url(fn() => route('filament.marches.pages.themes'))
+                    ->icon('heroicon-o-paint-brush')
+                    ->group('Paramétrage')
+                    ->sort(99)
+                    ->visible(fn() => auth()->check() && auth()->user()->hasRole(['super_admin', 'admin'])),
+            ])
+
             ->discoverResources(
                 in: app_path('Filament/Marches/Resources'),
                 for: 'App\\Filament\\Marches\\Resources'
@@ -78,6 +90,12 @@ class MarchesPanelProvider extends PanelProvider
                 for: 'App\\Filament\\Marches\\Widgets'
             )
             ->widgets([Widgets\AccountWidget::class])
+            ->plugins([
+                ThemesPlugin::make()
+                    ->canViewThemesPage(
+                        fn() => auth()->check() && (bool) auth()->user()->hasRole(['super_admin', 'admin'])
+                    ),
+            ])
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
                 fn(): HtmlString => $this->renderSwitcher('marches')
@@ -92,6 +110,7 @@ class MarchesPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                \Hasnayeen\Themes\Http\Middleware\SetTheme::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

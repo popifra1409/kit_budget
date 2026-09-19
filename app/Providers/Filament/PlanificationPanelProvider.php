@@ -1,5 +1,4 @@
 <?php
-// app/Providers/Filament/PlanificationPanelProvider.php
 
 namespace App\Providers\Filament;
 
@@ -49,7 +48,10 @@ class PlanificationPanelProvider extends PanelProvider
                 'Cadrage Stratégique',
                 'Plans Stratégiques EP',
                 'Activités',
-                'Paramétrage Planification',
+                'Paramétrage',
+            ])
+            ->navigationItems([
+                $this->commonThemeNavigationItem('planification'),
             ])
 
             ->discoverResources(
@@ -67,6 +69,7 @@ class PlanificationPanelProvider extends PanelProvider
             ->widgets([
                 Widgets\AccountWidget::class,
             ])
+            ->plugins($this->commonPlugins())
 
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
