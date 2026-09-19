@@ -9,4 +9,5 @@ return [
     App\Providers\Filament\ComptablePanelProvider::class,
     App\Providers\Filament\MarchesPanelProvider::class,
     App\Providers\Filament\PlanificationPanelProvider::class,
+    App\Providers\Filament\ProgrammationPanelProvider::class,
 ];

@@ -104,10 +104,11 @@ trait HasCommonPanelBootstrap
     protected function modulesDisponibles(): array
     {
         return [
-            'planification' => ['🎯', 'Planification', '/planification'],
-            'budget'        => ['💰', 'Budget',         '/budget'],
-            'comptable'     => ['📦', 'Matières',       '/comptable'],
-            'marches'       => ['📋', 'Marchés',        '/marches'],
+            'planification'  => ['🎯', 'Planification',  '/planification'],
+            'programmation'  => ['📈', 'Programmation',  '/programmation'],
+            'budget'         => ['💰', 'Budget',          '/budget'],
+            'comptable'      => ['📦', 'Matières',        '/comptable'],
+            'marches'        => ['📋', 'Marchés',         '/marches'],
         ];
     }
 

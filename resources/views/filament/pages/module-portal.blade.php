@@ -355,6 +355,8 @@
         $canComptable = $isSuperAdmin || $user->can('access_module_comptable');
         $canMarches = $isSuperAdmin || $user->can('access_module_marches');
         $modulesActifs = collect([$canPlanification, $canBudget, $canComptable, $canMarches])->filter()->count();
+        $canProgrammation = $isSuperAdmin || $user->can('access_module_programmation');
+        $modulesActifs = collect([$canPlanification, $canProgrammation, $canBudget, $canComptable, $canMarches])->filter()->count();
     @endphp
 
     {{-- Toast accès refusé --}}
@@ -445,7 +447,53 @@
                 </div>
             @endif
 
-            {{-- MODULE 02 : Budget --}}
+            {{-- MODULE 02 : Programmation --}}
+            @if($canProgrammation)
+                <a href="/programmation" class="mod-card"
+                    style="--c:linear-gradient(90deg,#7c3aed,#a78bfa);--cc:#7c3aed;--s:rgba(124,58,237,.22);--ib:rgba(124,58,237,.1);--is:rgba(124,58,237,.2);--tb:rgba(124,58,237,.08);--tc:#4c1d95;--tbo:rgba(124,58,237,.2)">
+                    <div class="mod-header">
+                        <div class="mod-icon">📈</div>
+                        <div>
+                            <div class="mod-num">Module 02</div>
+                            <div class="mod-title">Programmation</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc">Programme de Performance Annuel (PPA), déclinaison annuelle du Plan Stratégique.</div>
+                    <div class="mod-tags">
+                        <span class="mod-tag">PPA</span>
+                        <span class="mod-tag">Synthèse stratégique</span>
+                        <span class="mod-tag">Budgétisation AE/CP</span>
+                    </div>
+                    <div class="mod-cta">
+                        Accéder au module
+                        <svg class="mod-cta-arrow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                    </div>
+                </a>
+            @else
+                <div class="mod-card-locked" title="Accès non autorisé — contactez votre administrateur">
+                    <div class="mod-header">
+                        <div class="mod-icon" style="opacity:.4;">📈</div>
+                        <div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 02</div>
+                            <div class="mod-title mod-title-locked">Programmation</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc" style="color:#94a3b8;">Accès restreint à ce module.</div>
+                    <div class="mod-tags">
+                        <span class="mod-tag" style="background:rgba(148,163,184,.08);color:#94a3b8;border-color:rgba(148,163,184,.2);">Accès restreint</span>
+                    </div>
+                    <div class="mod-locked-msg">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        Contacter l'administrateur
+                    </div>
+                </div>
+            @endif
+
+            {{-- MODULE 03: Budget --}}
             @if($canBudget)
                 <a href="/budget" class="mod-card"
                     style="--c:linear-gradient(90deg,#0ea5e9,#38bdf8);--cc:#0ea5e9;--s:rgba(14,165,233,.22);--ib:rgba(14,165,233,.1);--is:rgba(14,165,233,.2);--tb:rgba(14,165,233,.08);--tc:#0369a1;--tbo:rgba(14,165,233,.2)">

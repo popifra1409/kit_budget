@@ -12,15 +12,13 @@ return new class extends Migration
             $table->text('objectif')->nullable()->after('description');
             $table->text('strategie')->nullable()->after('objectif');
             $table->text('cadre_institutionnel')->nullable()->after('strategie');
-            $table->foreignId('responsable_id')->nullable()->after('cadre_institutionnel')
-                ->constrained('users')->nullOnDelete();
+            // responsable_id existe deja depuis la migration initiale (Etape 2) - non redemande ici
         });
     }
 
     public function down(): void
     {
         Schema::table('sous_programmes_ep', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('responsable_id');
             $table->dropColumn(['objectif', 'strategie', 'cadre_institutionnel']);
         });
     }

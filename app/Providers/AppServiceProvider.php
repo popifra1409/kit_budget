@@ -103,6 +103,9 @@ class AppServiceProvider extends ServiceProvider
             'plan_strategique_ep'    => \App\Models\PlanStrategiqueEp::class,
             'sous_programme_ep'      => \App\Models\SousProgrammeEp::class,
 
+            //Module Programmation
+            'ppa_exercice' => \App\Models\PpaExercice::class,
+
         ]);
 
         DecisionAdministrative::observe(DecisionAdministrativeObserver::class);

@@ -88,19 +88,31 @@ class RolePermissionSeeder extends Seeder
         // ====================================================
         // 2bis. MODULES CRUD — Planification Stratégique
         // ====================================================
+        // NOTE : 'action_sous_programme', 'projet_strategique' et
+        // 'activite_planification' ont ete retires suite a la
+        // reconciliation architecturale (guide MINEPAT 2026) : le
+        // Sous-Programme strategique se rattache desormais directement
+        // aux Programme/Action/Activite/Tache DEJA EXISTANTS du module
+        // Budget (deplaces dans Planification), sans duplication.
+        // Ces modules restent donc dans $modulesBudget ci-dessus.
         $modulesPlanification = [
             'csp_ministere_sante',
             'plan_strategique_ep',
             'sous_programme_ep',
-            'action_sous_programme',
-            'projet_strategique',
             'indicateur',
+        ];
+
+        // ====================================================
+        // 2ter. MODULES CRUD — Programmation
+        // ====================================================
+        $modulesProgrammation = [
+            'ppa_exercice',
         ];
 
         // ── Créer permissions CRUD (firstOrCreate = non destructif) ──
         $this->command->info('📝 Création permissions CRUD...');
         $permsCrudCreees = 0;
-        foreach (array_merge($modulesBudget, $modulesComptable, $modulesMarches, $modulesPlanification) as $module) {
+        foreach (array_merge($modulesBudget, $modulesComptable, $modulesMarches, $modulesPlanification, $modulesProgrammation) as $module) {
             foreach (['view', 'view_any', 'create', 'update', 'delete'] as $action) {
                 $created = Permission::firstOrCreate([
                     'name'       => "{$action}_{$module}",
@@ -242,14 +254,17 @@ class RolePermissionSeeder extends Seeder
             'retourner_sous_programme_ep',
             'saisir_valeur_indicateur',
             'valider_valeur_indicateur',
-            'transmettre_action_sous_programme',
-            'valider_action_sous_programme',
-            'retourner_action_sous_programme',
-            'transmettre_projet_strategique',
-            'valider_projet_strategique',
-            'retourner_projet_strategique',
-            'saisir_valeur_indicateur',
-            'valider_valeur_indicateur',
+            // Workflow sur Activite (existant, module Budget deplace dans
+            // Planification, enrichi de HasWorkflow lors de la reconciliation)
+            'transmettre_activite',
+            'valider_activite',
+            'retourner_activite',
+
+            // ── Module Programmation ───────────────────────
+            'access_module_programmation',
+            'transmettre_ppa_exercice',
+            'valider_ppa_exercice',
+            'retourner_ppa_exercice',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -974,10 +989,14 @@ class RolePermissionSeeder extends Seeder
             [
                 'access_module_portal',
                 'access_module_planification',
+
+                // Cadre Strategique de Performance (CSP)
                 'view_any_csp_ministere_sante',
                 'view_csp_ministere_sante',
                 'create_csp_ministere_sante',
                 'update_csp_ministere_sante',
+
+                // Plan Strategique de Performance (PSP)
                 'view_any_plan_strategique_ep',
                 'view_plan_strategique_ep',
                 'create_plan_strategique_ep',
@@ -986,6 +1005,8 @@ class RolePermissionSeeder extends Seeder
                 'valider_plan_strategique_ep',
                 'retourner_plan_strategique_ep',
                 'cloturer_plan_strategique_ep',
+
+                // Sous-Programme strategique
                 'view_any_sous_programme_ep',
                 'view_sous_programme_ep',
                 'create_sous_programme_ep',
@@ -993,40 +1014,77 @@ class RolePermissionSeeder extends Seeder
                 'transmettre_sous_programme_ep',
                 'valider_sous_programme_ep',
                 'retourner_sous_programme_ep',
-                'view_any_activite_planification',
-                'view_activite_planification',
-                'create_activite_planification',
-                'update_activite_planification',
+
+                // Action (classification budgetaire reutilisee, module Budget)
+                'view_any_action',
+                'view_action',
+                'create_action',
+                'update_action',
+
+                // Activite (classification budgetaire reutilisee, + workflow)
+                'view_any_activite',
+                'view_activite',
+                'create_activite',
+                'update_activite',
+                'transmettre_activite',
+                'valider_activite',
+                'retourner_activite',
+
+                // Tache (costing, classification budgetaire reutilisee)
+                'view_any_tache',
+                'view_tache',
+                'create_tache',
+                'update_tache',
+
+                // Indicateurs
                 'view_any_indicateur',
                 'view_indicateur',
                 'create_indicateur',
                 'update_indicateur',
                 'saisir_valeur_indicateur',
                 'valider_valeur_indicateur',
+
+                // Transmission generique
                 'transmettre_document',
                 'view_my_transmissions',
-                'view_any_action_sous_programme',
-                'view_action_sous_programme',
-                'create_action_sous_programme',
-                'update_action_sous_programme',
-                'transmettre_action_sous_programme',
-                'valider_action_sous_programme',
-                'retourner_action_sous_programme',
-                'view_any_projet_strategique',
-                'view_projet_strategique',
-                'create_projet_strategique',
-                'update_projet_strategique',
-                'transmettre_projet_strategique',
-                'valider_projet_strategique',
-                'retourner_projet_strategique',
-                'view_any_indicateur',
-                'view_indicateur',
-                'create_indicateur',
-                'update_indicateur',
-                'saisir_valeur_indicateur',
-                'valider_valeur_indicateur',
             ],
             'responsable_planification'
+        );
+
+        // ── RESPONSABLE PROGRAMMATION ──────────────────────────────────
+        $this->ajouterPermissionsRole(
+            Role::firstOrCreate(['name' => 'responsable_programmation', 'guard_name' => 'web']),
+            [
+                'access_module_portal',
+                'access_module_programmation',
+
+                // PPA (Programme de Performance Annuel)
+                'view_any_ppa_exercice',
+                'view_ppa_exercice',
+                'create_ppa_exercice',
+                'update_ppa_exercice',
+                'transmettre_ppa_exercice',
+                'valider_ppa_exercice',
+                'retourner_ppa_exercice',
+
+                // Lecture de la Planification pour construire le PPA
+                'view_any_plan_strategique_ep',
+                'view_plan_strategique_ep',
+                'view_any_sous_programme_ep',
+                'view_sous_programme_ep',
+                'view_any_action',
+                'view_action',
+                'view_any_activite',
+                'view_activite',
+                'view_any_tache',
+                'view_tache',
+                'view_any_indicateur',
+                'view_indicateur',
+
+                'transmettre_document',
+                'view_my_transmissions',
+            ],
+            'responsable_programmation'
         );
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

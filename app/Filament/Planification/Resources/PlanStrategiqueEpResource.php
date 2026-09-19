@@ -62,6 +62,17 @@ class PlanStrategiqueEpResource extends Resource
                     Forms\Components\TextInput::make('libelle')
                         ->required()->maxLength(255),
                     Forms\Components\Textarea::make('description')->columnSpanFull(),
+                    Forms\Components\Textarea::make('contexte_elaboration')
+                        ->label('Contexte d\'élaboration')
+                        ->helperText('Ancrage juridique et contexte d\'élaboration du document (base du PPA/RAP).')
+                        ->columnSpanFull(),
+                    Forms\Components\Textarea::make('domaines_intervention')
+                        ->label('Domaines d\'intervention de l\'EP')
+                        ->columnSpanFull(),
+                    Forms\Components\Textarea::make('objectif_strategique')
+                        ->label('Objectif stratégique')
+                        ->helperText('Défi majeur à relever à moyen terme, point de convergence des sous-programmes.')
+                        ->columnSpanFull(),
                     Forms\Components\DatePicker::make('periode_debut')->required(),
                     Forms\Components\DatePicker::make('periode_fin')
                         ->required()->afterOrEqual('periode_debut'),
