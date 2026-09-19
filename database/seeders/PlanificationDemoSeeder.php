@@ -1,27 +1,30 @@
 <?php
-
 namespace Database\Seeders;
 
-use App\Models\ActionSousProgramme;
 use App\Models\CspMinistereSante;
 use App\Models\ParametresStructure;
 use App\Models\PlanStrategiqueEp;
-use App\Models\SousProgrammeEp;
 use Illuminate\Database\Seeder;
-use App\Models\ProjetStrategique;
 
 /**
- * Seeder de demonstration base sur l'exemple concret du
- * "Guide d'arrimage des Etablissements Publics aux Politiques
- * Sectorielles" (edition 2025), page 60 - illustration reelle
- * sur l'Hopital General de Yaounde.
+ * Cree/actualise le CSP et le PSP de base pour l'Hopital General
+ * de Yaounde.
+ *
+ * NOTE : la generation des Sous-Programmes (a partir des vrais
+ * Programmes budgetaires 412/413/414...) se fait desormais via
+ * SousProgrammesStrategiquesSeeder, pas ici. Les anciennes sections
+ * qui creaient un sous-programme fictif ("Approvisionnement en
+ * medicament") ainsi que des ActionSousProgramme/ProjetStrategique
+ * ont ete retirees suite a la reconciliation architecturale : ces
+ * deux classes n'existent plus (fusionnees avec Action/Activite
+ * existants du module Budget).
  */
 class PlanificationDemoSeeder extends Seeder
 {
     public function run(): void
     {
         // 1. CSP - Cadre Strategique de Performance du Ministere de la Sante
-        $csp = CspMinistereSante::firstOrCreate(
+        $csp = CspMinistereSante::updateOrCreate(
             ['code' => 'CSP-MINSANTE-2026'],
             [
                 'libelle' => 'Cadre Stratégique de Performance du Ministère de la Santé Publique',
@@ -35,7 +38,7 @@ class PlanificationDemoSeeder extends Seeder
         );
 
         // 2. PSP - Plan Strategique de Performance de l'Hopital General de Yaounde
-        $psp = PlanStrategiqueEp::firstOrCreate(
+        PlanStrategiqueEp::updateOrCreate(
             ['code' => 'PSP-HGY-2026-2030'],
             [
                 'csp_ministere_id' => $csp->id,
@@ -50,68 +53,6 @@ class PlanificationDemoSeeder extends Seeder
             ]
         );
 
-        // 3. Sous-programme "Approvisionnement en medicament"
-        $sousProgramme = SousProgrammeEp::firstOrCreate(
-            ['code' => 'SP-02'],
-            [
-                'plan_strategique_ep_id' => $psp->id,
-                'libelle' => 'Approvisionnement en médicament',
-                'description' => "Sous-programme opérationnel visant à garantir la disponibilité "
-                    . "des médicaments et intrants médicaux, et à améliorer le cadre de travail "
-                    . "des services associés.",
-                'statut' => 'en_vigueur',
-            ]
-        );
-
-        // 4. Actions du sous-programme (exemple exact du guide, page 60)
-        ActionSousProgramme::firstOrCreate(
-            ['code' => '01'],
-            [
-                'sous_programme_ep_id' => $sousProgramme->id,
-                'libelle' => 'Amélioration du cadre de travail',
-                'description' => "Acquisition de mobilier de bureau pour les services impliqués "
-                    . "dans l'approvisionnement en médicament.",
-                'statut' => 'en_vigueur',
-            ]
-        );
-
-        ActionSousProgramme::firstOrCreate(
-            ['code' => '02'],
-            [
-                'sous_programme_ep_id' => $sousProgramme->id,
-                'libelle' => 'Hospitalisation',
-                'description' => "Acquisition de lits d'hospitalisation.",
-                'statut' => 'en_vigueur',
-            ]
-        );
-
-        $action1 = ActionSousProgramme::where('code', '01')->first();
-        $action2 = ActionSousProgramme::where('code', '02')->first();
-
-        if ($action1) {
-            ProjetStrategique::firstOrCreate(
-                ['code' => 'PST-MOBILIER-2026'],
-                [
-                    'action_sous_programme_id' => $action1->id,
-                    'libelle' => 'Acquisition du mobilier de bureau',
-                    'description' => "Acquisition de mobilier de bureau pour l'amélioration du cadre de travail.",
-                    'statut' => 'en_cours',
-                ]
-            );
-        }
-
-        if ($action2) {
-            ProjetStrategique::firstOrCreate(
-                ['code' => 'PST-LITS-2026'],
-                [
-                    'action_sous_programme_id' => $action2->id,
-                    'libelle' => 'Acquisition des lits d\'hospitalisation',
-                    'description' => "Acquisition de lits d'hospitalisation.",
-                    'statut' => 'en_cours',
-                ]
-            );
-        }
-
-        $this->command->info('✔ Données de démonstration Planification (CSP/PSP/Sous-programme/Actions) créées.');
+        $this->command->info('✔ CSP et PSP de base créés/actualisés. Lancez SousProgrammesStrategiquesSeeder pour générer les Sous-Programmes.');
     }
 }

@@ -92,6 +92,16 @@ class ActiviteResource extends Resource
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null),
 
+                Forms\Components\Textarea::make('objectif')
+                    ->label('Objectif de l\'activité')
+                    ->columnSpanFull(),
+                Forms\Components\TextInput::make('zone_execution')
+                    ->label('Zone ou lieu d\'exécution'),
+                Forms\Components\Select::make('responsable_id')
+                    ->label('Responsable de mise en œuvre')
+                    ->options(\App\Models\User::pluck('name', 'id'))
+                    ->searchable(),
+
                 Forms\Components\Section::make('Informations de l\'Activité')
                     ->schema([
                         Forms\Components\Select::make('action_id')
@@ -233,7 +243,10 @@ class ActiviteResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            \App\Filament\Planification\Resources\ActiviteResource\RelationManagers\TachesRelationManager::class,
+            \App\Filament\Planification\Resources\Concerns\IndicateursRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

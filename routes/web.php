@@ -14,6 +14,7 @@ use App\Models\BonCommande;
 use App\Models\DecisionAdministrative;
 use App\Models\ParametresStructure;
 use App\Http\Controllers\FicheControleEngagementsController;
+use App\Http\Controllers\Planification\RapportController;
 
 Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
@@ -187,6 +188,22 @@ Route::middleware(['web', 'auth'])->group(function () {
         Route::get('/preview', [\App\Http\Controllers\BudgetProgrammeExportController::class, 'preview'])
             ->name('preview');
     });
+
+    // ── Rapports Planification Stratégique (Tableaux 14 & 15 — guide MINEPAT) ──
+    Route::prefix('planification/rapports')
+        ->name('planification.rapports.')
+        ->middleware(['module.access:planification'])
+        ->group(function () {
+            Route::get('/identification-sous-programmes/{psp}/pdf', [RapportController::class, 'identificationSousProgrammesPdf'])
+                ->name('identification-sous-programmes.pdf');
+            Route::get('/identification-sous-programmes/{psp}/excel', [RapportController::class, 'identificationSousProgrammesExcel'])
+                ->name('identification-sous-programmes.excel');
+
+            Route::get('/activites-sous-programme/{sousProgramme}/pdf', [RapportController::class, 'activitesSousProgrammePdf'])
+                ->name('activites-sous-programme.pdf');
+            Route::get('/activites-sous-programme/{sousProgramme}/excel', [RapportController::class, 'activitesSousProgrammeExcel'])
+                ->name('activites-sous-programme.excel');
+        });
 });
 
 /*

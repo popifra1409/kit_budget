@@ -74,18 +74,24 @@ class IndicateursRelationManager extends RelationManager
                     ->visible(fn() => auth()->user()->can('create_indicateur')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make()
-                    ->visible(fn() => auth()->user()->can('update_indicateur')),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn() => auth()->user()->can('update_indicateur')),
 
-                Tables\Actions\Action::make('gererValeurs')
-                    ->label('Gérer les valeurs')
-                    ->icon('heroicon-o-chart-bar')
+                    Tables\Actions\Action::make('gererValeurs')
+                        ->label('Gérer les valeurs')
+                        ->icon('heroicon-o-chart-bar')
+                        ->url(
+                            fn(Indicateur $record) =>
+                            \App\Filament\Planification\Resources\IndicateurResource::getUrl('edit', ['record' => $record])
+                        ),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
                     ->color('gray')
-                    ->url(
-                        fn(Indicateur $record) =>
-                        \App\Filament\Planification\Resources\IndicateurResource::getUrl('edit', ['record' => $record])
-                    ),
-            ])
+                    ->button()
+                    ->size('sm'),
+            ], position: \Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
             ]);

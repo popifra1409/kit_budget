@@ -99,8 +99,8 @@ class ProgrammeResource extends Resource
                         Forms\Components\Select::make('niveau')
                             ->label('Niveau')
                             ->options([
-                                'programme'     => 'Programme principal',
-                                'sous_programme' => 'Sous-programme',
+                                'programme'     => 'Programme (rattachement tutelle)',
+                                'sous_programme' => 'Sous-programme (subdivision de gestion interne)',
                             ])
                             ->required()->default('programme')->live()
                             ->afterStateUpdated(function ($state, callable $set) {

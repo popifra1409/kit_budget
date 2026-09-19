@@ -96,63 +96,64 @@ class PlanStrategiqueEpResource extends Resource
                 ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make()
-                    ->visible(fn(PlanStrategiqueEp $record) => $record->estModifiable()),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn(PlanStrategiqueEp $record) => $record->estModifiable()),
 
-                Tables\Actions\Action::make('transmettre')
-                    ->label('Transmettre')
-                    ->icon('heroicon-o-paper-airplane')
-                    ->visible(
-                        fn(PlanStrategiqueEp $record) =>
-                        $record->peutEtreTransmis() && auth()->user()->can('transmettre_plan_strategique_ep')
-                    )
-                    ->form([
-                        Forms\Components\Select::make('destinataire_id')
-                            ->label('Destinataire')
-                            ->options(User::pluck('name', 'id'))
-                            ->searchable()->required(),
-                        Forms\Components\Select::make('action_attendue')
-                            ->options([
-                                'validation' => 'Validation',
-                                'avis' => 'Avis',
-                                'correction' => 'Correction',
-                            ])->required(),
-                        Forms\Components\Textarea::make('commentaire'),
-                    ])
-                    ->action(function (PlanStrategiqueEp $record, array $data) {
-                        $record->transmettreA(
-                            User::findOrFail($data['destinataire_id']),
-                            $data['action_attendue'],
-                            $data['commentaire'] ?? null,
-                        );
-                        $record->update(['statut' => 'en_transmission']);
-                    }),
+                    Tables\Actions\Action::make('transmettre')
+                        ->label('Transmettre')
+                        ->icon('heroicon-o-paper-airplane')
+                        ->visible(fn(PlanStrategiqueEp $record) => $record->peutEtreTransmis())
+                        ->form([
+                            Forms\Components\Select::make('destinataire_id')
+                                ->label('Destinataire')
+                                ->options(User::pluck('name', 'id'))
+                                ->searchable()->required(),
+                            Forms\Components\Select::make('action_attendue')
+                                ->options([
+                                    'validation' => 'Validation',
+                                    'avis' => 'Avis',
+                                    'correction' => 'Correction',
+                                ])->required(),
+                            Forms\Components\Textarea::make('commentaire'),
+                        ])
+                        ->action(function (PlanStrategiqueEp $record, array $data) {
+                            $record->transmettreA(
+                                User::findOrFail($data['destinataire_id']),
+                                $data['action_attendue'],
+                                $data['commentaire'] ?? null,
+                            );
+                            $record->update(['statut' => 'en_transmission']);
+                        }),
 
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(
-                        fn(PlanStrategiqueEp $record) =>
-                        $record->estDestinataireActuel() && auth()->user()->can('valider_plan_strategique_ep')
-                    )
-                    ->requiresConfirmation()
-                    ->action(function (PlanStrategiqueEp $record) {
-                        $record->cloturerTransmission('Validé');
-                        $record->update(['statut' => 'valide']);
-                    }),
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn(PlanStrategiqueEp $record) => $record->estDestinataireActuel())
+                        ->requiresConfirmation()
+                        ->action(function (PlanStrategiqueEp $record) {
+                            $record->cloturerTransmission('Validé');
+                            $record->update(['statut' => 'valide']);
+                        }),
 
-                Tables\Actions\Action::make('retourner')
-                    ->label('Retourner')
-                    ->icon('heroicon-o-arrow-uturn-left')
-                    ->color('danger')
-                    ->visible(fn(PlanStrategiqueEp $record) => $record->estDestinataireActuel())
-                    ->form([Forms\Components\Textarea::make('motif')->required()])
-                    ->action(
-                        fn(PlanStrategiqueEp $record, array $data) =>
-                        $record->retournerPourCorrection($data['motif'])
-                    ),
-            ])
+                    Tables\Actions\Action::make('retourner')
+                        ->label('Retourner')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('danger')
+                        ->visible(fn(PlanStrategiqueEp $record) => $record->estDestinataireActuel())
+                        ->form([Forms\Components\Textarea::make('motif')->required()])
+                        ->action(
+                            fn(PlanStrategiqueEp $record, array $data) =>
+                            $record->retournerPourCorrection($data['motif'])
+                        ),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: \Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
             ]);

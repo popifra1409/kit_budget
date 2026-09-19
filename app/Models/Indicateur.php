@@ -14,7 +14,7 @@ class Indicateur extends Model
     protected $table = 'indicateurs';
 
     /** Niveaux autorises pour le rattachement (alias du morph map) */
-    public const NIVEAUX_AUTORISES = ['sous_programme_ep', 'action_sous_programme'];
+    public const NIVEAUX_AUTORISES = ['sous_programme_ep', 'activite'];
 
     protected $fillable = [
         'indicateurable_type',

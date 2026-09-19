@@ -23,6 +23,10 @@ class SousProgrammeEp extends Model
         'responsable_id',
         'statut',
         'created_by',
+        'objectif',
+        'strategie',
+        'cadre_institutionnel',
+        'responsable_id'
     ];
 
     protected static function boot(): void
@@ -66,9 +70,14 @@ class SousProgrammeEp extends Model
         return $this->belongsTo(User::class, 'responsable_id');
     }
 
+    /**
+     * Actions de la classification budgetaire rattachees au Programme
+     * budgetaire lie a ce sous-programme strategique.
+     * (SousProgrammeEp -> programme_budgetaire_id == Action.programme_id)
+     */
     public function actions(): HasMany
     {
-        return $this->hasMany(ActionSousProgramme::class, 'sous_programme_ep_id');
+        return $this->hasMany(Action::class, 'programme_id', 'programme_budgetaire_id');
     }
 
     public function indicateurs(): \Illuminate\Database\Eloquent\Relations\MorphMany

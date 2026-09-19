@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Traits\HasWorkflow;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -13,7 +15,7 @@ use Spatie\Activitylog\LogOptions;
 
 class Activite extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasWorkflow;
 
     protected $table = 'activites';
 
@@ -25,12 +27,34 @@ class Activite extends Model
         'description',
         'ordre',
         'actif',
+        'numero',
+        'statut',
+        'created_by',
     ];
 
     protected $casts = [
         'ordre' => 'integer',
         'actif' => 'boolean',
     ];
+
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function (self $model) {
+            $model->created_by ??= auth()->id();
+            $model->numero ??= static::genererNumero();
+        });
+    }
+
+    public static function genererNumero(): string
+    {
+        $annee = now()->year;
+        $dernier = static::withTrashed()->whereYear('created_at', $annee)->whereNotNull('numero')->count();
+
+        return sprintf('ACT-%d-%05d', $annee, $dernier + 1);
+    }
 
     /**
      * Relation : Action parent
@@ -48,6 +72,11 @@ class Activite extends Model
         return $this->hasMany(Tache::class);
     }
 
+    public function indicateurs(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(\App\Models\Indicateur::class, 'indicateurable');
+    }
+    
     /**
      * Obtenir le budget total (AE) de l'activité
      * = Somme des AE de toutes les tâches (qui incluent leurs sous-tâches)

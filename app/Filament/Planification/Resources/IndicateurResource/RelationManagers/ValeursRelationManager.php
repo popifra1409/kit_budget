@@ -48,34 +48,41 @@ class ValeursRelationManager extends RelationManager
                     ->visible(fn() => auth()->user()->can('saisir_valeur_indicateur')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make()
-                    ->visible(
-                        fn(ValeurIndicateur $record) =>
-                        $record->statut === 'saisi' && auth()->user()->can('saisir_valeur_indicateur')
-                    ),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\EditAction::make()
+                        ->visible(
+                            fn(ValeurIndicateur $record) =>
+                            $record->statut === 'saisi' && auth()->user()->can('saisir_valeur_indicateur')
+                        ),
 
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(
-                        fn(ValeurIndicateur $record) =>
-                        $record->statut === 'saisi' && auth()->user()->can('valider_valeur_indicateur')
-                    )
-                    ->requiresConfirmation()
-                    ->action(fn(ValeurIndicateur $record) => $record->valider()),
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(
+                            fn(ValeurIndicateur $record) =>
+                            $record->statut === 'saisi' && auth()->user()->can('valider_valeur_indicateur')
+                        )
+                        ->requiresConfirmation()
+                        ->action(fn(ValeurIndicateur $record) => $record->valider()),
 
-                Tables\Actions\Action::make('rejeter')
-                    ->label('Rejeter')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->visible(
-                        fn(ValeurIndicateur $record) =>
-                        $record->statut === 'saisi' && auth()->user()->can('valider_valeur_indicateur')
-                    )
-                    ->form([Forms\Components\Textarea::make('motif')->required()])
-                    ->action(fn(ValeurIndicateur $record, array $data) => $record->rejeter($data['motif'])),
-            ])
+                    Tables\Actions\Action::make('rejeter')
+                        ->label('Rejeter')
+                        ->icon('heroicon-o-x-circle')
+                        ->color('danger')
+                        ->visible(
+                            fn(ValeurIndicateur $record) =>
+                            $record->statut === 'saisi' && auth()->user()->can('valider_valeur_indicateur')
+                        )
+                        ->form([Forms\Components\Textarea::make('motif')->required()])
+                        ->action(fn(ValeurIndicateur $record, array $data) => $record->rejeter($data['motif'])),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()
+                    ->size('sm'),
+            ], position: \Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
             ]);
