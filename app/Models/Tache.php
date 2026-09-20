@@ -86,6 +86,23 @@ class Tache extends Model
     }
 
     /**
+     * Resout la LigneBudgetaire reelle (module Budget/Execution) correspondant
+     * a cette sous-tache, pour l'exercice de la tache. Uniquement pertinent
+     * pour les sous-taches (niveau le plus fin, seul niveau qui porte
+     * nomenclature_id).
+     */
+    public function ligneBudgetaire(): ?\App\Models\LigneBudgetaire
+    {
+        if ($this->niveau !== 'sous_tache' || !$this->nomenclature_id) {
+            return null;
+        }
+
+        return \App\Models\LigneBudgetaire::where('nomenclature_id', $this->nomenclature_id)
+            ->whereHas('budget', fn($q) => $q->where('exercice_id', $this->exercice_id))
+            ->first();
+    }
+
+    /**
      * Relation : Service responsable
      */
     public function service(): BelongsTo

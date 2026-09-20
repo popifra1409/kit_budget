@@ -27,19 +27,27 @@
     <h2>Contenu des sous-programmes</h2>
     @foreach ($sousProgrammes as $sp)
         <p><strong>{{ $sp->libelle }}</strong> ({{ $sp->programmeBudgetaire?->code }}) — Objectif : {{ $sp->objectif ?? '—' }}</p>
-        <table>
+                <table>
             <thead>
-                <tr><th>Action</th><th>Activité</th><th>Indicateurs</th><th>AE</th><th>CP</th></tr>
+                <tr>
+                    <th>Action</th><th>Activité</th><th>Indicateurs</th>
+                    <th>AE prévu</th><th>CP prévu</th>
+                    <th>Engagé (réel)</th><th>Disponible</th><th>Taux</th>
+                </tr>
             </thead>
             <tbody>
                 @foreach ($sp->actions as $action)
                     @foreach ($action->activites as $activite)
+                        @php $exec = $activite->getExecutionBudgetaire(); @endphp
                         <tr>
                             <td>{{ $action->libelle }}</td>
                             <td>{{ $activite->libelle }}</td>
                             <td>{{ $activite->indicateurs->pluck('libelle')->implode(', ') ?: '—' }}</td>
                             <td>{{ number_format($activite->getTotalAe(), 0, ',', ' ') }}</td>
                             <td>{{ number_format($activite->getTotalCp(), 0, ',', ' ') }}</td>
+                            <td>{{ number_format($exec['engage'], 0, ',', ' ') }}</td>
+                            <td>{{ number_format($exec['disponible'], 0, ',', ' ') }}</td>
+                            <td>{{ $exec['taux_engagement'] }}%</td>
                         </tr>
                     @endforeach
                 @endforeach

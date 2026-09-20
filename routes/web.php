@@ -16,6 +16,7 @@ use App\Models\ParametresStructure;
 use App\Http\Controllers\FicheControleEngagementsController;
 use App\Http\Controllers\Planification\RapportController;
 use App\Http\Controllers\Programmation\RapportPpaController;
+use \App\Http\Controllers\Programmation\TableauBordPspController;
 
 Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
@@ -206,7 +207,7 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('activites-sous-programme.excel');
         });
 
-    // ── Rapport PPA (Tableau 11 — guide d'arrimage des EP) ──
+    // ── Rapport PPA ──
     Route::prefix('programmation/rapports')
         ->name('programmation.rapports.')
         ->middleware(['module.access:programmation'])
@@ -215,6 +216,10 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('ppa.pdf');
             Route::get('/ppa/{ppa}/excel', [RapportPpaController::class, 'excel'])
                 ->name('ppa.excel');
+            Route::get('/tableau-bord-psp/{psp}/pdf', [TableauBordPspController::class, 'pdf'])
+                ->name('tableau-bord-psp.pdf');
+            Route::get('/tableau-bord-psp/{psp}/excel', [TableauBordPspController::class, 'excel'])
+                ->name('tableau-bord-psp.excel');
         });
 });
 

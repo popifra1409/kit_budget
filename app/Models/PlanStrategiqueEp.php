@@ -71,4 +71,72 @@ class PlanStrategiqueEp extends Model
     {
         return $this->hasMany(SousProgrammeEp::class, 'plan_strategique_ep_id');
     }
+
+    public function ppaExercices(): HasMany
+    {
+        return $this->hasMany(PpaExercice::class, 'plan_strategique_ep_id');
+    }
+
+    /**
+     * Synthese annee par annee (prevu vs execution reelle), sur tous
+     * les PPA deja crees pour ce PSP.
+     */
+    public function getSyntheseParExercice(): \Illuminate\Support\Collection
+    {
+        return $this->ppaExercices()
+            ->with('exercice')
+            ->get()
+            ->sortBy(fn($ppa) => $ppa->exercice?->annee)
+            ->map(function (PpaExercice $ppa) {
+                $totalAe = 0;
+                $totalCp = 0;
+                $totalEngage = 0;
+                $totalDisponible = 0;
+
+                foreach ($ppa->getSousProgrammesAvecActivites() as $sp) {
+                    foreach ($sp->actions as $action) {
+                        foreach ($action->activites as $activite) {
+                            $totalAe += $activite->getTotalAe();
+                            $totalCp += $activite->getTotalCp();
+                            $exec = $activite->getExecutionBudgetaire();
+                            $totalEngage += $exec['engage'];
+                            $totalDisponible += $exec['disponible'];
+                        }
+                    }
+                }
+
+                return [
+                    'ppa_id' => $ppa->id,
+                    'ppa_numero' => $ppa->numero,
+                    'exercice' => $ppa->exercice?->annee,
+                    'ae_prevu' => $totalAe,
+                    'cp_prevu' => $totalCp,
+                    'engage_reel' => $totalEngage,
+                    'disponible' => $totalDisponible,
+                    'taux_execution' => $totalCp > 0 ? round(($totalEngage / $totalCp) * 100, 1) : 0,
+                    'statut_ppa' => $ppa->statut,
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * Cumul sur toute la duree du PSP (somme de tous les exercices
+     * couverts par un PPA existant).
+     */
+    public function getCumulPluriannuel(): array
+    {
+        $synthese = $this->getSyntheseParExercice();
+
+        return [
+            'total_ae_prevu' => $synthese->sum('ae_prevu'),
+            'total_cp_prevu' => $synthese->sum('cp_prevu'),
+            'total_engage' => $synthese->sum('engage_reel'),
+            'total_disponible' => $synthese->sum('disponible'),
+            'nb_exercices_couverts' => $synthese->count(),
+            'nb_exercices_psp' => $this->periode_debut && $this->periode_fin
+                ? $this->periode_fin->diffInYears($this->periode_debut) + 1
+                : null,
+        ];
+    }
 }

@@ -53,31 +53,42 @@
                         </h3>
                         <div class="text-sm"><span class="font-semibold">Objectif :</span> {{ $sp->objectif ?? '—' }}</div>
 
-                        <table class="w-full mt-2 text-sm border">
+                                                <table class="w-full mt-2 text-sm border">
                             <thead class="bg-gray-50 dark:bg-gray-900">
                                 <tr>
                                     <th class="border p-2 text-left">Action</th>
                                     <th class="border p-2 text-left">Activité</th>
                                     <th class="border p-2 text-left">Indicateurs</th>
-                                    <th class="border p-2">AE</th>
-                                    <th class="border p-2">CP</th>
+                                    <th class="border p-2">AE prévu</th>
+                                    <th class="border p-2">CP prévu</th>
+                                    <th class="border p-2 bg-blue-50 dark:bg-blue-900/20">Engagé (réel)</th>
+                                    <th class="border p-2 bg-blue-50 dark:bg-blue-900/20">Disponible</th>
+                                    <th class="border p-2 bg-blue-50 dark:bg-blue-900/20">Taux exéc.</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @forelse ($sp->actions as $action)
                                     @forelse ($action->activites as $activite)
+                                        @php $exec = $activite->getExecutionBudgetaire(); @endphp
                                         <tr>
                                             <td class="border p-2">{{ $action->libelle }}</td>
                                             <td class="border p-2">{{ $activite->libelle }}</td>
                                             <td class="border p-2">{{ $activite->indicateurs->pluck('libelle')->implode(', ') ?: '—' }}</td>
                                             <td class="border p-2 text-right">{{ number_format($activite->getTotalAe(), 0, ',', ' ') }}</td>
                                             <td class="border p-2 text-right">{{ number_format($activite->getTotalCp(), 0, ',', ' ') }}</td>
+                                            <td class="border p-2 text-right bg-blue-50/50 dark:bg-blue-900/10">{{ number_format($exec['engage'], 0, ',', ' ') }}</td>
+                                            <td class="border p-2 text-right bg-blue-50/50 dark:bg-blue-900/10">{{ number_format($exec['disponible'], 0, ',', ' ') }}</td>
+                                            <td class="border p-2 text-right bg-blue-50/50 dark:bg-blue-900/10">
+                                                <span class="{{ $exec['taux_engagement'] > 90 ? 'text-red-600 font-bold' : ($exec['taux_engagement'] > 60 ? 'text-orange-600' : 'text-green-600') }}">
+                                                    {{ $exec['taux_engagement'] }}%
+                                                </span>
+                                            </td>
                                         </tr>
                                     @empty
-                                        <tr><td colspan="5" class="border p-2 text-center text-gray-400">Aucune activité pour cet exercice</td></tr>
+                                        <tr><td colspan="8" class="border p-2 text-center text-gray-400">Aucune activité pour cet exercice</td></tr>
                                     @endforelse
                                 @empty
-                                    <tr><td colspan="5" class="border p-2 text-center text-gray-400">Aucune action pour cet exercice</td></tr>
+                                    <tr><td colspan="8" class="border p-2 text-center text-gray-400">Aucune action pour cet exercice</td></tr>
                                 @endforelse
                             </tbody>
                         </table>

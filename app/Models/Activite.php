@@ -76,7 +76,7 @@ class Activite extends Model
     {
         return $this->morphMany(\App\Models\Indicateur::class, 'indicateurable');
     }
-    
+
     /**
      * Obtenir le budget total (AE) de l'activité
      * = Somme des AE de toutes les tâches (qui incluent leurs sous-tâches)
@@ -89,6 +89,31 @@ class Activite extends Model
             ->sum(function ($tache) {
                 return $tache->getTotalAe();
             });
+    }
+    /**
+     * Execution budgetaire REELLE de cette activite (module Budget), agregee
+     * a partir des LigneBudgetaire de ses sous-taches. Distinct de
+     * getTotalAe()/getTotalCp() qui restent le PREVISIONNEL de planification.
+     */
+    public function getExecutionBudgetaire(): array
+    {
+        $lignes = $this->taches()
+            ->where('niveau', 'sous_tache')
+            ->get()
+            ->map(fn($t) => $t->ligneBudgetaire())
+            ->filter();
+
+        $budgetRectifie = $lignes->sum('budget_rectifie');
+        $engage = $lignes->sum('engage');
+        $disponible = $lignes->sum('disponible_engagement');
+
+        return [
+            'budget_rectifie' => $budgetRectifie,
+            'engage' => $engage,
+            'disponible' => $disponible,
+            'taux_engagement' => $budgetRectifie > 0 ? round(($engage / $budgetRectifie) * 100, 1) : 0,
+            'nb_lignes' => $lignes->count(),
+        ];
     }
 
     /**

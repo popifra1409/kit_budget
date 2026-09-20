@@ -12,7 +12,7 @@ class PpaExport implements FromCollection, WithHeadings
 
     public function headings(): array
     {
-        return ['Sous-Programme', 'Action', 'Activité', 'Indicateurs', 'AE', 'CP'];
+        return ['Sous-Programme', 'Action', 'Activité', 'Indicateurs', 'AE prévu', 'CP prévu', 'Engagé (réel)', 'Disponible', 'Taux exécution (%)'];
     }
 
     public function collection()
@@ -22,6 +22,7 @@ class PpaExport implements FromCollection, WithHeadings
         foreach ($this->ppa->getSousProgrammesAvecActivites() as $sp) {
             foreach ($sp->actions as $action) {
                 foreach ($action->activites as $activite) {
+                    $exec = $activite->getExecutionBudgetaire();
                     $rows->push([
                         $sp->libelle,
                         $action->libelle,
@@ -29,6 +30,9 @@ class PpaExport implements FromCollection, WithHeadings
                         $activite->indicateurs->pluck('libelle')->implode(' | '),
                         $activite->getTotalAe(),
                         $activite->getTotalCp(),
+                        $exec['engage'],
+                        $exec['disponible'],
+                        $exec['taux_engagement'],
                     ]);
                 }
             }
