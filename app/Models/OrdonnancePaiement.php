@@ -405,6 +405,10 @@ class OrdonnancePaiement extends Model
         $this->mode_paiement      = $modePaiement;
         $this->save();
 
+        // ✅ NOUVEAU — repercuter le paiement sur la LigneBudgetaire concernee
+        //    (corrige "Taux exec." toujours a 0% dans BudgetResource/Budget::getTotalPaye())
+        $this->repercuterPaiementSurLigneBudgetaire();
+
         \App\Models\ActivityLog::logAction($this, 'marquer_payee', [
             'ancien_statut'      => $ancienStatut,
             'nouveau_statut'     => 'payee',
@@ -413,6 +417,42 @@ class OrdonnancePaiement extends Model
             'montant'            => $this->montant_net ?? $this->montant_brut,
             'type'               => $this->type_ordonnance,
         ]);
+    }
+
+    /**
+     * Met a jour LigneBudgetaire.paye pour la ligne correspondant a
+     * l'engagement de cette OP. Recalcule le cumul REEL depuis toutes
+     * les OP au statut 'payee' de cette nomenclature/budget (source de
+     * verite unique, comme LigneBudgetaire::recalculerDepuisEngagements()
+     * le fait deja pour 'engage') plutot qu'un simple += fragile.
+     */
+    protected function repercuterPaiementSurLigneBudgetaire(): void
+    {
+        if (!$this->relationLoaded('engagement')) {
+            $this->load('engagement');
+        }
+
+        $engagement = $this->engagement;
+        if (!$engagement || !$engagement->budget_id || !$engagement->nomenclature_principale_id) {
+            return;
+        }
+
+        $ligne = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
+            ->where('nomenclature_id', $engagement->nomenclature_principale_id)
+            ->first();
+
+        if (!$ligne) {
+            return;
+        }
+
+        $totalPaye = (float) static::whereHas('engagement', function ($q) use ($engagement) {
+            $q->where('budget_id', $engagement->budget_id)
+                ->where('nomenclature_principale_id', $engagement->nomenclature_principale_id);
+        })
+            ->where('statut', 'payee')
+            ->sum('montant_net');
+
+        $ligne->updateQuietly(['paye' => $totalPaye]);
     }
 
     public function annuler(): void

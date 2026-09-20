@@ -106,28 +106,20 @@
         .col-code {
             text-align: center;
             font-weight: 600;
-            width: 5%;
+            width: 7%;
             font-size: 7pt;
         }
 
         .col-libelle {
             text-align: left;
-            width: 15%;
+            width: 21%;
             font-size: 6.5pt;
-        }
-
-        .col-chapitre,
-        .col-article,
-        .col-paragraphe {
-            text-align: center;
-            width: 4%;
-            font-size: 6pt;
         }
 
         .col-montant {
             text-align: right;
             font-family: 'Courier New', monospace;
-            width: 7%;
+            width: 6.4%;
             font-size: 7pt;
         }
 
@@ -159,6 +151,33 @@
         .taux-mauvais {
             color: #DC3545;
             font-weight: bold;
+        }
+
+        /* ── Regroupement Programme / Sous-Programme ────────── */
+        .row-programme td {
+            background: #1F4E78 !important;
+            color: #FFFFFF;
+            font-weight: bold;
+            font-size: 8pt;
+            padding: 5px 6px;
+            border: 1px solid #163a5c;
+        }
+
+        .row-sous-programme td {
+            background: #D9E2F3 !important;
+            color: #1F4E78;
+            font-weight: bold;
+            font-size: 7.5pt;
+            padding: 4px 6px;
+            border: 1px solid #b9c9e8;
+        }
+
+        .row-sous-total td {
+            background: #F0F2F5 !important;
+            font-weight: bold;
+            font-style: italic;
+            border-top: 1px solid #999;
+            border-bottom: 1px solid #999;
         }
 
         tfoot {
@@ -258,6 +277,84 @@
         </table>
     </div>
 
+    @php
+        // Note : "Payé" = montant net verse au beneficiaire (OP standard).
+        // "Taxes Reversees" = montant des retenues (TVA, IR, TSR...) reversees
+        // separement au Tresor via l'OPT liee. Engage (brut) = Paye + Taxes
+        // Reversees, une fois le circuit solde.
+
+        // ── Calcul par ligne + regroupement Programme > Sous-Programme ──
+        $lignesEnrichies = $lignes->map(function ($ligne) {
+            $budgetInitial = $ligne->budget_initial ?? 0;
+            $virementsEntrants = $ligne->virements_entrants ?? 0;
+            $virementsSortants = $ligne->virements_sortants ?? 0;
+            $budgetRectifie = $ligne->budget_rectifie ?? ($budgetInitial + $virementsEntrants - $virementsSortants);
+
+            $engage = \App\Models\Engagement::where('budget_id', $ligne->budget_id)
+                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
+                ->sum('montant_engage') ?? 0;
+
+            $ordonne = \App\Models\Engagement::where('budget_id', $ligne->budget_id)
+                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
+                ->whereHas('ordonnancesPaiement')
+                ->sum('montant_engage') ?? 0;
+
+            $paye = \App\Models\OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
+                    $q->where('budget_id', $ligne->budget_id)
+                      ->where('nomenclature_principale_id', $ligne->nomenclature_id);
+                })
+                ->where('type_ordonnance', 'standard')
+                ->where('statut', 'payee')
+                ->sum('montant_net') ?? 0;
+
+            $taxesReversees = \App\Models\OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
+                    $q->where('budget_id', $ligne->budget_id)
+                      ->where('nomenclature_principale_id', $ligne->nomenclature_id);
+                })
+                ->where('type_ordonnance', 'impot')
+                ->where('statut', 'payee')
+                ->sum('montant_net') ?? 0;
+
+            $disponibleEng = $budgetRectifie - $engage;
+            $disponibleOrd = $budgetRectifie - $ordonne;
+            $tauxEngagement = $budgetRectifie > 0 ? ($engage / $budgetRectifie) * 100 : 0;
+            $tauxExecution = $budgetRectifie > 0 ? (($paye + $taxesReversees) / $budgetRectifie) * 100 : 0;
+
+            $classification = $ligne->getClassificationStrategique();
+
+            return (object) [
+                'ligne' => $ligne,
+                'budget_initial' => $budgetInitial,
+                'virements_entrants' => $virementsEntrants,
+                'virements_sortants' => $virementsSortants,
+                'budget_rectifie' => $budgetRectifie,
+                'engage' => $engage,
+                'ordonne' => $ordonne,
+                'paye' => $paye,
+                'taxes_reversees' => $taxesReversees,
+                'disponible_eng' => $disponibleEng,
+                'disponible_ord' => $disponibleOrd,
+                'taux_engagement' => $tauxEngagement,
+                'taux_execution' => $tauxExecution,
+                'programme' => $classification['programme'],
+                'sous_programme' => $classification['sous_programme'],
+            ];
+        });
+
+        $groupesProgramme = $lignesEnrichies->groupBy(fn ($l) => $l->programme?->id ?? 'non_affecte');
+
+        $totalInitialGeneral = 0;
+        $totalVirEntrantsGeneral = 0;
+        $totalVirSortantsGeneral = 0;
+        $totalRectifieGeneral = 0;
+        $totalEngageGeneral = 0;
+        $totalOrdonneGeneral = 0;
+        $totalPayeGeneral = 0;
+        $totalTaxesGeneral = 0;
+        $totalDispoEngGeneral = 0;
+        $totalDispoOrdGeneral = 0;
+    @endphp
+
     <!-- Tableau des disponibilités -->
     @if ($lignes->count() > 0)
         <table class="data-table">
@@ -265,9 +362,6 @@
                 <tr>
                     <th class="col-code">Code</th>
                     <th class="col-libelle">Nomenclature</th>
-                    <th class="col-chapitre">Ch.</th>
-                    <th class="col-article">Art.</th>
-                    <th class="col-paragraphe">§</th>
                     <th class="col-montant">Budget<br>Initial</th>
                     <th class="col-montant">Vir.<br>Entrants</th>
                     <th class="col-montant">Vir.<br>Sortants</th>
@@ -275,6 +369,7 @@
                     <th class="col-montant">Engagé</th>
                     <th class="col-montant">Ordonné</th>
                     <th class="col-montant">Payé</th>
+                    <th class="col-montant">Taxes<br>Reversées</th>
                     <th class="col-montant">Dispo.<br>Eng.</th>
                     <th class="col-montant">Dispo.<br>Ord.</th>
                     <th class="col-taux">Tx<br>Eng.</th>
@@ -282,118 +377,126 @@
                 </tr>
             </thead>
             <tbody>
-                @php
-                    $totalInitial = 0;
-                    $totalVirementsEntrants = 0;
-                    $totalVirementsSortants = 0;
-                    $totalRectifie = 0;
-                    $totalEngage = 0;
-                    $totalOrdonne = 0;
-                    $totalPaye = 0;
-                    $totalDisponibleEng = 0;
-                    $totalDisponibleOrd = 0;
-                @endphp
-
-                @foreach ($lignes->sortBy(fn($l) => $l->nomenclature?->code ?? 'ZZZ') as $ligne)
+                @foreach ($groupesProgramme as $programmeId => $lignesDuProgramme)
                     @php
-                        $budgetInitial = $ligne->budget_initial ?? 0;
-                        $virementsEntrants = $ligne->virements_entrants ?? 0;
-                        $virementsSortants = $ligne->virements_sortants ?? 0;
-                        $budgetRectifie =
-                            $ligne->budget_rectifie ?? $budgetInitial + $virementsEntrants - $virementsSortants;
-
-                        // ✅ RECALCULER les totaux directement depuis la base
-                        $engage =
-                            \App\Models\Engagement::where('budget_id', $ligne->budget_id)
-                                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
-                                ->sum('montant_engage') ?? 0;
-
-                        // Ordonnancé = engagements qui ont au moins une ordonnance
-                        $ordonne =
-                            \App\Models\Engagement::where('budget_id', $ligne->budget_id)
-                                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
-                                ->whereHas('ordonnancesPaiement')
-                                ->sum('montant_engage') ?? 0;
-
-                        // Payé = somme des ordonnances payées
-                        $paye =
-                            \App\Models\OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
-                                $q->where('budget_id', $ligne->budget_id)->where(
-                                    'nomenclature_principale_id',
-                                    $ligne->nomenclature_id,
-                                );
-                            })
-                                ->where('statut', 'paye')
-                                ->sum('montant_brut') ?? 0;
-
-                        $disponibleEng = $budgetRectifie - $engage;
-                        $disponibleOrd = $budgetRectifie - $ordonne;
-
-                        $tauxEngagement = $budgetRectifie > 0 ? ($engage / $budgetRectifie) * 100 : 0;
-                        $tauxExecution = $budgetRectifie > 0 ? ($paye / $budgetRectifie) * 100 : 0;
-
-                        $totalInitial += $budgetInitial;
-                        $totalVirementsEntrants += $virementsEntrants;
-                        $totalVirementsSortants += $virementsSortants;
-                        $totalRectifie += $budgetRectifie;
-                        $totalEngage += $engage;
-                        $totalOrdonne += $ordonne;
-                        $totalPaye += $paye;
-                        $totalDisponibleEng += $disponibleEng;
-                        $totalDisponibleOrd += $disponibleOrd;
+                        $programmeLabel = $programmeId === 'non_affecte'
+                            ? 'NON AFFECTÉ À UN PROGRAMME'
+                            : ($lignesDuProgramme->first()->programme->code . ' — ' . $lignesDuProgramme->first()->programme->libelle);
                     @endphp
 
-                    <tr>
-                        <td class="col-code">{{ $ligne->nomenclature?->code ?? '-' }}</td>
-                        <td class="col-libelle">{{ $ligne->nomenclature?->libelle ?? '' }}</td>
-                        <td class="col-chapitre">{{ $ligne->nomenclature?->chapitre ?? '' }}</td>
-                        <td class="col-article">{{ $ligne->nomenclature?->article ?? '' }}</td>
-                        <td class="col-paragraphe">{{ $ligne->nomenclature?->paragraphe ?? '' }}</td>
-                        <td class="col-montant">{{ number_format($budgetInitial, 0, ',', ' ') }}</td>
-                        <td class="col-montant">{{ number_format($virementsEntrants, 0, ',', ' ') }}</td>
-                        <td class="col-montant">{{ number_format($virementsSortants, 0, ',', ' ') }}</td>
-                        <td class="col-montant">{{ number_format($budgetRectifie, 0, ',', ' ') }}</td>
-                        <td class="col-montant">{{ number_format($engage, 0, ',', ' ') }}</td>
-                        <td class="col-montant">{{ number_format($ordonne, 0, ',', ' ') }}</td>
-                        <td class="col-montant">{{ number_format($paye, 0, ',', ' ') }}</td>
-                        <td class="col-montant {{ $disponibleEng < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                            {{ number_format($disponibleEng, 0, ',', ' ') }}
-                        </td>
-                        <td class="col-montant {{ $disponibleOrd < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                            {{ number_format($disponibleOrd, 0, ',', ' ') }}
-                        </td>
-                        <td
-                            class="col-taux {{ $tauxEngagement >= 90 ? 'taux-mauvais' : ($tauxEngagement >= 70 ? 'taux-moyen' : 'taux-bon') }}">
-                            {{ number_format($tauxEngagement, 1) }}%
-                        </td>
-                        <td
-                            class="col-taux {{ $tauxExecution >= 90 ? 'taux-mauvais' : ($tauxExecution >= 70 ? 'taux-moyen' : 'taux-bon') }}">
-                            {{ number_format($tauxExecution, 1) }}%
-                        </td>
+                    <tr class="row-programme">
+                        <td colspan="14">📁 PROGRAMME : {{ $programmeLabel }}</td>
                     </tr>
+
+                    @php
+                        $sousGroupes = $lignesDuProgramme->groupBy(fn ($l) => $l->sous_programme?->id ?? 'sans_sous_programme');
+                    @endphp
+
+                    @foreach ($sousGroupes as $sousProgrammeId => $lignesDuSousGroupe)
+                        @if ($sousProgrammeId !== 'sans_sous_programme')
+                            <tr class="row-sous-programme">
+                                <td colspan="14">&nbsp;&nbsp;↳ Sous-programme (gestion interne) : {{ $lignesDuSousGroupe->first()->sous_programme->code }} — {{ $lignesDuSousGroupe->first()->sous_programme->libelle }}</td>
+                            </tr>
+                        @endif
+
+                        @php
+                            $sTotalInitial = 0; $sTotalVirEnt = 0; $sTotalVirSort = 0; $sTotalRectifie = 0;
+                            $sTotalEngage = 0; $sTotalOrdonne = 0; $sTotalPaye = 0; $sTotalTaxes = 0;
+                            $sTotalDispoEng = 0; $sTotalDispoOrd = 0;
+                        @endphp
+
+                        @foreach ($lignesDuSousGroupe->sortBy(fn($l) => $l->ligne->nomenclature?->code ?? 'ZZZ') as $l)
+                            @php
+                                $sTotalInitial += $l->budget_initial;
+                                $sTotalVirEnt += $l->virements_entrants;
+                                $sTotalVirSort += $l->virements_sortants;
+                                $sTotalRectifie += $l->budget_rectifie;
+                                $sTotalEngage += $l->engage;
+                                $sTotalOrdonne += $l->ordonne;
+                                $sTotalPaye += $l->paye;
+                                $sTotalTaxes += $l->taxes_reversees;
+                                $sTotalDispoEng += $l->disponible_eng;
+                                $sTotalDispoOrd += $l->disponible_ord;
+
+                                $totalInitialGeneral += $l->budget_initial;
+                                $totalVirEntrantsGeneral += $l->virements_entrants;
+                                $totalVirSortantsGeneral += $l->virements_sortants;
+                                $totalRectifieGeneral += $l->budget_rectifie;
+                                $totalEngageGeneral += $l->engage;
+                                $totalOrdonneGeneral += $l->ordonne;
+                                $totalPayeGeneral += $l->paye;
+                                $totalTaxesGeneral += $l->taxes_reversees;
+                                $totalDispoEngGeneral += $l->disponible_eng;
+                                $totalDispoOrdGeneral += $l->disponible_ord;
+                            @endphp
+                            <tr>
+                                <td class="col-code">{{ $l->ligne->nomenclature?->code ?? '-' }}</td>
+                                <td class="col-libelle">{{ $l->ligne->nomenclature?->libelle ?? '' }}</td>
+                                <td class="col-montant">{{ number_format($l->budget_initial, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->virements_entrants, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->virements_sortants, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->budget_rectifie, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->engage, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->ordonne, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->paye, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($l->taxes_reversees, 0, ',', ' ') }}</td>
+                                <td class="col-montant {{ $l->disponible_eng < 0 ? 'montant-negatif' : 'montant-positif' }}">
+                                    {{ number_format($l->disponible_eng, 0, ',', ' ') }}
+                                </td>
+                                <td class="col-montant {{ $l->disponible_ord < 0 ? 'montant-negatif' : 'montant-positif' }}">
+                                    {{ number_format($l->disponible_ord, 0, ',', ' ') }}
+                                </td>
+                                <td class="col-taux {{ $l->taux_engagement >= 90 ? 'taux-mauvais' : ($l->taux_engagement >= 70 ? 'taux-moyen' : 'taux-bon') }}">
+                                    {{ number_format($l->taux_engagement, 1) }}%
+                                </td>
+                                <td class="col-taux {{ $l->taux_execution >= 90 ? 'taux-mauvais' : ($l->taux_execution >= 70 ? 'taux-moyen' : 'taux-bon') }}">
+                                    {{ number_format($l->taux_execution, 1) }}%
+                                </td>
+                            </tr>
+                        @endforeach
+
+                        @if ($sousProgrammeId !== 'sans_sous_programme')
+                            <tr class="row-sous-total">
+                                <td colspan="2" style="text-align:right;">Sous-total sous-programme :</td>
+                                <td class="col-montant">{{ number_format($sTotalInitial, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalVirEnt, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalVirSort, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalRectifie, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalEngage, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalOrdonne, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalPaye, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalTaxes, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalDispoEng, 0, ',', ' ') }}</td>
+                                <td class="col-montant">{{ number_format($sTotalDispoOrd, 0, ',', ' ') }}</td>
+                                <td class="col-taux">{{ $sTotalRectifie > 0 ? number_format(($sTotalEngage / $sTotalRectifie) * 100, 1) : 0 }}%</td>
+                                <td class="col-taux">{{ $sTotalRectifie > 0 ? number_format((($sTotalPaye + $sTotalTaxes) / $sTotalRectifie) * 100, 1) : 0 }}%</td>
+                            </tr>
+                        @endif
+                    @endforeach
                 @endforeach
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="5" style="text-align: right; font-weight: bold;">TOTAL GÉNÉRAL</td>
-                    <td class="col-montant">{{ number_format($totalInitial, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalVirementsEntrants, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalVirementsSortants, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalRectifie, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalEngage, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalOrdonne, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalPaye, 0, ',', ' ') }}</td>
-                    <td class="col-montant {{ $totalDisponibleEng < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                        {{ number_format($totalDisponibleEng, 0, ',', ' ') }}
+                    <td colspan="2" style="text-align: right; font-weight: bold;">TOTAL GÉNÉRAL</td>
+                    <td class="col-montant">{{ number_format($totalInitialGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalVirEntrantsGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalVirSortantsGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalRectifieGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalEngageGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalOrdonneGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalPayeGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant">{{ number_format($totalTaxesGeneral, 0, ',', ' ') }}</td>
+                    <td class="col-montant {{ $totalDispoEngGeneral < 0 ? 'montant-negatif' : 'montant-positif' }}">
+                        {{ number_format($totalDispoEngGeneral, 0, ',', ' ') }}
                     </td>
-                    <td class="col-montant {{ $totalDisponibleOrd < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                        {{ number_format($totalDisponibleOrd, 0, ',', ' ') }}
-                    </td>
-                    <td class="col-taux">
-                        {{ $totalRectifie > 0 ? number_format(($totalEngage / $totalRectifie) * 100, 1) : 0 }}%
+                    <td class="col-montant {{ $totalDispoOrdGeneral < 0 ? 'montant-negatif' : 'montant-positif' }}">
+                        {{ number_format($totalDispoOrdGeneral, 0, ',', ' ') }}
                     </td>
                     <td class="col-taux">
-                        {{ $totalRectifie > 0 ? number_format(($totalPaye / $totalRectifie) * 100, 1) : 0 }}%
+                        {{ $totalRectifieGeneral > 0 ? number_format(($totalEngageGeneral / $totalRectifieGeneral) * 100, 1) : 0 }}%
+                    </td>
+                    <td class="col-taux">
+                        {{ $totalRectifieGeneral > 0 ? number_format((($totalPayeGeneral + $totalTaxesGeneral) / $totalRectifieGeneral) * 100, 1) : 0 }}%
                     </td>
                 </tr>
             </tfoot>
@@ -405,7 +508,10 @@
             <span style="color: #28A745;">■</span> Disponible positif &nbsp;&nbsp;
             <span style="color: #DC3545;">■</span> Disponible négatif (dépassement) &nbsp;&nbsp;
             Dispo. Eng. = Disponible à l'engagement &nbsp;&nbsp;
-            Dispo. Ord. = Disponible à l'ordonnancement
+            Dispo. Ord. = Disponible à l'ordonnancement &nbsp;&nbsp;
+            Taxes Reversées = retenues (TVA, IR, TSR...) reversées au Trésor via l'OPT liée &nbsp;&nbsp;
+            📁 = Programme (rattachement tutelle) &nbsp;&nbsp;
+            ↳ = Sous-programme (subdivision de gestion interne, le cas échéant)
         </div>
     @else
         <div class="no-data">

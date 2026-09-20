@@ -132,6 +132,46 @@ class LigneBudgetaire extends Model
         return $this->belongsTo(NomenclatureBudgetaire::class);
     }
 
+    /**
+     * Resout le Programme (et Sous-Programme de gestion interne, si applicable)
+     * de rattachement de cette ligne, en remontant la chaine :
+     * Nomenclature -> Tache (sous_tache) -> Activite -> Action -> Programme.
+     *
+     * 'programme' = niveau national (codes 412/413/414...)
+     * 'sous_programme' = subdivision de gestion interne (niveau='sous_programme'),
+     *                     null si le Programme rattache est deja de niveau 'programme'.
+     */
+    public function getClassificationStrategique(): array
+    {
+        if (!$this->nomenclature_id) {
+            return ['programme' => null, 'sous_programme' => null];
+        }
+
+        $tache = \App\Models\Tache::where('nomenclature_id', $this->nomenclature_id)
+            ->where('niveau', 'sous_tache')
+            ->where('exercice_id', $this->budget->exercice_id)
+            ->with('activite.action.programme.parent')
+            ->first();
+
+        $programmeRattache = $tache?->activite?->action?->programme;
+
+        if (!$programmeRattache) {
+            return ['programme' => null, 'sous_programme' => null];
+        }
+
+        if ($programmeRattache->niveau === 'sous_programme') {
+            return [
+                'programme' => $programmeRattache->parent,
+                'sous_programme' => $programmeRattache,
+            ];
+        }
+
+        return [
+            'programme' => $programmeRattache,
+            'sous_programme' => null,
+        ];
+    }
+
     public function virementsSource(): HasMany
     {
         return $this->hasMany(VirementBudgetaire::class, 'ligne_source_id');

@@ -128,7 +128,9 @@ class Budget extends Model
     }
 
     /**
-     * Taux d'exécution (liquidé / budget rectifié)
+     * Taux d'exécution (payé / budget rectifié)
+     * NOTE : la liquidation n'etant pas utilisee comme etape distincte
+     * dans ce circuit de depense, "executer" = "payer".
      */
     public function getTauxExecution(): float
     {
@@ -136,7 +138,7 @@ class Budget extends Model
         if ($budgetRectifie == 0) {
             return 0;
         }
-        return ($this->getTotalLiquide() / $budgetRectifie) * 100;
+        return ($this->getTotalPaye() / $budgetRectifie) * 100;
     }
 
     /**
