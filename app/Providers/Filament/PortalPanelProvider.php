@@ -16,6 +16,7 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\ModulePortal;
+use Filament\Support\Enums\MaxWidth;
 use Filament\Http\Responses\Auth\Contracts\LoginResponse as LoginResponseContract;
 
 class PortalPanelProvider extends PanelProvider
@@ -54,6 +55,7 @@ class PortalPanelProvider extends PanelProvider
             ->brandName('SIGB')
             ->favicon(asset('images/favicon.png'))
             ->colors(['primary' => \Filament\Support\Colors\Color::hex('#0ea5e9')])
+            ->maxContentWidth(MaxWidth::Full)
 
             // Page unique — le portail de sélection des modules
             ->pages([ModulePortal::class])

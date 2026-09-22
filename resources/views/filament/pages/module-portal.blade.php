@@ -9,6 +9,13 @@
             box-sizing: border-box;
         }
 
+        /* Neutralise le max-width impose par le conteneur de page Filament
+        (fi-page), qui empechait la grille de s'etendre sur toute la largeur */
+        .fi-main {
+            padding-left: .75rem !important;
+            padding-right: .75rem !important;
+        }
+
         .portal-wrap {
             font-family: 'Sora', sans-serif;
             min-height: calc(100vh - 130px);
@@ -17,7 +24,8 @@
             align-items: center;
             justify-content: center;
             gap: .75rem;
-            padding: 1rem 1.5rem;
+            padding: 1rem .5rem;
+            width: 100%;
         }
 
         /* ── En-tête ───────────────────────────────────────────────── */
@@ -52,6 +60,8 @@
             letter-spacing: -.02em;
             color: #0f172a;
             margin: 0;
+            text-align: center;
+            width: 100%;
         }
 
         .dark .portal-title {
@@ -69,10 +79,10 @@
             font-size: .85rem;
             color: #64748b;
             max-width: 440px;
-            margin: 0;
+            margin: 0 auto;
             line-height: 1.5;
+            text-align: center;
         }
-
         .dark .portal-sub {
             color: #94a3b8;
         }
@@ -83,17 +93,12 @@
            automatiquement si un futur module est ajoute. */
         .modules-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: .875rem;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 260px));
+            justify-content: center;
+            gap: 1rem;
             width: 100%;
-            max-width: 1100px;
+            max-width: 1650px;
             margin: 0 auto;
-        }
-
-        @media (max-width: 900px) {
-            .modules-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
         }
 
         @media (max-width: 560px) {
@@ -101,7 +106,6 @@
                 grid-template-columns: 1fr;
             }
         }
-
         /* ── Carte active ──────────────────────────────────────────── */
         .mod-card {
             display: flex;
@@ -499,10 +503,8 @@
                     style="--c:linear-gradient(90deg,#0ea5e9,#38bdf8);--cc:#0ea5e9;--s:rgba(14,165,233,.22);--ib:rgba(14,165,233,.1);--is:rgba(14,165,233,.2);--tb:rgba(14,165,233,.08);--tc:#0369a1;--tbo:rgba(14,165,233,.2)">
                     <div class="mod-header">
                         <div class="mod-icon">💰</div>
-                        <div>
-                            <div class="mod-num">Module 02</div>
-                            <div class="mod-title">Gestion Budgétaire</div>
-                        </div>
+                        <div class="mod-num">Module 03</div>
+                        <div class="mod-title">Gestion Budgétaire</div>
                     </div>
                     <div class="mod-desc">Bons de commande, engagements, mémoires de dépenses, lignes budgétaires et
                         tableaux de bord.</div>
@@ -526,7 +528,7 @@
                     <div class="mod-header">
                         <div class="mod-icon" style="opacity:.4;">💰</div>
                         <div>
-                            <div class="mod-num" style="color:#94a3b8;">Module 02</div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 03</div>
                             <div class="mod-title mod-title-locked">Gestion Budgétaire</div>
                         </div>
                     </div>
@@ -546,14 +548,14 @@
                 </div>
             @endif
 
-            {{-- MODULE 03 : Comptabilité Matières --}}
+            {{-- MODULE 04 : Comptabilité Matières --}}
             @if($canComptable)
                 <a href="/comptable" class="mod-card"
                     style="--c:linear-gradient(90deg,#059669,#34d399);--cc:#059669;--s:rgba(5,150,105,.22);--ib:rgba(5,150,105,.1);--is:rgba(5,150,105,.2);--tb:rgba(5,150,105,.08);--tc:#065f46;--tbo:rgba(5,150,105,.2)">
                     <div class="mod-header">
                         <div class="mod-icon">📦</div>
                         <div>
-                            <div class="mod-num">Module 03</div>
+                            <div class="mod-num">Module 04</div>
                             <div class="mod-title">Comptabilité Matières</div>
                         </div>
                     </div>
@@ -579,7 +581,7 @@
                     <div class="mod-header">
                         <div class="mod-icon" style="opacity:.4;">📦</div>
                         <div>
-                            <div class="mod-num" style="color:#94a3b8;">Module 03</div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 04</div>
                             <div class="mod-title mod-title-locked">Comptabilité Matières</div>
                         </div>
                     </div>
@@ -599,14 +601,14 @@
                 </div>
             @endif
 
-            {{-- MODULE 04 : Marchés Publics --}}
+            {{-- MODULE 05 : Marchés Publics --}}
             @if($canMarches)
                 <a href="/marches" class="mod-card"
                     style="--c:linear-gradient(90deg,#7c3aed,#a78bfa);--cc:#7c3aed;--s:rgba(124,58,237,.22);--ib:rgba(124,58,237,.1);--is:rgba(124,58,237,.2);--tb:rgba(124,58,237,.08);--tc:#4c1d95;--tbo:rgba(124,58,237,.2)">
                     <div class="mod-header">
                         <div class="mod-icon">📋</div>
                         <div>
-                            <div class="mod-num">Module 04</div>
+                            <div class="mod-num">Module 05</div>
                             <div class="mod-title">Marchés Publics</div>
                         </div>
                     </div>
@@ -632,7 +634,7 @@
                     <div class="mod-header">
                         <div class="mod-icon" style="opacity:.4;">📋</div>
                         <div>
-                            <div class="mod-num" style="color:#94a3b8;">Module 04</div>
+                            <div class="mod-num" style="color:#94a3b8;">5</div>
                             <div class="mod-title mod-title-locked">Marchés Publics</div>
                         </div>
                     </div>
