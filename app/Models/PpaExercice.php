@@ -23,6 +23,7 @@ class PpaExercice extends Model
         'performances_anterieures',
         'bilan_technique',
         'bilan_financier',
+        'cdmt_exercice_id',
         'statut',
         'created_by',
     ];
@@ -53,6 +54,11 @@ class PpaExercice extends Model
     public function exercice(): BelongsTo
     {
         return $this->belongsTo(Exercice::class, 'exercice_id');
+    }
+
+    public function cdmtExercice(): BelongsTo
+    {
+        return $this->belongsTo(CdmtExercice::class);
     }
 
     public function getSousProgrammesAvecActivites(): Collection

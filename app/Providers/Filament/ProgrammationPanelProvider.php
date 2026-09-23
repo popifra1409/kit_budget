@@ -35,7 +35,7 @@ class ProgrammationPanelProvider extends PanelProvider
             ->login(Login::class)
             ->profile()
             ->colors([
-                'primary' => Color::hex('#7c3aed'), // violet — distinct de Planification (teal)
+                'primary' => Color::hex('#7c3aed'),
                 'success' => Color::hex('#059669'),
                 'danger'  => Color::hex('#dc2626'),
                 'warning' => Color::hex('#f59e0b'),
@@ -47,6 +47,7 @@ class ProgrammationPanelProvider extends PanelProvider
 
             ->navigationGroups([
                 'Programme de Performance Annuel',
+                'Cadrage Pluriannuel (CBMT/CDMT)',
                 'Rapports',
                 'Paramétrage',
             ])
