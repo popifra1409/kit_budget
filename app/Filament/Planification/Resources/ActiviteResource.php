@@ -244,6 +244,7 @@ class ActiviteResource extends Resource
     public static function getRelations(): array
     {
         return [
+            \App\Filament\Planification\Resources\ActiviteResource\RelationManagers\ExtrantsRelationManager::class,
             \App\Filament\Planification\Resources\ActiviteResource\RelationManagers\TachesRelationManager::class,
             \App\Filament\Planification\Resources\Concerns\IndicateursRelationManager::class,
         ];

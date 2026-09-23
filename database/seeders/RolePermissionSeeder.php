@@ -100,6 +100,7 @@ class RolePermissionSeeder extends Seeder
             'plan_strategique_ep',
             'sous_programme_ep',
             'indicateur',
+            'extrant',
         ];
 
         // ====================================================
@@ -1047,6 +1048,13 @@ class RolePermissionSeeder extends Seeder
                 // Transmission generique
                 'transmettre_document',
                 'view_my_transmissions',
+
+                'view_any_extrant',
+                'view_extrant',
+                'create_extrant',
+                'update_extrant',
+
+
             ],
             'responsable_planification'
         );

@@ -77,6 +77,11 @@ class Activite extends Model
         return $this->morphMany(\App\Models\Indicateur::class, 'indicateurable');
     }
 
+    public function extrants(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Extrant::class);
+    }
+
     /**
      * Obtenir le budget total (AE) de l'activité
      * = Somme des AE de toutes les tâches (qui incluent leurs sous-tâches)

@@ -17,6 +17,7 @@ use App\Http\Controllers\FicheControleEngagementsController;
 use App\Http\Controllers\Planification\RapportController;
 use App\Http\Controllers\Programmation\RapportPpaController;
 use \App\Http\Controllers\Programmation\TableauBordPspController;
+use \App\Http\Controllers\Programmation\RapportCbmtCdmtController;
 
 Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
@@ -220,6 +221,10 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('tableau-bord-psp.pdf');
             Route::get('/tableau-bord-psp/{psp}/excel', [TableauBordPspController::class, 'excel'])
                 ->name('tableau-bord-psp.excel');
+            Route::get('/cbmt-cdmt/{cdmt}/pdf', [RapportCbmtCdmtController::class, 'pdf'])
+                ->name('cbmt-cdmt.pdf');
+            Route::get('/cbmt-cdmt/{cdmt}/excel', [RapportCbmtCdmtController::class, 'excel'])
+                ->name('cbmt-cdmt.excel');
         });
 });
 

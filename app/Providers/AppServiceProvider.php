@@ -107,6 +107,7 @@ class AppServiceProvider extends ServiceProvider
             'ppa_exercice' => \App\Models\PpaExercice::class,
             'cbmt_exercice' => \App\Models\CbmtExercice::class,
             'cdmt_exercice' => \App\Models\CdmtExercice::class,
+            'extrant' => \App\Models\Extrant::class,
 
         ]);
 
