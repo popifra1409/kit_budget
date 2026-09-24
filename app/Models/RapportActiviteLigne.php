@@ -12,17 +12,28 @@ class RapportActiviteLigne extends Model
     protected $fillable = [
         'rapport_activite_periodique_id',
         'tache_id',
+        'ligne_budgetaire_id',
         'nature',
         'libelle',
         'unite',
         'prevision',
         'realisation',
+        'source_realisation',
+        'quote_part',
+        'realisation_actualisee_le',
     ];
 
     protected $casts = [
         'prevision' => 'decimal:2',
         'realisation' => 'decimal:2',
+        'quote_part' => 'decimal:4',
+        'realisation_actualisee_le' => 'datetime',
     ];
+
+    public function ligneBudgetaire(): BelongsTo
+    {
+        return $this->belongsTo(LigneBudgetaire::class);
+    }
 
     public function rapportActivitePeriodique(): BelongsTo
     {

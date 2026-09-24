@@ -92,4 +92,59 @@ class RapportActivitePeriodique extends Model
             'taux'        => $prev > 0 ? round(($real / $prev) * 100, 1) : null,
         ];
     }
+
+    /**
+     * Remplit la colonne Realisation des lignes "tache" a partir de l'engage
+     * reel du module Budget.
+     *
+     * @param string $mode 'cumul' (1er janvier -> fin de periode) ou 'periode' (periode seule)
+     * @param bool $ecraserManuelles remplacer aussi les realisations saisies a la main
+     */
+    public function actualiserRealisationsDepuisBudget(string $mode = 'cumul', bool $ecraserManuelles = false): array
+    {
+        if (!$this->estModifiable()) {
+            throw new \DomainException('Ce rapport est transmis ou validé : ses réalisations sont figées.');
+        }
+
+        $service = app(\App\Services\SuiviEvaluation\ExecutionBudgetaireService::class);
+        [$debut, $fin] = $service->bornesPeriode($this->periode, $this->type_periode);
+
+        if ($mode === 'cumul') {
+            $debut = $debut->copy()->startOfYear();
+        }
+
+        $exerciceId = $this->activite->exercice_id;
+        $stats = ['mises_a_jour' => 0, 'manuelles_conservees' => 0, 'sans_ligne_budgetaire' => 0, 'source' => null];
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($service, $debut, $fin, $exerciceId, $ecraserManuelles, &$stats) {
+            foreach ($this->lignesTaches()->with('tache')->get() as $ligne) {
+                if ($ligne->source_realisation === 'manuelle' && !$ecraserManuelles) {
+                    $stats['manuelles_conservees']++;
+                    continue;
+                }
+
+                $ligneBudgetaire = $ligne->tache?->ligneBudgetaire();
+                if (!$ligneBudgetaire) {
+                    $stats['sans_ligne_budgetaire']++;
+                    continue;
+                }
+
+                $engage = $service->montantEngage($ligneBudgetaire, $debut, $fin);
+                $part   = $service->quotePart($ligne->tache, $exerciceId);
+
+                $ligne->update([
+                    'realisation'               => round($engage['montant'] * $part, 2),
+                    'source_realisation'        => 'budget',
+                    'ligne_budgetaire_id'       => $ligneBudgetaire->id,
+                    'quote_part'                => $part,
+                    'realisation_actualisee_le' => now(),
+                ]);
+
+                $stats['source'] = $engage['source'];
+                $stats['mises_a_jour']++;
+            }
+        });
+
+        return $stats + ['debut' => $debut->format('d/m/Y'), 'fin' => $fin->format('d/m/Y')];
+    }
 }

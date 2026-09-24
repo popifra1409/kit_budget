@@ -30,13 +30,27 @@ class RapportActivitePeriodiqueResource extends Resource
                 ->options(Activite::pluck('libelle', 'id'))
                 ->searchable()->required(),
 
-            Forms\Components\TextInput::make('periode')
-                ->helperText("Ex: 2026-01 (mensuel) ou 2026-T1 (trimestriel)")
-                ->required(),
-
             Forms\Components\Select::make('type_periode')
                 ->options(['mensuel' => 'Mensuel', 'trimestriel' => 'Trimestriel'])
-                ->default('mensuel')->required(),
+                ->default('mensuel')
+                ->live()
+                ->required(),
+
+            Forms\Components\TextInput::make('periode')
+                ->helperText(fn(Forms\Get $get) => $get('type_periode') === 'trimestriel'
+                    ? 'Format : 2026-T1 à 2026-T4'
+                    : 'Format : 2026-01 à 2026-12')
+                ->rules([
+                    fn(Forms\Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
+                        try {
+                            app(\App\Services\SuiviEvaluation\ExecutionBudgetaireService::class)
+                                ->bornesPeriode((string) $value, (string) $get('type_periode'));
+                        } catch (\InvalidArgumentException $e) {
+                            $fail($e->getMessage());
+                        }
+                    },
+                ])
+                ->required(),
 
             Forms\Components\TextInput::make('poids_activite')
                 ->label("Poids de l'activité par rapport aux objectifs de l'action (%)")
@@ -80,6 +94,59 @@ class RapportActivitePeriodiqueResource extends Resource
                         ->visible(fn(RapportActivitePeriodique $record) => $record->lignesTaches()->count() === 0)
                         ->requiresConfirmation()
                         ->action(fn(RapportActivitePeriodique $record) => $record->genererLignesDepuisTaches()),
+
+                    Tables\Actions\Action::make('actualiserRealisations')
+                        ->label('Actualiser les réalisations (budget)')
+                        ->icon('heroicon-o-banknotes')
+                        ->color('info')
+                        ->visible(fn(RapportActivitePeriodique $record) =>
+                        $record->estModifiable()
+                            && auth()->user()->can('update_rapport_activite_periodique')
+                            && $record->lignesTaches()->exists())
+                        ->modalDescription("Les réalisations des tâches seront calculées à partir de l'engagé réel du module Budget.")
+                        ->form([
+                            Forms\Components\Radio::make('mode')
+                                ->label('Mode de calcul')
+                                ->options([
+                                    'cumul'   => 'Cumul depuis le 1er janvier jusqu\'à la fin de la période (recommandé)',
+                                    'periode' => 'Engagements de la période seule',
+                                ])
+                                ->default('cumul')
+                                ->required(),
+                            Forms\Components\Toggle::make('ecraser')
+                                ->label('Écraser aussi les réalisations saisies manuellement')
+                                ->default(false),
+                        ])
+                        ->action(function (RapportActivitePeriodique $record, array $data) {
+                            try {
+                                $s = $record->actualiserRealisationsDepuisBudget($data['mode'], (bool) $data['ecraser']);
+                            } catch (\InvalidArgumentException | \DomainException $e) {
+                                \Filament\Notifications\Notification::make()
+                                    ->danger()->title('Actualisation impossible')->body($e->getMessage())->send();
+                                return;
+                            }
+
+                            $corps = "{$s['mises_a_jour']} ligne(s) actualisée(s) sur la période du {$s['debut']} au {$s['fin']}.";
+                            if ($s['manuelles_conservees']) {
+                                $corps .= " {$s['manuelles_conservees']} saisie(s) manuelle(s) conservée(s).";
+                            }
+                            if ($s['sans_ligne_budgetaire']) {
+                                $corps .= " {$s['sans_ligne_budgetaire']} tâche(s) sans ligne budgétaire.";
+                            }
+
+                            $notif = \Filament\Notifications\Notification::make()
+                                ->title('Réalisations actualisées')->body($corps);
+
+                            // Mode repli : on previent que les bornes de periode n'ont pas pu etre appliquees
+                            if ($s['source'] === 'cumul_annuel') {
+                                $notif->warning()->body($corps . ' Attention : engagements datés non configurés, '
+                                    . "c'est le cumul annuel à ce jour qui a été utilisé, sans tenir compte de la période.");
+                            } else {
+                                $notif->success();
+                            }
+
+                            $notif->send();
+                        }),
 
                     Tables\Actions\Action::make('transmettre')
                         ->label('Transmettre')
