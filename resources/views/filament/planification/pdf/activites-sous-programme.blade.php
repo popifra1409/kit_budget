@@ -13,10 +13,10 @@
     <p><strong>Sous-programme :</strong> {{ $sousProgramme->libelle }}</p>
     <p><strong>Objectif :</strong> {{ $sousProgramme->objectif ?? '—' }}</p>
 
-    <table>
+        <table>
         <thead>
             <tr>
-                <th>Désignation</th><th>Objectif</th><th>Indicateurs</th>
+                <th>Désignation</th><th>Objectif</th><th>Extrant(s)</th><th>Indicateurs</th>
                 <th>Baseline</th><th>Cible</th><th>Zone</th><th>Responsable</th>
             </tr>
         </thead>
@@ -25,6 +25,7 @@
                 <tr>
                     <td>{{ $act->libelle }}</td>
                     <td>{{ $act->objectif ?? '—' }}</td>
+                    <td>{{ $act->extrants->pluck('libelle')->implode(' | ') ?: '—' }}</td>
                     <td>{{ $act->indicateurs->pluck('libelle')->implode(', ') ?: '—' }}</td>
                     <td>{{ $act->indicateurs->pluck('valeur_reference')->filter()->implode(', ') ?: '—' }}</td>
                     <td>{{ $act->indicateurs->pluck('valeur_cible')->filter()->implode(', ') ?: '—' }}</td>

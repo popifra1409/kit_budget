@@ -10,4 +10,5 @@ return [
     App\Providers\Filament\MarchesPanelProvider::class,
     App\Providers\Filament\PlanificationPanelProvider::class,
     App\Providers\Filament\ProgrammationPanelProvider::class,
+    App\Providers\Filament\SuiviEvaluationPanelProvider::class,
 ];

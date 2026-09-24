@@ -21,6 +21,7 @@ class SousProgrammeEp extends Model
         'libelle',
         'description',
         'responsable_id',
+        'type',
         'statut',
         'created_by',
         'objectif',
@@ -29,6 +30,9 @@ class SousProgrammeEp extends Model
         'responsable_id'
     ];
 
+    public const MAX_SOUS_PROGRAMMES = 4;
+    public const MAX_SUPPORT = 1;
+
     protected static function boot(): void
     {
         parent::boot();
@@ -36,6 +40,8 @@ class SousProgrammeEp extends Model
         static::creating(function (self $model) {
             $model->created_by ??= auth()->id();
             $model->numero ??= static::genererNumero();
+
+            static::validerLimiteSousProgrammes($model);
         });
 
         static::saving(function (self $model) {
@@ -48,6 +54,12 @@ class SousProgrammeEp extends Model
                             . "(qui est une subdivision de gestion interne sans rapport avec le plan stratégique)."
                     );
                 }
+            }
+        });
+
+        static::updating(function (self $model) {
+            if ($model->isDirty('type')) {
+                static::validerLimiteSousProgrammes($model);
             }
         });
     }
@@ -88,5 +100,35 @@ class SousProgrammeEp extends Model
     public function programmeBudgetaire(): BelongsTo
     {
         return $this->belongsTo(Programme::class, 'programme_budgetaire_id');
+    }
+
+    /**
+     * Instruction du 22 janvier 2026 : un EP ne peut avoir plus de 4
+     * sous-programmes (3 operationnels + 1 support maximum).
+     */
+    protected static function validerLimiteSousProgrammes(self $model): void
+    {
+        $query = static::where('plan_strategique_ep_id', $model->plan_strategique_ep_id)
+            ->when($model->exists, fn($q) => $q->where('id', '!=', $model->id));
+
+        $totalExistant = $query->count();
+
+        if ($totalExistant >= self::MAX_SOUS_PROGRAMMES) {
+            throw new \Exception(
+                "Ce Plan Stratégique compte déjà " . self::MAX_SOUS_PROGRAMMES
+                    . " sous-programmes. L'Instruction du 22 janvier 2026 limite ce nombre à "
+                    . self::MAX_SOUS_PROGRAMMES . " maximum (3 opérationnels + 1 support)."
+            );
+        }
+
+        if (($model->type ?? 'operationnel') === 'support') {
+            $nbSupport = (clone $query)->where('type', 'support')->count();
+            if ($nbSupport >= self::MAX_SUPPORT) {
+                throw new \Exception(
+                    "Ce Plan Stratégique a déjà un sous-programme de type 'support'. "
+                        . "Un seul sous-programme support est autorisé par établissement."
+                );
+            }
+        }
     }
 }

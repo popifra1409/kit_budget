@@ -222,7 +222,8 @@ class BudgetPanelProvider extends PanelProvider
             'comptable' => ['label' => 'Comptable', 'icon' => '📒', 'url' => '/comptable'],
             'marches' => ['label' => 'Marchés', 'icon' => '📋', 'url' => '/marches'],
             'planification' => ['label' => 'Planification', 'icon' => '🎯', 'url' => '/planification'],
-            'programmation' => ['label' => 'Programmation', 'icon' => '📈',  'url' => '/programmation']
+            'programmation' => ['label' => 'Programmation', 'icon' => '📈',  'url' => '/programmation'],
+            'suivi-evaluation' => ['label' => 'Suivi & Évaluation', 'icon' => '📊', 'url' => '/suivi-evaluation'],
         ];
 
         $html = '<div class="flex items-center gap-1 me-3 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">';

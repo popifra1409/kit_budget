@@ -27,10 +27,18 @@ class SousProgrammesRelationManager extends RelationManager
                 ->required()->maxLength(255),
             Forms\Components\Textarea::make('description')
                 ->columnSpanFull(),
+            Forms\Components\Select::make('type')
+                ->label('Type de sous-programme')
+                ->options([
+                    'operationnel' => 'Opérationnel',
+                    'support' => 'Support',
+                ])
+                ->default('operationnel')
+                ->required()
+                ->helperText('Maximum 4 sous-programmes par EP : 3 opérationnels + 1 support (Instruction du 22 janvier 2026).'),
+
             Forms\Components\Textarea::make('objectif')
-                ->label('Objectif du sous-programme')
-                ->helperText('Maximum 2 objectifs recommandés (guide MINEPAT).')
-                ->columnSpanFull(),
+                ->label('Objectif du sous-programme'),
             Forms\Components\Textarea::make('strategie')
                 ->label('Stratégie du sous-programme')
                 ->columnSpanFull(),
@@ -58,6 +66,8 @@ class SousProgrammesRelationManager extends RelationManager
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('numero')->label('N°')->searchable(),
+                Tables\Columns\BadgeColumn::make('type')
+                    ->colors(['primary' => 'operationnel', 'warning' => 'support']),
                 Tables\Columns\TextColumn::make('code')->searchable(),
                 Tables\Columns\TextColumn::make('libelle')->searchable(),
                 Tables\Columns\TextColumn::make('responsable.name')->label('Responsable'),

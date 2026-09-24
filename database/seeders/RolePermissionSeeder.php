@@ -266,6 +266,9 @@ class RolePermissionSeeder extends Seeder
             'transmettre_ppa_exercice',
             'valider_ppa_exercice',
             'retourner_ppa_exercice',
+
+            // ── Module Suivi et Evaluation ───────────────────────
+            'access_module_suivi_evaluation',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -1093,6 +1096,31 @@ class RolePermissionSeeder extends Seeder
                 'view_my_transmissions',
             ],
             'responsable_programmation'
+        );
+
+        // ── RESPONSABLE SUIVI ET EVALKUATION ──────────────────────────────────
+        $this->ajouterPermissionsRole(
+            Role::firstOrCreate(['name' => 'responsable_suivi_evaluation', 'guard_name' => 'web']),
+            [
+                'access_module_portal',
+                'access_module_suivi_evaluation',
+                // Lecture de la Planification/Programmation pour construire les rapports
+                'view_any_plan_strategique_ep',
+                'view_plan_strategique_ep',
+                'view_any_sous_programme_ep',
+                'view_sous_programme_ep',
+                'view_any_activite',
+                'view_activite',
+                'view_any_indicateur',
+                'view_indicateur',
+                'view_any_extrant',
+                'view_extrant',
+                'view_any_ppa_exercice',
+                'view_ppa_exercice',
+                'transmettre_document',
+                'view_my_transmissions',
+            ],
+            'responsable_suivi_evaluation'
         );
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

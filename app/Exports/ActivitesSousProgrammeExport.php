@@ -16,7 +16,7 @@ class ActivitesSousProgrammeExport implements FromCollection, WithHeadings
 
     public function headings(): array
     {
-        return ['Désignation', 'Objectif', 'Indicateurs', 'Baseline', 'Cible', 'Zone d\'exécution', 'Responsable'];
+        return ['Désignation', 'Objectif', 'Extrant(s)', 'Indicateurs', 'Baseline', 'Cible', 'Zone d\'exécution', 'Responsable'];
     }
 
     public function collection()
@@ -24,6 +24,7 @@ class ActivitesSousProgrammeExport implements FromCollection, WithHeadings
         return $this->activites->map(fn($act) => [
             $act->libelle,
             $act->objectif,
+            $act->extrants->pluck('libelle')->implode(' | '),
             $act->indicateurs->pluck('libelle')->implode(' | '),
             $act->indicateurs->pluck('valeur_reference')->filter()->implode(' | '),
             $act->indicateurs->pluck('valeur_cible')->filter()->implode(' | '),

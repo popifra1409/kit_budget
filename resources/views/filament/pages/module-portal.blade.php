@@ -9,13 +9,22 @@
             box-sizing: border-box;
         }
 
-        /* Neutralise le max-width impose par le conteneur de page Filament
-        (fi-page), qui empechait la grille de s'etendre sur toute la largeur */
-        .fi-main {
-            padding-left: .75rem !important;
-            padding-right: .75rem !important;
+                /* Le portail n'a aucune navigation : on masque completement la
+           sidebar (meme vide, elle reservait ~280px d'espace a gauche)
+           plutot que de continuer a reduire des paddings inutilement. */
+        .fi-sidebar {
+            display: none !important;
         }
 
+        .fi-main-ctn {
+            width: 100% !important;
+        }
+
+        .fi-main {
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+        }
         .portal-wrap {
             font-family: 'Sora', sans-serif;
             min-height: calc(100vh - 130px);
@@ -24,7 +33,7 @@
             align-items: center;
             justify-content: center;
             gap: .75rem;
-            padding: 1rem .5rem;
+            padding: 1rem .25rem;
             width: 100%;
         }
 
@@ -95,12 +104,11 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 260px));
             justify-content: center;
-            gap: 1rem;
+            gap: .75rem;
             width: 100%;
-            max-width: 1650px;
+            max-width: 1800px;
             margin: 0 auto;
         }
-
         @media (max-width: 560px) {
             .modules-grid {
                 grid-template-columns: 1fr;
@@ -361,6 +369,8 @@
         $modulesActifs = collect([$canPlanification, $canBudget, $canComptable, $canMarches])->filter()->count();
         $canProgrammation = $isSuperAdmin || $user->can('access_module_programmation');
         $modulesActifs = collect([$canPlanification, $canProgrammation, $canBudget, $canComptable, $canMarches])->filter()->count();
+        $canSuiviEvaluation = $isSuperAdmin || $user->can('access_module_suivi_evaluation');
+        $modulesActifs = collect([$canPlanification, $canProgrammation, $canBudget, $canComptable, $canMarches, $canSuiviEvaluation])->filter()->count();
     @endphp
 
     {{-- Toast accès refusé --}}
@@ -648,6 +658,52 @@
                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        Contacter l'administrateur
+                    </div>
+                </div>
+            @endif
+
+            {{-- MODULE 06 : Suivi et Évaluation --}}
+            @if($canSuiviEvaluation)
+                <a href="/suivi-evaluation" class="mod-card"
+                    style="--c:linear-gradient(90deg,#c2410c,#ea580c);--cc:#c2410c;--s:rgba(194,65,12,.22);--ib:rgba(194,65,12,.1);--is:rgba(194,65,12,.2);--tb:rgba(194,65,12,.08);--tc:#7c2d12;--tbo:rgba(194,65,12,.2)">
+                    <div class="mod-header">
+                        <div class="mod-icon">📊</div>
+                        <div>
+                            <div class="mod-num">Module 06</div>
+                            <div class="mod-title">Suivi et Évaluation</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc">Rapports d'activité périodiques, Rapport Annuel de Performance (RAP), tableaux de bord d'exécution.</div>
+                    <div class="mod-tags">
+                        <span class="mod-tag">Rapports d'activité</span>
+                        <span class="mod-tag">RAP</span>
+                        <span class="mod-tag">Tableaux de bord</span>
+                    </div>
+                    <div class="mod-cta">
+                        Accéder au module
+                        <svg class="mod-cta-arrow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                    </div>
+                </a>
+            @else
+                <div class="mod-card-locked" title="Accès non autorisé — contactez votre administrateur">
+                    <div class="mod-header">
+                        <div class="mod-icon" style="opacity:.4;">📊</div>
+                        <div>
+                            <div class="mod-num" style="color:#94a3b8;">Module 06</div>
+                            <div class="mod-title mod-title-locked">Suivi et Évaluation</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc" style="color:#94a3b8;">Accès restreint à ce module.</div>
+                    <div class="mod-tags">
+                        <span class="mod-tag" style="background:rgba(148,163,184,.08);color:#94a3b8;border-color:rgba(148,163,184,.2);">Accès restreint</span>
+                    </div>
+                    <div class="mod-locked-msg">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                         </svg>
                         Contacter l'administrateur
                     </div>

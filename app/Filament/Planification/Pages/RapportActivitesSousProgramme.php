@@ -62,7 +62,7 @@ class RapportActivitesSousProgramme extends Page implements HasForms
         $actionIds = Action::where('programme_id', $sp->programme_budgetaire_id)->pluck('id');
 
         return \App\Models\Activite::whereIn('action_id', $actionIds)
-            ->with(['responsable', 'indicateurs'])
+            ->with(['responsable', 'indicateurs', 'extrants'])
             ->orderBy('ordre')
             ->get();
     }

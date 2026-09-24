@@ -125,7 +125,8 @@ class MarchesPanelProvider extends PanelProvider
             'comptable'      => ['📦', 'Matières',      '/comptable'],
             'marches'        => ['📋', 'Marchés',       '/marches'],
             'planification'  => ['🎯', 'Planification', '/planification'],
-            'programmation' => ['📈', 'Programmation', '/programmation']
+            'programmation' => ['📈', 'Programmation', '/programmation'],
+            'suivi-evaluation' => ['📊', 'Suivi & Évaluation', '/suivi-evaluation'],
         ];
 
         $html  = '<div class="flex items-center gap-2 me-2">';
