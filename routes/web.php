@@ -18,6 +18,7 @@ use App\Http\Controllers\Planification\RapportController;
 use App\Http\Controllers\Programmation\RapportPpaController;
 use \App\Http\Controllers\Programmation\TableauBordPspController;
 use \App\Http\Controllers\Programmation\RapportCbmtCdmtController;
+use App\Http\Controllers\SuiviEvaluation\RapportSuiviEvaluationController;
 
 Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
@@ -225,6 +226,18 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('cbmt-cdmt.pdf');
             Route::get('/cbmt-cdmt/{cdmt}/excel', [RapportCbmtCdmtController::class, 'excel'])
                 ->name('cbmt-cdmt.excel');
+        });
+
+
+    // ── Rapports Suivi et Évaluation (Annexes 9 & 10) ──
+    Route::prefix('suivi-evaluation/rapports')
+        ->name('suivi-evaluation.rapports.')
+        ->middleware(['module.access:suivi_evaluation'])
+        ->group(function () {
+            Route::get('/activite/{rapport}/pdf',   [RapportSuiviEvaluationController::class, 'activitePdf'])->name('activite.pdf');
+            Route::get('/activite/{rapport}/excel', [RapportSuiviEvaluationController::class, 'activiteExcel'])->name('activite.excel');
+            Route::get('/rap/{rap}/pdf',            [RapportSuiviEvaluationController::class, 'rapPdf'])->name('rap.pdf');
+            Route::get('/rap/{rap}/excel',          [RapportSuiviEvaluationController::class, 'rapExcel'])->name('rap.excel');
         });
 });
 

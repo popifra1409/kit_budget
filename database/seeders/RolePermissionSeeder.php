@@ -106,14 +106,37 @@ class RolePermissionSeeder extends Seeder
         // ====================================================
         // 2ter. MODULES CRUD — Programmation
         // ====================================================
+        // CORRIGE : ajout de cbmt_exercice et cdmt_exercice, absents
+        // de toute liste malgre leur usage dans les Resources Filament.
         $modulesProgrammation = [
             'ppa_exercice',
+            'cbmt_exercice',
+            'cdmt_exercice',
+        ];
+
+        // ====================================================
+        // 2quater. MODULES CRUD — Suivi et Evaluation
+        // ====================================================
+        $modulesSuiviEvaluation = [
+            'rapport_activite_periodique',
+            'rapport_annuel_performance',
         ];
 
         // ── Créer permissions CRUD (firstOrCreate = non destructif) ──
         $this->command->info('📝 Création permissions CRUD...');
         $permsCrudCreees = 0;
-        foreach (array_merge($modulesBudget, $modulesComptable, $modulesMarches, $modulesPlanification, $modulesProgrammation) as $module) {
+        // CORRIGE : $modulesSuiviEvaluation etait declare mais jamais
+        // fusionne ici — ses permissions n'etaient donc jamais creees.
+        foreach (
+            array_merge(
+                $modulesBudget,
+                $modulesComptable,
+                $modulesMarches,
+                $modulesPlanification,
+                $modulesProgrammation,
+                $modulesSuiviEvaluation
+            ) as $module
+        ) {
             foreach (['view', 'view_any', 'create', 'update', 'delete'] as $action) {
                 $created = Permission::firstOrCreate([
                     'name'       => "{$action}_{$module}",
@@ -266,9 +289,23 @@ class RolePermissionSeeder extends Seeder
             'transmettre_ppa_exercice',
             'valider_ppa_exercice',
             'retourner_ppa_exercice',
+            // AJOUTE : workflow CBMT/CDMT (Cadrage Pluriannuel)
+            'transmettre_cbmt_exercice',
+            'valider_cbmt_exercice',
+            'retourner_cbmt_exercice',
+            'transmettre_cdmt_exercice',
+            'valider_cdmt_exercice',
+            'retourner_cdmt_exercice',
 
             // ── Module Suivi et Evaluation ───────────────────────
             'access_module_suivi_evaluation',
+            // AJOUTE : workflow des rapports de Suivi-Evaluation
+            'transmettre_rapport_activite_periodique',
+            'valider_rapport_activite_periodique',
+            'retourner_rapport_activite_periodique',
+            'transmettre_rapport_annuel_performance',
+            'valider_rapport_annuel_performance',
+            'retourner_rapport_annuel_performance',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -316,8 +353,7 @@ class RolePermissionSeeder extends Seeder
                 'view_budget_programme',
                 'saisir_previsions_budget_programme',
                 'exporter_budget_programme',
-                'gerer_collectif_budgetaire',      // permis de gérer les collectifs
-                // On ne donne pas adopter/annuler à l'opérateur, seulement visualisation
+                'gerer_collectif_budgetaire',
                 'view_collectif_budgetaire',
                 'view_any_collectif_budgetaire',
                 'marquer_payee_ordonnance_paiement',
@@ -424,7 +460,7 @@ class RolePermissionSeeder extends Seeder
                 'exporter_budget_programme',
                 'gerer_collectif_budgetaire',
                 'valider_collectif_budgetaire',
-                'adopter_collectif_budgetaire',   // peut adopter
+                'adopter_collectif_budgetaire',
                 'view_any_collectif_budgetaire',
                 'view_collectif_budgetaire',
                 'marquer_payee_ordonnance_paiement',
@@ -571,7 +607,7 @@ class RolePermissionSeeder extends Seeder
                 'gerer_collectif_budgetaire',
                 'valider_collectif_budgetaire',
                 'adopter_collectif_budgetaire',
-                'annuler_collectif_budgetaire',   // peut annuler
+                'annuler_collectif_budgetaire',
                 'view_any_collectif_budgetaire',
                 'view_collectif_budgetaire',
 
@@ -1048,16 +1084,15 @@ class RolePermissionSeeder extends Seeder
                 'saisir_valeur_indicateur',
                 'valider_valeur_indicateur',
 
-                // Transmission generique
-                'transmettre_document',
-                'view_my_transmissions',
-
+                // Extrants
                 'view_any_extrant',
                 'view_extrant',
                 'create_extrant',
                 'update_extrant',
 
-
+                // Transmission generique
+                'transmettre_document',
+                'view_my_transmissions',
             ],
             'responsable_planification'
         );
@@ -1078,7 +1113,25 @@ class RolePermissionSeeder extends Seeder
                 'valider_ppa_exercice',
                 'retourner_ppa_exercice',
 
-                // Lecture de la Planification pour construire le PPA
+                // AJOUTE : CBMT (Cadrage Budgetaire a Moyen Terme)
+                'view_any_cbmt_exercice',
+                'view_cbmt_exercice',
+                'create_cbmt_exercice',
+                'update_cbmt_exercice',
+                'transmettre_cbmt_exercice',
+                'valider_cbmt_exercice',
+                'retourner_cbmt_exercice',
+
+                // AJOUTE : CDMT (Cadre de Depenses a Moyen Terme)
+                'view_any_cdmt_exercice',
+                'view_cdmt_exercice',
+                'create_cdmt_exercice',
+                'update_cdmt_exercice',
+                'transmettre_cdmt_exercice',
+                'valider_cdmt_exercice',
+                'retourner_cdmt_exercice',
+
+                // Lecture de la Planification pour construire le PPA/CDMT
                 'view_any_plan_strategique_ep',
                 'view_plan_strategique_ep',
                 'view_any_sous_programme_ep',
@@ -1091,6 +1144,8 @@ class RolePermissionSeeder extends Seeder
                 'view_tache',
                 'view_any_indicateur',
                 'view_indicateur',
+                'view_any_extrant',
+                'view_extrant',
 
                 'transmettre_document',
                 'view_my_transmissions',
@@ -1098,12 +1153,13 @@ class RolePermissionSeeder extends Seeder
             'responsable_programmation'
         );
 
-        // ── RESPONSABLE SUIVI ET EVALKUATION ──────────────────────────────────
+        // ── RESPONSABLE SUIVI ET EVALUATION ─────────────────────────────
         $this->ajouterPermissionsRole(
             Role::firstOrCreate(['name' => 'responsable_suivi_evaluation', 'guard_name' => 'web']),
             [
                 'access_module_portal',
                 'access_module_suivi_evaluation',
+
                 // Lecture de la Planification/Programmation pour construire les rapports
                 'view_any_plan_strategique_ep',
                 'view_plan_strategique_ep',
@@ -1111,12 +1167,33 @@ class RolePermissionSeeder extends Seeder
                 'view_sous_programme_ep',
                 'view_any_activite',
                 'view_activite',
+                'view_any_tache',
+                'view_tache',
                 'view_any_indicateur',
                 'view_indicateur',
                 'view_any_extrant',
                 'view_extrant',
                 'view_any_ppa_exercice',
                 'view_ppa_exercice',
+
+                // Rapport d'activite periodique (Annexe 9)
+                'view_any_rapport_activite_periodique',
+                'view_rapport_activite_periodique',
+                'create_rapport_activite_periodique',
+                'update_rapport_activite_periodique',
+                'transmettre_rapport_activite_periodique',
+                'valider_rapport_activite_periodique',
+                'retourner_rapport_activite_periodique',
+
+                // RAP - Rapport Annuel de Performance (Annexe 10)
+                'view_any_rapport_annuel_performance',
+                'view_rapport_annuel_performance',
+                'create_rapport_annuel_performance',
+                'update_rapport_annuel_performance',
+                'transmettre_rapport_annuel_performance',
+                'valider_rapport_annuel_performance',
+                'retourner_rapport_annuel_performance',
+
                 'transmettre_document',
                 'view_my_transmissions',
             ],

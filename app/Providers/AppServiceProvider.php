@@ -109,6 +109,10 @@ class AppServiceProvider extends ServiceProvider
             'cdmt_exercice' => \App\Models\CdmtExercice::class,
             'extrant' => \App\Models\Extrant::class,
 
+            //Suivi et evaluation
+            'rapport_activite_periodique' => \App\Models\RapportActivitePeriodique::class,
+            'rapport_annuel_performance' => \App\Models\RapportAnnuelPerformance::class,
+
         ]);
 
         DecisionAdministrative::observe(DecisionAdministrativeObserver::class);
