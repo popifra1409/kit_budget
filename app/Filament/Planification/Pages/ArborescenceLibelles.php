@@ -17,7 +17,7 @@ class ArborescenceLibelles extends Page implements HasForms
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-list-bullet';
-    protected static ?string $navigationGroup = 'États et tableaux'; // aligner sur le groupe de vos Tableaux 14/15
+    protected static ?string $navigationGroup = 'États et tableaux'; 
     protected static ?string $navigationLabel = 'Tableau des libellés';
     protected static ?string $title = 'Tableau de revue des libellés';
     protected static string $view = 'filament.planification.pages.arborescence-libelles';

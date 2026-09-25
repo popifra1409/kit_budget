@@ -49,6 +49,7 @@ class PlanificationPanelProvider extends PanelProvider
                 'Plans Stratégiques EP',
                 'Activités',
                 'Rapports',
+                'États et tableaux',
                 'Paramétrage',
             ])
             ->navigationItems([

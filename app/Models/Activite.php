@@ -30,6 +30,9 @@ class Activite extends Model
         'numero',
         'statut',
         'created_by',
+        'objectif',
+        'zone_execution',
+        'responsable_id',
     ];
 
     protected $casts = [
@@ -82,6 +85,10 @@ class Activite extends Model
         return $this->hasMany(Extrant::class);
     }
 
+    public function responsable(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'responsable_id');
+    }
     /**
      * Obtenir le budget total (AE) de l'activité
      * = Somme des AE de toutes les tâches (qui incluent leurs sous-tâches)
