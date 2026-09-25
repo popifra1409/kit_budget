@@ -66,18 +66,30 @@ class SousProgrammesRelationManager extends RelationManager
             // ── Rattachements : deux champs distincts ──────────────────
             Forms\Components\Select::make('programme_budgetaire_id')
                 ->label('Programme de rattachement (ministériel)')
-                ->helperText('Programme national de niveau « programme » (ex : P-410 Prévention de la maladie).')
+                ->helperText('Programme national de niveau « programme » (ex : 412 Renforcement du système de santé).')
                 ->options(fn() => static::programmesExerciceActif()
                     ->where('niveau', 'programme')
                     ->get()
                     ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"]))
-                ->searchable(),
+                ->searchable()
+                ->live()
+                // Si ce programme porte lui-meme les actions, on pre-remplit le programme EP
+                ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                    if (!$state || filled($get('code_programme_ep'))) {
+                        return;
+                    }
+                    $programme = Programme::withoutGlobalScope('exercice')->find($state);
+                    if ($programme && \App\Models\Action::withoutGlobalScope('exercice')->where('programme_id', $programme->id)->exists()) {
+                        $set('code_programme_ep', $programme->code);
+                    }
+                }),
 
             Forms\Components\Select::make('code_programme_ep')
-                ->label("Programme budgétaire de l'EP (porte les actions)")
-                ->helperText("Ex : SP-1 Prévention des pathologies. Lien par code : il reste valable d'un exercice à l'autre.")
+                ->label('Programme qui porte les actions')
+                ->helperText("Souvent le même que le programme de rattachement. Lien par code : il reste valable d'un exercice à l'autre.")
                 ->options(fn() => static::programmesExerciceActif()
-                    ->where('niveau', '!=', 'programme') // exclut les programmes ministeriels (P-410...)
+                    // Uniquement les programmes qui ont effectivement des actions
+                    ->whereIn('id', \App\Models\Action::withoutGlobalScope('exercice')->select('programme_id'))
                     ->get()
                     ->mapWithKeys(fn($p) => [$p->code => "{$p->code} — {$p->libelle}"]))
                 ->searchable()

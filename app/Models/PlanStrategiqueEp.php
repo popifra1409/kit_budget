@@ -80,41 +80,52 @@ class PlanStrategiqueEp extends Model
     /**
      * Synthese annee par annee (prevu vs execution reelle), sur tous
      * les PPA deja crees pour ce PSP.
+     * Chaque PPA est calcule sur SON exercice (et non sur l'exercice actif).
      */
     public function getSyntheseParExercice(): \Illuminate\Support\Collection
     {
+        $sousProgrammes = $this->sousProgrammes()->get();
+
         return $this->ppaExercices()
             ->with('exercice')
             ->get()
             ->sortBy(fn($ppa) => $ppa->exercice?->annee)
-            ->map(function (PpaExercice $ppa) {
+            ->map(function (PpaExercice $ppa) use ($sousProgrammes) {
+                $exerciceId = $ppa->exercice_id;
+
                 $totalAe = 0;
                 $totalCp = 0;
                 $totalEngage = 0;
                 $totalDisponible = 0;
 
-                foreach ($sp->actionsPourExercice()->get() as $action) {
-                    foreach ($sp->actions as $action) {
-                        foreach ($action->activites as $activite) {
-                            $totalAe += $activite->getTotalAe();
-                            $totalCp += $activite->getTotalCp();
-                            $exec = $activite->getExecutionBudgetaire();
-                            $totalEngage += $exec['engage'];
-                            $totalDisponible += $exec['disponible'];
-                        }
+                foreach ($sousProgrammes as $sp) {
+                    // Actions du programme EP (SP-1...) pour l'exercice du PPA
+                    $actionIds = $sp->actionsPourExercice($exerciceId)->pluck('id');
+
+                    $activites = Activite::withoutGlobalScope('exercice')
+                        ->whereIn('action_id', $actionIds)
+                        ->where('exercice_id', $exerciceId)
+                        ->get();
+
+                    foreach ($activites as $activite) {
+                        $totalAe += $activite->getTotalAe();
+                        $totalCp += $activite->getTotalCp();
+                        $exec = $activite->getExecutionBudgetaire();
+                        $totalEngage += $exec['engage'];
+                        $totalDisponible += $exec['disponible'];
                     }
                 }
 
                 return [
-                    'ppa_id' => $ppa->id,
-                    'ppa_numero' => $ppa->numero,
-                    'exercice' => $ppa->exercice?->annee,
-                    'ae_prevu' => $totalAe,
-                    'cp_prevu' => $totalCp,
-                    'engage_reel' => $totalEngage,
-                    'disponible' => $totalDisponible,
+                    'ppa_id'         => $ppa->id,
+                    'ppa_numero'     => $ppa->numero,
+                    'exercice'       => $ppa->exercice?->annee,
+                    'ae_prevu'       => $totalAe,
+                    'cp_prevu'       => $totalCp,
+                    'engage_reel'    => $totalEngage,
+                    'disponible'     => $totalDisponible,
                     'taux_execution' => $totalCp > 0 ? round(($totalEngage / $totalCp) * 100, 1) : 0,
-                    'statut_ppa' => $ppa->statut,
+                    'statut_ppa'     => $ppa->statut,
                 ];
             })
             ->values();

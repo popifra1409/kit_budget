@@ -1,18 +1,21 @@
 <?php
+// database/seeders/SousProgrammesStrategiquesSeeder.php
 
 namespace Database\Seeders;
 
+use App\Models\Action;
 use App\Models\CspMinistereSante;
+use App\Models\Exercice;
 use App\Models\ParametresStructure;
 use App\Models\PlanStrategiqueEp;
 use App\Models\Programme;
 use App\Models\SousProgrammeEp;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
- * Genere/actualise les Sous-Programmes strategiques (SousProgrammeEp)
- * a partir des Programmes budgetaires REELS deja en production
- * (niveau='programme' : codes 410, 412, 413, 414...).
+ * Genere les Sous-Programmes strategiques (SousProgrammeEp) a partir des
+ * Programmes budgetaires REELS (niveau='programme' : 412, 413, 414...).
  *
  * Conforme au Guide Methodologique de Planification Strategique
  * (MINEPAT, 3e edition, janvier 2026) : "Le sous-programme d'un EP
@@ -20,11 +23,20 @@ use Illuminate\Database\Seeder;
  * techniques de l'administration de tutelle."
  *
  * Idempotent : relancable sans creer de doublons.
+ * Ne remplace JAMAIS un libelle, une description ou un type deja saisis
+ * (ils peuvent avoir ete corriges apres la revue des libelles).
  */
 class SousProgrammesStrategiquesSeeder extends Seeder
 {
     public function run(): void
     {
+        $exercice = Exercice::getActif();
+
+        if (!$exercice) {
+            $this->command->error('✖ Aucun exercice actif : activez un exercice avant de lancer ce seeder.');
+            return;
+        }
+
         // 1. S'assurer qu'un CSP et un PSP existent (container englobant)
         $csp = CspMinistereSante::firstOrCreate(
             ['code' => 'CSP-MINSANTE-2026'],
@@ -49,36 +61,74 @@ class SousProgrammesStrategiquesSeeder extends Seeder
             ]
         );
 
-        // 2. Nettoyage de l'exemple fictif "Approvisionnement en medicament" (SP-02),
-        //    devenu incoherent : il inventait un sous-programme au lieu d'utiliser
-        //    le vrai Programme de rattachement. Decommentez pour le retirer :
-        // SousProgrammeEp::where('code', 'SP-02')->delete();
+        // 2. Retrait de l'exemple fictif "SP-02" (ancien seeder de demonstration).
+        //    Supprime UNIQUEMENT s'il n'est rattache a aucun programme : un SP-02
+        //    saisi volontairement avec un rattachement n'est jamais touche.
+        //    A faire AVANT la creation : la limite de 4 sous-programmes par EP s'applique.
+        $fictifs = SousProgrammeEp::where('plan_strategique_ep_id', $psp->id)
+            ->where('code', 'SP-02')
+            ->whereNull('programme_budgetaire_id')
+            ->get();
 
-        // 3. Un Sous-Programme strategique par Programme budgetaire REEL
-        $programmes = Programme::where('niveau', 'programme')->orderBy('code')->get();
+        foreach ($fictifs as $fictif) {
+            $fictif->delete();
+            $this->command->warn("⚠ Sous-programme fictif '{$fictif->libelle}' (SP-02) supprimé : il n'était rattaché à aucun programme.");
+        }
+
+        // 3. Un Sous-Programme strategique par Programme budgetaire REEL de l'exercice actif
+        $programmes = Programme::withoutGlobalScope('exercice')
+            ->where('exercice_id', $exercice->id)
+            ->where('niveau', 'programme')
+            ->orderBy('code')
+            ->get();
 
         if ($programmes->isEmpty()) {
-            $this->command->warn("⚠ Aucun Programme (niveau='programme') trouvé en base. Rien à générer.");
+            $this->command->warn("⚠ Aucun Programme (niveau='programme') pour l'exercice {$exercice->annee}. Rien à générer.");
             return;
         }
 
         foreach ($programmes as $programme) {
-            $sousProgramme = SousProgrammeEp::updateOrCreate(
-                [
-                    'plan_strategique_ep_id' => $psp->id,
-                    'programme_budgetaire_id' => $programme->id,
-                ],
-                [
-                    'code' => 'SP-' . $programme->code,
-                    'libelle' => $programme->libelle,
-                    'description' => $programme->description,
-                    'statut' => 'en_vigueur',
-                ]
-            );
+            $sousProgramme = SousProgrammeEp::firstOrNew([
+                'plan_strategique_ep_id'  => $psp->id,
+                'programme_budgetaire_id' => $programme->id,
+            ]);
 
-            $this->command->info("✔ Sous-Programme '{$sousProgramme->libelle}' (code {$sousProgramme->code}) synchronisé avec Programme {$programme->code}.");
+            $nouveau = !$sousProgramme->exists;
+
+            // Donnees initiales : uniquement a la creation (ne jamais ecraser une saisie)
+            if ($nouveau) {
+                $sousProgramme->fill([
+                    'code'        => 'SP-' . $programme->code,
+                    'libelle'     => $programme->libelle,
+                    'description' => $programme->description,
+                    'statut'      => 'en_vigueur',
+                    // Instruction du 22/01/2026 : 3 operationnels + 1 support maximum
+                    'type'        => Str::contains(Str::upper(Str::ascii($programme->libelle)), 'GOUVERNANCE')
+                        ? 'support'
+                        : 'operationnel',
+                ]);
+            }
+
+            // Programme qui porte les actions : si le programme de rattachement a lui-meme
+            // des actions (cas 412/413/414), c'est lui. Sinon (cas P-410 -> SP-1), a renseigner
+            // manuellement dans le formulaire.
+            $porteActions = Action::withoutGlobalScope('exercice')
+                ->where('programme_id', $programme->id)
+                ->exists();
+
+            if (blank($sousProgramme->code_programme_ep) && $porteActions) {
+                $sousProgramme->code_programme_ep = $programme->code;
+            }
+
+            $sousProgramme->save();
+
+            $lien = $sousProgramme->code_programme_ep
+                ? "actions portées par {$sousProgramme->code_programme_ep}"
+                : 'programme portant les actions À RENSEIGNER dans le formulaire';
+
+            $this->command->info(($nouveau ? '✔ Créé' : '✔ Existant') . " : {$sousProgramme->code} — {$sousProgramme->libelle} ({$lien})");
         }
 
-        $this->command->info('✔ ' . $programmes->count() . ' Sous-Programme(s) stratégique(s) généré(s)/actualisé(s) depuis les Programmes budgétaires réels.');
+        $this->command->info('✔ ' . $programmes->count() . " sous-programme(s) stratégique(s) traité(s) pour l'exercice {$exercice->annee}.");
     }
 }
