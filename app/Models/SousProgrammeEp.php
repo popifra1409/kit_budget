@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasWorkflow;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class SousProgrammeEp extends Model
 {
@@ -21,6 +23,7 @@ class SousProgrammeEp extends Model
         'libelle',
         'description',
         'responsable_id',
+        'code_programme_ep',
         'type',
         'statut',
         'created_by',
@@ -87,9 +90,16 @@ class SousProgrammeEp extends Model
      * budgetaire lie a ce sous-programme strategique.
      * (SousProgrammeEp -> programme_budgetaire_id == Action.programme_id)
      */
-    public function actions(): HasMany
+    public function actions(): HasManyThrough
     {
-        return $this->hasMany(Action::class, 'programme_id', 'programme_budgetaire_id');
+        return $this->hasManyThrough(
+            Action::class,
+            Programme::class,
+            'code',               // colonne de Programme comparee au sous-programme
+            'programme_id',       // cle d'Action vers Programme
+            'code_programme_ep',  // colonne du sous-programme
+            'id'                  // cle de Programme
+        );
     }
 
     public function indicateurs(): \Illuminate\Database\Eloquent\Relations\MorphMany
@@ -97,9 +107,54 @@ class SousProgrammeEp extends Model
         return $this->morphMany(Indicateur::class, 'indicateurable');
     }
 
+    /**
+     * Programme MINISTERIEL de rattachement (ex: P-410 Prevention de la maladie).
+     * Sans scope d'exercice : le rattachement reste lisible quel que soit l'exercice actif.
+     */
     public function programmeBudgetaire(): BelongsTo
     {
-        return $this->belongsTo(Programme::class, 'programme_budgetaire_id');
+        return $this->belongsTo(Programme::class, 'programme_budgetaire_id')
+            ->withoutGlobalScope('exercice');
+    }
+
+    /** Alias explicite, plus lisible dans les nouvelles vues. */
+    public function programmeRattachement(): BelongsTo
+    {
+        return $this->programmeBudgetaire();
+    }
+
+    /**
+     * Programme budgetaire de l'EP (ex: SP-1) pour un exercice donne.
+     */
+    public function programmeEp(?int $exerciceId = null): ?Programme
+    {
+        if (blank($this->code_programme_ep)) {
+            return null;
+        }
+
+        return Programme::withoutGlobalScope('exercice')
+            ->where('code', $this->code_programme_ep)
+            ->where('exercice_id', $exerciceId ?? Exercice::getActif()?->id)
+            ->first();
+    }
+
+    /**
+     * Actions du sous-programme pour un exercice donne, resolues par CODE de programme EP.
+     * Methode a privilegier dans tous les rapports (PPA, RAP, matrice, libelles).
+     */
+    public function actionsPourExercice(?int $exerciceId = null): Builder
+    {
+        $exerciceId ??= Exercice::getActif()?->id;
+
+        $programmeIds = Programme::withoutGlobalScope('exercice')
+            ->where('code', $this->code_programme_ep)
+            ->where('exercice_id', $exerciceId)
+            ->pluck('id');
+
+        return Action::withoutGlobalScope('exercice')
+            ->whereIn('programme_id', $programmeIds)
+            ->where('exercice_id', $exerciceId)
+            ->orderBy('code');
     }
 
     /**

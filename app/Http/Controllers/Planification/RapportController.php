@@ -35,7 +35,7 @@ class RapportController extends Controller
     public function activitesSousProgrammePdf(SousProgrammeEp $sousProgramme)
     {
         $sousProgramme->load(['responsable', 'indicateurs']);
-        $actionIds = Action::where('programme_id', $sousProgramme->programme_budgetaire_id)->pluck('id');
+        $actionIds = $sousProgramme->actionsPourExercice()->pluck('id');
         $activites = Activite::whereIn('action_id', $actionIds)->with(['responsable', 'indicateurs'])->orderBy('ordre')->get();
 
         $pdf = Pdf::loadView('filament.planification.pdf.activites-sous-programme', [
@@ -48,7 +48,7 @@ class RapportController extends Controller
 
     public function activitesSousProgrammeExcel(SousProgrammeEp $sousProgramme)
     {
-        $actionIds = Action::where('programme_id', $sousProgramme->programme_budgetaire_id)->pluck('id');
+        $actionIds = $sousProgramme->actionsPourExercice()->pluck('id');
         $activites = Activite::whereIn('action_id', $actionIds)->with(['responsable', 'indicateurs'])->orderBy('ordre')->get();
 
         return Excel::download(

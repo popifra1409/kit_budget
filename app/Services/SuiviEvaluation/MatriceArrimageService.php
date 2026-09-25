@@ -59,7 +59,7 @@ class MatriceArrimageService
 
         $blocs = $this->sousProgrammesVisibles($psp, $user)
             ->when($sousProgrammeId, fn($q) => $q->whereKey($sousProgrammeId))
-            ->with(['programmeBudgetaire', 'responsable', 'indicateurs.valeurs', 'actions'])
+            ->with(['programmeBudgetaire', 'responsable', 'indicateurs.valeurs'])
             ->get()
             ->map(fn(SousProgrammeEp $sp) => $this->construireSousProgramme($sp, $exerciceId));
 
@@ -92,24 +92,26 @@ class MatriceArrimageService
     protected function construireSousProgramme(SousProgrammeEp $sp, int $exerciceId): array
     {
         $this->reinitialiser();
+        $actions = $sp->actionsPourExercice($exerciceId)->get();
 
         $this->verifier(filled($sp->objectif), 'majeure', 'Sous-programme sans objectif formulé');
         $this->verifier((bool) $sp->responsable_id, 'majeure', 'Sous-programme sans responsable désigné');
         $this->verifier((bool) $sp->programme_budgetaire_id, 'critique', 'Sous-programme non rattaché à un programme budgétaire');
+        $this->verifier(filled($sp->code_programme_ep), 'critique', "Aucun programme budgétaire de l'EP rattaché (actions introuvables)");
         $this->verifier($sp->indicateurs->isNotEmpty(), 'majeure', 'Aucun indicateur au niveau du sous-programme');
-        $this->verifier($sp->actions->isNotEmpty(), 'critique', 'Aucune action rattachée au sous-programme');
+        $this->verifier($actions->isNotEmpty(), 'critique', 'Aucune action rattachée au sous-programme');
 
-        $activitesParAction = Activite::query()
-            ->whereIn('action_id', $sp->actions->pluck('id'))
+        $activitesParAction = Activite::withoutGlobalScope('exercice')
+            ->whereIn('action_id', $actions->pluck('id'))
             ->where('exercice_id', $exerciceId)
-            ->with(['responsable', 'extrants', 'indicateurs.valeurs', 'taches'])
+            ->with(['responsable', 'extrants', 'indicateurs.valeurs', 'taches' => fn($q) => $q->withoutGlobalScope('exercice')])
             ->orderBy('code')
             ->get()
             ->groupBy('action_id');
 
         $lignes = [];
 
-        foreach ($sp->actions->sortBy('code') as $action) {
+        foreach ($actions as $action) {
             $this->compteurs['actions']++;
             $lignesAction = [];
 

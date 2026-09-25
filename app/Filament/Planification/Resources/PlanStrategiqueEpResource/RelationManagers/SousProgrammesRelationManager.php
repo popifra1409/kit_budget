@@ -2,6 +2,8 @@
 
 namespace App\Filament\Planification\Resources\PlanStrategiqueEpResource\RelationManagers;
 
+use App\Models\Exercice;
+use App\Models\Programme;
 use App\Models\SousProgrammeEp;
 use App\Models\User;
 use Filament\Forms;
@@ -17,6 +19,17 @@ class SousProgrammesRelationManager extends RelationManager
     protected static ?string $title = 'Sous-Programmes';
 
     protected static ?string $recordTitleAttribute = 'libelle';
+
+    /**
+     * Programmes de l'exercice actif, sans le scope global 'exercice'
+     * (evite les doublons P-410 2026 / P-410 2027 apres reconduction).
+     */
+    protected static function programmesExerciceActif()
+    {
+        return Programme::withoutGlobalScope('exercice')
+            ->where('exercice_id', Exercice::getActif()?->id)
+            ->orderBy('code');
+    }
 
     public function form(Form $form): Form
     {
@@ -47,17 +60,28 @@ class SousProgrammesRelationManager extends RelationManager
                 ->columnSpanFull(),
             Forms\Components\Select::make('responsable_id')
                 ->label('Responsable de mise en œuvre')
-                ->options(\App\Models\User::pluck('name', 'id'))
+                ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
                 ->searchable(),
+
+            // ── Rattachements : deux champs distincts ──────────────────
             Forms\Components\Select::make('programme_budgetaire_id')
-                ->label('Programme budgétaire lié (codification)')
-                ->helperText("Uniquement les Programmes de niveau national (codes 413, 414...), pas les sous-programmes de gestion interne.")
-                ->options(
-                    \App\Models\Programme::where('niveau', 'programme')
-                        ->get()
-                        ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"])
-                )
+                ->label('Programme de rattachement (ministériel)')
+                ->helperText('Programme national de niveau « programme » (ex : P-410 Prévention de la maladie).')
+                ->options(fn() => static::programmesExerciceActif()
+                    ->where('niveau', 'programme')
+                    ->get()
+                    ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"]))
                 ->searchable(),
+
+            Forms\Components\Select::make('code_programme_ep')
+                ->label("Programme budgétaire de l'EP (porte les actions)")
+                ->helperText("Ex : SP-1 Prévention des pathologies. Lien par code : il reste valable d'un exercice à l'autre.")
+                ->options(fn() => static::programmesExerciceActif()
+                    ->where('niveau', '!=', 'programme') // exclut les programmes ministeriels (P-410...)
+                    ->get()
+                    ->mapWithKeys(fn($p) => [$p->code => "{$p->code} — {$p->libelle}"]))
+                ->searchable()
+                ->required(),
         ])->columns(2);
     }
 
@@ -69,8 +93,16 @@ class SousProgrammesRelationManager extends RelationManager
                 Tables\Columns\BadgeColumn::make('type')
                     ->colors(['primary' => 'operationnel', 'warning' => 'support']),
                 Tables\Columns\TextColumn::make('code')->searchable(),
-                Tables\Columns\TextColumn::make('libelle')->searchable(),
+                Tables\Columns\TextColumn::make('libelle')->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('responsable.name')->label('Responsable'),
+                Tables\Columns\TextColumn::make('programmeBudgetaire.code')
+                    ->label('Rattachement')
+                    ->placeholder('—'),
+                Tables\Columns\TextColumn::make('code_programme_ep')
+                    ->label('Programme EP')
+                    ->badge()
+                    ->color(fn(?string $state) => $state ? 'success' : 'danger')
+                    ->placeholder('Non rattaché'),
                 Tables\Columns\BadgeColumn::make('statut')->colors([
                     'gray' => 'brouillon',
                     'warning' => 'en_transmission',
@@ -92,6 +124,16 @@ class SousProgrammesRelationManager extends RelationManager
                             \App\Filament\Planification\Resources\SousProgrammeEpResource::getUrl('edit', ['record' => $record])
                         ),
 
+                    Tables\Actions\Action::make('libelles')
+                        ->label('Tableau des libellés')
+                        ->icon('heroicon-o-list-bullet')
+                        ->visible(fn() => auth()->user()->can('view_arborescence_libelles'))
+                        ->url(fn(SousProgrammeEp $record) => \App\Filament\Planification\Pages\ArborescenceLibelles::getUrl([
+                            'psp' => $record->plan_strategique_ep_id,
+                            'sp'  => $record->id,
+                        ]))
+                        ->openUrlInNewTab(),
+
                     Tables\Actions\EditAction::make()
                         ->visible(
                             fn(SousProgrammeEp $record) =>
@@ -108,7 +150,7 @@ class SousProgrammesRelationManager extends RelationManager
                         ->form([
                             Forms\Components\Select::make('destinataire_id')
                                 ->label('Destinataire')
-                                ->options(User::pluck('name', 'id'))
+                                ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
                                 ->searchable()->required(),
                             Forms\Components\Select::make('action_attendue')
                                 ->options([
@@ -162,7 +204,10 @@ class SousProgrammesRelationManager extends RelationManager
                     ->size('sm'),
             ], position: \Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn() => auth()->user()->can('delete_sous_programme_ep')),
+                ]),
             ]);
     }
 }

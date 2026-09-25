@@ -46,13 +46,22 @@ class ArborescenceLibellesService
 
         $sps = $this->sousProgrammesVisibles($psp, $user)
             ->when($sousProgrammeId, fn($q) => $q->whereKey($sousProgrammeId))
-            ->with(['programmeBudgetaire', 'responsable', 'indicateurs', 'actions'])
+            ->with(['programmeBudgetaire', 'responsable', 'indicateurs'])
             ->get();
 
-        $activites = Activite::query()
-            ->whereIn('action_id', $sps->flatMap->actions->pluck('id'))
+        // Actions resolues par CODE de programme EP (SP-1...), pour l'exercice choisi
+        $actionsParSp = $sps->mapWithKeys(fn(SousProgrammeEp $sp) => [
+            $sp->id => $sp->actionsPourExercice($exerciceId)->get(),
+        ]);
+
+        $activites = Activite::withoutGlobalScope('exercice')
+            ->whereIn('action_id', $actionsParSp->flatten(1)->pluck('id'))
             ->where('exercice_id', $exerciceId)
-            ->with(['extrants', 'indicateurs', 'taches'])
+            ->with([
+                'extrants',
+                'indicateurs',
+                'taches' => fn($q) => $q->withoutGlobalScope('exercice'),
+            ])
             ->orderBy('code')
             ->get();
 
@@ -68,12 +77,17 @@ class ArborescenceLibellesService
             'psp'             => $psp,
             'csp'             => $psp->cspMinistere,
             'exercice'        => Exercice::find($exerciceId),
-            'sous_programmes' => $sps->map(fn(SousProgrammeEp $sp) => $this->construireSousProgramme($sp, $parAction)),
+            'sous_programmes' => $sps->map(fn(SousProgrammeEp $sp) => $this->construireSousProgramme(
+                $sp,
+                $actionsParSp->get($sp->id, collect()),
+                $parAction,
+                $exerciceId
+            )),
         ];
     }
 
     // ────────────────────────────────────────────────────────────────
-    protected function construireSousProgramme(SousProgrammeEp $sp, Collection $parAction): array
+    protected function construireSousProgramme(SousProgrammeEp $sp, Collection $actions, Collection $parAction, int $exerciceId): array
     {
         $this->observations = [];
         $this->vus = [];
@@ -85,20 +99,23 @@ class ArborescenceLibellesService
             $this->observer('Sous-programme', $sp->libelle, 'Objectif du sous-programme non formulé');
         }
         if (!$sp->programmeBudgetaire) {
-            $this->observer('Sous-programme', $sp->libelle, 'Aucun programme de rattachement');
+            $this->observer('Sous-programme', $sp->libelle, 'Aucun programme de rattachement (ministériel)');
+        }
+        if (blank($sp->code_programme_ep)) {
+            $this->observer('Sous-programme', $sp->libelle, "Aucun programme budgétaire de l'EP rattaché : actions introuvables");
         }
 
         $indicateursSp = $sp->indicateurs->map(fn($i) => $this->indicateur($i))->all();
         if (empty($indicateursSp)) {
             $this->observer('Sous-programme', $sp->libelle, 'Aucun indicateur de sous-programme');
         }
-        if ($sp->actions->isEmpty()) {
-            $this->observer('Sous-programme', $sp->libelle, 'Aucune action rattachée');
+        if ($actions->isEmpty() && filled($sp->code_programme_ep)) {
+            $this->observer('Sous-programme', $sp->libelle, "Aucune action pour le programme {$sp->code_programme_ep} sur cet exercice");
         }
 
         $lignes = [];
 
-        foreach ($sp->actions->sortBy('code') as $action) {
+        foreach ($actions as $action) {
             $this->compteurs['actions']++;
             $texteAction = $this->codeLibelle($action->code, $action->libelle);
             $alertes = $this->controler('Action', $action->libelle, $sp->libelle, doublon: true);
@@ -117,12 +134,17 @@ class ArborescenceLibellesService
             array_push($lignes, ...$lignesAction);
         }
 
+        $programmeEp = $sp->programmeEp($exerciceId);
+
         return [
             'sp'           => $sp,
             'sp_texte'     => $this->codeLibelle($sp->code, $sp->libelle),
             'sp_alertes'   => $alertesSp,
             'programme'    => $sp->programmeBudgetaire
                 ? $this->codeLibelle($sp->programmeBudgetaire->code, $sp->programmeBudgetaire->libelle)
+                : null,
+            'programme_ep' => $programmeEp
+                ? $this->codeLibelle($programmeEp->code, $programmeEp->libelle)
                 : null,
             'indicateurs'  => $indicateursSp,
             'lignes'       => $lignes,

@@ -67,7 +67,7 @@ class PpaExercice extends Model
             ->with([
                 'programmeBudgetaire',
                 'indicateurs',
-                'actions' => fn($q) => $q->where('exercice_id', $this->exercice_id),
+                'actions' => fn($q) => $q->withoutGlobalScope('exercice')->where('actions.exercice_id', $this->exercice_id),
                 'actions.activites' => fn($q) => $q->where('exercice_id', $this->exercice_id)
                     ->with(['indicateurs', 'taches' => fn($q2) => $q2->where('niveau', 'tache')]),
             ])

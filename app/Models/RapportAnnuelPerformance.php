@@ -70,11 +70,11 @@ class RapportAnnuelPerformance extends Model
         $annee = (string) $this->exercice?->annee;
 
         return $this->planStrategiqueEp->sousProgrammes()
-            ->with(['programmeBudgetaire', 'actions'])
+            ->with(['programmeBudgetaire'])
             ->get()
             ->map(function ($sp) use ($annee) {
-                $activites = \App\Models\Activite::whereIn('action_id', $sp->actions->pluck('id'))
-                    ->where('exercice_id', $this->exercice_id)
+                $activites = \App\Models\Activite::withoutGlobalScope('exercice')
+                    ->whereIn('action_id', $sp->actionsPourExercice($this->exercice_id)->pluck('id'))
                     ->with('indicateurs.valeurs')
                     ->get();
 

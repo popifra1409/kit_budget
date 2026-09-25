@@ -1,14 +1,29 @@
+{{-- resources/views/filament/planification/libelles/_entete-sp.blade.php --}}
 <table class="mx-table">
     <tr>
         <th style="width:20%">Sous-programme</th>
-        <td @class(['mx-flag' => $bloc['sp_alertes']])>
-            <strong>@include('filament.planification.libelles._libelle', ['item' => ['texte' => $bloc['sp_texte'], 'alertes' => $bloc['sp_alertes']]])</strong>
+        <td @class(['mx-flag' => $bloc['sp_alertes'] ?? []])>
+            <strong>@include('filament.planification.libelles._libelle', ['item' => ['texte' => $bloc['sp_texte'], 'alertes' => $bloc['sp_alertes'] ?? []]])</strong>
         </td>
     </tr>
     <tr>
         <th>Programme de rattachement</th>
         <td>
-            @if ($bloc['programme']) {{ $bloc['programme'] }} @else <span class="mx-alerte">Non rattaché</span> @endif
+            @if ($bloc['programme'] ?? null)
+                {{ $bloc['programme'] }}
+            @else
+                <span class="mx-alerte">Non rattaché</span>
+            @endif
+        </td>
+    </tr>
+    <tr>
+        <th>Programme budgétaire de l'EP</th>
+        <td>
+            @if ($bloc['programme_ep'] ?? null)
+                {{ $bloc['programme_ep'] }}
+            @else
+                <span class="mx-alerte">Non rattaché</span>
+            @endif
         </td>
     </tr>
     <tr><th>Responsable</th><td>{{ $bloc['sp']->responsable?->name ?? '—' }}</td></tr>
@@ -16,7 +31,7 @@
     <tr>
         <th>Indicateur(s) du sous-programme</th>
         <td>
-            @forelse ($bloc['indicateurs'] as $i)
+            @forelse ($bloc['indicateurs'] ?? [] as $i)
                 <div>• @include('filament.planification.libelles._libelle', ['item' => $i])</div>
             @empty
                 <span class="mx-alerte">Aucun</span>

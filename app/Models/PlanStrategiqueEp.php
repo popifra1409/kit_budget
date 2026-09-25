@@ -93,7 +93,7 @@ class PlanStrategiqueEp extends Model
                 $totalEngage = 0;
                 $totalDisponible = 0;
 
-                foreach ($ppa->getSousProgrammesAvecActivites() as $sp) {
+                foreach ($sp->actionsPourExercice()->get() as $action) {
                     foreach ($sp->actions as $action) {
                         foreach ($action->activites as $activite) {
                             $totalAe += $activite->getTotalAe();
