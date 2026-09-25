@@ -19,6 +19,7 @@ use App\Http\Controllers\Programmation\RapportPpaController;
 use \App\Http\Controllers\Programmation\TableauBordPspController;
 use \App\Http\Controllers\Programmation\RapportCbmtCdmtController;
 use App\Http\Controllers\SuiviEvaluation\RapportSuiviEvaluationController;
+use App\Http\Controllers\Planification\ArborescenceLibellesController;
 
 Route::get('/', fn() => redirect('/portal'))->name('welcome');
 
@@ -238,6 +239,17 @@ Route::middleware(['web', 'auth'])->group(function () {
             Route::get('/activite/{rapport}/excel', [RapportSuiviEvaluationController::class, 'activiteExcel'])->name('activite.excel');
             Route::get('/rap/{rap}/pdf',            [RapportSuiviEvaluationController::class, 'rapPdf'])->name('rap.pdf');
             Route::get('/rap/{rap}/excel',          [RapportSuiviEvaluationController::class, 'rapExcel'])->name('rap.excel');
+            Route::get('/matrice/pdf',   [RapportSuiviEvaluationController::class, 'matricePdf'])->name('matrice.pdf');
+            Route::get('/matrice/excel', [RapportSuiviEvaluationController::class, 'matriceExcel'])->name('matrice.excel');
+        });
+
+    // ── Tableau de revue des libellés (Planification) ──
+    Route::prefix('planification/libelles')
+        ->name('planification.libelles.')
+        ->middleware(['module.access:planification'])
+        ->group(function () {
+            Route::get('/pdf',   [ArborescenceLibellesController::class, 'pdf'])->name('pdf');
+            Route::get('/excel', [ArborescenceLibellesController::class, 'excel'])->name('excel');
         });
 });
 

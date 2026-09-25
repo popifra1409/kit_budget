@@ -15,4 +15,10 @@ return [
         'statut'          => 'statut',
         'statuts_retenus' => ['valide', 'engage'],
     ],
+
+    'matrice' => [
+        'aligne_completude'  => 90,
+        'aligne_performance' => 75,
+        'partiel_completude' => 70,
+    ],
 ];

@@ -53,7 +53,28 @@ class SousProgrammeEpResource extends Resource
                     'danger' => 'cloture',
                 ]),
             ])
-            ->actions([Tables\Actions\EditAction::make()]);
+            ->actions([
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\Action::make('matrice')
+                    ->label("Matrice d'arrimage")
+                    ->icon('heroicon-o-squares-2x2')
+                    ->visible(fn() => auth()->user()->can('view_matrice_arrimage'))
+                    ->url(fn(\App\Models\SousProgrammeEp $record) => \App\Filament\SuiviEvaluation\Pages\MatriceArrimage::getUrl(
+                        ['psp' => $record->plan_strategique_ep_id, 'sp' => $record->id],
+                        panel: 'suivi-evaluation'
+                    ))
+                    ->openUrlInNewTab(),
+
+                Tables\Actions\Action::make('libelles')
+                    ->label('Tableau des libellés')
+                    ->icon('heroicon-o-list-bullet')
+                    ->visible(fn() => auth()->user()->can('view_arborescence_libelles'))
+                    ->url(fn(\App\Models\SousProgrammeEp $record) => \App\Filament\Planification\Pages\ArborescenceLibelles::getUrl([
+                        'psp' => $record->plan_strategique_ep_id,
+                        'sp'  => $record->id,
+                    ]))
+                    ->openUrlInNewTab(),
+            ]);
     }
 
     public static function getRelations(): array
@@ -70,7 +91,5 @@ class SousProgrammeEpResource extends Resource
             'index' => Pages\ListSousProgrammeEps::route('/'),
             'edit' => Pages\EditSousProgrammeEp::route('/{record}/edit'),
         ];
-        // Pas de route 'create' : les sous-programmes se creent
-        // depuis SousProgrammesRelationManager sur PlanStrategiqueEpResource.
     }
 }

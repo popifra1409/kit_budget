@@ -106,8 +106,6 @@ class RolePermissionSeeder extends Seeder
         // ====================================================
         // 2ter. MODULES CRUD — Programmation
         // ====================================================
-        // CORRIGE : ajout de cbmt_exercice et cdmt_exercice, absents
-        // de toute liste malgre leur usage dans les Resources Filament.
         $modulesProgrammation = [
             'ppa_exercice',
             'cbmt_exercice',
@@ -125,8 +123,6 @@ class RolePermissionSeeder extends Seeder
         // ── Créer permissions CRUD (firstOrCreate = non destructif) ──
         $this->command->info('📝 Création permissions CRUD...');
         $permsCrudCreees = 0;
-        // CORRIGE : $modulesSuiviEvaluation etait declare mais jamais
-        // fusionne ici — ses permissions n'etaient donc jamais creees.
         foreach (
             array_merge(
                 $modulesBudget,
@@ -284,12 +280,16 @@ class RolePermissionSeeder extends Seeder
             'valider_activite',
             'retourner_activite',
 
+            // ✅ AJOUTE : Tableau de revue des libelles (arborescence)
+            'view_arborescence_libelles',      // voir le tableau (limite a ses propres sous-programmes)
+            'view_all_arborescence_libelles',  // voir tous les sous-programmes du PSP
+            'exporter_arborescence_libelles',  // export PDF / Excel
+
             // ── Module Programmation ───────────────────────
             'access_module_programmation',
             'transmettre_ppa_exercice',
             'valider_ppa_exercice',
             'retourner_ppa_exercice',
-            // AJOUTE : workflow CBMT/CDMT (Cadrage Pluriannuel)
             'transmettre_cbmt_exercice',
             'valider_cbmt_exercice',
             'retourner_cbmt_exercice',
@@ -299,13 +299,17 @@ class RolePermissionSeeder extends Seeder
 
             // ── Module Suivi et Evaluation ───────────────────────
             'access_module_suivi_evaluation',
-            // AJOUTE : workflow des rapports de Suivi-Evaluation
             'transmettre_rapport_activite_periodique',
             'valider_rapport_activite_periodique',
             'retourner_rapport_activite_periodique',
             'transmettre_rapport_annuel_performance',
             'valider_rapport_annuel_performance',
             'retourner_rapport_annuel_performance',
+
+            // ✅ AJOUTE : Matrice d'arrimage strategique (Tableaux de Bord)
+            'view_matrice_arrimage',      // voir la matrice (limitee a ses propres sous-programmes)
+            'view_all_matrice_arrimage',  // voir tous les sous-programmes du PSP
+            'exporter_matrice_arrimage',  // export PDF / Excel
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -673,7 +677,7 @@ class RolePermissionSeeder extends Seeder
                 'imprimer_etat_retenues_regie',
                 'imprimer_compte_emploi_regie',
 
-                // Collectifs (lecture uniquement ?)
+                // Collectifs (lecture)
                 'view_any_collectif_budgetaire',
                 'view_collectif_budgetaire',
             ],
@@ -748,6 +752,18 @@ class RolePermissionSeeder extends Seeder
                 'valider_collectif_budgetaire',
                 'adopter_collectif_budgetaire',
                 'annuler_collectif_budgetaire',
+
+                // ✅ AJOUTE : pilotage strategique via la matrice d'arrimage
+                'access_module_suivi_evaluation',
+                'view_matrice_arrimage',
+                'view_all_matrice_arrimage',
+                'exporter_matrice_arrimage',
+
+                // ✅ AJOUTE : revue des libelles (module Planification)
+                'access_module_planification',
+                'view_arborescence_libelles',
+                'view_all_arborescence_libelles',
+                'exporter_arborescence_libelles',
             ],
             'directeur_general'
         );
@@ -1093,6 +1109,17 @@ class RolePermissionSeeder extends Seeder
                 // Transmission generique
                 'transmettre_document',
                 'view_my_transmissions',
+
+                // ✅ AJOUTE : acces a la matrice d'arrimage (raccourci depuis la Planification)
+                'access_module_suivi_evaluation',
+                'view_matrice_arrimage',
+                'view_all_matrice_arrimage',
+                'exporter_matrice_arrimage',
+
+                // ✅ AJOUTE : revue des libelles
+                'view_arborescence_libelles',
+                'view_all_arborescence_libelles',
+                'exporter_arborescence_libelles',
             ],
             'responsable_planification'
         );
@@ -1113,7 +1140,7 @@ class RolePermissionSeeder extends Seeder
                 'valider_ppa_exercice',
                 'retourner_ppa_exercice',
 
-                // AJOUTE : CBMT (Cadrage Budgetaire a Moyen Terme)
+                // CBMT (Cadrage Budgetaire a Moyen Terme)
                 'view_any_cbmt_exercice',
                 'view_cbmt_exercice',
                 'create_cbmt_exercice',
@@ -1122,7 +1149,7 @@ class RolePermissionSeeder extends Seeder
                 'valider_cbmt_exercice',
                 'retourner_cbmt_exercice',
 
-                // AJOUTE : CDMT (Cadre de Depenses a Moyen Terme)
+                // CDMT (Cadre de Depenses a Moyen Terme)
                 'view_any_cdmt_exercice',
                 'view_cdmt_exercice',
                 'create_cdmt_exercice',
@@ -1147,13 +1174,19 @@ class RolePermissionSeeder extends Seeder
                 'view_any_extrant',
                 'view_extrant',
 
+                // ✅ AJOUTE : revue des libelles (lecture, acces via le module Planification)
+                'access_module_planification',
+                'view_arborescence_libelles',
+                'view_all_arborescence_libelles',
+                'exporter_arborescence_libelles',
+
                 'transmettre_document',
                 'view_my_transmissions',
             ],
             'responsable_programmation'
         );
 
-        // ── RESPONSABLE SUIVI ET EVALUATION ─────────────────────────────
+        // ── RESPONSABLE SUIVI ET EVALUATION ───────────────────────────
         $this->ajouterPermissionsRole(
             Role::firstOrCreate(['name' => 'responsable_suivi_evaluation', 'guard_name' => 'web']),
             [
@@ -1194,10 +1227,42 @@ class RolePermissionSeeder extends Seeder
                 'valider_rapport_annuel_performance',
                 'retourner_rapport_annuel_performance',
 
+                // ✅ AJOUTE : Matrice d'arrimage strategique (vision complete)
+                'view_matrice_arrimage',
+                'view_all_matrice_arrimage',
+                'exporter_matrice_arrimage',
+
+                // ✅ AJOUTE : revue des libelles (acces via le module Planification)
+                'access_module_planification',
+                'view_arborescence_libelles',
+                'view_all_arborescence_libelles',
+                'exporter_arborescence_libelles',
+
                 'transmettre_document',
                 'view_my_transmissions',
             ],
             'responsable_suivi_evaluation'
+        );
+
+        // ── ✅ NOUVEAU : RESPONSABLE DE SOUS-PROGRAMME ─────────────────
+        // Pas de 'view_all_matrice_arrimage' : ne voit QUE les sous-programmes
+        // dont il est responsable (filtre applique cote serveur par le service).
+        $this->ajouterPermissionsRole(
+            Role::firstOrCreate(['name' => 'responsable_sous_programme', 'guard_name' => 'web']),
+            [
+                'access_module_portal',
+                'access_module_suivi_evaluation',
+                'view_matrice_arrimage',
+                'exporter_matrice_arrimage',
+                'view_any_rapport_activite_periodique',
+                'view_rapport_activite_periodique',
+
+                // Revue des libelles de SES sous-programmes uniquement (pas de view_all_*)
+                'access_module_planification',
+                'view_arborescence_libelles',
+                'exporter_arborescence_libelles',
+            ],
+            'responsable_sous_programme'
         );
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -1219,8 +1284,7 @@ class RolePermissionSeeder extends Seeder
      * Ajoute uniquement les NOUVELLES permissions à un rôle.
      * Les permissions déjà attribuées au rôle sont conservées intactes.
      *
-     * ✅ Remplace syncPermissions() (qui était destructif)
-     *    par givePermissionTo() (qui est additif)
+     * Utilise givePermissionTo() (additif) plutot que syncPermissions() (destructif).
      *
      * @param Role   $role        Le rôle à mettre à jour
      * @param array  $permissions Liste des permissions voulues pour ce rôle
