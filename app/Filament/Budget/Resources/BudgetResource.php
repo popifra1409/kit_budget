@@ -275,61 +275,55 @@ class BudgetResource extends Resource
                     Tables\Actions\EditAction::make(),
 
                     // ── Export Excel ──────────────────────────────
-                    Action::make('exportExcel')
-                        ->label('Export Excel')
-                        ->icon('heroicon-o-document-arrow-down')
+                    Tables\Actions\Action::make('exporterDisponibilitesExcel')
+                        ->label('Disponibilités (Excel)')
+                        ->icon('heroicon-o-table-cells')
                         ->color('success')
-                        ->requiresConfirmation()
                         ->modalHeading('Exporter les disponibilités en Excel')
-                        ->modalDescription(
-                            fn(Budget $record) =>
-                            "Exporter l'état des disponibilités budgétaires pour : {$record->libelle}"
-                        )
-                        ->modalSubmitActionLabel('Télécharger')
-                        ->visible(fn() => auth()->user()->hasAnyRole([
-                            'super_admin',
-                            'chef_service_budget',
-                            'sous_directeur_budget',
-                            'directeur_general',
-                            'controleur_financier',
-                        ]))
-                        ->action(function (Budget $record) {
-                            $filename = 'disponibilites_'
-                                . str_replace(' ', '_', $record->code) . '_'
-                                . now()->format('Ymd_His') . '.xlsx';
-                            return Excel::download(new DisponibilitesBudgetExport($record), $filename);
+                        ->modalDescription(fn(Budget $record) => "État des disponibilités budgétaires pour : {$record->libelle}")
+                        ->modalSubmitActionLabel('Générer')
+                        ->form(static::formulaireEtatDisponibilites())
+                        ->action(function (Budget $record, array $data) {
+                            $detaille = $data['niveau'] === 'detaille';
+
+                            $filename = 'disponibilites_' . ($detaille ? 'detaille_' : '')
+                                . $record->code . '_' . now()->format('Ymd_His') . '.xlsx';
+
+                            return Excel::download(new DisponibilitesBudgetExport(
+                                $record,
+                                $detaille,
+                                (bool) $data['engagees_seulement'],
+                                $data['programme_id'] ? (int) $data['programme_id'] : null,
+                            ), $filename);
                         }),
 
                     // ── Export PDF ────────────────────────────────
-                    Action::make('exportPdf')
-                        ->label('Export PDF')
-                        ->icon('heroicon-o-document-text')
+                    Tables\Actions\Action::make('exporterDisponibilitesPdf')
+                        ->label('Disponibilités (PDF)')
+                        ->icon('heroicon-o-document-arrow-down')
                         ->color('danger')
-                        ->requiresConfirmation()
                         ->modalHeading('Exporter les disponibilités en PDF')
-                        ->modalDescription(
-                            fn(Budget $record) =>
-                            "Générer un document PDF avec l'état des disponibilités pour : {$record->libelle}"
-                        )
-                        ->modalSubmitActionLabel('Générer PDF')
-                        ->visible(fn() => auth()->user()->hasAnyRole([
-                            'super_admin',
-                            'chef_service_budget',
-                            'sous_directeur_budget',
-                            'directeur_general',
-                            'controleur_financier',
-                        ]))
-                        ->action(function (Budget $record) {
-                            $lignes = $record->lignesBudgetaires()->with(['nomenclature'])->get();
-                            $pdf = PDF::loadView('exports.disponibilites-budget-pdf', [
-                                'budget' => $record,
-                                'lignes' => $lignes,
-                            ]);
-                            $pdf->setPaper('a4', 'landscape');
-                            $filename = 'disponibilites_'
-                                . str_replace(' ', '_', $record->code) . '_'
-                                . now()->format('Ymd_His') . '.pdf';
-                            return response()->streamDownload(fn() => print($pdf->stream()), $filename);
+                        ->modalDescription(fn(Budget $record) => "Document PDF de l'état des disponibilités pour : {$record->libelle}")
+                        ->modalSubmitActionLabel('Générer')
+                        ->form(static::formulaireEtatDisponibilites())
+                        ->action(function (Budget $record, array $data) {
+                            $detaille = $data['niveau'] === 'detaille';
+
+                            $etat = app(\App\Services\Budget\EtatDisponibilitesService::class)->construire(
+                                $record,
+                                $detaille,
+                                (bool) $data['engagees_seulement'],
+                                $data['programme_id'] ? (int) $data['programme_id'] : null,
+                            );
+
+                            // Le detail (engagements) est long : A3 paysage pour rester lisible
+                            $pdf = PDF::loadView('exports.disponibilites-budget-pdf', ['etat' => $etat])
+                                ->setPaper($detaille ? 'a3' : 'a4', 'landscape');
+
+                            $filename = 'disponibilites_' . ($detaille ? 'detaille_' : '')
+                                . $record->code . '_' . now()->format('Ymd_His') . '.pdf';
+
+                            return response()->streamDownload(fn() => print($pdf->output()), $filename);
                         }),
 
                 ])
@@ -364,6 +358,34 @@ class BudgetResource extends Resource
             'create' => Pages\CreateBudget::route('/create'),
             'edit'   => Pages\EditBudget::route('/{record}/edit'),
             'view'   => Pages\ViewBudget::route('/{record}'),
+        ];
+    }
+
+    /** Options communes aux exports PDF et Excel de l'etat des disponibilites. */
+    protected static function formulaireEtatDisponibilites(): array
+    {
+        return [
+            Forms\Components\Radio::make('niveau')
+                ->label('Niveau de détail')
+                ->options([
+                    'synthetique' => 'Synthétique : une ligne par nomenclature',
+                    'detaille'    => 'Détaillé : engagements (bénéficiaire, objet, montants) sous chaque ligne',
+                ])
+                ->default('synthetique')
+                ->required(),
+
+            Forms\Components\Toggle::make('engagees_seulement')
+                ->label('Uniquement les lignes ayant des engagements')
+                ->default(false),
+
+            Forms\Components\Select::make('programme_id')
+                ->label('Programme')
+                ->placeholder('Tous les programmes')
+                ->options(fn(Budget $record) => \App\Models\Programme::withoutGlobalScope('exercice')
+                    ->where('exercice_id', $record->exercice_id ?? \App\Models\Exercice::getActif()?->id)
+                    ->where('niveau', 'programme')
+                    ->orderBy('code')->get()
+                    ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"])),
         ];
     }
 }

@@ -3,55 +3,65 @@
 namespace App\Exports;
 
 use App\Models\Budget;
-use App\Models\Engagement;
-use App\Models\OrdonnancePaiement;
+use App\Services\Budget\EtatDisponibilitesService;
 use Maatwebsite\Excel\Concerns\FromArray;
+use Maatwebsite\Excel\Concerns\WithColumnWidths;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
-use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Export "Etat des disponibilites budgetaires", regroupe par Programme
- * de rattachement puis par Sous-programme de gestion interne (le cas
- * echeant).
+ * Export Excel de l'"Etat des disponibilites budgetaires".
+ * Calculs : EtatDisponibilitesService (commun avec le PDF).
  *
- * "Paye" = montant net verse au beneficiaire (OP standard, statut
- * 'payee'). "Taxes Reversees" = retenues (TVA, IR, TSR...) reversees
- * separement au Tresor via l'OPT liee. Colonnes Chapitre/Article/
- * Paragraphe retirees (non utilisees).
+ * Colonnes A..O = etat ; P = "Niveau" (filtre : Programme, Ligne, Engagement...).
  */
-class DisponibilitesBudgetExport implements
+class DisponibilitesBudgetExport extends DefaultValueBinder implements
     FromArray,
     WithHeadings,
     WithStyles,
     WithTitle,
     WithColumnWidths,
-    WithEvents
+    WithEvents,
+    WithCustomValueBinder
 {
-    protected Budget $budget;
+    protected const DERNIERE_COLONNE_ETAT = 'O';
+    protected const COLONNE_NIVEAU = 'P';
+    protected const PREMIERE_LIGNE_DONNEES = 4; // apres les 2 lignes de titre + l'en-tete
 
-    protected array $lignesProgramme = [];
-    protected array $lignesSousProgramme = [];
-    protected array $lignesSousTotal = [];
-    protected int $ligneTotalGeneral = 0;
+    protected ?array $etat = null;
 
-    public function __construct(Budget $budget)
+    /** Type de chaque ligne de donnees (meme ordre que array()). */
+    protected array $types = [];
+
+    public function __construct(
+        protected Budget $budget,
+        protected bool $detaille = false,
+        protected bool $engageesSeulement = false,
+        protected ?int $programmeId = null,
+    ) {}
+
+    protected function etat(): array
     {
-        $this->budget = $budget;
+        return $this->etat ??= app(EtatDisponibilitesService::class)
+            ->construire($this->budget, $this->detaille, $this->engageesSeulement, $this->programmeId);
     }
 
     public function headings(): array
     {
         return [
             'Code',
-            'Nomenclature',
+            $this->detaille ? 'Nomenclature / Bénéficiaire — Objet' : 'Nomenclature',
             'Budget Initial',
             'Vir. Entrants',
             'Vir. Sortants',
@@ -63,88 +73,75 @@ class DisponibilitesBudgetExport implements
             'Disponible Eng.',
             'Disponible Ord.',
             'Taux Engagement (%)',
+            'Taux Ordonnancement (%)',
             'Taux Exécution (%)',
+            'Niveau',
         ];
     }
 
-    protected function calculerLigne($ligne): array
+    public function array(): array
     {
-        $budgetInitial = (float) ($ligne->budget_initial ?? 0);
-        $virementsEntrants = (float) ($ligne->virements_entrants ?? 0);
-        $virementsSortants = (float) ($ligne->virements_sortants ?? 0);
-        $budgetRectifie = (float) ($ligne->budget_rectifie ?? ($budgetInitial + $virementsEntrants - $virementsSortants));
+        $etat = $this->etat();
+        $rows = [];
 
-        $engage = (float) (Engagement::where('budget_id', $ligne->budget_id)
-            ->where('nomenclature_principale_id', $ligne->nomenclature_id)
-            ->sum('montant_engage') ?? 0);
+        foreach ($etat['groupes'] as $groupe) {
+            $titre = ($groupe['programme'] ? 'PROGRAMME : ' : '') . $groupe['libelle'];
+            $this->ajouterLigne($rows, $this->ligneTitre($titre), 'programme');
 
-        $ordonne = (float) (Engagement::where('budget_id', $ligne->budget_id)
-            ->where('nomenclature_principale_id', $ligne->nomenclature_id)
-            ->whereHas('ordonnancesPaiement')
-            ->sum('montant_engage') ?? 0);
+            foreach ($groupe['sous_groupes'] as $sousGroupe) {
+                if ($sousGroupe['libelle']) {
+                    $this->ajouterLigne($rows, $this->ligneTitre('   ↳ Sous-programme (gestion interne) : ' . $sousGroupe['libelle']), 'sous_programme');
+                }
 
-        $paye = (float) (OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
-            $q->where('budget_id', $ligne->budget_id)
-                ->where('nomenclature_principale_id', $ligne->nomenclature_id);
-        })
-            ->where('type_ordonnance', 'standard')
-            ->where('statut', 'payee')
-            ->sum('montant_net') ?? 0);
+                foreach ($sousGroupe['lignes'] as $ligne) {
+                    $this->ajouterLigne($rows, array_merge([$ligne['code'], $ligne['libelle']], $this->montants($ligne['c'])), 'ligne');
 
-        $taxesReversees = (float) (OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
-            $q->where('budget_id', $ligne->budget_id)
-                ->where('nomenclature_principale_id', $ligne->nomenclature_id);
-        })
-            ->where('type_ordonnance', 'impot')
-            ->where('statut', 'payee')
-            ->sum('montant_net') ?? 0);
+                    foreach ($ligne['engagements'] as $e) {
+                        $this->ajouterLigne($rows, $this->ligneEngagement($e), 'engagement');
+                    }
+                }
 
-        $disponibleEng = $budgetRectifie - $engage;
-        $disponibleOrd = $budgetRectifie - $ordonne;
-        $tauxEngagement = $budgetRectifie > 0 ? ($engage / $budgetRectifie) * 100 : 0;
-        $tauxExecution = $budgetRectifie > 0 ? (($paye + $taxesReversees) / $budgetRectifie) * 100 : 0;
+                if ($sousGroupe['libelle']) {
+                    $this->ajouterLigne($rows, array_merge(['Sous-total sous-programme', ''], $this->montants($sousGroupe['total'])), 'sous_total');
+                }
+            }
 
-        return compact(
-            'budgetInitial',
-            'virementsEntrants',
-            'virementsSortants',
-            'budgetRectifie',
-            'engage',
-            'ordonne',
-            'paye',
-            'taxesReversees',
-            'disponibleEng',
-            'disponibleOrd',
-            'tauxEngagement',
-            'tauxExecution'
-        );
+            if ($groupe['afficher_total']) {
+                $this->ajouterLigne($rows, array_merge(['Sous-total programme', ''], $this->montants($groupe['total'])), 'sous_total');
+            }
+        }
+
+        $this->ajouterLigne($rows, array_merge(['TOTAL GÉNÉRAL', ''], $this->montants($etat['total'])), 'total');
+
+        return $rows;
     }
 
-    protected function ligneVide(string $libelle, array $totaux = []): array
+    // ────────────────────────────────────────────────────────────────
+
+    protected const LIBELLES_NIVEAU = [
+        'programme'      => 'Programme',
+        'sous_programme' => 'Sous-programme',
+        'ligne'          => 'Ligne',
+        'engagement'     => 'Engagement',
+        'sous_total'     => 'Sous-total',
+        'total'          => 'Total',
+    ];
+
+    protected function ajouterLigne(array &$rows, array $valeurs, string $type): void
     {
-        return [
-            $libelle,
-            '',
-            $totaux['budgetInitial'] ?? '',
-            $totaux['virementsEntrants'] ?? '',
-            $totaux['virementsSortants'] ?? '',
-            $totaux['budgetRectifie'] ?? '',
-            $totaux['engage'] ?? '',
-            $totaux['ordonne'] ?? '',
-            $totaux['paye'] ?? '',
-            $totaux['taxesReversees'] ?? '',
-            $totaux['disponibleEng'] ?? '',
-            $totaux['disponibleOrd'] ?? '',
-            $totaux['tauxEngagement'] ?? '',
-            $totaux['tauxExecution'] ?? '',
-        ];
+        $valeurs[] = self::LIBELLES_NIVEAU[$type];
+        $rows[] = $valeurs;
+        $this->types[] = $type;
     }
 
-    protected function ligneDonnee($ligne, array $c): array
+    protected function ligneTitre(string $libelle): array
+    {
+        return array_merge([$libelle], array_fill(0, 14, ''));
+    }
+
+    protected function montants(array $c): array
     {
         return [
-            $ligne->nomenclature?->code ?? '',
-            $ligne->nomenclature?->libelle ?? '',
             round($c['budgetInitial'], 2),
             round($c['virementsEntrants'], 2),
             round($c['virementsSortants'], 2),
@@ -156,80 +153,43 @@ class DisponibilitesBudgetExport implements
             round($c['disponibleEng'], 2),
             round($c['disponibleOrd'], 2),
             round($c['tauxEngagement'], 2),
+            round($c['tauxOrdonnancement'], 2),
             round($c['tauxExecution'], 2),
         ];
     }
 
-    public function array(): array
+    protected function ligneEngagement(array $e): array
     {
-        $lignes = $this->budget->lignesBudgetaires()->with(['nomenclature'])->get();
+        $details = array_filter([$e['date'], $e['numeros_op'] ? "OP {$e['numeros_op']}" : null]);
 
-        $enrichies = $lignes->map(function ($ligne) {
-            $c = $this->calculerLigne($ligne);
-            $classification = $ligne->getClassificationStrategique();
-            return (object) array_merge($c, [
-                'ligne' => $ligne,
-                'programme' => $classification['programme'],
-                'sous_programme' => $classification['sous_programme'],
-            ]);
-        });
+        return [
+            $e['numero'],
+            '↳ ' . $e['beneficiaire'] . ' — ' . $e['objet'] . ($details ? ' (' . implode(', ', $details) . ')' : ''),
+            '',
+            '',
+            '',
+            '',
+            round($e['engage'], 2),
+            round($e['ordonne'], 2),
+            round($e['paye'], 2),
+            round($e['taxesReversees'], 2),
+            '',
+            '',
+            '',
+            '',
+            '',
+        ];
+    }
 
-        $groupesProgramme = $enrichies->groupBy(fn($l) => $l->programme?->id ?? 'non_affecte');
-
-        $rows = [];
-        $rowIndex = 1;
-
-        $totalGeneral = ['budgetInitial' => 0, 'virementsEntrants' => 0, 'virementsSortants' => 0, 'budgetRectifie' => 0, 'engage' => 0, 'ordonne' => 0, 'paye' => 0, 'taxesReversees' => 0, 'disponibleEng' => 0, 'disponibleOrd' => 0];
-
-        foreach ($groupesProgramme as $programmeId => $lignesDuProgramme) {
-            $programmeLabel = $programmeId === 'non_affecte'
-                ? 'NON AFFECTE A UN PROGRAMME'
-                : 'PROGRAMME : ' . $lignesDuProgramme->first()->programme->code . ' - ' . $lignesDuProgramme->first()->programme->libelle;
-
-            $rows[] = $this->ligneVide($programmeLabel);
-            $rowIndex++;
-            $this->lignesProgramme[] = $rowIndex + 1;
-
-            $sousGroupes = $lignesDuProgramme->groupBy(fn($l) => $l->sous_programme?->id ?? 'sans_sous_programme');
-
-            foreach ($sousGroupes as $sousProgrammeId => $lignesDuSousGroupe) {
-                if ($sousProgrammeId !== 'sans_sous_programme') {
-                    $sp = $lignesDuSousGroupe->first()->sous_programme;
-                    $rows[] = $this->ligneVide("   -> Sous-programme : {$sp->code} - {$sp->libelle}");
-                    $rowIndex++;
-                    $this->lignesSousProgramme[] = $rowIndex + 1;
-                }
-
-                $sTotal = ['budgetInitial' => 0, 'virementsEntrants' => 0, 'virementsSortants' => 0, 'budgetRectifie' => 0, 'engage' => 0, 'ordonne' => 0, 'paye' => 0, 'taxesReversees' => 0, 'disponibleEng' => 0, 'disponibleOrd' => 0];
-
-                foreach ($lignesDuSousGroupe->sortBy(fn($l) => $l->ligne->nomenclature?->code ?? 'ZZZ') as $l) {
-                    $c = (array) $l;
-                    $rows[] = $this->ligneDonnee($l->ligne, $c);
-                    $rowIndex++;
-
-                    foreach (['budgetInitial', 'virementsEntrants', 'virementsSortants', 'budgetRectifie', 'engage', 'ordonne', 'paye', 'taxesReversees', 'disponibleEng', 'disponibleOrd'] as $k) {
-                        $sTotal[$k] += $c[$k];
-                        $totalGeneral[$k] += $c[$k];
-                    }
-                }
-
-                if ($sousProgrammeId !== 'sans_sous_programme') {
-                    $sTotal['tauxEngagement'] = $sTotal['budgetRectifie'] > 0 ? ($sTotal['engage'] / $sTotal['budgetRectifie']) * 100 : 0;
-                    $sTotal['tauxExecution'] = $sTotal['budgetRectifie'] > 0 ? (($sTotal['paye'] + $sTotal['taxesReversees']) / $sTotal['budgetRectifie']) * 100 : 0;
-                    $rows[] = $this->ligneVide('Sous-total sous-programme', array_map(fn($v) => round($v, 2), $sTotal));
-                    $rowIndex++;
-                    $this->lignesSousTotal[] = $rowIndex + 1;
-                }
-            }
+    /** Protection contre l'injection de formules (objets et noms saisis par les utilisateurs). */
+    public function bindValue(Cell $cell, $value): bool
+    {
+        if (is_string($value) && preg_match('/^[=+\-@]/', $value)) {
+            $cell->setValueExplicit($value, DataType::TYPE_STRING);
+            return true;
         }
 
-        $totalGeneral['tauxEngagement'] = $totalGeneral['budgetRectifie'] > 0 ? ($totalGeneral['engage'] / $totalGeneral['budgetRectifie']) * 100 : 0;
-        $totalGeneral['tauxExecution'] = $totalGeneral['budgetRectifie'] > 0 ? (($totalGeneral['paye'] + $totalGeneral['taxesReversees']) / $totalGeneral['budgetRectifie']) * 100 : 0;
-        $rows[] = $this->ligneVide('TOTAL GENERAL', array_map(fn($v) => round($v, 2), $totalGeneral));
-        $rowIndex++;
-        $this->ligneTotalGeneral = $rowIndex + 1;
-
-        return $rows;
+        return parent::bindValue($cell, $value);
     }
 
     public function styles(Worksheet $sheet)
@@ -238,21 +198,25 @@ class DisponibilitesBudgetExport implements
             1 => [
                 'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
-                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                    'wrapText' => true,
+                ],
             ],
         ];
     }
 
     public function title(): string
     {
-        return 'Disponibilités';
+        return $this->detaille ? 'Disponibilités (détail)' : 'Disponibilités';
     }
 
     public function columnWidths(): array
     {
         return [
             'A' => 16,
-            'B' => 42,
+            'B' => $this->detaille ? 60 : 42,
             'C' => 16,
             'D' => 14,
             'E' => 14,
@@ -264,7 +228,9 @@ class DisponibilitesBudgetExport implements
             'K' => 16,
             'L' => 16,
             'M' => 13,
-            'N' => 13,
+            'N' => 14,
+            'O' => 13,
+            'P' => 14,
         ];
     }
 
@@ -273,95 +239,110 @@ class DisponibilitesBudgetExport implements
         return [
             AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
-                $highestColumn = 'N';
+                $fin = self::DERNIERE_COLONNE_ETAT;
+                $niv = self::COLONNE_NIVEAU;
+                $etat = $this->etat();
 
+                // ── Titre et sous-titre ──
                 $sheet->insertNewRowBefore(1, 2);
-                $sheet->setCellValue('A1', 'ÉTAT DES DISPONIBILITÉS BUDGÉTAIRES');
-                $sheet->mergeCells('A1:' . $highestColumn . '1');
+                $sheet->setCellValue('A1', 'ÉTAT DES DISPONIBILITÉS BUDGÉTAIRES' . ($this->detaille ? ' — DÉTAIL DES ENGAGEMENTS' : ''));
+                $sheet->mergeCells("A1:{$niv}1");
                 $sheet->getStyle('A1')->applyFromArray([
                     'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => '1F4E78']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
                 ]);
                 $sheet->getRowDimension(1)->setRowHeight(30);
 
-                $sheet->setCellValue('A2', "Budget: {$this->budget->libelle} - Exercice: {$this->budget->exercice} - Généré le: " . now()->format('d/m/Y à H:i'));
-                $sheet->mergeCells('A2:' . $highestColumn . '2');
+                $options = array_filter([
+                    $this->engageesSeulement ? 'Lignes engagées uniquement' : null,
+                    $etat['programme_filtre'] ? 'Programme : ' . $etat['programme_filtre'] : null,
+                ]);
+
+                $sheet->setCellValue(
+                    'A2',
+                    "Budget : {$this->budget->libelle} - Exercice : {$this->budget->exercice}"
+                        . ' - Lignes : ' . $etat['nb_lignes_affichees'] . ' / ' . $etat['nb_lignes_budget']
+                        . ($options ? ' - ' . implode(' - ', $options) : '')
+                        . ' - Généré le : ' . now()->format('d/m/Y à H:i')
+                );
+                $sheet->mergeCells("A2:{$niv}2");
                 $sheet->getStyle('A2')->applyFromArray([
                     'font' => ['size' => 10, 'italic' => true],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
 
-                $highestRow = $sheet->getHighestRow();
+                $premiere = self::PREMIERE_LIGNE_DONNEES;
+                $derniere = $sheet->getHighestRow();
 
-                $sheet->getStyle('A3:' . $highestColumn . $highestRow)->applyFromArray([
+                // ── Bordures, formats ──
+                $sheet->getStyle("A3:{$niv}{$derniere}")->applyFromArray([
                     'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CCCCCC']]],
                 ]);
+                $sheet->getStyle("C{$premiere}:L{$derniere}")->getNumberFormat()->setFormatCode('#,##0 "FCFA"');
+                $sheet->getStyle("M{$premiere}:O{$derniere}")->getNumberFormat()->setFormatCode('0.00"%"');
+                $sheet->getStyle("C{$premiere}:L{$derniere}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                $sheet->getStyle("M{$premiere}:O{$derniere}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                $sheet->getStyle("{$niv}{$premiere}:{$niv}{$derniere}")->getFont()->getColor()->setRGB('7F7F7F');
 
-                // Montants : colonnes C a L. Pourcentages : M, N.
-                $sheet->getStyle('C4:L' . $highestRow)->getNumberFormat()->setFormatCode('#,##0 "FCFA"');
-                $sheet->getStyle('M4:N' . $highestRow)->getNumberFormat()->setFormatCode('0.00"%"');
-                $sheet->getStyle('C4:L' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                $sheet->getStyle('M4:N' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                // ── Styles par type de ligne ──
+                foreach ($this->types as $i => $type) {
+                    $row = $premiere + $i;
 
-                foreach ($this->lignesProgramme as $r) {
-                    $row = $r + 2;
-                    $sheet->mergeCells("A{$row}:N{$row}");
-                    $sheet->getStyle("A{$row}:N{$row}")->applyFromArray([
-                        'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4E78']],
-                    ]);
-                }
+                    match ($type) {
+                        'programme' => $this->styleTitre($sheet, $row, $fin, [
+                            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4E78']],
+                        ]),
+                        'sous_programme' => $this->styleTitre($sheet, $row, $fin, [
+                            'font' => ['bold' => true, 'italic' => true, 'color' => ['rgb' => '1F4E78']],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D9E2F3']],
+                        ]),
+                        'sous_total' => $sheet->getStyle("A{$row}:{$fin}{$row}")->applyFromArray([
+                            'font' => ['bold' => true, 'italic' => true],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0F2F5']],
+                            'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN], 'bottom' => ['borderStyle' => Border::BORDER_THIN]],
+                        ]),
+                        'total' => $sheet->getStyle("A{$row}:{$fin}{$row}")->applyFromArray([
+                            'font' => ['bold' => true, 'size' => 11],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E7E6E6']],
+                            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '000000']]],
+                        ]),
+                        'engagement' => $sheet->getStyle("A{$row}:{$fin}{$row}")->applyFromArray([
+                            'font' => ['italic' => true, 'size' => 9, 'color' => ['rgb' => '555555']],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FAFAFA']],
+                            'alignment' => ['wrapText' => true, 'vertical' => Alignment::VERTICAL_TOP],
+                        ]),
+                        default => null,
+                    };
 
-                foreach ($this->lignesSousProgramme as $r) {
-                    $row = $r + 2;
-                    $sheet->mergeCells("A{$row}:N{$row}");
-                    $sheet->getStyle("A{$row}:N{$row}")->applyFromArray([
-                        'font' => ['bold' => true, 'italic' => true, 'color' => ['rgb' => '1F4E78']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D9E2F3']],
-                    ]);
-                }
-
-                foreach ($this->lignesSousTotal as $r) {
-                    $row = $r + 2;
-                    $sheet->getStyle("A{$row}:N{$row}")->applyFromArray([
-                        'font' => ['bold' => true, 'italic' => true],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0F2F5']],
-                        'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN], 'bottom' => ['borderStyle' => Border::BORDER_THIN]],
-                    ]);
-                }
-
-                $totalRow = $this->ligneTotalGeneral + 2;
-                $sheet->getStyle("A{$totalRow}:N{$totalRow}")->applyFromArray([
-                    'font' => ['bold' => true, 'size' => 11],
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E7E6E6']],
-                    'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '000000']]],
-                ]);
-
-                // Disponibles negatifs en rouge : Disponible Eng. = K, Disponible Ord. = L
-                for ($row = 4; $row <= $highestRow; $row++) {
-                    $dispoEng = $sheet->getCell('K' . $row)->getValue();
-                    $dispoOrd = $sheet->getCell('L' . $row)->getValue();
-
-                    if (is_numeric($dispoEng) && $dispoEng < 0) {
-                        $sheet->getStyle('K' . $row)->applyFromArray([
-                            'font' => ['color' => ['rgb' => 'FF0000'], 'bold' => true],
-                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFC7CE']],
-                        ]);
+                    // Disponibles negatifs en rouge (K = Dispo. Eng., L = Dispo. Ord.)
+                    if (in_array($type, ['ligne', 'sous_total', 'total'], true)) {
+                        foreach (['K', 'L'] as $col) {
+                            $valeur = $sheet->getCell("{$col}{$row}")->getValue();
+                            if (is_numeric($valeur) && $valeur < 0) {
+                                $sheet->getStyle("{$col}{$row}")->applyFromArray([
+                                    'font' => ['color' => ['rgb' => 'FF0000'], 'bold' => true],
+                                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFC7CE']],
+                                ]);
+                            }
+                        }
                     }
-                    if (is_numeric($dispoOrd) && $dispoOrd < 0) {
-                        $sheet->getStyle('L' . $row)->applyFromArray([
-                            'font' => ['color' => ['rgb' => 'FF0000'], 'bold' => true],
-                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFC7CE']],
-                        ]);
+
+                    if ($type !== 'engagement') {
+                        $sheet->getRowDimension($row)->setRowHeight(16);
                     }
                 }
 
-                $sheet->freezePane('A4');
-
-                for ($row = 4; $row <= $highestRow; $row++) {
-                    $sheet->getRowDimension($row)->setRowHeight(16);
-                }
+                $sheet->getRowDimension(3)->setRowHeight(32);
+                $sheet->freezePane('C' . $premiere);
+                $sheet->setAutoFilter("A3:{$niv}{$derniere}");
             },
         ];
+    }
+
+    protected function styleTitre(Worksheet $sheet, int $row, string $fin, array $style): void
+    {
+        $sheet->mergeCells("A{$row}:{$fin}{$row}");
+        $sheet->getStyle("A{$row}:{$fin}{$row}")->applyFromArray($style);
     }
 }

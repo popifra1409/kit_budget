@@ -1,529 +1,168 @@
+{{-- resources/views/exports/disponibilites-budget-pdf.blade.php --}}
+@php
+    $b = $etat['budget'];
+    $f = fn ($v) => number_format((float) $v, 0, ',', ' ');
+    $dateAdoption = filled($b->date_adoption ?? null)
+        ? \Illuminate\Support\Carbon::parse($b->date_adoption)->format('d/m/Y')
+        : '—';
+    $filtres = array_filter([
+        $etat['engagees_seulement'] ? 'Lignes engagées uniquement' : null,
+        $etat['programme_filtre'] ? 'Programme ' . $etat['programme_filtre'] : null,
+    ]);
+@endphp
 <!DOCTYPE html>
-<html lang="fr">
-
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>État des Disponibilités Budgétaires - {{ $budget->libelle }}</title>
+    <meta charset="utf-8">
+    <title>État des disponibilités budgétaires</title>
     <style>
-        @page {
-            margin: 12mm 8mm;
-        }
+        @page { margin: 20px 18px 34px 18px; }
+        body { font-family: 'DejaVu Sans', sans-serif; font-size: 7px; color: #111; }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        h1 { font-size: 14px; text-align: center; color: #1F4E78; margin: 0 0 2px; }
+        .sous-titre { text-align: center; font-size: 9px; margin-bottom: 6px; }
 
-        body {
-            font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 7pt;
-            color: #333;
-            line-height: 1.3;
-        }
+        table.infos { width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 7.5px; }
+        table.infos td { padding: 2px 4px; }
+        table.infos .lib { font-weight: bold; color: #1F4E78; }
 
-        .header {
-            text-align: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 3px solid #1F4E78;
+        table.etat { width: 100%; border-collapse: collapse; }
+        table.etat thead { display: table-header-group; } /* en-tete repete sur chaque page */
+        table.etat th {
+            background: #4472C4; color: #fff; padding: 3px 2px; border: 1px solid #8EA9DB;
+            font-size: 6.5px; text-align: center; vertical-align: middle;
         }
+        table.etat td { border: 1px solid #D0D0D0; padding: 2px; vertical-align: top; }
+        table.etat tr { page-break-inside: avoid; }
 
-        .header h1 {
-            font-size: 16pt;
-            color: #1F4E78;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            font-weight: bold;
-        }
+        .num { text-align: right; white-space: nowrap; }
+        .pos { color: #0B6B2E; }
+        .neg { color: #C00000; background: #FFC7CE; font-weight: bold; }
 
-        .header .subtitle {
-            font-size: 10pt;
-            color: #666;
-            margin-bottom: 4px;
-        }
+        tr.prog td { background: #1F4E78; color: #fff; font-weight: bold; font-size: 8px; padding: 3px; }
+        tr.sp td { background: #D9E2F3; color: #1F4E78; font-weight: bold; font-style: italic; }
+        tr.stot td { background: #F0F2F5; font-weight: bold; font-style: italic; }
+        tr.total td { background: #E7E6E6; font-weight: bold; font-size: 7.5px; border: 1.5px solid #000; }
 
-        .header .info {
-            font-size: 8pt;
-            color: #999;
-            font-style: italic;
-        }
+        tr.eng td { background: #FAFAFA; color: #444; font-style: italic; font-size: 6.5px; }
+        tr.eng td.lib { padding-left: 10px; }
+        tr.eng .meta { color: #7F7F7F; }
 
-        .budget-info {
-            background: #F8F9FA;
-            padding: 8px;
-            margin-bottom: 12px;
-            border-left: 4px solid #4472C4;
-            border-radius: 3px;
-        }
-
-        .budget-info table {
-            width: 100%;
-        }
-
-        .budget-info td {
-            padding: 2px 6px;
-            font-size: 8pt;
-        }
-
-        .budget-info td:first-child {
-            font-weight: bold;
-            width: 20%;
-            color: #1F4E78;
-        }
-
-        table.data-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 8px;
-            font-size: 7pt;
-        }
-
-        table.data-table thead {
-            background: #4472C4;
-            color: white;
-        }
-
-        table.data-table thead th {
-            padding: 6px 3px;
-            text-align: center;
-            font-weight: bold;
-            border: 1px solid #2B5797;
-            font-size: 7pt;
-            line-height: 1.2;
-        }
-
-        table.data-table tbody td {
-            padding: 5px 3px;
-            border: 1px solid #ddd;
-        }
-
-        table.data-table tbody tr:nth-child(even) {
-            background: #F9F9F9;
-        }
-
-        .col-code {
-            text-align: center;
-            font-weight: 600;
-            width: 7%;
-            font-size: 7pt;
-        }
-
-        .col-libelle {
-            text-align: left;
-            width: 21%;
-            font-size: 6.5pt;
-        }
-
-        .col-montant {
-            text-align: right;
-            font-family: 'Courier New', monospace;
-            width: 6.4%;
-            font-size: 7pt;
-        }
-
-        .col-taux {
-            text-align: center;
-            font-weight: 600;
-            width: 5%;
-        }
-
-        .montant-positif {
-            color: #28A745;
-        }
-
-        .montant-negatif {
-            color: #DC3545;
-            font-weight: bold;
-        }
-
-        .taux-bon {
-            color: #28A745;
-            font-weight: bold;
-        }
-
-        .taux-moyen {
-            color: #FFC107;
-            font-weight: bold;
-        }
-
-        .taux-mauvais {
-            color: #DC3545;
-            font-weight: bold;
-        }
-
-        /* ── Regroupement Programme / Sous-Programme ────────── */
-        .row-programme td {
-            background: #1F4E78 !important;
-            color: #FFFFFF;
-            font-weight: bold;
-            font-size: 8pt;
-            padding: 5px 6px;
-            border: 1px solid #163a5c;
-        }
-
-        .row-sous-programme td {
-            background: #D9E2F3 !important;
-            color: #1F4E78;
-            font-weight: bold;
-            font-size: 7.5pt;
-            padding: 4px 6px;
-            border: 1px solid #b9c9e8;
-        }
-
-        .row-sous-total td {
-            background: #F0F2F5 !important;
-            font-weight: bold;
-            font-style: italic;
-            border-top: 1px solid #999;
-            border-bottom: 1px solid #999;
-        }
-
-        tfoot {
-            background: #E7E6E6;
-            font-weight: bold;
-            border-top: 2px solid #333;
-        }
-
-        tfoot td {
-            padding: 6px 3px;
-            border: 1px solid #999;
-            font-size: 7.5pt;
-        }
-
-        .footer {
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            text-align: center;
-            font-size: 6pt;
-            color: #999;
-            padding-top: 4px;
-            border-top: 1px solid #ddd;
-        }
-
-        .no-data {
-            text-align: center;
-            padding: 30px;
-            color: #999;
-            font-style: italic;
-        }
-
-        .legend {
-            margin-top: 12px;
-            padding: 8px;
-            background: #FFF9E6;
-            border-left: 4px solid #FFC107;
-            font-size: 7pt;
-        }
-
-        .legend strong {
-            color: #856404;
-        }
+        .legende { margin-top: 6px; font-size: 6.5px; color: #555; }
+        .pied { position: fixed; bottom: -22px; left: 0; right: 0; text-align: center; font-size: 6.5px; color: #7F7F7F; }
     </style>
 </head>
-
 <body>
-    <!-- En-tête -->
-    <div class="header">
-        <h1>État des Disponibilités Budgétaires</h1>
-        <div class="subtitle">{{ $budget->libelle }}</div>
-        <div class="info">Généré le {{ now()->format('d/m/Y à H:i') }}</div>
-    </div>
+    <div class="pied">Document généré automatiquement - {{ now()->format('d/m/Y à H:i') }}</div>
 
-    <!-- Informations du budget -->
-    <div class="budget-info">
-        <table>
+    <h1>ÉTAT DES DISPONIBILITÉS BUDGÉTAIRES{{ $etat['detaille'] ? ' — DÉTAIL DES ENGAGEMENTS' : '' }}</h1>
+    <div class="sous-titre">{{ $b->libelle }} — Généré le {{ now()->format('d/m/Y à H:i') }}</div>
+
+    <table class="infos">
+        <tr>
+            <td><span class="lib">Exercice :</span> {{ $b->exercice }}</td>
+            <td><span class="lib">Code budget :</span> {{ $b->code ?? '—' }}</td>
+            <td><span class="lib">Statut :</span> {{ ucfirst((string) ($b->statut ?? '—')) }}</td>
+            <td><span class="lib">Date adoption :</span> {{ $dateAdoption }}</td>
+        </tr>
+        <tr>
+            <td><span class="lib">Lignes :</span> {{ $etat['nb_lignes_affichees'] }} / {{ $etat['nb_lignes_budget'] }}</td>
+            <td><span class="lib">Budget total :</span> {{ $f($etat['budget_total']) }} FCFA</td>
+            <td><span class="lib">Engagements :</span> {{ $etat['nb_engagements'] }}</td>
+            <td><span class="lib">Filtres :</span> {{ $filtres ? implode(' — ', $filtres) : 'aucun' }}</td>
+        </tr>
+    </table>
+
+    <table class="etat">
+        <thead>
             <tr>
-                <td>Exercice :</td>
-                <td>{{ $budget->exercice }}</td>
-                <td>Code Budget :</td>
-                <td>{{ $budget->code }}</td>
+                <th style="width:5%">Code</th>
+                <th style="width:{{ $etat['detaille'] ? '22' : '18' }}%">{{ $etat['detaille'] ? 'Nomenclature / Bénéficiaire — Objet' : 'Nomenclature' }}</th>
+                <th>Budget<br>Initial</th>
+                <th>Vir.<br>Entrants</th>
+                <th>Vir.<br>Sortants</th>
+                <th>Budget<br>Rectifié</th>
+                <th>Engagé</th>
+                <th>Ordonné</th>
+                <th>Payé</th>
+                <th>Taxes<br>Reversées</th>
+                <th>Dispo.<br>Eng.</th>
+                <th>Dispo.<br>Ord.</th>
+                <th>Tx<br>Eng.</th>
+                <th>Tx<br>Ord.</th>
+                <th>Tx<br>Exec.</th>
             </tr>
-            <tr>
-                <td>Statut :</td>
-                <td>
-                    @switch($budget->statut)
-                        @case('elaboration')
-                            En élaboration
-                        @break
-
-                        @case('adopte')
-                            Adopté
-                        @break
-
-                        @case('execution')
-                            En exécution
-                        @break
-
-                        @case('cloture')
-                            Clôturé
-                        @break
-
-                        @default
-                            {{ $budget->statut }}
-                    @endswitch
-                </td>
-                <td>Date adoption :</td>
-                <td>{{ $budget->date_adoption ? $budget->date_adoption->format('d/m/Y') : 'N/A' }}</td>
-            </tr>
-            <tr>
-                <td>Nombre de lignes :</td>
-                <td>{{ $lignes->count() }}</td>
-                <td>Budget total :</td>
-                <td>{{ number_format($lignes->sum('budget_rectifie'), 0, ',', ' ') }} FCFA</td>
-            </tr>
-        </table>
-    </div>
-
-    @php
-        // Note : "Payé" = montant net verse au beneficiaire (OP standard).
-        // "Taxes Reversees" = montant des retenues (TVA, IR, TSR...) reversees
-        // separement au Tresor via l'OPT liee. Engage (brut) = Paye + Taxes
-        // Reversees, une fois le circuit solde.
-
-        // ── Calcul par ligne + regroupement Programme > Sous-Programme ──
-        $lignesEnrichies = $lignes->map(function ($ligne) {
-            $budgetInitial = $ligne->budget_initial ?? 0;
-            $virementsEntrants = $ligne->virements_entrants ?? 0;
-            $virementsSortants = $ligne->virements_sortants ?? 0;
-            $budgetRectifie = $ligne->budget_rectifie ?? ($budgetInitial + $virementsEntrants - $virementsSortants);
-
-            $engage = \App\Models\Engagement::where('budget_id', $ligne->budget_id)
-                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
-                ->sum('montant_engage') ?? 0;
-
-            $ordonne = \App\Models\Engagement::where('budget_id', $ligne->budget_id)
-                ->where('nomenclature_principale_id', $ligne->nomenclature_id)
-                ->whereHas('ordonnancesPaiement')
-                ->sum('montant_engage') ?? 0;
-
-            $paye = \App\Models\OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
-                    $q->where('budget_id', $ligne->budget_id)
-                      ->where('nomenclature_principale_id', $ligne->nomenclature_id);
-                })
-                ->where('type_ordonnance', 'standard')
-                ->where('statut', 'payee')
-                ->sum('montant_net') ?? 0;
-
-            $taxesReversees = \App\Models\OrdonnancePaiement::whereHas('engagement', function ($q) use ($ligne) {
-                    $q->where('budget_id', $ligne->budget_id)
-                      ->where('nomenclature_principale_id', $ligne->nomenclature_id);
-                })
-                ->where('type_ordonnance', 'impot')
-                ->where('statut', 'payee')
-                ->sum('montant_net') ?? 0;
-
-            $disponibleEng = $budgetRectifie - $engage;
-            $disponibleOrd = $budgetRectifie - $ordonne;
-            $tauxEngagement = $budgetRectifie > 0 ? ($engage / $budgetRectifie) * 100 : 0;
-            $tauxExecution = $budgetRectifie > 0 ? (($paye + $taxesReversees) / $budgetRectifie) * 100 : 0;
-
-            $classification = $ligne->getClassificationStrategique();
-
-            return (object) [
-                'ligne' => $ligne,
-                'budget_initial' => $budgetInitial,
-                'virements_entrants' => $virementsEntrants,
-                'virements_sortants' => $virementsSortants,
-                'budget_rectifie' => $budgetRectifie,
-                'engage' => $engage,
-                'ordonne' => $ordonne,
-                'paye' => $paye,
-                'taxes_reversees' => $taxesReversees,
-                'disponible_eng' => $disponibleEng,
-                'disponible_ord' => $disponibleOrd,
-                'taux_engagement' => $tauxEngagement,
-                'taux_execution' => $tauxExecution,
-                'programme' => $classification['programme'],
-                'sous_programme' => $classification['sous_programme'],
-            ];
-        });
-
-        $groupesProgramme = $lignesEnrichies->groupBy(fn ($l) => $l->programme?->id ?? 'non_affecte');
-
-        $totalInitialGeneral = 0;
-        $totalVirEntrantsGeneral = 0;
-        $totalVirSortantsGeneral = 0;
-        $totalRectifieGeneral = 0;
-        $totalEngageGeneral = 0;
-        $totalOrdonneGeneral = 0;
-        $totalPayeGeneral = 0;
-        $totalTaxesGeneral = 0;
-        $totalDispoEngGeneral = 0;
-        $totalDispoOrdGeneral = 0;
-    @endphp
-
-    <!-- Tableau des disponibilités -->
-    @if ($lignes->count() > 0)
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th class="col-code">Code</th>
-                    <th class="col-libelle">Nomenclature</th>
-                    <th class="col-montant">Budget<br>Initial</th>
-                    <th class="col-montant">Vir.<br>Entrants</th>
-                    <th class="col-montant">Vir.<br>Sortants</th>
-                    <th class="col-montant">Budget<br>Rectifié</th>
-                    <th class="col-montant">Engagé</th>
-                    <th class="col-montant">Ordonné</th>
-                    <th class="col-montant">Payé</th>
-                    <th class="col-montant">Taxes<br>Reversées</th>
-                    <th class="col-montant">Dispo.<br>Eng.</th>
-                    <th class="col-montant">Dispo.<br>Ord.</th>
-                    <th class="col-taux">Tx<br>Eng.</th>
-                    <th class="col-taux">Tx<br>Exec.</th>
+        </thead>
+        <tbody>
+            @forelse ($etat['groupes'] as $groupe)
+                <tr class="prog">
+                    <td colspan="15">■ {{ $groupe['programme'] ? 'PROGRAMME : ' : '' }}{{ $groupe['libelle'] }}</td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach ($groupesProgramme as $programmeId => $lignesDuProgramme)
-                    @php
-                        $programmeLabel = $programmeId === 'non_affecte'
-                            ? 'NON AFFECTÉ À UN PROGRAMME'
-                            : ($lignesDuProgramme->first()->programme->code . ' — ' . $lignesDuProgramme->first()->programme->libelle);
-                    @endphp
 
-                    <tr class="row-programme">
-                        <td colspan="14">📁 PROGRAMME : {{ $programmeLabel }}</td>
-                    </tr>
+                @foreach ($groupe['sous_groupes'] as $sousGroupe)
+                    @if ($sousGroupe['libelle'])
+                        <tr class="sp">
+                            <td colspan="15">↳ Sous-programme (gestion interne) : {{ $sousGroupe['libelle'] }}</td>
+                        </tr>
+                    @endif
 
-                    @php
-                        $sousGroupes = $lignesDuProgramme->groupBy(fn ($l) => $l->sous_programme?->id ?? 'sans_sous_programme');
-                    @endphp
+                    @foreach ($sousGroupe['lignes'] as $ligne)
+                        <tr>
+                            <td>{{ $ligne['code'] }}</td>
+                            <td>{{ $ligne['libelle'] }}</td>
+                            @include('exports.partials.disponibilites-montants', ['c' => $ligne['c']])
+                        </tr>
 
-                    @foreach ($sousGroupes as $sousProgrammeId => $lignesDuSousGroupe)
-                        @if ($sousProgrammeId !== 'sans_sous_programme')
-                            <tr class="row-sous-programme">
-                                <td colspan="14">&nbsp;&nbsp;↳ Sous-programme (gestion interne) : {{ $lignesDuSousGroupe->first()->sous_programme->code }} — {{ $lignesDuSousGroupe->first()->sous_programme->libelle }}</td>
-                            </tr>
-                        @endif
-
-                        @php
-                            $sTotalInitial = 0; $sTotalVirEnt = 0; $sTotalVirSort = 0; $sTotalRectifie = 0;
-                            $sTotalEngage = 0; $sTotalOrdonne = 0; $sTotalPaye = 0; $sTotalTaxes = 0;
-                            $sTotalDispoEng = 0; $sTotalDispoOrd = 0;
-                        @endphp
-
-                        @foreach ($lignesDuSousGroupe->sortBy(fn($l) => $l->ligne->nomenclature?->code ?? 'ZZZ') as $l)
-                            @php
-                                $sTotalInitial += $l->budget_initial;
-                                $sTotalVirEnt += $l->virements_entrants;
-                                $sTotalVirSort += $l->virements_sortants;
-                                $sTotalRectifie += $l->budget_rectifie;
-                                $sTotalEngage += $l->engage;
-                                $sTotalOrdonne += $l->ordonne;
-                                $sTotalPaye += $l->paye;
-                                $sTotalTaxes += $l->taxes_reversees;
-                                $sTotalDispoEng += $l->disponible_eng;
-                                $sTotalDispoOrd += $l->disponible_ord;
-
-                                $totalInitialGeneral += $l->budget_initial;
-                                $totalVirEntrantsGeneral += $l->virements_entrants;
-                                $totalVirSortantsGeneral += $l->virements_sortants;
-                                $totalRectifieGeneral += $l->budget_rectifie;
-                                $totalEngageGeneral += $l->engage;
-                                $totalOrdonneGeneral += $l->ordonne;
-                                $totalPayeGeneral += $l->paye;
-                                $totalTaxesGeneral += $l->taxes_reversees;
-                                $totalDispoEngGeneral += $l->disponible_eng;
-                                $totalDispoOrdGeneral += $l->disponible_ord;
-                            @endphp
-                            <tr>
-                                <td class="col-code">{{ $l->ligne->nomenclature?->code ?? '-' }}</td>
-                                <td class="col-libelle">{{ $l->ligne->nomenclature?->libelle ?? '' }}</td>
-                                <td class="col-montant">{{ number_format($l->budget_initial, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->virements_entrants, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->virements_sortants, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->budget_rectifie, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->engage, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->ordonne, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->paye, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($l->taxes_reversees, 0, ',', ' ') }}</td>
-                                <td class="col-montant {{ $l->disponible_eng < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                                    {{ number_format($l->disponible_eng, 0, ',', ' ') }}
+                        @foreach ($ligne['engagements'] as $e)
+                            <tr class="eng">
+                                <td>{{ $e['numero'] }}</td>
+                                <td class="lib">
+                                    ↳ <strong>{{ $e['beneficiaire'] }}</strong> — {{ $e['objet'] }}
+                                    <span class="meta">({{ $e['date'] }}@if ($e['numeros_op']), OP {{ $e['numeros_op'] }}@endif)</span>
                                 </td>
-                                <td class="col-montant {{ $l->disponible_ord < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                                    {{ number_format($l->disponible_ord, 0, ',', ' ') }}
-                                </td>
-                                <td class="col-taux {{ $l->taux_engagement >= 90 ? 'taux-mauvais' : ($l->taux_engagement >= 70 ? 'taux-moyen' : 'taux-bon') }}">
-                                    {{ number_format($l->taux_engagement, 1) }}%
-                                </td>
-                                <td class="col-taux {{ $l->taux_execution >= 90 ? 'taux-mauvais' : ($l->taux_execution >= 70 ? 'taux-moyen' : 'taux-bon') }}">
-                                    {{ number_format($l->taux_execution, 1) }}%
-                                </td>
+                                <td colspan="4"></td>
+                                <td class="num">{{ $f($e['engage']) }}</td>
+                                <td class="num">{{ $f($e['ordonne']) }}</td>
+                                <td class="num">{{ $f($e['paye']) }}</td>
+                                <td class="num">{{ $f($e['taxesReversees']) }}</td>
+                                <td colspan="5"></td>
                             </tr>
                         @endforeach
-
-                        @if ($sousProgrammeId !== 'sans_sous_programme')
-                            <tr class="row-sous-total">
-                                <td colspan="2" style="text-align:right;">Sous-total sous-programme :</td>
-                                <td class="col-montant">{{ number_format($sTotalInitial, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalVirEnt, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalVirSort, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalRectifie, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalEngage, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalOrdonne, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalPaye, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalTaxes, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalDispoEng, 0, ',', ' ') }}</td>
-                                <td class="col-montant">{{ number_format($sTotalDispoOrd, 0, ',', ' ') }}</td>
-                                <td class="col-taux">{{ $sTotalRectifie > 0 ? number_format(($sTotalEngage / $sTotalRectifie) * 100, 1) : 0 }}%</td>
-                                <td class="col-taux">{{ $sTotalRectifie > 0 ? number_format((($sTotalPaye + $sTotalTaxes) / $sTotalRectifie) * 100, 1) : 0 }}%</td>
-                            </tr>
-                        @endif
                     @endforeach
+
+                    @if ($sousGroupe['libelle'])
+                        <tr class="stot">
+                            <td colspan="2">Sous-total sous-programme</td>
+                            @include('exports.partials.disponibilites-montants', ['c' => $sousGroupe['total']])
+                        </tr>
+                    @endif
                 @endforeach
-            </tbody>
-            <tfoot>
-                <tr>
-                    <td colspan="2" style="text-align: right; font-weight: bold;">TOTAL GÉNÉRAL</td>
-                    <td class="col-montant">{{ number_format($totalInitialGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalVirEntrantsGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalVirSortantsGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalRectifieGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalEngageGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalOrdonneGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalPayeGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant">{{ number_format($totalTaxesGeneral, 0, ',', ' ') }}</td>
-                    <td class="col-montant {{ $totalDispoEngGeneral < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                        {{ number_format($totalDispoEngGeneral, 0, ',', ' ') }}
-                    </td>
-                    <td class="col-montant {{ $totalDispoOrdGeneral < 0 ? 'montant-negatif' : 'montant-positif' }}">
-                        {{ number_format($totalDispoOrdGeneral, 0, ',', ' ') }}
-                    </td>
-                    <td class="col-taux">
-                        {{ $totalRectifieGeneral > 0 ? number_format(($totalEngageGeneral / $totalRectifieGeneral) * 100, 1) : 0 }}%
-                    </td>
-                    <td class="col-taux">
-                        {{ $totalRectifieGeneral > 0 ? number_format((($totalPayeGeneral + $totalTaxesGeneral) / $totalRectifieGeneral) * 100, 1) : 0 }}%
-                    </td>
-                </tr>
-            </tfoot>
-        </table>
 
-        <!-- Légende -->
-        <div class="legend">
-            <strong>Légende :</strong>
-            <span style="color: #28A745;">■</span> Disponible positif &nbsp;&nbsp;
-            <span style="color: #DC3545;">■</span> Disponible négatif (dépassement) &nbsp;&nbsp;
-            Dispo. Eng. = Disponible à l'engagement &nbsp;&nbsp;
-            Dispo. Ord. = Disponible à l'ordonnancement &nbsp;&nbsp;
-            Taxes Reversées = retenues (TVA, IR, TSR...) reversées au Trésor via l'OPT liée &nbsp;&nbsp;
-            📁 = Programme (rattachement tutelle) &nbsp;&nbsp;
-            ↳ = Sous-programme (subdivision de gestion interne, le cas échéant)
-        </div>
-    @else
-        <div class="no-data">
-            Aucune ligne budgétaire trouvée pour ce budget.
-        </div>
-    @endif
+                @if ($groupe['afficher_total'])
+                    <tr class="stot">
+                        <td colspan="2">Sous-total programme</td>
+                        @include('exports.partials.disponibilites-montants', ['c' => $groupe['total']])
+                    </tr>
+                @endif
+            @empty
+                <tr><td colspan="15" style="text-align:center; color:#999">Aucune ligne ne correspond aux critères choisis.</td></tr>
+            @endforelse
 
-    <!-- Pied de page -->
-    <div class="footer">
-        Document généré automatiquement -
-        {{ config('app.name') }} - {{ now()->format('d/m/Y à H:i') }}
-    </div>
+            <tr class="total">
+                <td colspan="2">TOTAL GÉNÉRAL</td>
+                @include('exports.partials.disponibilites-montants', ['c' => $etat['total']])
+            </tr>
+        </tbody>
+    </table>
+
+    <p class="legende">
+        Légende : Dispo. Eng. = Disponible à l'engagement · Dispo. Ord. = Disponible à l'ordonnancement ·
+        Tx Eng. = Engagé / Budget rectifié · Tx Ord. = Ordonné / Engagé · Tx Exec. = (Payé + Taxes reversées) / Budget rectifié ·
+        Taxes reversées = retenues (TVA, IR, TSR...) reversées au Trésor via l'OPT liée ·
+        ■ = Programme (rattachement tutelle) · ↳ = Sous-programme (subdivision de gestion interne) ou engagement
+        @if ($etat['detaille'])
+            · Sous chaque ligne : engagements (bénéficiaire — objet, date, n° d'OP) ; leur somme est égale aux montants de la ligne.
+        @endif
+    </p>
 </body>
-
 </html>
