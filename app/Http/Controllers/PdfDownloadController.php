@@ -49,7 +49,17 @@ class PdfDownloadController extends Controller
     {
         if (!$engagement->engageable_type || !$engagement->engageable_id) return;
 
-        $modelClass = $engagement->engageable_type;
+        // Accepte l'alias de morph map ('decision_administrative') ET le nom complet de la classe
+        $modelClass = \Illuminate\Database\Eloquent\Relations\Relation::getMorphedModel($engagement->engageable_type)
+            ?? $engagement->engageable_type;
+
+        if (!class_exists($modelClass)) {
+            \Log::warning('chargerEngageable : type de document inconnu', [
+                'engagement' => $engagement->numero,
+                'engageable_type' => $engagement->engageable_type,
+            ]);
+            return;
+        }
 
         if ($engagement->estBonCommande()) {
             $engageable = $modelClass::withoutGlobalScope('exercice')

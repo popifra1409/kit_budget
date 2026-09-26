@@ -9,6 +9,7 @@ use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use App\Traits\HasExercice;
 use App\Traits\GereTransmissions;
 use Carbon\Carbon;
@@ -73,10 +74,22 @@ class OrdonnancePaiement extends Model
     {
         static::creating(function ($op) {
             if (!$op->numero) {
-                $op->numero = $op->genererNumero();
+                // ✅ CORRIGE — genererNumero() exige l'engagement : l'ancien appel sans argument
+                //    aurait provoque une erreur si une OP etait creee sans numero.
+                $op->numero = static::genererNumero($op->engagement_id, $op->type_ordonnance ?: 'standard');
             }
             if (!$op->created_by) {
                 $op->created_by = auth()->id();
+            }
+        });
+
+        // Forme canonique du type de beneficiaire : toujours le nom complet de la classe
+        // (une OP n'a pas de colonne 'engageable_type', seule 'beneficiaire_type' est concernee).
+        static::saving(function (self $op) {
+            $valeur = $op->beneficiaire_type;
+
+            if ($valeur && !str_contains($valeur, '\\')) {
+                $op->beneficiaire_type = Relation::getMorphedModel($valeur) ?? $valeur;
             }
         });
     }
@@ -148,7 +161,9 @@ class OrdonnancePaiement extends Model
             $this->engagement->load('engageable');
         }
 
-        if ($this->engagement->engageable_type === BonCommande::class) {
+        // ✅ CORRIGE — instanceof au lieu de comparer la chaine brute :
+        //    fonctionne que la base contienne 'App\Models\BonCommande' ou l'alias 'bon_commande'
+        if ($this->engagement->engageable instanceof BonCommande) {
             return $this->engagement->engageable;
         }
 

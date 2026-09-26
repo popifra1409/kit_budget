@@ -190,10 +190,35 @@ class ActivityLog extends SpatieActivity
         };
     }
 
+    /**
+     * Classe du sujet, que subject_type contienne un alias de morph map
+     * ('engagement', 'bon_commande'...) ou le nom complet de la classe.
+     */
+    public function getSubjectClass(): ?string
+    {
+        if (!$this->subject_type) {
+            return null;
+        }
+
+        return \Illuminate\Database\Eloquent\Relations\Relation::getMorphedModel($this->subject_type)
+            ?? $this->subject_type;
+    }
+
     public function getSubjectLabel(): string
     {
         if (!$this->subject_type) return '—';
-        return match (class_basename($this->subject_type)) {
+
+        // ✅ CORRIGE : class_basename('bon_commande') donnait 'bon_commande' (alias brut)
+        return match (class_basename($this->getSubjectClass())) {
+            'Action'                 => 'Action',
+            'Activite'               => 'Activité',
+            'Programme'              => 'Programme',
+            'Tache'                  => 'Tâche',
+            'NomenclatureBudgetaire' => 'Nomenclature Budgétaire',
+            'Personnel'              => 'Personnel',
+            'BonCommandeRegie'       => 'Bon de Commande (Régie)',
+            'DecaissementRegie'      => 'Décaissement (Régie)',
+            'DepenseRegie'           => 'Dépense (Régie)',
             'BonCommande'            => 'Bon de Commande',
             'DecisionAdministrative' => 'Décision Administrative',
             'Engagement'             => 'Engagement',

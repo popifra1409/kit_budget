@@ -12,6 +12,10 @@ use Filament\Tables\Table;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ActivityResource extends Resource
 {
@@ -50,6 +54,8 @@ class ActivityResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // ✅ Evite une requete par ligne pour l'auteur et le document concerne
+            ->modifyQueryUsing(fn(Builder $query) => $query->with(['causer', 'subject']))
             ->persistFiltersInSession()
             ->persistSearchInSession()
             ->persistSortInSession()
@@ -100,7 +106,8 @@ class ActivityResource extends Resource
                     ->label('Type')
                     ->formatStateUsing(fn($state, $record) => $record->getSubjectLabel())
                     ->badge()
-                    ->color(fn($state) => match (class_basename($state ?? '')) {
+                    // ✅ CORRIGE : subject_type contient un alias ('engagement'), pas la classe
+                    ->color(fn($state, $record) => match (class_basename($record->getSubjectClass() ?? '')) {
                         'BonCommande'            => 'info',
                         'DecisionAdministrative' => 'warning',
                         'Engagement'             => 'primary',
@@ -119,9 +126,28 @@ class ActivityResource extends Resource
                     ->getStateUsing(fn($record) => $record->getDocumentNumero() ?? "ID:{$record->subject_id}")
                     ->weight('bold')
                     ->color('primary')
-                    ->searchable(query: function (Builder $query, string $search) {
-                        // Recherche via jointure sur le sujet
-                        $query->whereHas('subject', fn($q) => $q->where('numero', 'like', "%{$search}%"));
+                    // ✅ CORRIGE : whereHas('subject') cherchait "numero" dans TOUTES les tables
+                    // journalisees (actions, programmes, roles... n'en ont pas) -> erreur SQL.
+                    // On ne cherche que dans les tables qui ont reellement une colonne "numero".
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        $sujets = static::sujetsAvecNumero();
+                        $operateur = DB::getDriverName() === 'pgsql' ? 'ilike' : 'like';
+
+                        return $query->where(function (Builder $q) use ($sujets, $search, $operateur) {
+                            if (empty($sujets)) {
+                                $q->whereRaw('1 = 0');
+                                return;
+                            }
+
+                            foreach ($sujets as $type => $table) {
+                                $q->orWhere(fn(Builder $sq) => $sq
+                                    ->where('subject_type', $type)
+                                    ->whereIn('subject_id', DB::table($table)
+                                        ->select('id')
+                                        // CAST : "numero" peut etre numerique dans certaines tables
+                                        ->where(DB::raw('CAST(numero AS TEXT)'), $operateur, "%{$search}%")));
+                            }
+                        });
                     })
                     ->copyable(),
 
@@ -208,7 +234,12 @@ class ActivityResource extends Resource
                         'App\Models\Transmission'           => 'Transmission',
                         'App\Models\VirementBudgetaire'     => 'Virement Budgétaire',
                         'App\Models\User'                   => 'Utilisateur',
-                    ]),
+                    ])
+                    // ✅ CORRIGE : le journal enregistre l'alias de morph map ('engagement'),
+                    // le filtre accepte donc l'alias ET le nom complet de la classe
+                    ->query(fn(Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        ? $query->whereIn('subject_type', static::typesPourClasse($data['value']))
+                        : $query),
 
                 Tables\Filters\SelectFilter::make('causer_id')
                     ->label('Utilisateur')
@@ -400,6 +431,53 @@ class ActivityResource extends Resource
                 ])
                 ->collapsible()->collapsed(),
         ]);
+    }
+
+    // =========================================================
+    // HELPERS — types de sujets
+    // =========================================================
+
+    /**
+     * Types de sujets presents dans le journal dont la table possede une colonne "numero".
+     * Couvre les deux formes de subject_type : alias de morph map ('engagement')
+     * et nom complet de classe ('App\Models\Engagement'). Mis en cache 24 h.
+     *
+     * @return array<string, string>  subject_type => table
+     */
+    protected static function sujetsAvecNumero(): array
+    {
+        return Cache::remember('activity_log.sujets_avec_numero', now()->addDay(), function () {
+            $sujets = [];
+
+            $types = ActivityLog::query()
+                ->whereNotNull('subject_type')
+                ->distinct()
+                ->pluck('subject_type');
+
+            foreach ($types as $type) {
+                $classe = Relation::getMorphedModel($type) ?? $type;
+
+                if (!class_exists($classe)) {
+                    continue;
+                }
+
+                $table = (new $classe)->getTable();
+
+                if (Schema::hasColumn($table, 'numero')) {
+                    $sujets[$type] = $table;
+                }
+            }
+
+            return $sujets;
+        });
+    }
+
+    /** Valeurs possibles de subject_type pour une classe : nom complet + alias de morph map. */
+    protected static function typesPourClasse(string $classe): array
+    {
+        $alias = array_search($classe, Relation::morphMap(), true);
+
+        return array_values(array_filter([$classe, $alias ?: null]));
     }
 
     public static function getPages(): array

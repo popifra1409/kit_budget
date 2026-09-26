@@ -14,6 +14,8 @@ use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Traits\HasWorkflow;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Validation\ValidationException;
 
 class Engagement extends Model
 {
@@ -56,6 +58,14 @@ class Engagement extends Model
         'exercice'        => 'integer',
     ];
 
+    /**
+     * Resultat memorise de extraireDonneesDocument() pour cette instance.
+     * Evite de recalculer (et de journaliser) 8 fois les memes montants
+     * lors de la generation d'un certificat d'engagement ou d'une OP.
+     * Reinitialise automatiquement a chaque enregistrement de l'engagement.
+     */
+    protected ?array $donneesExtraitesCache = null;
+
     // =========================================================
     // BOOT
     // =========================================================
@@ -70,6 +80,46 @@ class Engagement extends Model
             if (empty($engagement->exercice)) {
                 $engagement->exercice = now()->year;
             }
+        });
+
+        // Forme canonique des types polymorphes : toujours le nom complet de la classe.
+        // Empeche le melange 'decision_administrative' / 'App\Models\DecisionAdministrative'
+        // quel que soit le chemin d'ecriture (formulaire, relation Eloquent, report...).
+        static::saving(function (self $engagement) {
+            foreach (['engageable_type', 'beneficiaire_type'] as $colonne) {
+                $valeur = $engagement->{$colonne};
+
+                if ($valeur && !str_contains($valeur, '\\')) {
+                    $engagement->{$colonne} = Relation::getMorphedModel($valeur) ?? $valeur;
+                }
+            }
+
+            // Controle du beneficiaire : UNIQUEMENT quand il est saisi ou modifie.
+            // Les engagements existants ne sont jamais bloques lors d'une autre mise a jour
+            // (changement de statut, validation, annulation...).
+            if (
+                $engagement->isDirty(['beneficiaire_type', 'beneficiaire_id'])
+                && $engagement->beneficiaire_type
+                && $engagement->beneficiaire_id
+                && class_exists($engagement->beneficiaire_type) // valeurs libres historiques (ex: 'autre') non controlees
+            ) {
+                $classe = $engagement->beneficiaire_type;
+
+                if (!in_array($classe, [Personnel::class, Fournisseur::class], true)) {
+                    throw ValidationException::withMessages([
+                        'beneficiaire_id' => "Le bénéficiaire d'un engagement doit être un agent (personnel) ou un fournisseur.",
+                    ]);
+                }
+
+                if (!$classe::query()->whereKey($engagement->beneficiaire_id)->exists()) {
+                    throw ValidationException::withMessages([
+                        'beneficiaire_id' => "Le bénéficiaire sélectionné n'existe pas ou a été supprimé.",
+                    ]);
+                }
+            }
+
+            // Toute modification invalide les montants memorises
+            $engagement->donneesExtraitesCache = null;
         });
 
         /**
@@ -176,15 +226,51 @@ class Engagement extends Model
         return $this->engageable instanceof \App\Models\BonCommande ? $this->engageable : null;
     }
 
+    // =========================================================
+    // TYPES POLYMORPHES — resolus en nom complet de classe
+    // (accepte l'alias de morph map 'decision_administrative' ET 'App\Models\...')
+    // =========================================================
+
+    public static function classeDepuisType(?string $type): ?string
+    {
+        if (blank($type)) {
+            return null;
+        }
+
+        return Relation::getMorphedModel($type) ?? $type;
+    }
+
+    /** Toutes les formes possibles d'un type en base : nom complet + alias eventuel. */
+    public static function formesDuType(string $type): array
+    {
+        $classe = static::classeDepuisType($type);
+        $alias  = array_search($classe, Relation::morphMap(), true);
+
+        return array_values(array_unique(array_filter([$classe, $alias ?: null, $type])));
+    }
+
+    public function getEngageableClass(): ?string
+    {
+        return static::classeDepuisType($this->engageable_type);
+    }
+
+    public function getBeneficiaireClass(): ?string
+    {
+        return static::classeDepuisType($this->beneficiaire_type);
+    }
+
     public function estBonCommande(): bool
     {
-        return $this->engageable_type === 'bon_commande'
+        // Resolution par classe + anciennes verifications conservees comme filet de securite
+        return $this->getEngageableClass() === BonCommande::class
+            || $this->engageable_type === 'bon_commande'
             || str_contains($this->engageable_type ?? '', 'BonCommande');
     }
 
     public function estDecision(): bool
     {
-        return $this->engageable_type === 'decision_administrative'
+        return $this->getEngageableClass() === DecisionAdministrative::class
+            || $this->engageable_type === 'decision_administrative'
             || str_contains($this->engageable_type ?? '', 'DecisionAdministrative');
     }
 
@@ -193,18 +279,36 @@ class Engagement extends Model
         return $this->morphTo('beneficiaire', 'beneficiaire_type', 'beneficiaire_id');
     }
 
+    /**
+     * ✅ CORRIGE — Beneficiaire reel (Personnel ou Fournisseur) via la relation polymorphe.
+     * L'ancienne version comparait a 'fournisseur' / 'personnel', valeurs absentes de la base :
+     * elle renvoyait toujours null.
+     */
     public function getBeneficiaire()
     {
-        if ($this->beneficiaire_type === 'fournisseur') return $this->beneficiaireFournisseur;
-        if ($this->beneficiaire_type === 'personnel')   return $this->beneficiairePersonnel;
-        return null;
+        if (!$this->beneficiaire_type || !$this->beneficiaire_id) {
+            return null;
+        }
+
+        $this->loadMissing('beneficiaire');
+
+        return $this->beneficiaire;
     }
 
+    /**
+     * ⚠️ OBSOLETE — la colonne 'beneficiaire_fournisseur_id' n'existe pas dans la table
+     * 'engagements' : cette relation renvoie toujours null. Conservee uniquement pour ne pas
+     * casser d'eventuels appels existants. Utiliser getBeneficiaire().
+     */
     public function beneficiaireFournisseur(): BelongsTo
     {
         return $this->belongsTo(Fournisseur::class, 'beneficiaire_fournisseur_id');
     }
 
+    /**
+     * ⚠️ OBSOLETE — la colonne 'beneficiaire_personnel_id' n'existe pas dans la table
+     * 'engagements' : cette relation renvoie toujours null. Utiliser getBeneficiaire().
+     */
     public function beneficiairePersonnel(): BelongsTo
     {
         return $this->belongsTo(Personnel::class, 'beneficiaire_personnel_id');
@@ -254,7 +358,8 @@ class Engagement extends Model
     }
     public function scopeType($query, $type)
     {
-        return $query->where('engageable_type', $type);
+        // Couvre 'App\Models\BonCommande' ET l'alias 'bon_commande'
+        return $query->whereIn('engageable_type', static::formesDuType((string) $type));
     }
 
     // =========================================================
@@ -408,11 +513,14 @@ class Engagement extends Model
 
     public function getTypeLabel(): string
     {
-        return match ($this->engageable_type) {
+        $classe = $this->getEngageableClass();
+
+        return match ($classe) {
             'App\Models\BonCommande'            => 'Bon de Commande',
             'App\Models\DecisionAdministrative' => 'Décision Administrative',
             'App\Models\Marche'                 => 'Marché',
-            default                             => class_basename($this->engageable_type),
+            null                                => 'Engagement manuel',
+            default                             => class_basename($classe),
         };
     }
 
@@ -444,6 +552,10 @@ class Engagement extends Model
                 'engage_par',
                 'nomenclature_principale_id',
                 'type_engagement_id',
+                'engageable_type',
+                'engageable_id',
+                'beneficiaire_type',
+                'beneficiaire_id',
             ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
@@ -477,7 +589,8 @@ class Engagement extends Model
         }
 
         return DB::transaction(function () {
-            $donnees = $this->extraireDonneesDocument();
+            // Montants toujours recalcules a la creation des OP (jamais depuis le cache)
+            $donnees = $this->extraireDonneesDocument(true);
 
             if (!$donnees['beneficiaire']) {
                 throw new \Exception("Aucun bénéficiaire défini pour cet engagement.");
@@ -620,8 +733,16 @@ class Engagement extends Model
     // =========================================================
     // EXTRACTION DONNÉES DOCUMENT SOURCE
     // =========================================================
-    public function extraireDonneesDocument(): array
+    /**
+     * @param bool $rafraichir true = ignorer le resultat memorise et recalculer
+     *                        (utilise lors de la creation des OP).
+     */
+    public function extraireDonneesDocument(bool $rafraichir = false): array
     {
+        if (!$rafraichir && $this->donneesExtraitesCache !== null) {
+            return $this->donneesExtraitesCache;
+        }
+
         $montantHT = 0;
         $montantBrut = 0;
         $montantTVA = 0;
@@ -650,7 +771,7 @@ class Engagement extends Model
             $bc->load('fournisseur');
             $beneficiaire     = $bc->fournisseur;
             $beneficiaireType = 'App\Models\Fournisseur';
-            \Log::info("BC - Montants extraits", ['bc_numero' => $bc->numero, 'montant_ttc' => $montantTTC, 'montant_net' => $montantNet]);
+            \Log::debug("BC - Montants extraits", ['bc_numero' => $bc->numero, 'montant_ttc' => $montantTTC, 'montant_net' => $montantNet]);
         }
 
         // CAS 2 : DÉCISION ADMINISTRATIVE
@@ -681,7 +802,7 @@ class Engagement extends Model
                 \Log::error("DA - Aucun bénéficiaire trouvé", ['da_id' => $da->id, 'type_beneficiaire' => $da->type_beneficiaire]);
             }
 
-            \Log::info("DA - Montants extraits", [
+            \Log::debug("DA - Montants extraits", [
                 'da_numero'   => $da->numero ?? 'N/A',
                 'montant_brut' => $montantBrut,
                 'montant_net' => $montantNet,
@@ -694,25 +815,27 @@ class Engagement extends Model
             $montantIR  = $this->calculerMontantImpot();
             $montantNet = $montantTTC - $montantIR;
 
-            if ($this->beneficiaire_type === 'App\Models\Fournisseur') {
-                if (!$this->relationLoaded('beneficiaireFournisseur')) $this->load('beneficiaireFournisseur');
-                $beneficiaire     = $this->beneficiaireFournisseur;
+            // ✅ CORRIGE — via la relation polymorphe reelle (beneficiaire_type / beneficiaire_id).
+            // L'ancienne version passait par des colonnes inexistantes : beneficiaire toujours null.
+            $candidat = $this->getBeneficiaire();
+
+            if ($candidat instanceof Fournisseur) {
+                $beneficiaire     = $candidat;
                 $beneficiaireType = 'App\Models\Fournisseur';
-            } elseif ($this->beneficiaire_type === 'App\Models\Personnel') {
-                if (!$this->relationLoaded('beneficiairePersonnel')) $this->load('beneficiairePersonnel');
-                $beneficiaire     = $this->beneficiairePersonnel;
+            } elseif ($candidat instanceof Personnel) {
+                $beneficiaire     = $candidat;
                 $beneficiaireType = 'App\Models\Personnel';
             }
         }
 
-        \Log::info("Données extraites", [
+        \Log::debug("Données extraites", [
             'engagement_numero' => $this->numero,
             'beneficiaire_existe' => $beneficiaire !== null,
             'beneficiaire_type' => $beneficiaireType,
             'beneficiaire_nom'  => $beneficiaire?->nom_complet ?? $beneficiaire?->raison_sociale ?? 'NULL',
         ]);
 
-        return [
+        return $this->donneesExtraitesCache = [
             'montant_ht'       => $montantHT,
             'montant_brut'     => $montantBrut,
             'montant_tva'      => $montantTVA,
@@ -734,19 +857,24 @@ class Engagement extends Model
     {
         if ($this->engageable_type && $this->engageable) return 0;
 
-        $montant = $this->montant_engage;
+        $montant      = $this->montant_engage;
+        $beneficiaire = $this->getBeneficiaire();
 
-        if (($this->beneficiaire_type === 'fournisseur' || $this->beneficiaire_type === 'App\Models\Fournisseur')
-            && $this->beneficiaireFournisseur
-        ) {
-            $fournisseur = $this->beneficiaireFournisseur;
-            if (!$fournisseur->relationLoaded('regimeFiscal')) $fournisseur->load('regimeFiscal');
-            if ($fournisseur->regimeFiscal) {
-                return round(($montant * ($fournisseur->regimeFiscal->taux_ir_defaut ?? 0)) / 100, 2);
+        // ✅ CORRIGE — le fournisseur est lu via la relation polymorphe reelle
+        //    (l'ancienne relation beneficiaireFournisseur renvoyait toujours null)
+        if ($beneficiaire instanceof Fournisseur) {
+            if (!$beneficiaire->relationLoaded('regimeFiscal')) $beneficiaire->load('regimeFiscal');
+            if ($beneficiaire->regimeFiscal) {
+                return round(($montant * ($beneficiaire->regimeFiscal->taux_ir_defaut ?? 0)) / 100, 2);
             }
         }
 
-        if ($this->beneficiaire_type === 'personnel' || $this->beneficiaire_type === 'App\Models\User') {
+        // Bareme agents : Personnel (valeur reelle en base) + anciennes valeurs conservees
+        if (
+            $beneficiaire instanceof Personnel
+            || $this->beneficiaire_type === 'personnel'
+            || $this->beneficiaire_type === 'App\Models\User'
+        ) {
             if ($montant < 500000)  return round(($montant * 5.5)  / 100, 2);
             if ($montant < 3000000) return round(($montant * 11.0) / 100, 2);
             return round(($montant * 15.0) / 100, 2);

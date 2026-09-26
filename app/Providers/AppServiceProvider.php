@@ -28,8 +28,6 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 
 use Illuminate\Support\Facades\Event;
-use Illuminate\Auth\Events\Login;
-use Illuminate\Auth\Events\Logout;
 
 
 class AppServiceProvider extends ServiceProvider
@@ -51,9 +49,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-
-        Event::listen(Login::class, \App\Listeners\LogSuccessfulLogin::class);
-        Event::listen(Logout::class, \App\Listeners\LogSuccessfulLogout::class);
 
         Relation::enforceMorphMap([
             //configurations

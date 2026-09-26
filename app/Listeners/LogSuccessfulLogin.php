@@ -2,15 +2,16 @@
 
 namespace App\Listeners;
 
+use App\Models\ActivityLog;
+use App\Models\User;
 use Illuminate\Auth\Events\Login;
 
 class LogSuccessfulLogin
 {
     public function handle(Login $event): void
     {
-        activity()
-            ->causedBy($event->user)
-            ->event('login')
-            ->log('Connexion réussie — ' . ($event->user->name ?? $event->user->email ?? 'Utilisateur'));
+        if ($event->user instanceof User) {
+            ActivityLog::logAuth('login', $event->user);
+        }
     }
 }
