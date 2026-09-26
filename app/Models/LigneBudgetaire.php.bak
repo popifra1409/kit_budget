@@ -98,8 +98,6 @@ class LigneBudgetaire extends Model
 
         return \App\Models\Engagement::query()
             ->whereIn('id', $engagementIds)
-            ->where('budget_id', $this->budget_id)   // ✅ AJOUT : uniquement le budget de cette ligne (pas les autres exercices)
-            ->whereNull('date_annulation')           // ✅ AJOUT : annulation reelle
             ->whereNotIn('statut', ['annule'])
             ->whereNull('deleted_at');
     }
@@ -197,56 +195,25 @@ class LigneBudgetaire extends Model
     // =========================================================
 
     /**
-     * ✅ SOURCE UNIQUE — montants de lignes_engagement des engagements ACTIFS imputes
-     * sur la nomenclature de cette ligne, pour le MEME budget (donc le meme exercice).
-     *
-     * Utilisee par recalculerDepuisEngagements(), engageEntre(), total_engage :
-     * ces calculs ne peuvent plus diverger.
-     *
-     * Avant : le filtre portait uniquement sur la nomenclature. Une meme nomenclature
-     * presente dans deux budgets (ex. apres reconduction d'exercice) cumulait les
-     * engagements des deux budgets.
-     */
-    public function requeteEngagementsActifs(): \Illuminate\Database\Query\Builder
-    {
-        return \DB::table('lignes_engagement as le')
-            ->join('engagements as e', 'le.engagement_id', '=', 'e.id')
-            ->where('le.nomenclature_id', $this->nomenclature_id)
-            ->where('e.budget_id', $this->budget_id)
-            ->whereNull('e.date_annulation')
-            ->whereNotIn('e.statut', ['annule'])
-            ->whereNull('e.deleted_at');
-    }
-
-    /**
-     * Engage sur une periode (dates d'engagement incluses).
-     * Utilise par le Suivi-Evaluation (Annexe 9 — rapport d'activite periodique).
-     */
-    public function engageEntre(\Carbon\CarbonInterface $debut, \Carbon\CarbonInterface $fin): float
-    {
-        return (float) $this->requeteEngagementsActifs()
-            ->whereDate('e.date_engagement', '>=', $debut->toDateString())
-            ->whereDate('e.date_engagement', '<=', $fin->toDateString())
-            ->sum('le.montant');
-    }
-
-    /**
      * ✅ Recalcule et PERSISTE les colonnes stockées depuis les engagements réels
      *    À appeler après toute suppression ou création d'engagement
      *
-     * Source : lignes_engagement → engagements actifs du MEME budget
-     *          (non annulés, non supprimés)
-     *
-     * ✅ CORRIGÉ — le budget rectifié est calculé par getBudgetRectifieReel()
-     *    (initial + virements exécutés + collectifs adoptés), la même formule que
-     *    celle appliquée à chaque sauvegarde. L'ancienne version utilisait
-     *    « initial + virements » et effaçait l'effet des collectifs budgétaires.
+     * Source : lignes_engagement → engagements actifs (non annulés, non supprimés)
      */
     public function recalculerDepuisEngagements(): void
     {
-        $totalEngage = (float) $this->requeteEngagementsActifs()->sum('le.montant');
+        // Total engagé = somme des montants dans lignes_engagement pour les engagements actifs
+        $totalEngage = \DB::table('lignes_engagement as le')
+            ->join('engagements as e', 'le.engagement_id', '=', 'e.id')
+            ->where('le.nomenclature_id', $this->nomenclature_id)
+            ->whereNotIn('e.statut', ['annule'])
+            ->whereNull('e.deleted_at')
+            ->sum('le.montant');
 
-        $budgetRectifie = $this->getBudgetRectifieReel();
+        // Budget rectifié = initial + entrants - sortants
+        $budgetRectifie = (float) $this->budget_initial
+            + (float) $this->virements_entrants
+            - (float) $this->virements_sortants;
 
         $this->updateQuietly([
             'engage'                    => $totalEngage,
@@ -474,21 +441,31 @@ class LigneBudgetaire extends Model
     // =========================================================
 
     /**
-     * ✅ CORRIGÉ — calcul dynamique via la requête unique (même budget uniquement)
+     * ✅ CORRIGÉ — calcul dynamique via lignes_engagement
      */
     public function getTotalEngageAttribute(): float
     {
-        return (float) $this->requeteEngagementsActifs()->sum('le.montant');
+        return (float) \DB::table('lignes_engagement as le')
+            ->join('engagements as e', 'le.engagement_id', '=', 'e.id')
+            ->where('le.nomenclature_id', $this->nomenclature_id)
+            ->whereNotIn('e.statut', ['annule'])
+            ->whereNull('e.deleted_at')
+            ->sum('le.montant');
     }
 
     /**
-     * ✅ CORRIGÉ — calcul dynamique via la requête unique (même budget uniquement)
+     * ✅ CORRIGÉ — calcul dynamique via lignes_engagement
      */
     public function getNombreEngagementsAttribute(): int
     {
-        return (int) $this->requeteEngagementsActifs()
-            ->distinct()
-            ->count('le.engagement_id');
+        $ids = \DB::table('lignes_engagement')
+            ->where('nomenclature_id', $this->nomenclature_id)
+            ->pluck('engagement_id')->unique();
+
+        return \App\Models\Engagement::whereIn('id', $ids)
+            ->whereNotIn('statut', ['annule'])
+            ->whereNull('deleted_at')
+            ->count();
     }
 
     /**

@@ -94,11 +94,15 @@ class Avenant extends Model
 
             $budgetId = $engagement->budget_id;
 
+            // ✅ CORRIGE — comparaison par valeur entiere : le formulaire renvoie l'id en texte ("12")
+            //    et la base en nombre (12). L'ancien !== traitait a tort un avenant SANS changement
+            //    de ligne comme un changement de ligne (controle de credit sur le montant total
+            //    au lieu du delta).
+            $changementNomenclature = $this->nomenclature_corrigee_id !== null
+                && (int) $this->nomenclature_originale_id !== (int) $this->nomenclature_corrigee_id;
+
             // ── Cas 1 : Changement de nomenclature ───────────
-            if (
-                $this->nomenclature_originale_id !== $this->nomenclature_corrigee_id
-                && $this->nomenclature_corrigee_id !== null
-            ) {
+            if ($changementNomenclature) {
 
                 $lbOriginale = LigneBudgetaire::where('budget_id', $budgetId)
                     ->where('nomenclature_id', $this->nomenclature_originale_id)
@@ -127,6 +131,9 @@ class Avenant extends Model
                     'nomenclature_principale_id' => $this->nomenclature_corrigee_id,
                     'montant_engage'             => $this->montant_corrige,
                 ]);
+
+                // ✅ AJOUT — la ligne d'imputation suit l'engagement (montant ET nomenclature)
+                $this->synchroniserLignesEngagement($engagement, (int) $this->nomenclature_corrigee_id);
             } else {
                 // ── Cas 2 : Delta de montant ──────────────────
                 $delta = $this->delta_montant;
@@ -151,6 +158,9 @@ class Avenant extends Model
                     $lb->save();
 
                     $engagement->update(['montant_engage' => $this->montant_corrige]);
+
+                    // ✅ AJOUT — la ligne d'imputation suit le nouveau montant
+                    $this->synchroniserLignesEngagement($engagement, (int) $this->nomenclature_originale_id);
                 }
             }
 
@@ -179,6 +189,43 @@ class Avenant extends Model
             DB::rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * ✅ AJOUT — Aligne la ligne de lignes_engagement sur l'engagement corrige.
+     *
+     * Sans cela, lignes_engagement gardait le montant d'origine : la colonne 'engage'
+     * restait juste, mais tout calcul fonde sur lignes_engagement (recalcul d'une ligne,
+     * engage par periode du Suivi-Evaluation) sous-estimait l'engagement.
+     *
+     * Cas traites :
+     *  - une seule ligne (cas de tous les engagements actuels) : montant + nomenclature mis a jour ;
+     *  - plusieurs lignes : repartition impossible a deduire → aucune modification, alerte au log
+     *    pour correction manuelle (la transaction de l'avenant n'est PAS bloquee).
+     */
+    protected function synchroniserLignesEngagement(\App\Models\Engagement $engagement, int $nomenclatureId): void
+    {
+        $lignes = \App\Models\LigneEngagement::where('engagement_id', $engagement->id)->get();
+
+        if ($lignes->count() === 1) {
+            $ligne = $lignes->first();
+
+            $ligne->update([
+                'montant'         => $this->montant_corrige,
+                'nomenclature_id' => $nomenclatureId,
+            ]);
+
+            return;
+        }
+
+        \Log::warning('Avenant : lignes_engagement non synchronisé automatiquement', [
+            'avenant'      => $this->numero_avenant,
+            'engagement'   => $engagement->numero,
+            'nb_lignes'    => $lignes->count(),
+            'motif'        => $lignes->isEmpty()
+                ? 'aucune ligne d\'imputation'
+                : 'engagement réparti sur plusieurs lignes : répartition à corriger manuellement',
+        ]);
     }
 
     protected function mettreAJourOrdonnances(): void

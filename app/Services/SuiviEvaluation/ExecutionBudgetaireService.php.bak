@@ -34,14 +34,28 @@ class ExecutionBudgetaireService
     }
 
     /**
-     * Montant engage sur une ligne budgetaire entre deux dates (dates d'engagement),
-     * pour le budget de la ligne uniquement. Meme source que la colonne 'engage'.
+     * Montant engage sur une ligne budgetaire entre deux dates.
      *
      * @return array{montant: float, source: string}
      */
     public function montantEngage(LigneBudgetaire $ligne, Carbon $debut, Carbon $fin): array
     {
-        return ['montant' => $ligne->engageEntre($debut, $fin), 'source' => 'engagements_dates'];
+        $cfg = config('suivi_evaluation.engagements');
+
+        if (!($cfg['enabled'] ?? false)) {
+            // Repli : cumul annuel a l'instant T (ne tient pas compte des bornes)
+            return ['montant' => (float) $ligne->engage, 'source' => 'cumul_annuel'];
+        }
+
+        $query = $cfg['model']::query()
+            ->where($cfg['ligne_fk'], $ligne->id)
+            ->whereBetween($cfg['date'], [$debut, $fin]);
+
+        if (!empty($cfg['statut'])) {
+            $query->whereIn($cfg['statut'], $cfg['statuts_retenus']);
+        }
+
+        return ['montant' => (float) $query->sum($cfg['montant']), 'source' => 'engagements_dates'];
     }
 
     /**
@@ -56,12 +70,10 @@ class ExecutionBudgetaireService
 
         $cle = "{$tache->nomenclature_id}:{$exerciceId}";
 
-        // Sans le scope global d'exercice : le prorata doit porter sur l'exercice du rapport,
-        // meme si l'exercice actif de l'application est different.
-        $this->totauxAeParNomenclature[$cle] ??= (float) Tache::withoutGlobalScope('exercice')
+        $this->totauxAeParNomenclature[$cle] ??= (float) Tache::query()
             ->where('niveau', 'sous_tache')
             ->where('nomenclature_id', $tache->nomenclature_id)
-            ->whereHas('activite', fn($q) => $q->withoutGlobalScope('exercice')->where('exercice_id', $exerciceId))
+            ->whereHas('activite', fn($q) => $q->where('exercice_id', $exerciceId))
             ->sum('ae');
 
         $total = $this->totauxAeParNomenclature[$cle];
