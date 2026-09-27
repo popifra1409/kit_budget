@@ -45,6 +45,13 @@ class IndicateursRelationManager extends RelationManager
                     Forms\Components\TextInput::make('annee_reference')->numeric()
                         ->label('Année de référence'),
                     Forms\Components\TextInput::make('valeur_cible')->numeric(),
+                    Forms\Components\Radio::make('sens')
+                        ->label("Sens d'évolution souhaité")
+                        ->options(\App\Models\Indicateur::SENS)
+                        ->default('hausse')
+                        ->required()
+                        ->helperText('Détermine le calcul du taux d\'atteinte. Ex. : mortalité, délais, ruptures de stock → « À réduire ».')
+                        ->columnSpanFull(),
                     Forms\Components\TextInput::make('annee_cible')->numeric()
                         ->label('Année cible'),
                 ])->columns(4),
@@ -64,6 +71,11 @@ class IndicateursRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('valeur_cible')->label('Cible')
                     ->formatStateUsing(fn($record) => $record->valeur_cible !== null
                         ? "{$record->valeur_cible} ({$record->annee_cible})" : '—'),
+                Tables\Columns\TextColumn::make('sens')
+                    ->label('Sens')
+                    ->formatStateUsing(fn(?string $state) => $state === 'baisse' ? '↓ À réduire' : '↑ À augmenter')
+                    ->badge()
+                    ->color(fn(?string $state) => $state === 'baisse' ? 'warning' : 'info'),
                 Tables\Columns\BadgeColumn::make('statut')->colors([
                     'gray' => 'brouillon',
                     'success' => 'valide',

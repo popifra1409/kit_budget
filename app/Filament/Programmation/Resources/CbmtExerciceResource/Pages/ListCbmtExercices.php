@@ -11,6 +11,8 @@ class ListCbmtExercices extends ListRecords
     protected static string $resource = CbmtExerciceResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [Actions\CreateAction::make()
+            ->label('Nouveau CBMT')
+            ->icon('heroicon-o-plus'),];
     }
 }

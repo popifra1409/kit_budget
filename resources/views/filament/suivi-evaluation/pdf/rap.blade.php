@@ -55,6 +55,7 @@
     </table>
 
     <h3>2.2 Performance (indicateurs)</h3>
+    <td>{{ ($ind['sens'] ?? 'hausse') === 'baisse' ? '↓' : '↑' }} {{ $ind['libelle'] }}</td>
     @foreach ($etat as $row)
         <p><strong>{{ $row['sous_programme']->libelle }}</strong></p>
         <table>
@@ -86,5 +87,6 @@
 
     <h2>Leçons apprises (input du prochain cycle CDMT)</h2>
     <p>{!! nl2br(e($rap->lecons_apprises ?? '—')) !!}</p>
+    <p style="font-size:8px;color:#666">↑ indicateur à augmenter (taux = réalisé / cible) · ↓ indicateur à réduire (taux = cible / réalisé)</p>
 </body>
 </html>

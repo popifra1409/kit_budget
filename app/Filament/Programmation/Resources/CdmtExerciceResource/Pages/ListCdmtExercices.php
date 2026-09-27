@@ -11,6 +11,10 @@ class ListCdmtExercices extends ListRecords
     protected static string $resource = CdmtExerciceResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [
+            Actions\CreateAction::make()
+                ->label('Nouveau CDMT')
+                ->icon('heroicon-o-plus'),
+        ];
     }
 }

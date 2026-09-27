@@ -262,7 +262,8 @@ class ArborescenceLibellesService
         }
 
         return [
-            'texte'   => $indicateur->libelle . ($indicateur->unite_mesure ? " ({$indicateur->unite_mesure})" : ''),
+            'texte'   => $indicateur->getSensSymbole() . ' ' . $indicateur->libelle
+                . ($indicateur->unite_mesure ? " ({$indicateur->unite_mesure})" : ''),
             'alertes' => $alertes,
         ];
     }

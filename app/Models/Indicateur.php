@@ -21,6 +21,7 @@ class Indicateur extends Model
         'indicateurable_id',
         'code',
         'libelle',
+        'sens',
         'objectif_associe',
         'unite_mesure',
         'mode_calcul',
@@ -40,6 +41,55 @@ class Indicateur extends Model
         'annee_cible' => 'integer',
     ];
 
+    /** Sens d'evolution souhaite de l'indicateur. */
+    public const SENS = [
+        'hausse' => '↑ À augmenter (une valeur plus élevée est meilleure)',
+        'baisse' => '↓ À réduire (une valeur plus faible est meilleure)',
+    ];
+
+    /**
+     * Taux d'atteinte de la cible (%), selon le sens de l'indicateur.
+     * Source UNIQUE du calcul : utilisee par le RAP, la matrice d'arrimage et les tableaux.
+     *
+     *  - hausse : realise / cible  (ex. couverture vaccinale 90 / cible 80 = 112,5 %)
+     *  - baisse : cible / realise  (ex. mortalite 2 % / cible 3 % = 150 %)
+     *
+     * Renvoie null si le calcul n'a pas de sens (valeur non numerique, cible nulle en hausse).
+     */
+    public function calculerTauxAtteinte(float|int|string|null $realise): ?float
+    {
+        if (!is_numeric($realise) || !is_numeric($this->valeur_cible)) {
+            return null;
+        }
+
+        $realise = (float) $realise;
+        $cible = (float) $this->valeur_cible;
+
+        if ($this->estABaisser()) {
+            // Valeur ramenee a zero : l'objectif de reduction est atteint
+            if ($realise <= 0) {
+                return 100.0;
+            }
+
+            return round(($cible / $realise) * 100, 1);
+        }
+
+        if ($cible <= 0) {
+            return null;
+        }
+
+        return round(($realise / $cible) * 100, 1);
+    }
+
+    public function estABaisser(): bool
+    {
+        return ($this->sens ?? 'hausse') === 'baisse';
+    }
+
+    public function getSensSymbole(): string
+    {
+        return $this->estABaisser() ? '↓' : '↑';
+    }
     protected static function boot(): void
     {
         parent::boot();

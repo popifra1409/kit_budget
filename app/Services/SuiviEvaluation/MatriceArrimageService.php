@@ -299,9 +299,8 @@ class MatriceArrimageService
             ->sortByDesc('periode')
             ->first();
 
-        $cible   = is_numeric($indicateur->valeur_cible) ? (float) $indicateur->valeur_cible : null;
-        $realise = is_numeric($valeur?->valeur_realisee) ? (float) $valeur->valeur_realisee : null;
-        $taux    = ($cible && $realise !== null) ? round($realise / $cible * 100, 1) : null;
+        // ✅ Calcul selon le sens (a augmenter / a reduire)
+        $taux = $indicateur->calculerTauxAtteinte($valeur?->valeur_realisee);
 
         if ($taux !== null) {
             $this->tauxIndicateurs[] = min($taux, 100); // plafonne : un depassement ne masque pas un retard ailleurs
@@ -315,6 +314,7 @@ class MatriceArrimageService
             'realise'   => $valeur?->valeur_realisee,
             'periode'   => $valeur?->periode,
             'taux'      => $taux,
+            'sens' => $indicateur->sens ?? 'hausse',
         ];
     }
 

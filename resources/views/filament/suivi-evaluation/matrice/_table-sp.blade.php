@@ -34,7 +34,7 @@
                     </td>
                     <td rowspan="{{ $a['rowspan'] }}">
                         @forelse ($a['indicateurs'] as $i)
-                            <div>• {{ $i['libelle'] }}
+                            <div>• {{ ($i['sens'] ?? 'hausse') === 'baisse' ? '↓' : '↑' }} {{ $i['libelle'] }}
                                 <span class="mx-muted">réf. {{ $i['reference'] ?? '—' }} → cible {{ $i['cible'] ?? '—' }} | réalisé {{ $i['realise'] ?? '—' }}@if ($i['taux'] !== null) ({{ $i['taux'] }} %)@endif</span>
                             </div>
                         @empty

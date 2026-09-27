@@ -11,6 +11,10 @@ class ListRapportActivitePeriodiques extends ListRecords
     protected static string $resource = RapportActivitePeriodiqueResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [
+            Actions\CreateAction::make()
+                ->label('Nouveau Rapport Periodique')
+                ->icon('heroicon-o-plus'),
+        ];
     }
 }

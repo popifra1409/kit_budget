@@ -88,16 +88,15 @@ class RapportAnnuelPerformance extends Model
                         ->sortByDesc('periode')
                         ->first();
 
-                    $cible   = is_numeric($ind->valeur_cible) ? (float) $ind->valeur_cible : null;
-                    $realise = is_numeric($valeur?->valeur_realisee) ? (float) $valeur->valeur_realisee : null;
-
                     return [
                         'libelle'   => $ind->libelle,
+                        'sens'      => $ind->sens ?? 'hausse',
                         'reference' => $ind->valeur_reference,
                         'cible'     => $ind->valeur_cible,
                         'realise'   => $valeur?->valeur_realisee,
                         'periode'   => $valeur?->periode,
-                        'taux'      => ($cible && $realise !== null) ? round(($realise / $cible) * 100, 1) : null,
+                        // ✅ Calcul selon le sens (a augmenter / a reduire)
+                        'taux'      => $ind->calculerTauxAtteinte($valeur?->valeur_realisee),
                     ];
                 });
 

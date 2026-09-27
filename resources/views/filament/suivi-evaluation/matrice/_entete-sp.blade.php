@@ -40,7 +40,7 @@
         <tr><th>Indicateur du sous-programme</th><th>Unité</th><th>Référence</th><th>Cible</th><th>Réalisé</th><th>Période</th><th>Atteinte</th></tr>
         @foreach ($bloc['indicateurs'] as $i)
             <tr>
-                <td>{{ $i['libelle'] }}</td>
+                <td>{{ ($i['sens'] ?? 'hausse') === 'baisse' ? '↓' : '↑' }} {{ $i['libelle'] }}</td>
                 <td>{{ $i['unite'] ?? '—' }}</td>
                 <td class="mx-num">{{ $i['reference'] ?? '—' }}</td>
                 <td class="mx-num">{{ $i['cible'] ?? '—' }}</td>

@@ -11,6 +11,10 @@ class ListRapportAnnuelPerformances extends ListRecords
     protected static string $resource = RapportAnnuelPerformanceResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [
+            Actions\CreateAction::make()
+                ->label('Nouveau RAP')
+                ->icon('heroicon-o-plus'),
+        ];
     }
 }

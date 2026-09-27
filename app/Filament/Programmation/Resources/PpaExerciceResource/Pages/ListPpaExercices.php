@@ -11,6 +11,8 @@ class ListPpaExercices extends ListRecords
     protected static string $resource = PpaExerciceResource::class;
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()];
+        return [Actions\CreateAction::make()
+            ->label('Nouveau PPA')
+            ->icon('heroicon-o-plus'),];
     }
 }
