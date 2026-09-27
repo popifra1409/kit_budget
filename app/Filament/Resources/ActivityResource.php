@@ -4,6 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ActivityResource\Pages;
 use App\Models\ActivityLog;
+use App\Support\Audit;
+use Filament\Facades\Filament;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -25,15 +27,26 @@ class ActivityResource extends Resource
     protected static ?string $navigationLabel = 'Journal d\'activité';
     protected static ?string $modelLabel      = 'Activité';
     protected static ?string $pluralModelLabel = 'Journal d\'activité';
-    protected static ?string $navigationGroup = 'Audit';
+    protected static ?string $navigationGroup = 'Sécurité et audit';
     protected static ?int    $navigationSort  = 1;
 
     // =========================================================
     // PERMISSIONS
     // =========================================================
+    /**
+     * Journal visible UNIQUEMENT dans le panel d'administration (config audit.panel).
+     * La ressource etant decouverte par plusieurs panels (dossier Filament/Resources partage),
+     * cette verification la retire aussi du menu et des adresses des autres modules.
+     */
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('view_any_activity') ?? false;
+        return Filament::getCurrentPanel()?->getId() === config('audit.panel', 'admin')
+            && (auth()->user()?->can('view_any_activity') ?? false);
+    }
+
+    public static function canView($record): bool
+    {
+        return static::canViewAny();
     }
     public static function canCreate(): bool
     {
@@ -43,9 +56,18 @@ class ActivityResource extends Resource
     {
         return false;
     }
+    /**
+     * Aucune suppression manuelle : un journal d'audit doit rester inalterable.
+     * La retention est geree par l'archivage mensuel verifie (php artisan journal:archiver).
+     */
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_activity') ?? false;
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
     }
 
     // =========================================================
@@ -75,6 +97,22 @@ class ActivityResource extends Resource
                     ->searchable()
                     ->size('sm'),
 
+                // ✅ Module (deduit du type de document : couvre aussi l'historique)
+                Tables\Columns\TextColumn::make('module')
+                    ->label('Module')
+                    ->getStateUsing(fn($record) => $record->getModuleLabel())
+                    ->badge()
+                    ->color(fn($record) => match ($record->getModule()) {
+                        'budget'           => 'primary',
+                        'comptable'        => 'warning',
+                        'marches'          => 'info',
+                        'planification'    => 'success',
+                        'programmation'    => 'success',
+                        'suivi_evaluation' => 'success',
+                        'administration'   => 'gray',
+                        default            => in_array($record->log_name, ['auth', 'security'], true) ? 'danger' : 'gray',
+                    }),
+
                 // ✅ Événement avec couleur sémantique
                 Tables\Columns\BadgeColumn::make('event')
                     ->label('Événement')
@@ -97,6 +135,10 @@ class ActivityResource extends Resource
                         'cloturer'      => 'success',
                         'retourner'     => 'warning',
                         'access_denied' => 'danger',
+                        'restored'      => 'success',
+                        'login_failed'  => 'danger',
+                        'archivage'     => 'gray',
+                        'correction_donnees', 'correctifs_donnees', 'corriger_beneficiaire' => 'warning',
                         default         => 'gray',
                     })
                     ->sortable(),
@@ -215,26 +257,38 @@ class ActivityResource extends Resource
                         'login'         => '🔓 Connexion',
                         'logout'        => '🔒 Déconnexion',
                         'access_denied' => '🚫 Accès refusé',
+                        'login_failed'  => '⚠️ Échec de connexion',
+                        // ── Audit des données ──────────────
+                        'restored'            => '♻️ Restauré',
+                        'correction_donnees'  => '🛠️ Correction de données',
+                        'correctifs_donnees'  => '🛠️ Correctifs de données',
+                        'archivage'           => '🗄️ Archivage du journal',
                     ])
                     ->multiple(),
 
+                // ✅ Filtre par module (y compris l'historique deja enregistre)
+                Tables\Filters\SelectFilter::make('module')
+                    ->label('Module')
+                    ->options(fn() => Audit::optionsModules() + ['securite' => 'Sécurité (connexions, accès refusés)'])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $module = $data['value'] ?? null;
+
+                        if (blank($module)) {
+                            return $query;
+                        }
+
+                        if ($module === 'securite') {
+                            return $query->whereIn('log_name', ['auth', 'security']);
+                        }
+
+                        return $query->whereIn('subject_type', Audit::typesDuModule($module));
+                    }),
+
                 Tables\Filters\SelectFilter::make('subject_type')
                     ->label('Type de document')
-                    ->options([
-                        'App\Models\BonCommande'            => 'Bon de Commande',
-                        'App\Models\DecisionAdministrative' => 'Décision Administrative',
-                        'App\Models\Engagement'             => 'Engagement',
-                        'App\Models\OrdonnancePaiement'     => 'Ordonnance de Paiement',
-                        'App\Models\MemoireDepense'         => 'Mémoire de Dépense',
-                        'App\Models\BordereauEngagement'    => 'Bordereau d\'Engagement',
-                        'App\Models\Budget'                 => 'Budget',
-                        'App\Models\LigneBudgetaire'        => 'Ligne Budgétaire',
-                        'App\Models\RegieAvance'            => 'Régie d\'Avance',
-                        'App\Models\Exercice'               => 'Exercice',
-                        'App\Models\Transmission'           => 'Transmission',
-                        'App\Models\VirementBudgetaire'     => 'Virement Budgétaire',
-                        'App\Models\User'                   => 'Utilisateur',
-                    ])
+                    // Tous les modeles audites, groupes par module (config/audit.php)
+                    ->options(fn() => Audit::optionsModelesParModule())
+                    ->searchable()
                     // ✅ CORRIGE : le journal enregistre l'alias de morph map ('engagement'),
                     // le filtre accepte donc l'alias ET le nom complet de la classe
                     ->query(fn(Builder $query, array $data): Builder => filled($data['value'] ?? null)
@@ -253,6 +307,7 @@ class ActivityResource extends Resource
                         'workflow' => 'Workflow',
                         'auth'     => 'Authentification',
                         'security' => 'Sécurité',
+                        'audit'    => 'Audit des données',
                     ]),
 
                 Tables\Filters\Filter::make('periode')
@@ -284,12 +339,8 @@ class ActivityResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->hasRole('super_admin')),
-                ]),
-            ])
+            // Aucune action groupee : les entrees du journal ne se suppriment pas manuellement
+            ->bulkActions([])
             ->defaultSort('created_at', 'desc')
             ->poll('30s');
     }

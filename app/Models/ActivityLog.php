@@ -186,6 +186,12 @@ class ActivityLog extends SpatieActivity
             'cloturer'      => '🏁 Clôturé',
             'retourner'     => '↩️ Retourné',
             'access_denied' => '🚫 Accès refusé',
+            'restored'      => '♻️ Restauré',
+            'login_failed'  => '⚠️ Échec de connexion',
+            'archivage'     => '🗄️ Archivage du journal',
+            'correction_donnees'  => '🛠️ Correction de données',
+            'correctifs_donnees'  => '🛠️ Correctifs de données',
+            'corriger_beneficiaire' => '🛠️ Correction du bénéficiaire',
             default         => ucfirst($this->event ?? '—'),
         };
     }
@@ -208,32 +214,25 @@ class ActivityLog extends SpatieActivity
     {
         if (!$this->subject_type) return '—';
 
-        // ✅ CORRIGE : class_basename('bon_commande') donnait 'bon_commande' (alias brut)
-        return match (class_basename($this->getSubjectClass())) {
-            'Action'                 => 'Action',
-            'Activite'               => 'Activité',
-            'Programme'              => 'Programme',
-            'Tache'                  => 'Tâche',
-            'NomenclatureBudgetaire' => 'Nomenclature Budgétaire',
-            'Personnel'              => 'Personnel',
-            'BonCommandeRegie'       => 'Bon de Commande (Régie)',
-            'DecaissementRegie'      => 'Décaissement (Régie)',
-            'DepenseRegie'           => 'Dépense (Régie)',
-            'BonCommande'            => 'Bon de Commande',
-            'DecisionAdministrative' => 'Décision Administrative',
-            'Engagement'             => 'Engagement',
-            'OrdonnancePaiement'     => 'Ordonnance de Paiement',
-            'MemoireDepense'         => 'Mémoire de Dépense',
-            'BordereauEngagement'    => 'Bordereau d\'Engagement',
-            'Budget'                 => 'Budget',
-            'LigneBudgetaire'        => 'Ligne Budgétaire',
-            'RegieAvance'            => 'Régie d\'Avance',
-            'Exercice'               => 'Exercice',
-            'User'                   => 'Utilisateur',
-            'Transmission'           => 'Transmission',
-            'VirementBudgetaire'     => 'Virement Budgétaire',
-            default => class_basename($this->subject_type),
-        };
+        // Libelle defini par module dans config/audit.php (accepte alias et nom de classe)
+        return \App\Support\Audit::libelleModele($this->subject_type)
+            ?? class_basename($this->getSubjectClass());
+    }
+
+    /** Module de l'entree (budget, planification...), deduit du type de document. */
+    public function getModule(): ?string
+    {
+        return \App\Support\Audit::moduleDe($this->subject_type);
+    }
+
+    /** Libelle du module ; "Sécurité" pour les connexions et alertes sans document. */
+    public function getModuleLabel(): string
+    {
+        if ($module = $this->getModule()) {
+            return \App\Support\Audit::libelleModule($module);
+        }
+
+        return in_array($this->log_name, ['auth', 'security'], true) ? 'Sécurité' : '—';
     }
 
     // ── Helper privé ─────────────────────────────────────────

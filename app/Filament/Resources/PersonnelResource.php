@@ -12,9 +12,14 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
+use \App\Filament\Concerns\AutorisationParPermissions;
 
 class PersonnelResource extends Resource
 {
+    protected static function prefixePermission(): string
+    {
+        return 'user';
+    }
     protected static ?string $model = Personnel::class;
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
     protected static ?string $navigationLabel = 'Personnel';

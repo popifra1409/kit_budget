@@ -9,9 +9,15 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Spatie\Permission\Models\Permission;
+use \App\Filament\Concerns\AutorisationParPermissions;
 
 class PermissionResource extends Resource
 {
+    protected static function prefixePermission(): string
+    {
+        return 'user';
+    }
+
     use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = Permission::class;
 

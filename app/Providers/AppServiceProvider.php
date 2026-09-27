@@ -23,12 +23,10 @@ use App\Models\DepenseRegie;
 use App\Observers\DepenseRegieObserver;
 use App\Models\BonCommandeRegie;
 use App\Observers\BonCommandeRegieObserver;
+use App\Support\Audit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
-
-use Illuminate\Support\Facades\Event;
-
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -49,7 +47,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-
+        /*
+        |------------------------------------------------------------------
+        | MORPH MAP (imposee)
+        |------------------------------------------------------------------
+        | enforceMorphMap : toute relation polymorphe vers un modele ABSENT de
+        | cette liste leve une ClassMorphViolationException. Le journal d'audit
+        | rattachant chaque entree a son document par une relation polymorphe,
+        | TOUT modele audite (config/audit.php) doit figurer ici.
+        | Controle : php artisan audit:couverture
+        |
+        | ⚠️ Ne jamais renommer ni supprimer un alias existant : il est stocke en
+        |    base (activity_log, engagements, transmissions...). Seuls les ajouts
+        |    sont sans risque.
+        */
         Relation::enforceMorphMap([
             //configurations
             'programme' => \App\Models\Programme::class,
@@ -108,7 +119,78 @@ class AppServiceProvider extends ServiceProvider
             'rapport_activite_periodique' => \App\Models\RapportActivitePeriodique::class,
             'rapport_annuel_performance' => \App\Models\RapportAnnuelPerformance::class,
 
+            // ─────────────────────────────────────────────────────────────
+            // ✅ AJOUTS — modeles desormais audites (config/audit.php).
+            //    Sans ces alias, l'audit de ces modeles echouerait en silence.
+            // ─────────────────────────────────────────────────────────────
+
+            // Budget : lignes, avenants, collectifs, recettes, regies, parametres
+            'ligne_budgetaire'             => \App\Models\LigneBudgetaire::class,
+            'groupe_nomenclature'          => \App\Models\GroupeNomenclature::class,
+            'ligne_engagement'             => \App\Models\LigneEngagement::class,
+            'avenant'                      => \App\Models\Avenant::class,
+            'ligne_bon_commande'           => \App\Models\LigneBonCommande::class,
+            'menu_depense_decision'        => \App\Models\MenuDepenseDecision::class,
+            'bordereau_engagement_ligne'   => \App\Models\BordereauEngagementLigne::class,
+            'ligne_memoire_depense'        => \App\Models\LigneMemoireDepense::class,
+            'facture_proforma'             => \App\Models\FactureProforma::class,
+            'ligne_facture_proforma'       => \App\Models\LigneFactureProforma::class,
+            'collectif_budgetaire'         => \App\Models\CollectifBudgetaire::class,
+            'mouvement_collectif'          => \App\Models\MouvementCollectif::class,
+            'ligne_prevision_recette'      => \App\Models\LignePrevisionRecette::class,
+            'prevision_recette_mensuelle'  => \App\Models\PrevisionRecetteMensuelle::class,
+            'prevision_budget_programme'   => \App\Models\PrevisionBudgetProgramme::class,
+            'ligne_regie_avance'           => \App\Models\LigneRegieAvance::class,
+            'ligne_bon_commande_regie'     => \App\Models\LigneBonCommandeRegie::class,
+            'decaissement_regie'           => \App\Models\DecaissementRegie::class,
+            'ligne_depense_regie'          => \App\Models\LigneDepenseRegie::class,
+            'provision_consommation'       => \App\Models\ProvisionConsommation::class,
+            'mode_paiement'                => \App\Models\ModePaiement::class,
+            'taux_ir'                      => \App\Models\TauxIr::class,
+            'regime_fiscal'                => \App\Models\RegimeFiscal::class,
+
+            // Comptabilité matières
+            'article'                      => \App\Models\Article::class,
+            'categorie_article'            => \App\Models\CategorieArticle::class,
+            'unite_mesure'                 => \App\Models\UniteMesure::class,
+            'conditionnement'              => \App\Models\Conditionnement::class,
+            'stock'                        => \App\Models\Stock::class,
+            'fiche_stock'                  => \App\Models\FicheStock::class,
+            'expression_besoin'            => \App\Models\ExpressionBesoin::class,
+            'ligne_expression_besoin'      => \App\Models\LigneExpressionBesoin::class,
+            'fiche_consolidation_besoin'   => \App\Models\FicheConsolidationBesoin::class,
+            'reception'                    => \App\Models\Reception::class,
+            'ligne_reception'              => \App\Models\LigneReception::class,
+            'ordre_entree'                 => \App\Models\OrdreEntree::class,
+            'bordereau_mouvement'          => \App\Models\BordereauMouvement::class,
+            'mouvement_bordereau'          => \App\Models\MouvementBordereau::class,
+
+            // Marchés publics
+            'piece_dossier'                => \App\Models\PieceDossier::class,
+
+            // Planification stratégique
+            'cadre_logique'                => \App\Models\CadreLogique::class,
+            'objectif_principal'           => \App\Models\ObjectifPrincipal::class,
+            'objectif_specifique'          => \App\Models\ObjectifSpecifique::class,
+            'indicateur'                   => \App\Models\Indicateur::class,
+            'valeur_indicateur'            => \App\Models\ValeurIndicateur::class,
+
+            // Programmation
+            'cbmt_ligne'                   => \App\Models\CbmtLigne::class,
+            'cdmt_ligne'                   => \App\Models\CdmtLigne::class,
+
+            // Suivi et évaluation
+            'rapport_activite_ligne'       => \App\Models\RapportActiviteLigne::class,
+
+            // Administration
+            'transmission'                 => \App\Models\Transmission::class,
         ]);
+
+        // Modele de role propre a l'application (s'il existe et differe du modele Spatie) :
+        // alias distinct pour ne pas modifier l'alias 'role' deja stocke en base.
+        if (class_exists(\App\Models\Role::class) && \App\Models\Role::class !== Role::class) {
+            Relation::morphMap(['role_application' => \App\Models\Role::class]);
+        }
 
         DecisionAdministrative::observe(DecisionAdministrativeObserver::class);
         LignePrevisionRecette::observe(LignePrevisionRecetteObserver::class);
@@ -117,11 +199,15 @@ class AppServiceProvider extends ServiceProvider
         PieceDossier::observe(PieceDossierObserver::class);
         DepenseRegie::observe(DepenseRegieObserver::class);
         BonCommandeRegie::observe(BonCommandeRegieObserver::class);
+
+        // ✅ AJOUT — Audit de tous les modules (modeles listes dans config/audit.php,
+        //    hors modeles deja journalises nativement par LogsActivity)
+        Audit::enregistrerObservateurs();
+
         // Enregistrer le CSS personnalisé
         FilamentAsset::register([
             Css::make('custom-theme', resource_path('css/filament/admin/theme.css')),
         ]);
-
 
         \Livewire\Livewire::component(
             'agent-budgetaire-widget',

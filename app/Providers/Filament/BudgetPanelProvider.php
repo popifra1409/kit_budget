@@ -114,8 +114,7 @@ class BudgetPanelProvider extends PanelProvider
                 'Contrôle & Suivi',
                 'Configuration Budget',
                 'Paramétrage',
-                'Audit',
-                'Administration',
+                // 'Audit' et 'Administration' retirés : ces écrans sont dans le panel Administration (/admin)
             ])
 
 
@@ -124,10 +123,13 @@ class BudgetPanelProvider extends PanelProvider
                 in: app_path('Filament/Budget/Resources'),
                 for: 'App\\Filament\\Budget\\Resources'
             )
-            ->discoverResources(
-                in: app_path('Filament/Resources'),
-                for: 'App\\Filament\\Resources'
-            )
+            // Le dossier partagé Filament/Resources n'est plus découvert ici : utilisateurs,
+            // rôles, permissions et journal d'audit sont dans le panel Administration.
+            // Seuls le personnel et les services restent dans le Budget (DA, opérateurs).
+            ->resources([
+                \App\Filament\Resources\PersonnelResource::class,
+                \App\Filament\Resources\ServiceResource::class,
+            ])
             ->discoverPages(
                 in: app_path('Filament/Budget/Pages'),
                 for: 'App\\Filament\\Budget\\Pages'

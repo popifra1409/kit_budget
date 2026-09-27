@@ -10,9 +10,15 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use \App\Filament\Concerns\AutorisationParPermissions;
 
 class RoleResource extends Resource
 {
+    protected static function prefixePermission(): string
+    {
+        return 'user';
+    }
+
     use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = Role::class;
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';

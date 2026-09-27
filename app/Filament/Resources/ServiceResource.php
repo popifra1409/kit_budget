@@ -14,9 +14,15 @@ use App\Imports\ServicesImport;
 use App\Exports\ServicesTemplateExport;
 use Filament\Notifications\Notification;
 use Maatwebsite\Excel\Facades\Excel;
+use \App\Filament\Concerns\AutorisationParPermissions;
 
 class ServiceResource extends Resource
 {
+    protected static function prefixePermission(): string
+    {
+        return 'user';
+    }
+
     protected static ?string $model = Service::class;
     protected static ?string $navigationIcon = 'heroicon-o-building-office';
     protected static ?string $navigationLabel = 'Services';

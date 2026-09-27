@@ -366,11 +366,17 @@
         $canBudget = $isSuperAdmin || $user->can('access_module_budget');
         $canComptable = $isSuperAdmin || $user->can('access_module_comptable');
         $canMarches = $isSuperAdmin || $user->can('access_module_marches');
-        $modulesActifs = collect([$canPlanification, $canBudget, $canComptable, $canMarches])->filter()->count();
         $canProgrammation = $isSuperAdmin || $user->can('access_module_programmation');
-        $modulesActifs = collect([$canPlanification, $canProgrammation, $canBudget, $canComptable, $canMarches])->filter()->count();
         $canSuiviEvaluation = $isSuperAdmin || $user->can('access_module_suivi_evaluation');
         $modulesActifs = collect([$canPlanification, $canProgrammation, $canBudget, $canComptable, $canMarches, $canSuiviEvaluation])->filter()->count();
+
+        // ✅ Administration : même règle que l'entrée du panel (User::canAccessPanel).
+        //    On vérifie que le panel 'admin' est bien enregistré : sinon Filament renverrait
+        //    le panel par défaut (portail) et la tuile s'afficherait à tort pour tous.
+        $panelAdmin = \Filament\Facades\Filament::getPanels()['admin'] ?? null;
+        $canAdministration = $panelAdmin !== null && $user->canAccessPanel($panelAdmin);
+        $canGererComptes = $isSuperAdmin || $user->can('view_any_user');
+        $canAudit = $user->can('view_any_activity');
     @endphp
 
     {{-- Toast accès refusé --}}
@@ -708,6 +714,43 @@
                         Contacter l'administrateur
                     </div>
                 </div>
+            @endif
+
+            {{-- ADMINISTRATION : visible uniquement par les profils autorisés (pas de tuile verrouillée :
+                 inutile de signaler l'existence de l'administration aux autres utilisateurs) --}}
+            @if($canAdministration)
+                <a href="/admin" class="mod-card"
+                    style="--c:linear-gradient(90deg,#334155,#475569);--cc:#334155;--s:rgba(51,65,85,.22);--ib:rgba(51,65,85,.1);--is:rgba(51,65,85,.2);--tb:rgba(51,65,85,.08);--tc:#1e293b;--tbo:rgba(51,65,85,.2)">
+                    <div class="mod-header">
+                        <div class="mod-icon">🛡️</div>
+                        <div>
+                            <div class="mod-num">Administration</div>
+                            <div class="mod-title">{{ $canGererComptes ? 'Administration et audit' : "Journal d'audit" }}</div>
+                        </div>
+                    </div>
+                    <div class="mod-desc">
+                        @if($canGererComptes)
+                            Utilisateurs, rôles et permissions, personnel, services, et journal d'audit de tous les modules.
+                        @else
+                            Consultation du journal d'audit : opérations réalisées dans tous les modules de l'application.
+                        @endif
+                    </div>
+                    <div class="mod-tags">
+                        @if($canGererComptes)
+                            <span class="mod-tag">Utilisateurs</span>
+                            <span class="mod-tag">Rôles</span>
+                        @endif
+                        @if($canAudit)
+                            <span class="mod-tag">Journal d'audit</span>
+                        @endif
+                    </div>
+                    <div class="mod-cta">
+                        Accéder à l'administration
+                        <svg class="mod-cta-arrow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                    </div>
+                </a>
             @endif
 
         </div>{{-- /.modules-grid --}}

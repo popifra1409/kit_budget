@@ -11,9 +11,15 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Spatie\Permission\Models\Role;
+use \App\Filament\Concerns\AutorisationParPermissions;
 
 class UserResource extends Resource
 {
+    protected static function prefixePermission(): string
+    {
+        return 'user';
+    }
+
     use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = User::class;
     protected static ?string $navigationIcon = 'heroicon-o-users';

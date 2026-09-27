@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationItem;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -19,19 +20,29 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Models\ParametresStructure;
 use App\Models\ParametresFournisseur;
-use Filament\Navigation\NavigationGroup;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
 use App\Filament\Pages\Auth\Login;
-use Filament\Navigation\MenuItem;
 
 /**
- * AdminPanelProvider avec URLs dynamiques compatibles Clusters
- * VERSION CORRIGÉE - URLs fonctionnent avec ou sans clusters
+ * Panel ADMINISTRATION (/admin)
+ *
+ * Contenu : utilisateurs, rôles, permissions, personnel, services, journal d'audit
+ * (ressources du dossier partagé app/Filament/Resources).
+ *
+ * Accès : restreint par User::canAccessPanel() aux administrateurs et aux profils
+ * d'audit (permission view_any_activity). Chaque écran contrôle en plus ses propres
+ * actions (trait AutorisationParPermissions).
+ *
+ * ⚠️ Ce panel n'est PAS le panel par défaut : c'est le portail (/portal).
+ *    Deux panels par défaut provoquaient les redirections vers /admin après connexion,
+ *    raison pour laquelle ce panel avait été désactivé.
  */
 class AdminPanelProvider extends PanelProvider
 {
+    use Concerns\AvecRetourPortail;
+
     public function panel(Panel $panel): Panel
     {
         // ===================================
@@ -41,12 +52,11 @@ class AdminPanelProvider extends PanelProvider
         $fournisseur = $this->getFournisseurSecurise();
 
         return $panel
-            ->default()
+            // ✅ PAS de ->default()
             ->id('admin')
             ->path('admin')
             ->login(Login::class)
             ->profile()
-            // ->viteTheme('resources/css/filament/admin/theme.css')
 
             // 🎨 PALETTE DE COULEURS PERSONNALISÉE
             ->colors([
@@ -58,73 +68,56 @@ class AdminPanelProvider extends PanelProvider
             ])
 
             // ===================================
-            // BRANDING PERSONNALISÉ - LOGO ÉDITEUR
+            // BRANDING PERSONNALISÉ
             // ===================================
-            ->brandName($fournisseur->nom_logiciel ?? 'Budget Manager')
-            ->brandLogo(fn() => $fournisseur->logo_url ?? asset('images/logo-editeur.png'))
+            ->brandName(($fournisseur->nom_logiciel ?? 'Budget Manager') . ' — Administration')
+            ->brandLogo(function () use ($fournisseur) {
+                $logo = $fournisseur->logo_url ?? null;
+                if (!$logo) {
+                    return asset('images/logo-editeur.png');
+                }
+                return str_starts_with($logo, 'http') ? $logo : asset($logo);
+            })
             ->brandLogoHeight('2.5rem')
             ->favicon(fn() => $fournisseur->logo_url ?? asset('images/favicon.png'))
-
-            // ===================================
-            // SIDEBAR CONFIGURATION
-            // ===================================
             ->sidebarCollapsibleOnDesktop()
-            ->renderHook(
-                PanelsRenderHook::HEAD_END,
-                fn() => new HtmlString('
-        <style>
-            /* ========================================= */
-            /* MASQUER LA SIDEBAR DU CLUSTER - FORCÉ */
-            /* ========================================= */
-            
-            /* Masquer tous les types de sidebar de cluster */
-            .fi-cluster-sidebar,
-            [class*="cluster-sidebar"],
-            [class*="fi-sidebar-nav-clusters"],
-            nav[aria-label*="cluster"],
-            aside[class*="cluster"] {
-                display: none !important;
-                width: 0 !important;
-                visibility: hidden !important;
-            }
-            
-            /* Ajuster le contenu pour prendre tout l\'espace */
-            .fi-cluster-content,
-            [class*="cluster-content"] {
-                margin-left: 0 !important;
-                padding-left: 0 !important;
-            }
-            
-           
-        </script>
-    ')
-            )
-            // 📂 ORDRE DES GROUPES DE NAVIGATION
+
+            // 📂 NAVIGATION : uniquement l'administration
             ->navigationGroups([
-                'Commandes & Engagement',
-                'Fournisseurs & Documents',
-                'Gestion Budgétaire',
-                'Cadre Logique',
-                'Contrôle & Suivi',
-                'Configuration Budget',
-                'Paramétrage',
-                'Audit',
                 'Administration',
+                'Sécurité et audit',
+                'Paramétrage',
+            ])
+            ->navigationItems([
+                // ✅ Thèmes : même règle d'accès que dans le module Budget
+                NavigationItem::make('Apparence & Thèmes')
+                    ->url(fn() => route('filament.admin.pages.themes'))
+                    ->icon('heroicon-o-paint-brush')
+                    ->group('Paramétrage')
+                    ->sort(99)
+                    ->visible(fn() => auth()->check()
+                        && auth()->user()->hasRole(['super_admin', 'admin'])),
             ])
 
-            // ✅ DÉCOUVRIR LES CLUSTERS (à activer quand prêt)
-            // ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\\Filament\\Clusters')
+            // ✅ Plugin de thèmes (identique au panel Budget)
+            ->plugins([
+                \Hasnayeen\Themes\ThemesPlugin::make()
+                    ->canViewThemesPage(
+                        fn() => auth()->check() && (bool) auth()->user()->hasRole(['super_admin', 'admin'])
+                    ),
+            ])
 
+            // ✅ Uniquement les écrans d'administration du dossier partagé Filament/Resources.
+            //    Les dossiers Filament/Pages et Filament/Widgets ne sont PAS découverts : ils
+            //    contiennent le tableau de bord du Budget, la page du portail et la connexion.
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
-            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
-            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->pages([
-                // Pages\Dashboard::class,
+                Pages\Dashboard::class,
             ])
             ->widgets([
                 Widgets\AccountWidget::class,
-                \App\Filament\Widgets\WelcomeWidget::class,
             ])
+
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -135,10 +128,18 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                // ✅ Applique le thème choisi (comme dans le panel Budget)
+                \Hasnayeen\Themes\Http\Middleware\SetTheme::class,
             ])
             ->authMiddleware([
-                Authenticate::class,
+                Authenticate::class, // + User::canAccessPanel() pour le panel 'admin'
             ])
+
+            // « Retour au portail » en tête du menu latéral (hors navigation : voir AvecRetourPortail)
+            ->renderHook(
+                PanelsRenderHook::SIDEBAR_NAV_START,
+                fn(): HtmlString => $this->lienRetourPortail()
+            )
 
             // ===================================
             // 🎯 BADGE LICENCE (Header)
@@ -149,105 +150,12 @@ class AdminPanelProvider extends PanelProvider
             )
 
             // ===================================
-            // 🚀 ACTIONS RAPIDES (Header) - URLs DYNAMIQUES
-            // ===================================
-            ->renderHook(
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderActionsRapides()
-            )
-
-            // ===================================
             // 📄 FOOTER AVEC COPYRIGHT
             // ===================================
             ->renderHook(
                 PanelsRenderHook::FOOTER,
                 fn(): HtmlString => $this->renderFooter($structure, $fournisseur)
             );
-    }
-
-    /**
-     * ✅ NOUVELLE MÉTHODE - Render actions rapides avec URLs dynamiques
-     * Compatible avec ou sans clusters
-     */
-    private function renderActionsRapides(): HtmlString
-    {
-        // Récupérer les URLs dynamiques
-        $urlBC = $this->getResourceUrl('App\Filament\Resources\BonCommandeResource', 'create');
-        $urlEngagement = $this->getResourceUrl('App\Filament\Resources\EngagementResource', 'create');
-        $urlMemoire = $this->getResourceUrl('App\Filament\Resources\MemoireDepenseResource', 'create');
-
-        return new HtmlString('
-        <div class="flex items-center gap-2 me-4">
-            
-            <!-- Action: Nouveau Bon de Commande -->
-            ' . ($urlBC ? '
-            <a href="' . e($urlBC) . '" 
-               class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg transition shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
-               title="Nouveau Bon de Commande">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span class="hidden lg:inline font-medium">Nouveau BC</span>
-            </a>
-            ' : '') . '
-            
-            <!-- Action: Nouvel Engagement -->
-            ' . ($urlEngagement ? '
-            <a href="' . e($urlEngagement) . '" 
-               class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition border border-green-200 dark:border-green-800"
-               title="Nouvel Engagement">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span class="hidden lg:inline font-medium">Engagement</span>
-            </a>
-            ' : '') . '
-            
-            <!-- Action: Nouveau Mémoire de Dépense -->
-            ' . ($urlMemoire ? '
-            <a href="' . e($urlMemoire) . '" 
-               class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition border border-orange-200 dark:border-orange-800"
-               title="Nouveau Mémoire de Dépense">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span class="hidden lg:inline font-medium">Mémoire</span>
-            </a>
-            ' : '') . '
-            
-            <!-- Divider -->
-            <div class="border-l border-blue-300 dark:border-blue-600 h-8 mx-1"></div>
-            
-            <!-- Badge: Exercice en cours -->
-            <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span class="text-sm font-semibold text-blue-700 dark:text-blue-300">' . now()->year . '</span>
-            </div>
-            
-        </div>
-        ');
-    }
-
-    /**
-     * ✅ NOUVELLE MÉTHODE - Obtenir l'URL d'une ressource de manière dynamique
-     * Fonctionne avec ou sans clusters
-     */
-    private function getResourceUrl(string $resourceClass, string $page = 'index'): ?string
-    {
-        try {
-            // Vérifier que la classe existe
-            if (!class_exists($resourceClass)) {
-                return null;
-            }
-
-            // Utiliser la méthode getUrl() de Filament (compatible clusters)
-            return $resourceClass::getUrl($page);
-        } catch (\Exception $e) {
-            // Erreur silencieuse, retourner null
-            return null;
-        }
     }
 
     /**
@@ -289,10 +197,10 @@ class AdminPanelProvider extends PanelProvider
         return new HtmlString('
             <footer class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 mt-auto">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                    
+
                     <!-- Section principale -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                        
+
                         <!-- Colonne 1: À propos du logiciel -->
                         <div>
                             <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
@@ -305,7 +213,7 @@ class AdminPanelProvider extends PanelProvider
                                 ' . e($fournisseur->description_logiciel ?? 'Système de gestion développé par ' . $fournisseur->nom_societe) . '
                             </p>
                         </div>
-                        
+
                         <!-- Colonne 2: Informations Structure Cliente -->
                         <div>
                             <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
@@ -323,7 +231,7 @@ class AdminPanelProvider extends PanelProvider
                                 ' . e($structure->email) . '
                             </p>' : '') . '
                         </div>
-                        
+
                         <!-- Colonne 3: Support & Contact Fournisseur -->
                         <div>
                             <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
@@ -344,16 +252,16 @@ class AdminPanelProvider extends PanelProvider
                                 Urgence 24/7: <a href="tel:' . e($this->formatTelephone($contactFooter['telephone_urgence'])) . '" class="hover:text-red-600 dark:hover:text-red-400 transition font-semibold">' . e($contactFooter['telephone_urgence']) . '</a>
                             </p>' : '') . '
                             <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                ' . ($docLinks['documentation'] ? '<a href="' . e($docLinks['documentation']) . '" target="_blank" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Documentation</a>' : 'Documentation') . ' • 
+                                ' . ($docLinks['documentation'] ? '<a href="' . e($docLinks['documentation']) . '" target="_blank" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Documentation</a>' : 'Documentation') . ' •
                                 ' . ($docLinks['guide_utilisateur'] ? '<a href="' . e($docLinks['guide_utilisateur']) . '" target="_blank" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Guide utilisateur</a>' : 'Guide utilisateur') . '
                             </p>
                         </div>
                     </div>
-                    
+
                     <!-- Séparateur -->
                     <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
                         <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                            
+
                             <!-- Copyright -->
                             <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -361,7 +269,7 @@ class AdminPanelProvider extends PanelProvider
                                 </svg>
                                 <span class="font-medium">' . e($fournisseur->copyright_complet) . '</span>
                             </div>
-                            
+
                             <!-- Version & Licence -->
                             <div class="flex items-center gap-4 text-xs">
                                 <span class="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-mono">

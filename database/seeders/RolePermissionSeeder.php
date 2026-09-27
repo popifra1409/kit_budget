@@ -310,6 +310,13 @@ class RolePermissionSeeder extends Seeder
             'view_matrice_arrimage',      // voir la matrice (limitee a ses propres sous-programmes)
             'view_all_matrice_arrimage',  // voir tous les sous-programmes du PSP
             'exporter_matrice_arrimage',  // export PDF / Excel
+            // ── Audit (journal d'activite, panel Administration) ──
+            'view_any_activity',
+            'view_activity',
+
+            // ✅ AJOUTE : acces au panel Administration (/admin), controle par User::canAccessPanel()
+            //    super_admin et admin la recoivent automatiquement.
+            'access_module_admin',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -398,6 +405,16 @@ class RolePermissionSeeder extends Seeder
                 'ajouter_piece_dossier',
                 'telecharger_piece_dossier',
                 'view_my_dossiers',
+
+                // ✅ AJOUTE : referentiels utilises par les DA — creation et correction,
+                //    SANS suppression (un agent ou un service rattache a des documents emis
+                //    ne doit pas pouvoir etre efface par un operateur).
+                'create_personnel',
+                'update_personnel',
+                'view_any_service',
+                'view_service',
+                'create_service',
+                'update_service',
             ],
             'operateur_budget'
         );
@@ -468,6 +485,14 @@ class RolePermissionSeeder extends Seeder
                 'view_any_collectif_budgetaire',
                 'view_collectif_budgetaire',
                 'marquer_payee_ordonnance_paiement',
+
+                // ✅ AJOUTE : referentiels personnel et services (memes droits que l'operateur encadre)
+                'create_personnel',
+                'update_personnel',
+                'view_any_service',
+                'view_service',
+                'create_service',
+                'update_service',
             ],
             'chef_service_budget'
         );
@@ -617,6 +642,12 @@ class RolePermissionSeeder extends Seeder
 
                 // ── Paiement OP ───────────────────────────
                 'marquer_payee_ordonnance_paiement',
+
+                // ✅ AJOUTE : services (l'ecran controle desormais strictement view_any_service)
+                'view_any_service',
+                'view_service',
+                'create_service',
+                'update_service',
             ],
             'daaf'
         );
@@ -680,6 +711,10 @@ class RolePermissionSeeder extends Seeder
                 // Collectifs (lecture)
                 'view_any_collectif_budgetaire',
                 'view_collectif_budgetaire',
+
+                // ✅ AJOUTE : consultation du journal d'audit (panel Administration, lecture seule)
+                'view_any_activity',
+                'view_activity',
             ],
             'controleur_financier'
         );
@@ -764,6 +799,10 @@ class RolePermissionSeeder extends Seeder
                 'view_arborescence_libelles',
                 'view_all_arborescence_libelles',
                 'exporter_arborescence_libelles',
+
+                // ✅ AJOUTE : consultation du journal d'audit (panel Administration, lecture seule)
+                'view_any_activity',
+                'view_activity',
             ],
             'directeur_general'
         );

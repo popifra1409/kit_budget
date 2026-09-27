@@ -74,8 +74,21 @@ class User extends Authenticatable implements FilamentUser
             return false;
         }
 
-        // Accepter tous les utilisateurs avec au moins un rôle
-        return $this->roles()->exists();
+        // Aucun rôle : aucun accès
+        if (!$this->roles()->exists()) {
+            return false;
+        }
+
+        // ✅ Panel d'administration : réservé aux administrateurs
+        //    et aux profils d'audit (consultation du journal uniquement)
+        if ($panel->getId() === 'admin') {
+            return $this->hasAnyRole(['super_admin', 'admin'])
+                || $this->can('access_module_admin')
+                || $this->can('view_any_activity');
+        }
+
+        // Autres panels : contrôlés par leurs propres middlewares de module
+        return true;
     }
 
     /**
