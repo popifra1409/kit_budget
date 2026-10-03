@@ -24,6 +24,65 @@ class DossierFournisseurService
     ];
 
     // ════════════════════════════════════════════════════════
+    // RECHERCHE DU DOSSIER D'UN DOCUMENT
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * ✅ AJOUT — Un document a-t-il fait l'objet d'un avenant de changement de bénéficiaire ?
+     * Si oui, il peut avoir plusieurs dossiers (un par fournisseur successif).
+     */
+    public static function aChangeDeBeneficiaire($document): bool
+    {
+        if (!$document?->id) {
+            return false;
+        }
+
+        return \App\Models\Avenant::query()
+            ->where('type_correction', \App\Models\Avenant::TYPE_BENEFICIAIRE)
+            ->where('statut', 'applique')
+            ->whereIn('document_source_type', \App\Models\Engagement::formesDuType(get_class($document)))
+            ->where('document_source_id', $document->id)
+            ->exists();
+    }
+
+    /**
+     * ✅ AJOUT — Dossier ACTUEL d'un document : celui de son fournisseur actuel.
+     *
+     * Avant les avenants de changement de bénéficiaire, un document n'avait qu'un dossier,
+     * retrouvé par le seul document. Après un changement de fournisseur, l'ancien dossier
+     * est conservé et un nouveau est ouvert : la recherche doit donc aussi porter sur le
+     * fournisseur, sinon l'ancien dossier serait mis à jour à la place du nouveau.
+     *
+     * Repli historique (document sans changement de bénéficiaire) : premier dossier trouvé,
+     * exactement comme avant. Aucun changement de comportement pour les dossiers existants.
+     */
+    public static function dossierDuDocument($document, ?int $fournisseurId = null): ?DossierFournisseur
+    {
+        if (!$document?->id) {
+            return null;
+        }
+
+        $fournisseurId ??= $document->fournisseur_id ?? null;
+
+        $base = DossierFournisseur::where('document_principal_type', get_class($document))
+            ->where('document_principal_id', $document->id);
+
+        if ($fournisseurId) {
+            $dossier = (clone $base)->where('fournisseur_id', $fournisseurId)->first();
+            if ($dossier) {
+                return $dossier;
+            }
+        }
+
+        // Document ayant changé de fournisseur : pas de repli sur le dossier d'un autre fournisseur
+        if (static::aChangeDeBeneficiaire($document)) {
+            return null;
+        }
+
+        return $base->first();
+    }
+
+    // ════════════════════════════════════════════════════════
     // OBTENIR OU CRÉER UN DOSSIER POUR UN FOURNISSEUR
     // ════════════════════════════════════════════════════════
 
@@ -40,10 +99,9 @@ class DossierFournisseurService
         $documentType = get_class($documentPrincipal);
         $documentId   = $documentPrincipal->id;
 
-        // ✅ Chercher un dossier déjà lié à ce document
-        $dossier = DossierFournisseur::where('document_principal_type', $documentType)
-            ->where('document_principal_id', $documentId)
-            ->first();
+        // ✅ MODIFIÉ — dossier de ce document POUR CE fournisseur
+        //    (après un avenant de changement de fournisseur, l'ancien dossier ne doit pas être repris)
+        $dossier = static::dossierDuDocument($documentPrincipal, $fournisseurId);
 
         if ($dossier) {
             // Mettre à jour les montants
@@ -217,9 +275,8 @@ class DossierFournisseurService
         if (!$bc->fournisseur_id) return;
 
         try {
-            $dossier = DossierFournisseur::where('document_principal_type', get_class($bc))
-                ->where('document_principal_id', $bc->id)
-                ->first();
+            // ✅ MODIFIÉ — dossier du fournisseur actuel du BC
+            $dossier = static::dossierDuDocument($bc);
 
             if ($dossier) {
                 static::ajouterPieceAutomatique($dossier, 'certificat_engagement', $engagement, "CE-{$engagement->numero}.pdf");
@@ -241,10 +298,8 @@ class DossierFournisseurService
             $documentSource = $engagement->engageable;
             if (!$documentSource) return;
 
-            // Chercher le dossier lié au document source
-            $dossier = DossierFournisseur::where('document_principal_type', get_class($documentSource))
-                ->where('document_principal_id', $documentSource->id)
-                ->first();
+            // ✅ MODIFIÉ — dossier du fournisseur actuel du document source
+            $dossier = static::dossierDuDocument($documentSource);
 
             if (!$dossier) return;
 

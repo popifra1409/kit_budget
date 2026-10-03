@@ -21,7 +21,11 @@ class OrdonnancePaiementDossierObserver
     public function updated(OrdonnancePaiement $op): void
     {
         if ($op->wasChanged('statut') && $op->statut === 'payee' && $op->type_ordonnance === 'standard') {
-            $dossier = \App\Models\PieceDossier::where('document_type', get_class($op))
+            // ✅ MODIFIÉ — dossier du fournisseur ACTUEL du document source.
+            //    Après un avenant de changement de fournisseur, l'OP figure dans l'ancien ET le
+            //    nouveau dossier : la recherche par pièce aurait pris l'ancien.
+            $dossier = DossierFournisseurService::dossierDuDocument($op->engagement?->engageable)
+                ?? \App\Models\PieceDossier::where('document_type', get_class($op))
                 ->where('document_id', $op->id)
                 ->first()
                 ?->dossierFournisseur;

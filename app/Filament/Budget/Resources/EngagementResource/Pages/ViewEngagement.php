@@ -10,6 +10,10 @@ use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use App\Models\EtatConfig;
 use App\Models\Avenant;
+use App\Models\Fournisseur;
+use App\Models\Personnel;
+use App\Models\RegimeFiscal;
+use App\Services\Budget\ChangementBeneficiaireService;
 use Filament\Forms;
 use Filament\Forms\Get;
 use Illuminate\Support\Facades\DB;
@@ -772,6 +776,189 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         Log::error('Erreur avenant', ['engagement' => $this->record->numero, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
                         Notification::make()->title('❌ Erreur avenant')->danger()
                             ->body("Une erreur est survenue : " . $e->getMessage() . "\n\nAucune modification enregistrée.")->persistent()->send();
+                    }
+                }),
+
+            // ══════════════════════════════════════════════════════════
+            // ✅ AJOUT — AVENANT « CHANGEMENT DE BÉNÉFICIAIRE »
+            //    BC : nouveau fournisseur (existant ou créé). DA : agent ou fournisseur.
+            //    Action distincte de l'avenant « Rectification » ci-dessus, qui reste inchangé.
+            //    Logique métier : App\Services\Budget\ChangementBeneficiaireService
+            // ══════════════════════════════════════════════════════════
+            Actions\Action::make('changer_beneficiaire')
+                ->label('Changer de bénéficiaire')
+                ->icon('heroicon-o-arrows-right-left')
+                ->color('warning')
+                ->visible(
+                    fn($record) =>
+                    auth()->user()?->can('create_avenant_engagement')
+                        && app(ChangementBeneficiaireService::class)->estPossible($record)
+                )
+                ->modalHeading('Avenant — changement de bénéficiaire')
+                ->modalDescription('Aucun effet budgétaire : la ligne, le montant engagé et les crédits ne changent pas.')
+                ->modalWidth('3xl')
+                ->modalSubmitActionLabel('Appliquer l\'avenant')
+                ->fillForm(fn($record) => app(ChangementBeneficiaireService::class)->valeursInitiales($record))
+                ->form([
+                    Forms\Components\Placeholder::make('beneficiaire_actuel')
+                        ->label('Bénéficiaire actuel')
+                        ->content(fn() => app(ChangementBeneficiaireService::class)
+                            ->libelleBeneficiaire($this->record->getBeneficiaire())),
+
+                    // DA : agent ou fournisseur. BC : toujours un fournisseur (champ masqué).
+                    Forms\Components\Radio::make('type_beneficiaire')
+                        ->label('Nouveau bénéficiaire')
+                        ->options([
+                            'personnel'   => 'Un agent (personnel)',
+                            'fournisseur' => 'Un fournisseur',
+                        ])
+                        ->inline()
+                        ->live()
+                        ->required()
+                        ->visible(fn() => $this->record->estDecision()),
+
+                    Forms\Components\Select::make('fournisseur_id')
+                        ->label('Fournisseur')
+                        ->options(fn() => Fournisseur::actifs()
+                            ->when(
+                                $this->record->getBeneficiaireClass() === Fournisseur::class,
+                                fn($q) => $q->whereKeyNot($this->record->beneficiaire_id)
+                            )
+                            ->orderBy('raison_sociale')
+                            ->get()
+                            ->mapWithKeys(fn($f) => [$f->id => $f->raison_sociale . ($f->nif ? " — NIU {$f->nif}" : '')]))
+                        ->searchable()
+                        ->live()
+                        ->visible(fn(Get $get) => $this->record->estBonCommande() || $get('type_beneficiaire') === 'fournisseur')
+                        ->required(fn(Get $get) => $this->record->estBonCommande() || $get('type_beneficiaire') === 'fournisseur')
+                        ->helperText('Fournisseurs actifs et non blacklistés uniquement.')
+                        // IR recalculé selon le régime fiscal du fournisseur choisi (reste modifiable)
+                        ->afterStateUpdated(function ($state, Forms\Set $set) {
+                            $ir = app(ChangementBeneficiaireService::class)->irPropose($this->record, $state);
+                            if ($ir !== null) {
+                                $set('montant_ir', $ir);
+                            }
+                        })
+                        // Création d'un fournisseur : uniquement avec le droit create_fournisseur
+                        ->createOptionForm(auth()->user()?->can('create_fournisseur') ? [
+                            Forms\Components\TextInput::make('raison_sociale')->label('Raison sociale')->required()->maxLength(255)->columnSpanFull(),
+                            Forms\Components\TextInput::make('sigle')->label('Sigle')->maxLength(50),
+                            Forms\Components\TextInput::make('nif')->label('NIU')->maxLength(50)
+                                ->unique(table: 'fournisseurs', column: 'nif')
+                                ->helperText('Contrôle des doublons : un NIU ne peut exister qu\'une fois.'),
+                            Forms\Components\TextInput::make('rccm')->label('RCCM')->maxLength(100),
+                            Forms\Components\Select::make('regime_fiscal_id')->label('Régime fiscal')
+                                ->options(fn() => RegimeFiscal::actifs()->orderBy('libelle')->pluck('libelle', 'id'))
+                                ->required()->searchable(),
+                            Forms\Components\Select::make('type')->label('Type')
+                                ->options(['biens' => 'Biens', 'services' => 'Services', 'travaux' => 'Travaux', 'mixte' => 'Mixte'])
+                                ->default('mixte')->required(),
+                            Forms\Components\TextInput::make('telephone')->label('Téléphone')->tel(),
+                            Forms\Components\TextInput::make('email')->label('Email')->email(),
+                            Forms\Components\TextInput::make('adresse')->label('Adresse'),
+                            Forms\Components\TextInput::make('ville')->label('Ville'),
+                            Forms\Components\TextInput::make('banque')->label('Banque'),
+                            Forms\Components\TextInput::make('numero_compte')->label('N° de compte'),
+                        ] : null)
+                        ->createOptionUsing(fn(array $data): int => app(ChangementBeneficiaireService::class)->creerFournisseur($data))
+                        ->createOptionModalHeading('Nouveau fournisseur'),
+
+                    Forms\Components\Select::make('personnel_id')
+                        ->label('Agent')
+                        ->options(fn() => Personnel::query()
+                            ->where('actif', true)
+                            ->when(
+                                $this->record->getBeneficiaireClass() === Personnel::class,
+                                fn($q) => $q->whereKeyNot($this->record->beneficiaire_id)
+                            )
+                            ->orderBy('nom')
+                            ->get()
+                            ->mapWithKeys(fn($p) => [$p->id => $p->nom_complet . ($p->matricule ? " — {$p->matricule}" : '')]))
+                        ->searchable()
+                        ->visible(fn(Get $get) => $this->record->estDecision() && $get('type_beneficiaire') === 'personnel')
+                        ->required(fn(Get $get) => $this->record->estDecision() && $get('type_beneficiaire') === 'personnel')
+                        // Création d'un agent : uniquement avec le droit create_personnel
+                        ->createOptionForm(auth()->user()?->can('create_personnel') ? [
+                            Forms\Components\TextInput::make('nom')->label('Nom')->required()->maxLength(100),
+                            Forms\Components\TextInput::make('prenoms')->label('Prénoms')->maxLength(150),
+                            Forms\Components\TextInput::make('fonction')->label('Fonction'),
+                            Forms\Components\TextInput::make('telephone')->label('Téléphone')->tel(),
+                            Forms\Components\TextInput::make('numero_cni')->label('N° CNI')
+                                ->unique(table: 'personnels', column: 'numero_cni')
+                                ->helperText('Contrôle des doublons. Le matricule est généré automatiquement.'),
+                            Forms\Components\TextInput::make('banque')->label('Banque'),
+                            Forms\Components\TextInput::make('numero_compte_bancaire')->label('N° de compte bancaire'),
+                        ] : null)
+                        ->createOptionUsing(fn(array $data): int => app(ChangementBeneficiaireService::class)->creerPersonnel($data))
+                        ->createOptionModalHeading('Nouvel agent'),
+
+                    Forms\Components\Section::make('Retenues après changement')
+                        ->description('Pré-remplies avec les retenues actuelles ; l\'IR est recalculé selon le régime du fournisseur choisi. Modifiables.')
+                        ->schema([
+                            Forms\Components\TextInput::make('montant_cnps')->label('CNPS')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
+                                ->visible(fn() => $this->record->estDecision()),
+                            Forms\Components\TextInput::make('montant_ir')->label('IR')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true),
+                            Forms\Components\TextInput::make('montant_irnc')->label('IRNC')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
+                                ->visible(fn() => $this->record->estDecision()),
+                            Forms\Components\TextInput::make('montant_tva')->label('TVA')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true),
+                            Forms\Components\TextInput::make('montant_tsr')->label('TSR')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
+                                ->visible(fn() => $this->record->estBonCommande()),
+                            Forms\Components\TextInput::make('autres_retenues')->label('Autres retenues')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
+                                ->visible(fn() => $this->record->estDecision()),
+
+                            Forms\Components\Placeholder::make('net_apres')
+                                ->label('Net à payer au nouveau bénéficiaire')
+                                ->content(function (Get $get) {
+                                    $doc = $this->record->engageable;
+                                    $brut = $this->record->estBonCommande() ? (float) ($doc?->montant_ttc ?? 0) : (float) ($doc?->montant_brut ?? 0);
+                                    $taxes = collect(['montant_cnps', 'montant_ir', 'montant_irnc', 'montant_tva', 'montant_tsr', 'autres_retenues'])
+                                        ->sum(fn($c) => (float) ($get($c) ?? 0));
+                                    return number_format($brut - $taxes, 0, ',', ' ') . ' FCFA  (brut ' . number_format($brut, 0, ',', ' ') . ' − retenues ' . number_format($taxes, 0, ',', ' ') . ')';
+                                })
+                                ->columnSpanFull(),
+                        ])
+                        ->columns(3),
+
+                    Forms\Components\Textarea::make('motif')
+                        ->label('Motif du changement de bénéficiaire')
+                        ->required()->rows(3)->maxLength(1000)
+                        ->placeholder('Ex : erreur de saisie du fournisseur, désistement du titulaire, remplacement de l\'agent...'),
+                ])
+                ->action(function (array $data) {
+                    $service = app(ChangementBeneficiaireService::class);
+
+                    $estAgent = $this->record->estDecision() && ($data['type_beneficiaire'] ?? null) === 'personnel';
+                    $classe = $estAgent ? Personnel::class : Fournisseur::class;
+                    $id = (int) ($estAgent ? $data['personnel_id'] : $data['fournisseur_id']);
+
+                    try {
+                        $avenant = $service->appliquer($this->record, $classe, $id, $data, (string) $data['motif']);
+                        $avenant->load(['beneficiaireCorrige', 'dossierFournisseurCree']);
+
+                        $message = "Avenant n° {$avenant->numero_avenant} appliqué.\n\n"
+                            . 'Nouveau bénéficiaire : ' . $service->libelleBeneficiaire($avenant->beneficiaireCorrige);
+
+                        if ($avenant->dossierFournisseurCree) {
+                            $message .= "\n\nDossier fournisseur ouvert : {$avenant->dossierFournisseurCree->numero_dossier}";
+                        }
+
+                        Notification::make()->title('✅ Bénéficiaire modifié')->success()->body($message)->duration(10000)->send();
+
+                        return redirect()->route('filament.budget.resources.engagements.view', ['record' => $this->record]);
+                    } catch (\DomainException $e) {
+                        // Règle de gestion non respectée : message clair, rien n'a été modifié
+                        Notification::make()->title('Changement impossible')->warning()
+                            ->body($e->getMessage() . "\n\nAucune modification enregistrée.")->persistent()->send();
+                    } catch (\Illuminate\Validation\ValidationException $e) {
+                        Notification::make()->title('Données invalides')->warning()
+                            ->body(collect($e->errors())->flatten()->implode("\n"))->persistent()->send();
+                    } catch (\Throwable $e) {
+                        Log::error('Erreur avenant changement de bénéficiaire', [
+                            'engagement' => $this->record->numero,
+                            'erreur'     => $e->getMessage(),
+                        ]);
+                        Notification::make()->title('❌ Erreur')->danger()
+                            ->body('Une erreur est survenue. Aucune modification enregistrée.')->persistent()->send();
                     }
                 }),
 

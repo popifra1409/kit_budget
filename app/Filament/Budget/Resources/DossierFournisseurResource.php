@@ -69,6 +69,17 @@ class DossierFournisseurResource extends Resource
                 // ── Informations du dossier (lecture seule) ──
                 Forms\Components\Section::make('Dossier')
                     ->schema([
+                        // ✅ AJOUT — bandeau si le bénéficiaire a été remplacé par avenant
+                        Forms\Components\Placeholder::make('mention_avenant')
+                            ->label('')
+                            ->content(fn($record) => new \Illuminate\Support\HtmlString(
+                                '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:.5rem;padding:.6rem .8rem;">⚠️ <strong>'
+                                    . e(static::mentionAvenant($record)) . '</strong><br><span style="font-size:.85em;">'
+                                    . e(static::detailMentionAvenant($record)) . '</span></div>'
+                            ))
+                            ->visible(fn($record) => static::mentionAvenant($record) !== null)
+                            ->columnSpanFull(),
+
                         Forms\Components\TextInput::make('numero_dossier')
                             ->label('N° Dossier')->disabled()->dehydrated(false),
                         Forms\Components\TextInput::make('reference_principale')
@@ -148,10 +159,13 @@ class DossierFournisseurResource extends Resource
             ->persistSearchInSession()
             ->persistSortInSession()
             ->deferLoading()
-            
+
             ->columns([
                 Tables\Columns\TextColumn::make('numero_dossier')
-                    ->label('N° Dossier')->searchable()->sortable()->weight('bold')->copyable(),
+                    ->label('N° Dossier')->searchable()->sortable()->weight('bold')->copyable()
+                    // ✅ AJOUT — mention de l'avenant de changement de bénéficiaire
+                    ->description(fn($record) => static::mentionAvenant($record))
+                    ->color(fn($record) => static::mentionAvenant($record) ? 'warning' : null),
 
                 Tables\Columns\TextColumn::make('fournisseur.raison_sociale')
                     ->label('Fournisseur')->searchable()->sortable()->limit(30)
@@ -400,5 +414,26 @@ class DossierFournisseurResource extends Resource
             'view'   => Pages\ViewDossierFournisseur::route('/{record}'),
             'edit'   => Pages\EditDossierFournisseur::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * ✅ AJOUT — Mention affichée sur un dossier dont le bénéficiaire a été remplacé par avenant.
+     * L'ancien dossier est conservé tel quel (règle de gestion) : seule cette mention le signale.
+     */
+    public static function mentionAvenant($record): ?string
+    {
+        $info = data_get($record?->metadata, 'beneficiaire_remplace');
+
+        return $info ? 'Bénéficiaire remplacé par avenant n° ' . ($info['numero_avenant'] ?? '?') : null;
+    }
+
+    public static function detailMentionAvenant($record): string
+    {
+        $info = data_get($record?->metadata, 'beneficiaire_remplace', []);
+
+        return 'Engagement ' . ($info['engagement'] ?? '—')
+            . ' — nouveau bénéficiaire : ' . ($info['nouveau_beneficiaire'] ?? '—')
+            . (!empty($info['date']) ? ' — le ' . \Illuminate\Support\Carbon::parse($info['date'])->format('d/m/Y') : '')
+            . '. Les nouvelles pièces sont versées au dossier du nouveau bénéficiaire.';
     }
 }

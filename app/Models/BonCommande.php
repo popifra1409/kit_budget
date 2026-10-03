@@ -1077,10 +1077,10 @@ class BonCommande extends Model
         }
 
         try {
-            // Chercher un dossier existant
-            $dossier = DossierFournisseur::where('document_principal_type', get_class($this))
-                ->where('document_principal_id', $this->id)
-                ->first();
+            // ✅ MODIFIÉ — dossier du fournisseur ACTUEL de ce BC (repli historique inchangé).
+            //    Après un avenant de changement de fournisseur, l'ancien dossier est conservé :
+            //    sans ce critère, c'est lui qui aurait reçu les mises à jour.
+            $dossier = \App\Services\DossierFournisseurService::dossierDuDocument($this);
 
             if (!$dossier) {
                 // Créer un nouveau dossier

@@ -31,13 +31,31 @@ class Avenant extends Model
         'applique_par',
         'date_application',
         'created_by',
+
+        // ✅ AJOUT — colonnes existantes en base, utilisées par l'avenant de changement de bénéficiaire.
+        //    (ViewEngagement ne les transmet pas : aucun effet sur les avenants de montant/taxes.)
+        'montant_taxes_original',
+        'montant_taxes_corrige',
+        'corriger_ordonnances',
+
+        // ✅ AJOUT — avenant « changement de bénéficiaire »
+        'beneficiaire_original_type',
+        'beneficiaire_original_id',
+        'beneficiaire_corrige_type',
+        'beneficiaire_corrige_id',
+        'dossier_fournisseur_cree_id',
     ];
+
+    /** Type de correction de l'avenant de changement de bénéficiaire. */
+    public const TYPE_BENEFICIAIRE = 'beneficiaire';
 
     protected $casts = [
         'montant_original' => 'decimal:2',
         'montant_corrige'  => 'decimal:2',
         'delta_montant'    => 'decimal:2',
         'date_application' => 'datetime',
+        'montant_taxes_original' => 'decimal:2',
+        'montant_taxes_corrige'  => 'decimal:2',
     ];
 
     public function documentSource(): MorphTo
@@ -73,6 +91,31 @@ class Avenant extends Model
     public function appliqueParUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'applique_par');
+    }
+
+    // ── Avenant « changement de bénéficiaire » ───────────────
+
+    /** Ancien bénéficiaire (Fournisseur ou Personnel). */
+    public function beneficiaireOriginal(): MorphTo
+    {
+        return $this->morphTo('beneficiaire_original');
+    }
+
+    /** Nouveau bénéficiaire (Fournisseur ou Personnel). */
+    public function beneficiaireCorrige(): MorphTo
+    {
+        return $this->morphTo('beneficiaire_corrige');
+    }
+
+    /** Dossier fournisseur ouvert pour le nouveau fournisseur. */
+    public function dossierFournisseurCree(): BelongsTo
+    {
+        return $this->belongsTo(DossierFournisseur::class, 'dossier_fournisseur_cree_id');
+    }
+
+    public function estChangementBeneficiaire(): bool
+    {
+        return $this->type_correction === self::TYPE_BENEFICIAIRE;
     }
 
     // ── Appliquer l'avenant ───────────────────────────────────
