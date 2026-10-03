@@ -94,21 +94,15 @@ if ($nomenclature) {
                 - ($ligneBudgetaire->virements_sortants ?? 0)));
 
         // ✅ Collectifs budgétaires ayant impacté cette ligne
-        //    ✅ CORRIGÉ — mouvements actifs uniquement (les mouvements annulés sont exclus) ;
-        //    collectifs adoptés AU PLUS TARD à la date de l'engagement, pour rester cohérent
-        //    avec les montants figés à cette date (« disponible avant engagement »).
-        $dateEngagement = $engagement->date_engagement
-            ? \Carbon\Carbon::parse($engagement->date_engagement)->endOfDay()
-            : now();
-
+        //    ✅ CORRIGÉ — tous les collectifs adoptés, mouvements actifs uniquement
+        //    (les mouvements annulés sont exclus).
         $collectifsLigne = \App\Models\MouvementCollectif::where(function($q) use ($ligneBudgetaire) {
                 $q->where('ligne_depense_id', $ligneBudgetaire->id)
                   ->orWhere('nouvelle_ligne_depense_id', $ligneBudgetaire->id);
             })
             ->where(fn($q) => $q->whereNull('statut')->orWhere('statut', 'actif'))
             ->whereNull('date_annulation')
-            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte')
-                ->where(fn($d) => $d->whereNull('date_adoption')->orWhere('date_adoption', '<=', $dateEngagement)))
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
             ->with('collectif')
             ->orderBy('created_at')
             ->get();
