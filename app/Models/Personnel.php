@@ -68,7 +68,7 @@ class Personnel extends Model
     {
         return $this->belongsTo(\App\Models\User::class, 'user_id');
     }
-    
+
     public function decisionsAdministratives(): HasMany
     {
         return $this->hasMany(DecisionAdministrative::class);
@@ -77,6 +77,70 @@ class Personnel extends Model
     public function createur(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    // ===== HISTORIQUE FINANCIER (fiche agent) =====
+    //
+    // Les engagements et OP enregistrent le type de bénéficiaire sous deux formes
+    // ('App\Models\Personnel' ou l'alias 'personnel') : les relations couvrent les deux.
+
+    /** Engagements dont l'agent est bénéficiaire. */
+    public function engagementsBeneficiaire(): HasMany
+    {
+        return $this->hasMany(Engagement::class, 'beneficiaire_id')
+            ->whereIn('beneficiaire_type', Engagement::formesDuType(static::class));
+    }
+
+    /** Ordonnances de paiement émises au nom de l'agent. */
+    public function ordonnancesBeneficiaire(): HasMany
+    {
+        return $this->hasMany(OrdonnancePaiement::class, 'beneficiaire_id')
+            ->whereIn('beneficiaire_type', Engagement::formesDuType(static::class));
+    }
+
+    /** Avenants de changement de bénéficiaire dont l'agent est le NOUVEAU bénéficiaire. */
+    public function avenantsBeneficiaire(): HasMany
+    {
+        return $this->hasMany(Avenant::class, 'beneficiaire_corrige_id')
+            ->whereIn('beneficiaire_corrige_type', Engagement::formesDuType(static::class));
+    }
+
+    /**
+     * Synthèse financière, tous exercices confondus.
+     * - Engagé : montant des engagements actifs (brut) ;
+     * - Ordonnancé / payé : OP standard non annulées (net versé à l'agent).
+     */
+    public function syntheseHistorique(): array
+    {
+        $engagements = $this->engagementsBeneficiaire()
+            ->withoutGlobalScope('exercice')
+            ->whereNull('date_annulation')
+            ->where('statut', '!=', 'annule');
+
+        $ordonnances = $this->ordonnancesBeneficiaire()
+            ->withoutGlobalScope('exercice')
+            ->where('type_ordonnance', 'standard')
+            ->where('statut', '!=', 'annulee');
+
+        $totalOrdonnance = (float) (clone $ordonnances)->sum('montant_net');
+        $totalPaye = (float) (clone $ordonnances)->where('statut', 'payee')->sum('montant_net');
+
+        return [
+            'nb_decisions'     => $this->decisionsAdministratives()->withoutGlobalScope('exercice')->count(),
+            'nb_engagements'   => (clone $engagements)->count(),
+            'total_engage'     => (float) (clone $engagements)->sum('montant_engage'),
+            'total_ordonnance' => $totalOrdonnance,
+            'total_paye'       => $totalPaye,
+            'reste_a_payer'    => $totalOrdonnance - $totalPaye,
+        ];
+    }
+
+    /** L'agent a-t-il un historique (DA, engagement ou OP), tous exercices confondus ? */
+    public function aUnHistorique(): bool
+    {
+        return $this->decisionsAdministratives()->withoutGlobalScope('exercice')->exists()
+            || $this->engagementsBeneficiaire()->withoutGlobalScope('exercice')->exists()
+            || $this->ordonnancesBeneficiaire()->withoutGlobalScope('exercice')->exists();
     }
 
     // ===== ACCESSEURS =====

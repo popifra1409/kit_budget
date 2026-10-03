@@ -158,8 +158,9 @@ class DossiersRelationManager extends RelationManager
                                 ->label('Observations')->rows(2)->columnSpanFull(),
                         ])
                         ->action(function ($record, array $data) {
-                            \App\Models\PieceDossier::create([
-                                'dossier_fournisseur_id' => $record->id,
+                            // ✅ CORRIGÉ — colonne de rattachement et colonnes réelles de la base
+                            //    (l'ancien code écrivait 'dossier_fournisseur_id', absente de certaines bases)
+                            DossierFournisseurService::creerPiece($record, [
                                 'type_piece'             => $data['type_piece'],
                                 'source'                 => 'manuelle',
                                 'libelle'                => $data['libelle'],
@@ -170,6 +171,8 @@ class DossiersRelationManager extends RelationManager
                                 'valide'                 => false,
                                 'document_type'          => null,
                                 'document_id'            => null,
+                                'ajoute_par'             => auth()->id(),
+                                'date_ajout'             => now(),
                             ]);
                             Notification::make()->title('✅ Pièce ajoutée')->success()->send();
                         }),

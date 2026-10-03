@@ -1,4 +1,4 @@
-{{-- resources/views/pdf/engagement/certificat-engagement.blade.php --}}
+{{-- resources/views/pdf/templates/certificat-engagement-officiel.blade.php --}}
 
 @extends('pdf.layouts.master', ['typeFooter' => 'engagement'])
 
@@ -7,424 +7,615 @@
 @endsection
 
 @php
-$engagement = $donnees['_raw'];
 
+$engagement = $donnees['_raw'];
 $parametres = \App\Models\ParametresStructure::where('actif', true)->first();
 
-// ✅ Charger toutes les relations nécessaires avec withoutGlobalScope
-// pour les engagements des exercices clôturés (reports 2025→2026)
-$engagement->loadMissing([
-'nomenclaturePrincipale',
-'beneficiaire',
-'exercice',
-]);
+// ── Charger les relations ─────────────────────────────────
+$engagement->loadMissing(['nomenclaturePrincipale', 'beneficiaire', 'exercice']);
 
-// ✅ Recharger l'engageable avec withoutGlobalScope si pas chargé
-if ($engagement->engageable_id && !$engagement->relationLoaded('engageable')) {
-if ($engagement->estBonCommande()) {
-$engageable = \App\Models\BonCommande::withoutGlobalScope('exercice')
-->with(['typeEngagement', 'fournisseur'])
-->find($engagement->engageable_id);
-$engagement->setRelation('engageable', $engageable);
-} elseif ($engagement->estDecision()) {
-$engageable = \App\Models\DecisionAdministrative::withoutGlobalScope('exercice')
-->with(['typeDecision', 'personnel', 'fournisseur'])
-->find($engagement->engageable_id);
-$engagement->setRelation('engageable', $engageable);
-}
+// ✅ Charger engageable sans global scope (exercices clôturés 2025)
+if ($engagement->engageable_type && $engagement->engageable_id
+&& !$engagement->relationLoaded('engageable')) {
+    $modelClass = $engagement->engageable_type;
+    if ($engagement->estBonCommande()) {
+        $eng = $modelClass::withoutGlobalScope('exercice')
+            ->with(['typeEngagement', 'fournisseur'])
+            ->find($engagement->engageable_id);
+    } elseif ($engagement->estDecision()) {
+        $eng = $modelClass::withoutGlobalScope('exercice')
+            ->with(['typeDecision', 'personnel', 'fournisseur'])
+            ->find($engagement->engageable_id);
+    } else {
+        $eng = $modelClass::withoutGlobalScope('exercice')
+            ->find($engagement->engageable_id);
+    }
+    $engagement->setRelation('engageable', $eng);
 } else {
-// Charger les sous-relations manquantes
-if ($engagement->estBonCommande() && $engagement->engageable) {
-$engagement->engageable->loadMissing(['typeEngagement', 'fournisseur']);
-} elseif ($engagement->estDecision() && $engagement->engageable) {
-$engagement->engageable->loadMissing(['typeDecision', 'personnel', 'fournisseur']);
-}
+    if ($engagement->estBonCommande() && $engagement->engageable)
+        $engagement->engageable->loadMissing(['typeEngagement', 'fournisseur']);
+    elseif ($engagement->estDecision() && $engagement->engageable)
+        $engagement->engageable->loadMissing(['typeDecision', 'personnel', 'fournisseur']);
 }
 
+// ── Type et numéro document ───────────────────────────────
 if ($engagement->estBonCommande() && $engagement->engageable) {
-
-// ✅ Chargement direct — TypeEngagement n'a pas de global scope
-$typeEngagement = \App\Models\TypeEngagement::find(
-$engagement->engageable->type_engagement_id
-);
-
-$typeLibelle = $typeEngagement?->libelle
-?? match($typeEngagement?->code ?? 'BC') {
-'BC' => 'Bon de Commande Administratif',
-'LC' => 'Lettre-Commande',
-'MA' => 'Marché Public',
-'DL' => 'Décompte Lettre-Commande',
-'DM' => 'Décompte Marché',
-default => 'Bon de Commande',
-};
-
-$numeroDoc = $engagement->engageable->numero ?? 'N/A';
-
+    $typeEngagement = \App\Models\TypeEngagement::find(
+        $engagement->engageable->type_engagement_id
+    );
+    $typeLibelle = $typeEngagement?->libelle ?? 'BON DE COMMANDE';
+    $numeroDoc   = $engagement->engageable->numero ?? '—';
 } elseif ($engagement->estDecision() && $engagement->engageable) {
-
-// ✅ Chargement direct — TypeDecision n'a pas de global scope
-$typeDecision = \App\Models\TypeDecision::find(
-$engagement->engageable->type_decision_id
-);
-
-$typeLibelle = $typeDecision?->libelle ?? 'Décision Administrative';
-$numeroDoc = $engagement->engageable->numero ?? 'N/A';
-
+    $typeDecision = \App\Models\TypeDecision::find(
+        $engagement->engageable->type_decision_id
+    );
+    $typeLibelle = $typeDecision?->libelle ?? 'DÉCISION';
+    $numeroDoc   = $engagement->engageable->numero ?? '—';
 } else {
-// Fallback manuel
-$typeLibelle = $engagement->reference_document
-? 'Engagement Manuel'
-: ($engagement->type_engagement ?? 'Engagement');
-$numeroDoc = $engagement->reference_document ?? 'N/A';
+    $typeLibelle = $engagement->type_engagement ?? 'ENGAGEMENT';
+    $numeroDoc   = $engagement->reference_document ?? '—';
 }
 
-// ✅ Numéro engagement — toujours disponible même pour exercice 2025
+// ── Numéro engagement ─────────────────────────────────────
 $numeroEngagement = $engagement->numero
-?? \App\Models\Engagement::withoutGlobalScope('exercice')->find($engagement->id)?->numero
-?? 'N/A';
+    ?? \App\Models\Engagement::withoutGlobalScope('exercice')->find($engagement->id)?->numero
+    ?? '—';
 
+// ── Exercice ──────────────────────────────────────────────
+$anneeExercice = \App\Models\Exercice::find($engagement->exercice_id)?->annee
+    ?? $engagement->exercice
+    ?? now()->year;
+
+// ── Nomenclature ──────────────────────────────────────────
 $nomenclature = $engagement->nomenclaturePrincipale;
 
-// ── Données du bon ────────────────────────────────────────
-$numeroBca = $donnees['numero_bca'] ?? $numeroDoc ?? '—';
-
-// ── Ligne budgétaire et montants ──────────────────────────
-$ligneBudgetaire = null;
+// ── Ligne budgétaire ──────────────────────────────────────
+$ligneBudgetaire  = null;
 $dotationInitiale = 0;
-$budgetRectifie = 0;
-$disponibleAvant = 0;
-$disponibleApres = 0;
-$montantEngage = (float) ($engagement->montant_engage ?? 0);
+$budgetRectifie   = 0;
+$disponibleAvant  = 0;
+$disponibleApres  = 0;
+$montantEngage    = (float) ($engagement->montant_engage ?? 0);
 
 if ($nomenclature) {
-$ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-->where('nomenclature_id', $nomenclature->id)
-->first();
+    $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
+        ->where('nomenclature_id', $nomenclature->id)
+        ->first();
 
-if ($ligneBudgetaire) {
-$dotationInitiale = (float) ($ligneBudgetaire->budget_initial
-?? $ligneBudgetaire->montant_initial
-?? 0);
+    if ($ligneBudgetaire) {
 
-$virementsEntrants = (float) ($ligneBudgetaire->virements_entrants ?? 0);
-$virementsSortants = (float) ($ligneBudgetaire->virements_sortants ?? 0);
+        $dotationInitiale = (float) ($ligneBudgetaire->budget_initial
+            ?? $ligneBudgetaire->montant_initial
+            ?? 0);
 
-$budgetRectifie = (float) ($ligneBudgetaire->budget_rectifie
-?? ($dotationInitiale + $virementsEntrants - $virementsSortants));
+        $budgetRectifie = (float) ($ligneBudgetaire->budget_rectifie
+            ?? ($dotationInitiale
+                + ($ligneBudgetaire->virements_entrants ?? 0)
+                - ($ligneBudgetaire->virements_sortants ?? 0)));
 
-// ✅ PRIORITÉ 1 : snapshots figés au moment de l'engagement
-// Ces valeurs ne changent jamais même après de nouveaux engagements
-if ($engagement->snapshot_disponible_avant !== null) {
+        // ✅ Collectifs budgétaires ayant impacté cette ligne
+        //    ✅ CORRIGÉ — mouvements actifs uniquement (les mouvements annulés sont exclus) ;
+        //    collectifs adoptés AU PLUS TARD à la date de l'engagement, pour rester cohérent
+        //    avec les montants figés à cette date (« disponible avant engagement »).
+        $dateEngagement = $engagement->date_engagement
+            ? \Carbon\Carbon::parse($engagement->date_engagement)->endOfDay()
+            : now();
 
-$dotationInitiale = (float) ($engagement->snapshot_budget_initial ?? $dotationInitiale);
-$budgetRectifie = (float) ($engagement->snapshot_budget_rectifie ?? $budgetRectifie);
-$disponibleAvant = (float) $engagement->snapshot_disponible_avant;
-$disponibleApres = (float) $engagement->snapshot_disponible_apres;
+        $collectifsLigne = \App\Models\MouvementCollectif::where(function($q) use ($ligneBudgetaire) {
+                $q->where('ligne_depense_id', $ligneBudgetaire->id)
+                  ->orWhere('nouvelle_ligne_depense_id', $ligneBudgetaire->id);
+            })
+            ->where(fn($q) => $q->whereNull('statut')->orWhere('statut', 'actif'))
+            ->whereNull('date_annulation')
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte')
+                ->where(fn($d) => $d->whereNull('date_adoption')->orWhere('date_adoption', '<=', $dateEngagement)))
+            ->with('collectif')
+            ->orderBy('created_at')
+            ->get();
 
-} else {
-// ✅ FALLBACK : recalcul chronologique pour anciens engagements
-// Utiliser '<' au lieu de '!=' pour n'inclure QUE les antérieurs
-    // Cela garantit la stabilité même sans snapshot
-    $totalEngageAvant=\App\Models\Engagement::withoutGlobalScope('exercice')
-    ->where('budget_id', $ligneBudgetaire->budget_id)
-    ->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
-    ->where('id', '<', $engagement->id)
-        ->whereIn('statut', ['provisoire', 'definitif'])
-        ->sum('montant_engage');
+        // ✅ PRIORITÉ 1 : snapshots figés au moment de l'engagement
+        if ($engagement->snapshot_disponible_avant !== null) {
 
-        $disponibleAvant = $budgetRectifie - $totalEngageAvant;
-        $disponibleApres = $disponibleAvant - $montantEngage;
-        }
-        }
-        }
+            $dotationInitiale = (float) ($engagement->snapshot_budget_initial ?? $dotationInitiale);
+            $budgetRectifie   = (float) ($engagement->snapshot_budget_rectifie ?? $budgetRectifie);
+            $disponibleAvant  = (float) $engagement->snapshot_disponible_avant;
+            $disponibleApres  = (float) $engagement->snapshot_disponible_apres;
 
-        // ── Hiérarchie budgétaire ─────────────────────────────────
-        $tache = null;
-        $activite = null;
-        $action = null;
-        $programme = null;
-        $sousProgramme = null;
-        $objectif = null;
-
-        if ($nomenclature) {
-        $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
-
-        if ($tache) {
-        $tache->load('activite.action.programme.parent');
-
-        $activite = $tache->activite;
-        $action = $activite?->action;
-        $programme = $action?->programme;
-
-        if ($programme) {
-        if ($programme->estSousProgramme()) {
-        $sousProgramme = $programme;
-        $programme = $programme->parent;
         } else {
-        $sousProgramme = null;
+            // ✅ FALLBACK : recalcul chronologique pour anciens engagements
+            $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
+                ->where('budget_id', $ligneBudgetaire->budget_id)
+                ->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
+                ->where('id', '<', $engagement->id)
+                ->whereIn('statut', ['provisoire', 'definitif'])
+                ->sum('montant_engage');
+
+            $disponibleAvant = $budgetRectifie - $totalEngageAvant;
+            $disponibleApres = $disponibleAvant - $montantEngage;
         }
+    }
+}
 
-        try {
-        if (method_exists($programme, 'objectifPrincipal')) {
-        $objectif = $programme->objectifPrincipal;
-        } elseif (method_exists($programme, 'objectifsPrincipaux')) {
-        $objectifs = $programme->objectifsPrincipaux;
-        $objectif = $objectifs instanceof \Illuminate\Support\Collection
-        ? $objectifs->first()
-        : $objectifs;
+// ── Hiérarchie budgétaire ─────────────────────────────────
+$tache = $activite = $action = null;
+$programme = $sousProgramme = $objectif = null;
+
+if ($nomenclature) {
+    $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
+    if ($tache) {
+        $tache->load('activite.action.programme.parent');
+        $activite  = $tache->activite;
+        $action    = $activite?->action;
+        $programme = $action?->programme;
+        if ($programme) {
+            if ($programme->estSousProgramme()) {
+                $sousProgramme = $programme;
+                $programme     = $programme->parent;
+            }
+            try {
+                if (method_exists($programme, 'objectifPrincipal'))
+                    $objectif = $programme->objectifPrincipal;
+            } catch (\Exception $e) {
+                $objectif = null;
+            }
         }
-        } catch (\Exception $e) {
-        \Log::warning('Erreur récupération objectif', [
-        'programme_id' => $programme->id,
-        'error' => $e->getMessage(),
-        ]);
-        $objectif = null;
-        }
-        }
-        }
-        }
+    }
+}
 
-        $nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
+// ── Sous-programme — chiffre uniquement ───────────────────
+$codeSousProgrammeBrut = $sousProgramme?->code ?? $programme?->code ?? '—';
+$libelleSousProgramme  = ($sousProgramme ?? $programme)?->libelle ?? '—';
 
-        // ✅ Exercice de l'engagement — pas celui du document source
-        $anneeExerciceEngagement = \App\Models\Exercice::find($engagement->exercice_id)?->annee
-        ?? $engagement->exercice
-        ?? now()->year;
+if ($codeSousProgrammeBrut !== '—') {
+    $chiffresOnly      = preg_replace('/[^0-9]/', '', $codeSousProgrammeBrut);
+    $codeSousProgramme = $chiffresOnly !== '' ? (int) $chiffresOnly : $codeSousProgrammeBrut;
+} else {
+    $codeSousProgramme = '—';
+}
 
-        @endphp
+// ── Article ───────────────────────────────────────────────
+$codeArticle = $nomenclature?->getCodeArticle() ?? ($nomenclature?->code ?? '—');
 
-        @section('title', 'Certificat d\'Engagement')
+// ── Bénéficiaire principal ────────────────────────────────
+$nomBeneficiaire = $engagement->getNomBeneficiaire() ?? 'N/A';
 
-        @section('montant_lettres')
-        {{ \App\Helpers\NombreEnLettres::montantCFA($engagement->montant_engage ?? 0) }}
-        @endsection
+// ── Détection taxes/impôts ────────────────────────────────
+$totalTaxes = 0;
+$aDesImpots = false;
 
-        @section('additional_styles')
-        <style>
-            .doc-title-wrapper {
-                margin: 6px 0 8px 0 !important;
-            }
+if ($engagement->engageable) {
+    $donneesSrc = $engagement->extraireDonneesDocument();
 
-            .doc-title {
-                margin: 4px 0 8px 0 !important;
-                padding: 4px 0 !important;
-                font-size: 10pt !important;
-            }
+    if ($engagement->estBonCommande()) {
+        $totalTaxes = ((float) ($donneesSrc['montant_ir']  ?? 0))
+                    + ((float) ($donneesSrc['montant_tva'] ?? 0))
+                    + ((float) ($donneesSrc['montant_tsr'] ?? 0));
+    } elseif ($engagement->estDecision()) {
+        $totalTaxes = ((float) ($donneesSrc['montant_cnps']      ?? 0))
+                    + ((float) ($donneesSrc['montant_ir']      ?? 0))
+                    + ((float) ($donneesSrc['montant_irnc']      ?? 0))
+                    + ((float) ($donneesSrc['montant_tva']       ?? 0))
+                    + ((float) ($donneesSrc['montant_redevance'] ?? 0))
+                    + ((float) ($donneesSrc['montant_feicom']    ?? 0))
+                    + ((float) ($donneesSrc['autres_retenues']   ?? 0));
+    }
 
-            .bas-page {
-                margin-top: 20px !important;
-            }
+    $aDesImpots = $totalTaxes > 0;
+}
 
-            .section-title {
-                font-weight: bold;
-                font-size: 8.5pt;
-                margin: 6px 0 4px 0;
-            }
+// ── Montant en lettres ────────────────────────────────────
+$montantLettres = \App\Helpers\NombreEnLettres::montantCFA($engagement->montant_engage ?? 0);
 
-            .info-line {
-                margin: 3px 0;
-                font-size: 9pt;
-                line-height: 1.3;
-            }
+// ── Code du type d'engagement ─────────────────────────────
+// ✅ Permet d'adapter le chemin hiérarchique et la référence
+$codeTypeEngagement = 'BC'; // défaut
+if ($engagement->estBonCommande() && $engagement->engageable) {
+    $codeTypeEngagement = strtoupper(
+        \App\Models\TypeEngagement::find(
+            $engagement->engageable->type_engagement_id
+        )?->code ?? 'BC'
+    );
+}
 
-            .info-line strong {
-                font-weight: bold;
-            }
+// ── Référence du document source (champ 'reference' du BC/DA) ──
+$referenceDocument = $engagement->engageable?->reference ?? null;
 
-            /* ── Notice snapshot ─────────────────────── */
-            .snapshot-notice {
-                font-size: 7pt;
-                color: #555;
-                font-style: italic;
-                margin: 2px 0 4px 0;
-                padding: 2px 5px;
-                border-left: 2px solid #999;
-                background: #f5f5f5;
-            }
+// ── Référence chemin hiérarchique selon type d'engagement ─
+$sigle = $parametres->sigle ?? 'CHUY';
 
-            .hierarchie-table {
-                width: 100%;
-                margin: 5px 0;
-                border-collapse: collapse;
-                font-size: 8.5pt;
-            }
+if (in_array($codeTypeEngagement, ['LC', 'DL', 'DM', 'MA'])) {
+    // Lettre Commande / Décompte LC / Décompte Marché / Marché
+    $refChemin = "{$sigle}/DG/SM/CIPM/";
+} else {
+    // Bon de Commande (défaut)
+    $refChemin = "{$sigle}/DG/DRHF/SDFC/SBC/BBE";
+}
 
-            .hierarchie-table th,
-            .hierarchie-table td {
-                border: 1px solid #000;
-                padding: 3px 5px;
-                text-align: left;
-                vertical-align: top;
-                line-height: 1.3;
-            }
+// ── Pied de page : créateur et dates ─────────────────────
+$dateImpression  = now()->format('d/m/Y à H:i');
+$dateCreation    = '—';
+$nomCreateur     = '—';
+$numeroDocument  = $numeroDoc ?? $numeroEngagement;
 
-            .hierarchie-table th {
-                background-color: #f0f0f0;
-                font-weight: bold;
-                width: 22%;
-            }
-        </style>
-        @endsection
+// ✅ Créateur depuis l'engageable (BC ou DA) — PAS l'utilisateur connecté
+$createurId = $engagement->engageable?->created_by
+    ?? $engagement->created_by
+    ?? null;
 
-        @section('content')
+if ($createurId) {
+    $createur = \App\Models\User::find($createurId);
+    if ($createur) {
+        $nomCreateur = $createur->username
+            ?? $createur->login
+            ?? $createur->name
+            ?? '—';
+    }
+}
 
-        {{-- Titre --}}
-        <div class="doc-title doc-title-wrapper">CERTIFICAT D'ENGAGEMENT</div>
+// ✅ Date de création du document source
+$createdAt = $engagement->engageable?->created_at
+    ?? $engagement->created_at;
 
-        {{-- ✅ Type et numéro du document source --}}
-        <div class="info-line">
-            <strong>Type d'engagement :</strong> {{ $typeLibelle }} - N° {{ $numeroDoc }}
-        </div>
+if ($createdAt) {
+    $dateCreation = \Carbon\Carbon::parse($createdAt)->format('d/m/Y à H:i');
+}
 
-        {{-- ✅ Numéro de l'engagement --}}
-        <div class="info-line">
-            <strong>N° Engagement :</strong> {{ $numeroEngagement }}
-        </div>
+@endphp
 
-        {{-- Imputation budgétaire --}}
-        <div class="info-line">
-            <strong>Imputation budgétaire de l'engagement</strong> : BUDGET PROGRAMME DU
-            <strong>{{ $parametres->sigle }}</strong> DE L'EXERCICE
-            <strong>{{ $engagement->exercice }}</strong>
-        </div>
+@section('title', 'Certificat d\'Engagement')
 
-        @if ($ligneBudgetaire)
+@section('additional_styles')
+<style>
+    /* ── Cadre principal ──────────────────────── */
+    .cadre-principal {
+        border: 1.5px solid #000;
+        padding: 8px 10px;
+        margin-top: 4px;
+    }
 
-        {{-- ✅ Notice snapshot — affichée uniquement si snapshot disponible --}}
-        @if ($engagement->snapshot_disponible_avant !== null)
-        <div class="snapshot-notice">
-            📌 Montants figés à la date d'engagement
-            ({{ \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') }})
-            — indépendants des engagements ultérieurs sur cette ligne.
-        </div>
-        @endif
+    /* ── Titre certificat ─────────────────────── */
+    .titre-certificat {
+        text-align: center;
+        font-size: 10.5pt;
+        font-weight: bold;
+        background: #e8e8e8;
+        padding: 10px 4px;
+        margin-bottom: 8px;
+        margin-top: 10px;
+        border: 1px solid #aaa;
+    }
 
-        <div class="info-line">
-            <strong>DOTATION INITIALE :</strong>
-            {{ number_format($dotationInitiale, 0, ',', ' ') }} F CFA
-        </div>
+    /* ── Lignes d'info ────────────────────────── */
+    .ligne-info {
+        margin: 4px 0;
+        font-size: 10pt;
+        line-height: 1.6;
+    }
 
-        <div class="info-line">
-            <strong>Montant disponible :</strong>
-            {{ number_format($disponibleAvant, 0, ',', ' ') }} F CFA
-            <span style="font-size:8px;font-style:italic;">(Avant engagement)</span>
-        </div>
+    /* ── Ligne montant ───────────────────────── */
+    .ligne-montant {
+        display: table;
+        width: 100%;
+        margin: 3px 0;
+    }
 
-        <div class="info-line">
-            Une Autorisation d'Engagement d'un montant de :
-        </div>
+    .lm-label {
+        display: table-cell;
+        width: 58%;
+        font-size: 10.5pt;
+    }
 
-        <div class="info-line">
-            <strong>Montant TTC de l'engagement (en chiffres) :</strong>
-            {{ number_format($montantEngage, 0, ',', ' ') }} F CFA
-        </div>
+    .lm-valeur {
+        display: table-cell;
+        width: 42%;
+        font-weight: bold;
+        font-size: 11pt;
+        text-align: right;
+        padding-right: 10px;
+    }
 
-        <div class="info-line">
-            <strong>En lettres :</strong> @yield('montant_lettres')
-        </div>
+    /* ── Blocs encadrés ───────────────────────── */
+    .bloc-encadre {
+        border: 1px solid #000;
+        padding: 4px 6px;
+        margin: 3px 0;
+        font-size: 10pt;
+        line-height: 1.4;
+    }
 
-        <div class="info-line">
-            <strong>Nouveau montant disponible :</strong>
-            <span style="{{ $disponibleApres < 0 ? 'color:red;font-weight:bold;' : '' }}">
-                {{ number_format($disponibleApres, 0, ',', ' ') }} F CFA
-            </span>
-            <span style="font-size:8px;font-style:italic;">(Après engagement)</span>
-            @if ($disponibleApres < 0)
-                <span style="color:red;font-size:8pt;"> (⚠️ Dépassement)</span>
+    .label-sousligne {
+        font-weight: bold;
+        text-decoration: underline;
+    }
+
+    /* ── Notice snapshot ─────────────────────── */
+    .snapshot-notice {
+        font-size: 7pt;
+        color: #666;
+        font-style: italic;
+        margin-bottom: 2px;
+        padding: 1px 4px;
+        border-left: 2px solid #aaa;
+        background: #f5f5f5;
+    }
+
+    /* ── Tableau récapitulatif ────────────────── */
+    .tableau-recap {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 6px;
+        font-size: 9.5pt;
+    }
+
+    .tableau-recap th {
+        border: 1px solid #000;
+        padding: 5px 4px;
+        text-align: center;
+        background: #d8d8d8;
+        font-weight: bold;
+        font-size: 9pt;
+    }
+
+    .tableau-recap td {
+        border: 1px solid #000;
+        padding: 8px 4px;
+        text-align: center;
+        font-size: 9.5pt;
+    }
+
+    /* ── Zone signature ───────────────────────── */
+    .zone-signature {
+        margin-top: 10px;
+        text-align: right;
+        padding-right: 15px;
+        font-size: 9.5pt;
+    }
+
+    .zone-signature .ville-date {
+        margin-bottom: 20px;
+    }
+
+    .zone-signature .titre-signature {
+        font-weight: bold;
+        font-size: 10pt;
+    }
+
+    /* ✅ Pied de page fixe ─────────────────────── */
+    .pdf-footer-document {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 1.5cm;
+        border-top: 1px solid #ccc;
+        padding-top: 4px;
+        font-size: 7pt;
+        color: #000;
+        background: #fff;
+    }
+
+    .pdf-footer-document table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .pdf-footer-document td {
+        border: none;
+        padding: 0 6px;
+        vertical-align: top;
+        font-size: 7pt;
+        color: #000;
+    }
+</style>
+@endsection
+
+@section('content')
+
+{{-- ✅ Pied de page fixe — affiché sur toutes les pages --}}
+<div class="pdf-footer-document">
+    <table>
+        <tr>
+            <td style="width:30%; text-align:left;">
+                <strong>Imprimé le :</strong> {{ $dateImpression }}
+            </td>
+            <td style="width:35%; text-align:center; font-weight:bold;">
+                {{ $sigle }} — N° {{ $numeroDocument }}
+            </td>
+            <td style="width:35%; text-align:right;">
+                <strong>Créé le :</strong> {{ $dateCreation }}
+                @if($nomCreateur !== '—')
+                    &nbsp;|&nbsp; <strong>Par :</strong> {{ $nomCreateur }}
                 @endif
-        </div>
+            </td>
+        </tr>
+    </table>
+</div>
 
+{{-- ══ CADRE PRINCIPAL ══════════════════════════════════════════ --}}
+<div class="cadre-principal">
+
+    {{-- ── Titre ──────────────────────────────────────────────── --}}
+    <div class="titre-certificat">
+        CERTIFICAT D'ENGAGEMENT N°{{ $anneeExercice }}/{{ $numeroEngagement }}/{{ $refChemin }}
+    </div>
+
+    {{-- ── Type engagement et numéro document ────────────────── --}}
+    <div class="ligne-info">
+        Type d'engagement : <strong>{{ strtoupper($typeLibelle) }}</strong> N°
+        <u>{{ $numeroDoc }}</u>
+        &nbsp;
+
+        @if(in_array($codeTypeEngagement, ['LC', 'DL', 'DM', 'MA']))
+            {{-- LC / DL / DM / MA : chemin CIPM + référence du document obligatoire --}}
+            {{ $refChemin }}
+            <span style="font-weight:bold;">
+                {{ $referenceDocument ?? '________________________________' }}
+            </span>
         @else
-        <div class="info-line" style="color:red;">⚠️ Ligne budgétaire non trouvée</div>
+            {{-- BC : chemin BBE + date de signature (champ reference) ou tirets --}}
+            {{ $refChemin }} du
+            <span>
+                @if($referenceDocument)
+                    <strong>{{ $referenceDocument }}</strong>
+                @else
+                    ____________________________
+                @endif
+            </span>
+        @endif
+    </div>
+
+    {{-- ── Imputation budgétaire ──────────────────────────────── --}}
+    <div class="ligne-info">
+        Imputation budgétaire de l'engagement :
+        <strong>
+            BUDGET PROGRAMME DU {{ strtoupper($sigle) }}
+            DE L'EXERCICE {{ $anneeExercice }}
+        </strong>
+    </div>
+
+    {{-- ── Montants ────────────────────────────────────────────── --}}
+    @if ($ligneBudgetaire)
+
+        {{-- Notice snapshot --}}
+        @if ($engagement->snapshot_disponible_avant !== null)
+            <div class="snapshot-notice">
+                📌 Montants figés à la date d'engagement
+                ({{ \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') }})
+                — indépendants des engagements ultérieurs sur cette ligne.
+            </div>
         @endif
 
-        <div class="info-line">Est réservée pour l'acte Administratif ci-après :</div>
-
-        <div class="info-line">
-            <strong>Référence :</strong> {{ $numeroBca }}
+        <div class="ligne-montant">
+            <div class="lm-label">Dotation initiale :</div>
+            <div class="lm-valeur">
+                {{ number_format($dotationInitiale, 0, ',', ' ') }}
+            </div>
         </div>
 
-        <div class="info-line">
-            <strong>Date d'émission :</strong>
-            {{ $engagement->date_engagement
-        ? \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y')
-        : '.....................' }}
-        </div>
+        {{-- ✅ Collectifs budgétaires adoptés ayant modifié la ligne --}}
+        @if(isset($collectifsLigne) && $collectifsLigne->isNotEmpty())
+            @foreach($collectifsLigne as $index => $mouvement)
+            <div class="ligne-montant">
+                <div class="lm-label">
+                    Collectif budgétaire {{ $index + 1 }}
+                    ({{ $mouvement->collectif?->numero }}) :
+                </div>
+                <div class="lm-valeur">
+                    {{ ($mouvement->montant_modification >= 0 ? '+' : '') }}{{ number_format($mouvement->montant_modification, 0, ',', ' ') }}
+                </div>
+            </div>
+            @endforeach
 
-        <div class="info-line">
-            <strong>Signataire :</strong> {{ $parametres->nom_ordonnateur ?? 'N/A' }}
-        </div>
-
-        <div class="info-line">
-            <strong>OBJET :</strong> {{ $engagement->objet }}
-        </div>
-
-        <div class="info-line">
-            <strong>BÉNÉFICIAIRE :</strong> {{ $nomBeneficiaire }}
-        </div>
-
-        <div class="info-line">
-            Cette autorisation d'Engagement est imputée de la manière suivante :
-        </div>
-
-        @if ($nomenclature)
-        <div class="info-line">
-            <strong>CHAPITRE :</strong> {{ substr($nomenclature->code, 0, 2) }}
-        </div>
-        <div class="info-line">
-            <strong>PARAGRAPHE/COMPTE/CODE :</strong>
-            ({{ $nomenclature->code }}) - {{ $nomenclature->libelle }}
-        </div>
+            {{-- Dotation finale = dotation initiale + Σ collectifs --}}
+            @php
+                $dotationFinale = $dotationInitiale + $collectifsLigne->sum('montant_modification');
+            @endphp
+            <div class="ligne-montant" style="font-weight:bold;">
+                <div class="lm-label">Dotation finale :</div>
+                <div class="lm-valeur">
+                    {{ number_format($dotationFinale, 0, ',', ' ') }}
+                </div>
+            </div>
         @endif
 
-        {{-- Tableau hiérarchique --}}
-        <table class="hierarchie-table">
-            @if ($sousProgramme)
-            <tr>
-                <th>SOUS-PROGRAMME :</th>
-                <td>{{ $sousProgramme->code }} - {{ $sousProgramme->libelle }}</td>
-            </tr>
-            @elseif ($programme)
-            <tr>
-                <th>PROGRAMME :</th>
-                <td>{{ $programme->code }} - {{ $programme->libelle }}</td>
-            </tr>
-            @endif
+        <div class="ligne-montant">
+            <div class="lm-label">
+                Montant disponible sur la ligne (avant engagement) :
+            </div>
+            <div class="lm-valeur">
+                {{ number_format($disponibleAvant, 0, ',', ' ') }}
+            </div>
+        </div>
 
-            @if ($nomenclature)
-            <tr>
-                <th>ARTICLE :</th>
-                <td>{{ $nomenclature->getCodeArticle() }}</td>
-            </tr>
-            @endif
+        <div class="ligne-montant">
+            <div class="lm-label">
+                Montant de l'engagement TTC (en chiffres) :
+            </div>
+            <div class="lm-valeur">
+                {{ number_format($montantEngage, 0, ',', ' ') }}
+            </div>
+        </div>
 
-            @if ($objectif)
-            <tr>
-                <th>OBJECTIF :</th>
-                <td>{{ $objectif->libelle }}</td>
-            </tr>
-            @endif
+        <div class="ligne-montant">
+            <div class="lm-label">Montant disponible à nouveau :</div>
+            <div class="lm-valeur"
+                style="{{ $disponibleApres < 0 ? 'color:red;' : '' }}">
+                {{ number_format($disponibleApres, 0, ',', ' ') }}
+                @if ($disponibleApres < 0)
+                    <span style="font-size:7pt;">(⚠️)</span>
+                @endif
+            </div>
+        </div>
 
-            @if ($action)
-            <tr>
-                <th>ACTION :</th>
-                <td>{{ $action->libelle }}</td>
-            </tr>
-            @endif
+    @else
+        <div class="ligne-info" style="color:red;">
+            ⚠️ Ligne budgétaire non trouvée
+        </div>
+    @endif
 
-            @if ($activite)
-            <tr>
-                <th>ACTIVITÉ :</th>
-                <td>{{ $activite->libelle }}</td>
-            </tr>
-            @endif
+    {{-- ── Montant en lettres ──────────────────────────────────── --}}
+    <div class="ligne-info">
+        Montant de l'engagement TTC (en lettres) :
+        <strong>{{ strtoupper($montantLettres) }}.</strong>
+    </div>
 
-            @if ($tache)
-            <tr>
-                <th>TÂCHE :</th>
-                <td>{{ $tache->libelle }}</td>
-            </tr>
-            @endif
-        </table>
+    {{-- ── OBJET ───────────────────────────────────────────────── --}}
+    <div class="bloc-encadre">
+        <span class="label-sousligne">OBJET :</span>
+        {{ strtoupper($engagement->objet) }}
+    </div>
 
-        @endsection
+    {{-- ── BÉNÉFICIAIRE ────────────────────────────────────────── --}}
+    <div class="bloc-encadre">
+        <span class="label-sousligne">BÉNÉFICIAIRE :</span>
+        {{ strtoupper($nomBeneficiaire) }}
+        @if ($aDesImpots)
+            ET LE RECEVEUR DES IMPÔTS
+        @endif
+    </div>
+
+    {{-- ── SOUS-PROGRAMME ─────────────────────────────────────── --}}
+    @if ($sousProgramme || $programme)
+        <div class="bloc-encadre">
+            <span class="label-sousligne">SOUS-PROGRAMME :</span>
+            ({{ $codeSousProgramme }}) {{ strtoupper($libelleSousProgramme) }}
+        </div>
+    @endif
+
+    {{-- ── ARTICLE/SECTION ────────────────────────────────────── --}}
+    @if ($nomenclature)
+        <div class="bloc-encadre">
+            <span class="label-sousligne">ARTICLE/SECTION :</span>
+            ({{ $codeArticle }})
+        </div>
+
+        {{-- ── PARAGRAPHE/COMPTE/CODE ─────────────────────────────── --}}
+        <div class="bloc-encadre">
+            <span class="label-sousligne">PARAGRAPHE/COMPTE/CODE :</span>
+            ({{ $nomenclature->code }}) {{ strtoupper($nomenclature->libelle) }}
+        </div>
+    @endif
+
+    {{-- ── TABLEAU RÉCAPITULATIF ───────────────────────────────── --}}
+    <table class="tableau-recap">
+        <thead>
+            <tr>
+                <th>ANNÉE</th>
+                <th>SOUS-PROGRAMME</th>
+                <th>ARTICLE / SECTION</th>
+                <th>PARAGRAPHE / COMPTE / CODE</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ $anneeExercice }}</td>
+                <td>{{ $codeSousProgramme }}</td>
+                <td>{{ $codeArticle }}</td>
+                <td>{{ $nomenclature?->code ?? '—' }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+</div>{{-- fin cadre-principal --}}
+
+@endsection

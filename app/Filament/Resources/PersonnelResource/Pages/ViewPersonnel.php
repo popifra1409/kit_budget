@@ -276,6 +276,42 @@ class ViewPersonnel extends ViewRecord
                             ]),
                     ]),
 
+                // ✅ AJOUT — Synthèse financière (tous exercices), détaillée dans les onglets ci-dessous
+                Infolists\Components\Section::make('Historique financier')
+                    ->description('Tous exercices confondus — le détail figure dans les onglets en bas de page.')
+                    ->icon('heroicon-o-banknotes')
+                    ->schema([
+                        Infolists\Components\Grid::make(5)
+                            ->schema([
+                                Infolists\Components\TextEntry::make('synthese_engagements')
+                                    ->label('Engagements')
+                                    ->getStateUsing(fn($record) => $this->synthese()['nb_engagements'] . ' engagement(s)')
+                                    ->badge()->color('info'),
+
+                                Infolists\Components\TextEntry::make('synthese_engage')
+                                    ->label('Total engagé')
+                                    ->getStateUsing(fn($record) => $this->synthese()['total_engage'])
+                                    ->money('XAF')->weight('bold'),
+
+                                Infolists\Components\TextEntry::make('synthese_ordonnance')
+                                    ->label('Total ordonnancé (net)')
+                                    ->getStateUsing(fn($record) => $this->synthese()['total_ordonnance'])
+                                    ->money('XAF'),
+
+                                Infolists\Components\TextEntry::make('synthese_paye')
+                                    ->label('Total payé (net)')
+                                    ->getStateUsing(fn($record) => $this->synthese()['total_paye'])
+                                    ->money('XAF')->color('success')->weight('bold'),
+
+                                Infolists\Components\TextEntry::make('synthese_reste')
+                                    ->label('Reste à payer')
+                                    ->getStateUsing(fn($record) => $this->synthese()['reste_a_payer'])
+                                    ->money('XAF')
+                                    ->color(fn($state) => $state > 0 ? 'warning' : 'gray')
+                                    ->weight('bold'),
+                            ]),
+                    ]),
+
                 // Section Statistiques
                 Infolists\Components\Section::make('Statistiques')
                     ->schema([
@@ -283,7 +319,7 @@ class ViewPersonnel extends ViewRecord
                             ->schema([
                                 Infolists\Components\TextEntry::make('decisions_count')
                                     ->label('Décisions administratives')
-                                    ->getStateUsing(fn($record) => $record->decisionsAdministratives()->count())
+                                    ->getStateUsing(fn($record) => $this->synthese()['nb_decisions'])
                                     ->badge()
                                     ->color('info')
                                     ->suffix(' décision(s)'),
@@ -312,14 +348,38 @@ class ViewPersonnel extends ViewRecord
                 ->label('Créer une décision')
                 ->icon('heroicon-o-document-text')
                 ->color('success')
+                // ✅ CORRIGÉ — les DA n'existent que dans le module Budget : adresse construite pour ce panel
+                //    (depuis le panel Administration, l'ancienne adresse provoquait une erreur)
+                ->visible(fn() => auth()->user()?->can('create_decision_administrative'))
                 ->url(fn() => \App\Filament\Budget\Resources\DecisionAdministrativeResource::getUrl('create', [
                     'personnel_id' => $this->record->id
-                ])),
+                ], panel: 'budget')),
 
             Actions\DeleteAction::make()
-                ->visible(fn() => $this->record->decisionsAdministratives()->count() === 0)
+                // ✅ CORRIGÉ — suppression impossible dès qu'il existe un historique (DA, engagement ou OP),
+                //    tous exercices confondus
+                ->visible(fn() => !$this->record->aUnHistorique())
                 ->requiresConfirmation()
                 ->modalDescription('Êtes-vous sûr de vouloir supprimer ce personnel ? Cette action est irréversible.'),
         ];
+    }
+
+    // ✅ AJOUT — Historique de l'agent en onglets (comme les dossiers sur la fiche fournisseur)
+    public function getRelationManagers(): array
+    {
+        return [
+            \App\Filament\Resources\PersonnelResource\RelationManagers\DecisionsRelationManager::class,
+            \App\Filament\Resources\PersonnelResource\RelationManagers\EngagementsRelationManager::class,
+            \App\Filament\Resources\PersonnelResource\RelationManagers\OrdonnancesRelationManager::class,
+            \App\Filament\Resources\PersonnelResource\RelationManagers\AvenantsRelationManager::class,
+        ];
+    }
+
+    /** Synthèse calculée une seule fois par affichage (5 cartes de montants). */
+    protected ?array $syntheseCache = null;
+
+    protected function synthese(): array
+    {
+        return $this->syntheseCache ??= $this->record->syntheseHistorique();
     }
 }

@@ -12,14 +12,9 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
-use \App\Filament\Concerns\AutorisationParPermissions;
 
 class PersonnelResource extends Resource
 {
-    protected static function prefixePermission(): string
-    {
-        return 'user';
-    }
     protected static ?string $model = Personnel::class;
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
     protected static ?string $navigationLabel = 'Personnel';
@@ -55,7 +50,18 @@ class PersonnelResource extends Resource
     public static function canDelete($record): bool
     {
         if (!auth()->user()?->can('delete_personnel')) return false;
-        return $record->decisionsAdministratives()->count() === 0;
+
+        // ✅ CORRIGÉ — aucun historique, tous exercices confondus (DA, engagement ou OP)
+        return !$record->aUnHistorique();
+    }
+
+    /**
+     * ✅ AJOUT — Pas de suppression groupée : elle ne vérifiait pas l'historique de chaque
+     * agent et pouvait effacer des agents rattachés à des DA, engagements ou OP.
+     */
+    public static function canDeleteAny(): bool
+    {
+        return false;
     }
 
     protected static ?string $recordTitleAttribute = 'nom_complet';
@@ -304,11 +310,8 @@ class PersonnelResource extends Resource
 
             ], position: ActionsPosition::BeforeColumns)
 
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ])
+            // ✅ Suppression groupée retirée (voir canDeleteAny)
+            ->bulkActions([])
             ->defaultSort('nom', 'asc');
     }
 

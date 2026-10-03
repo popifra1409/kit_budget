@@ -54,9 +54,10 @@ class ArborescenceLibellesService
             $sp->id => $sp->actionsPourExercice($exerciceId)->get(),
         ]);
 
+        // ✅ GÉNÉRIQUE — exercice demandé OU non renseigné (bases où exercice_id est vide)
         $activites = Activite::withoutGlobalScope('exercice')
             ->whereIn('action_id', $actionsParSp->flatten(1)->pluck('id'))
-            ->where('exercice_id', $exerciceId)
+            ->where(fn($q) => $q->where('exercice_id', $exerciceId)->orWhereNull('exercice_id'))
             ->with([
                 'extrants',
                 'indicateurs',
@@ -101,7 +102,9 @@ class ArborescenceLibellesService
         if (!$sp->programmeBudgetaire) {
             $this->observer('Sous-programme', $sp->libelle, 'Aucun programme de rattachement (ministériel)');
         }
-        if (blank($sp->code_programme_ep)) {
+        // Le programme de rattachement sert de repli : on ne signale l'absence de programme EP
+        // que si aucune action n'a pu être retrouvée
+        if (blank($sp->code_programme_ep) && $actions->isEmpty()) {
             $this->observer('Sous-programme', $sp->libelle, "Aucun programme budgétaire de l'EP rattaché : actions introuvables");
         }
 
@@ -184,8 +187,11 @@ class ArborescenceLibellesService
             'indicateurs' => collect($indicateurs)->pluck('texte')->implode(' | '),
         ];
 
-        $parents    = $activite->taches->where('niveau', 'tache')->sortBy('code');
-        $sousTaches = $activite->taches->where('niveau', 'sous_tache');
+        // ✅ GÉNÉRIQUE — rangement par parent_id et non par la valeur de 'niveau'
+        //    (une base peut utiliser d'autres libellés de niveau, ou les laisser vides) :
+        //    tâche = sans parent ; sous-tâche = avec un parent.
+        $parents    = $activite->taches->filter(fn($t) => blank($t->parent_id))->sortBy('code');
+        $sousTaches = $activite->taches->filter(fn($t) => filled($t->parent_id));
 
         $groupes = $parents->map(fn($t) => [$t, $sousTaches->where('parent_id', $t->id)->sortBy('code')])->values();
 
@@ -262,7 +268,9 @@ class ArborescenceLibellesService
         }
 
         return [
-            'texte'   => $indicateur->getSensSymbole() . ' ' . $indicateur->libelle
+            // Sens d'évolution (↑ à augmenter / ↓ à réduire), si le modèle le gère
+            'texte'   => (method_exists($indicateur, 'getSensSymbole') ? $indicateur->getSensSymbole() . ' ' : '')
+                . $indicateur->libelle
                 . ($indicateur->unite_mesure ? " ({$indicateur->unite_mesure})" : ''),
             'alertes' => $alertes,
         ];

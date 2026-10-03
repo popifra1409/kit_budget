@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\DossierFournisseur;
 use App\Models\PieceDossier;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class DossierFournisseurService
 {
@@ -152,6 +153,45 @@ class DossierFournisseurService
     }
 
     // ════════════════════════════════════════════════════════
+    // STRUCTURE DE LA TABLE DES PIÈCES (générique)
+    // ════════════════════════════════════════════════════════
+
+    /** Colonnes réelles de la table des pièces (lues une fois par requête). */
+    protected static function colonnesPieces(): array
+    {
+        static $colonnes = null;
+
+        return $colonnes ??= Schema::getColumnListing((new PieceDossier)->getTable());
+    }
+
+    /**
+     * ✅ AJOUT — Colonne qui rattache une pièce à son dossier.
+     * Selon les bases : 'dossier_id' (celle du modèle DossierFournisseur::pieces())
+     * ou 'dossier_fournisseur_id'. Le service détecte la colonne réelle.
+     */
+    public static function colonneDossier(): string
+    {
+        return in_array('dossier_id', static::colonnesPieces(), true)
+            ? 'dossier_id'
+            : 'dossier_fournisseur_id';
+    }
+
+    /**
+     * ✅ AJOUT — Crée une pièce dans un dossier en n'écrivant que les colonnes existantes.
+     * Utilisé pour les pièces automatiques et les pièces ajoutées à la main.
+     */
+    public static function creerPiece(DossierFournisseur $dossier, array $donnees): PieceDossier
+    {
+        $donnees = [static::colonneDossier() => $dossier->id] + $donnees;
+        $donnees = array_intersect_key($donnees, array_flip(static::colonnesPieces()));
+
+        $piece = new PieceDossier();
+        $piece->forceFill($donnees)->save();
+
+        return $piece;
+    }
+
+    // ════════════════════════════════════════════════════════
     // AJOUTER UNE PIÈCE AUTOMATIQUEMENT
     // ════════════════════════════════════════════════════════
 
@@ -166,15 +206,16 @@ class DossierFournisseurService
         $documentId   = $document->id;
 
         // ✅ Ne pas dupliquer — vérifier si la pièce existe déjà
-        $existe = PieceDossier::where('dossier_fournisseur_id', $dossier->id)
+        // ✅ CORRIGÉ — colonne de rattachement réelle de la base
+        $existe = PieceDossier::where(static::colonneDossier(), $dossier->id)
             ->where('document_type', $documentType)
             ->where('document_id', $documentId)
             ->exists();
 
         if ($existe) return null;
 
-        $piece = PieceDossier::create([
-            'dossier_fournisseur_id' => $dossier->id,
+        $donnees = [
+            static::colonneDossier() => $dossier->id,
             'type_piece'             => $typePiece,
             'document_type'          => $documentType,
             'document_id'            => $documentId,
@@ -184,7 +225,16 @@ class DossierFournisseurService
             'valide_par'             => auth()->id() ?? $dossier->responsable_id,
             'date_validation'        => now(),
             'libelle'                => (static::TYPES[$typePiece] ?? $typePiece) . ' N° ' . ($document->numero ?? ''),
-        ]);
+            'ajoute_par'             => auth()->id() ?? $dossier->responsable_id,
+            'date_ajout'             => now(),
+        ];
+
+        // ✅ CORRIGÉ — uniquement les colonnes présentes dans la table (structure variable selon
+        //    les bases : 'libelle', 'ajoute_par', 'date_ajout'... peuvent ne pas exister)
+        $donnees = array_intersect_key($donnees, array_flip(static::colonnesPieces()));
+
+        $piece = new PieceDossier();
+        $piece->forceFill($donnees)->save();
 
         Log::info("Pièce [{$typePiece}] ajoutée au dossier {$dossier->numero_dossier}", [
             'document' => $document->numero ?? $documentId,
@@ -204,7 +254,8 @@ class DossierFournisseurService
             ->get();
 
         foreach ($pieces as $piece) {
-            $dossier = $piece->dossierFournisseur;
+            // ✅ CORRIGÉ — dossier retrouvé par la colonne réelle de la base
+            $dossier = DossierFournisseur::find($piece->{static::colonneDossier()});
             $piece->delete();
 
             // ✅ Si le dossier n'a plus aucune pièce automatique,
