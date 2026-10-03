@@ -155,6 +155,49 @@ class LignePrevisionRecette extends Model
     }
 
     /**
+     * ✅ AJOUT — Montant rectifié RÉEL, recalculé (même règle que les lignes de dépenses) :
+     *   prévision initiale + Σ mouvements de recettes des collectifs ADOPTÉS, non annulés,
+     *   portant sur cette ligne existante.
+     *
+     * Une ligne créée par un collectif (est_issue_collectif) a pour prévision initiale le
+     * montant du mouvement qui l'a créée : ce mouvement n'est donc pas ajouté une seconde fois.
+     *
+     * Remplace l'ancien cumul (montant_rectifie += mouvement), qui doublait le montant à
+     * chaque réapplication d'un collectif.
+     */
+    public function getMontantRectifieReel(): float
+    {
+        $mouvements = (float) MouvementCollectif::query()
+            ->where('type', 'recette')
+            ->where('ligne_recette_id', $this->id)
+            ->where(fn($q) => $q->whereNull('statut')->orWhereNotIn('statut', ['annule', 'annulee']))
+            ->whereNull('date_annulation')
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
+            ->sum('montant_modification');
+
+        return round((float) $this->montant_prevu_initial + $mouvements, 2);
+    }
+
+    /**
+     * ✅ AJOUT — Aligne montant_rectifie sur le montant réel. L'écart et le taux de recouvrement
+     * sont recalculés par saving(), et l'observateur redistribue les 12 prévisions mensuelles.
+     * Renvoie true si le montant a changé.
+     */
+    public function recalculerRectifie(): bool
+    {
+        $reel = $this->getMontantRectifieReel();
+
+        if (abs((float) $this->montant_rectifie - $reel) < 0.01) {
+            return false;
+        }
+
+        $this->montant_rectifie = $reel;
+        $this->save();
+
+        return true;
+    }
+
+    /**
      * Recalculer tous les indicateurs
      */
     public function recalculer(): void

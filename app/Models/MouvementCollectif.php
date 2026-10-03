@@ -178,8 +178,11 @@ class MouvementCollectif extends Model
                 } elseif ($this->ligne_recette_id) {
                     $ligne = $this->ligneRecette;
                     if ($ligne) {
-                        $ligne->montant_rectifie += $this->montant_modification;
-                        $ligne->save();
+                        // ✅ CORRIGÉ — recalcul complet (initial + Σ mouvements adoptés), comme pour
+                        //    les dépenses. L'ancien « += » doublait le montant à chaque réapplication.
+                        //    Le mouvement doit être actif AVANT le recalcul pour y être compté.
+                        $this->updateQuietly(['statut' => 'actif', 'date_annulation' => null, 'annule_par' => null]);
+                        $ligne->recalculerRectifie();
                     }
                 }
             }
@@ -328,8 +331,10 @@ class MouvementCollectif extends Model
             } elseif ($this->ligne_recette_id) {
                 $ligne = $this->ligneRecette;
                 if ($ligne) {
-                    $ligne->montant_rectifie -= $this->montant_modification;
-                    $ligne->save();
+                    // ✅ CORRIGÉ — le mouvement est marqué annulé AVANT le recalcul, qui l'exclut
+                    //    alors du total (au lieu de soustraire un montant d'un cumul peut-être faux).
+                    $this->updateQuietly(['statut' => 'annule', 'date_annulation' => now(), 'annule_par' => $user?->id]);
+                    $ligne->recalculerRectifie();
                 }
             }
         }

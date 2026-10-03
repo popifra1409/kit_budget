@@ -66,6 +66,49 @@ class HistoriqueLigneBudgetaireService
         ];
     }
 
+    /**
+     * Synthèse à l'échelle d'un ou plusieurs budgets (tableau de bord).
+     * Mêmes règles que modifications() et LigneBudgetaire::getBudgetRectifieReel() :
+     *   budget actualisé = initial + augmentations + réductions + virements entrants − sortants.
+     */
+    public function syntheseBudgets(iterable $budgetIds): array
+    {
+        $budgetIds = collect($budgetIds)->filter()->values();
+        $ligneIds = LigneBudgetaire::whereIn('budget_id', $budgetIds)->pluck('id');
+
+        $initial = (float) LigneBudgetaire::whereIn('budget_id', $budgetIds)->sum('budget_initial');
+
+        $mouvements = MouvementCollectif::query()
+            ->where('type', 'depense')
+            ->where(fn($q) => $q->whereIn('ligne_depense_id', $ligneIds)->orWhereIn('nouvelle_ligne_depense_id', $ligneIds))
+            ->where(fn($q) => $q->whereNull('statut')->orWhereNotIn('statut', ['annule', 'annulee']))
+            ->whereNull('date_annulation')
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'));
+
+        $virements = VirementBudgetaire::query()
+            ->where('statut', 'execute')
+            ->where(fn($q) => $q->whereIn('ligne_source_id', $ligneIds)->orWhereIn('ligne_destination_id', $ligneIds));
+
+        $augmentations = (float) (clone $mouvements)->where('montant_modification', '>', 0)->sum('montant_modification');
+        $reductions = (float) (clone $mouvements)->where('montant_modification', '<', 0)->sum('montant_modification');
+        $entrants = (float) (clone $virements)->whereIn('ligne_destination_id', $ligneIds)->sum('montant');
+        $sortants = (float) (clone $virements)->whereIn('ligne_source_id', $ligneIds)->sum('montant');
+
+        return [
+            'budget_initial'      => $initial,
+            'augmentations'       => $augmentations,
+            'reductions'          => $reductions,          // négatif
+            'collectifs_net'      => $augmentations + $reductions,
+            'nb_augmentations'    => (clone $mouvements)->where('montant_modification', '>', 0)->count(),
+            'nb_reductions'       => (clone $mouvements)->where('montant_modification', '<', 0)->count(),
+            'nb_collectifs'       => (clone $mouvements)->distinct()->count('collectif_budgetaire_id'),
+            'virements_montant'   => (float) (clone $virements)->sum('montant'),  // crédits déplacés
+            'virements_nombre'    => (clone $virements)->count(),
+            'virements_net'       => $entrants - $sortants,                     // 0 si interne au budget
+            'budget_actualise'    => $initial + $augmentations + $reductions + $entrants - $sortants,
+        ];
+    }
+
     // ────────────────────────────────────────────────────────────────
 
     /** Augmentations et réductions des collectifs adoptés (mouvements de dépense). */
