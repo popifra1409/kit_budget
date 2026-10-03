@@ -317,6 +317,7 @@ if (isset($pdf)) {
     </tr>
 </table>
 
+@include('pdf.partials.modifications-ligne', ['historique' => $historique])
 {{-- ══════════════════════════════════════════════════════════
      TABLEAU DES ENGAGEMENTS
      ✅ table-layout:fixed + colgroup avec widths % stricts

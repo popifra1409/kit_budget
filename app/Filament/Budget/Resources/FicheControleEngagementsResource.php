@@ -168,16 +168,15 @@ class FicheControleEngagementsResource extends Resource
                 Tables\Columns\TextColumn::make('budget_initial')
                     ->label('Dotation Initiale')->money('XAF')->sortable()->color('info'),
 
-                // ✅ Collectifs budgétaires adoptés
+                // ✅ CORRIGÉ — toutes les modifications de la ligne : collectifs (augmentations,
+                //    réductions, virements internes) ET virements budgétaires. Avant : seuls les
+                //    mouvements de dépense des collectifs étaient comptés.
                 Tables\Columns\TextColumn::make('collectifs_montant')
-                    ->label('Dont Collectifs')
+                    ->label('Modifications (collectifs, virements)')
                     ->getStateUsing(function ($record) {
-                        $total = \App\Models\MouvementCollectif::where(function ($q) use ($record) {
-                            $q->where('ligne_depense_id', $record->id)
-                                ->orWhere('nouvelle_ligne_depense_id', $record->id);
-                        })
-                            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
-                            ->sum('montant_modification');
+                        $total = (float) app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
+                            ->modifications($record)
+                            ->sum('montant');
                         return $total != 0
                             ? ($total > 0 ? '+' : '') . number_format($total, 0, ',', ' ') . ' FCFA'
                             : '—';
@@ -328,6 +327,8 @@ class FicheControleEngagementsResource extends Resource
                             $montantOPT = self::getMontantOPT($record);
 
                             return view('filament.pages.fiche-controle-details', [
+                                // ✅ AJOUT — historique des modifications de la ligne (pour la vue de détail)
+                                'historique'  => app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)->synthese($record),
                                 'record'      => $record,
                                 'engagements' => $engagements,
                                 'totalEngage' => $totalEngage,

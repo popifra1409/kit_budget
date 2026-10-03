@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\DossierFournisseur;
 use App\Models\PieceDossier;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
@@ -177,12 +178,70 @@ class DossierFournisseurService
     }
 
     /**
+     * Types de pièces autorisés par la contrainte de la base (PostgreSQL), lus une fois par requête.
+     * null = pas de contrainte connue : tous les types sont acceptés.
+     */
+    protected static function typesPiecesAutorises(): ?array
+    {
+        static $types = false;
+
+        if ($types !== false) {
+            return $types;
+        }
+
+        if (DB::getDriverName() !== 'pgsql') {
+            return $types = null;
+        }
+
+        $contrainte = DB::selectOne(
+            "SELECT pg_get_constraintdef(c.oid) AS definition
+               FROM pg_constraint c
+               JOIN pg_class t ON t.oid = c.conrelid
+              WHERE t.relname = ? AND c.contype = 'c'
+                AND pg_get_constraintdef(c.oid) LIKE '%type_piece%'",
+            [(new PieceDossier)->getTable()]
+        );
+
+        if (!$contrainte) {
+            return $types = null;
+        }
+
+        preg_match_all("/'([^']+)'::/", $contrainte->definition, $m);
+
+        return $types = ($m[1] ?: null);
+    }
+
+    /**
+     * ✅ AJOUT — Garde-fou : un type refusé par la contrainte de la base est enregistré comme
+     * 'autre' (avec avertissement au log) au lieu de faire échouer l'opération.
+     * La migration « elargir_types_pieces_dossier » rend ce repli inutile.
+     */
+    public static function typePieceAutorise(string $type): string
+    {
+        $autorises = static::typesPiecesAutorises();
+
+        if ($autorises === null || in_array($type, $autorises, true)) {
+            return $type;
+        }
+
+        Log::warning("Type de pièce « {$type} » non autorisé par la base : enregistré comme « autre ». "
+            . 'Lancez la migration elargir_types_pieces_dossier.');
+
+        return in_array('autre', $autorises, true) ? 'autre' : $type;
+    }
+
+    /**
      * ✅ AJOUT — Crée une pièce dans un dossier en n'écrivant que les colonnes existantes.
      * Utilisé pour les pièces automatiques et les pièces ajoutées à la main.
      */
     public static function creerPiece(DossierFournisseur $dossier, array $donnees): PieceDossier
     {
         $donnees = [static::colonneDossier() => $dossier->id] + $donnees;
+
+        if (isset($donnees['type_piece'])) {
+            $donnees['type_piece'] = static::typePieceAutorise($donnees['type_piece']);
+        }
+
         $donnees = array_intersect_key($donnees, array_flip(static::colonnesPieces()));
 
         $piece = new PieceDossier();
@@ -216,7 +275,7 @@ class DossierFournisseurService
 
         $donnees = [
             static::colonneDossier() => $dossier->id,
-            'type_piece'             => $typePiece,
+            'type_piece'             => static::typePieceAutorise($typePiece),
             'document_type'          => $documentType,
             'document_id'            => $documentId,
             'nom_fichier'            => $nomFichier ?: (static::TYPES[$typePiece] ?? $typePiece) . ' — ' . ($document->numero ?? $document->id),

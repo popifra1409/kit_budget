@@ -32,7 +32,7 @@ class FicheControleEngagementsController extends Controller
         $engagements = $ligneBudgetaire->engagements()
             ->with([
                 'engageable',
-                'ordonnancesPaiement', 
+                'ordonnancesPaiement',
                 'beneficiaire',
                 'beneficiaireFournisseur',
                 'beneficiairePersonnel',
@@ -151,6 +151,9 @@ class FicheControleEngagementsController extends Controller
             'virements_entrants'  => $virementsEntrants,
             'virements_sortants'  => $virementsSortants,
             'budget_rectifie'     => $budgetRectifie,
+            // ✅ AJOUT — historique des modifications de la ligne (collectifs, virements), dotation finale.
+            //    Même source que le certificat d'engagement et la fenêtre « Détails ».
+            'historique'          => app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)->synthese($ligneBudgetaire),
             'total_engage'        => $totalEngage,
             'disponible'          => $disponible,
             'taux_consommation'   => $tauxConsommation,

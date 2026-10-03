@@ -93,19 +93,12 @@ if ($nomenclature) {
                 + ($ligneBudgetaire->virements_entrants ?? 0)
                 - ($ligneBudgetaire->virements_sortants ?? 0)));
 
-        // ✅ Collectifs budgétaires ayant impacté cette ligne
-        //    ✅ CORRIGÉ — tous les collectifs adoptés, mouvements actifs uniquement
-        //    (les mouvements annulés sont exclus).
-        $collectifsLigne = \App\Models\MouvementCollectif::where(function($q) use ($ligneBudgetaire) {
-                $q->where('ligne_depense_id', $ligneBudgetaire->id)
-                  ->orWhere('nouvelle_ligne_depense_id', $ligneBudgetaire->id);
-            })
-            ->where(fn($q) => $q->whereNull('statut')->orWhere('statut', 'actif'))
-            ->whereNull('date_annulation')
-            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
-            ->with('collectif')
-            ->orderBy('created_at')
-            ->get();
+        // ✅ Modifications de la ligne depuis la dotation initiale : collectifs budgétaires
+        //    (augmentations, réductions, virements internes au collectif) et virements budgétaires.
+        //    Source unique, partagée avec la fiche de contrôle des engagements.
+        //    ✅ CORRIGÉ — les virements d'un collectif (ex. 669604 → 617100) n'étaient pas lus.
+        $collectifsLigne = app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
+            ->modifications($ligneBudgetaire);
 
         // ✅ PRIORITÉ 1 : snapshots figés au moment de l'engagement
         if ($engagement->snapshot_disponible_avant !== null) {
@@ -486,23 +479,24 @@ if ($createdAt) {
             </div>
         </div>
 
-        {{-- ✅ Collectifs budgétaires adoptés ayant modifié la ligne --}}
+        {{-- ✅ Modifications de la ligne : collectifs budgétaires (augmentation, réduction, virement)
+                 et virements budgétaires, avec leur nature et leur référence --}}
         @if(isset($collectifsLigne) && $collectifsLigne->isNotEmpty())
-            @foreach($collectifsLigne as $index => $mouvement)
+            @foreach($collectifsLigne as $index => $modification)
             <div class="ligne-montant">
                 <div class="lm-label">
-                    Collectif budgétaire {{ $index + 1 }}
-                    ({{ $mouvement->collectif?->numero }}) :
+                    {{ $modification['origine'] }} ({{ $modification['reference'] }})
+                    — {{ $modification['libelle_nature'] }}@if ($modification['contrepartie']) {{ $modification['montant'] >= 0 ? 'depuis' : 'vers' }} {{ $modification['contrepartie'] }}@endif :
                 </div>
                 <div class="lm-valeur">
-                    {{ ($mouvement->montant_modification >= 0 ? '+' : '') }}{{ number_format($mouvement->montant_modification, 0, ',', ' ') }}
+                    {{ $modification['montant'] >= 0 ? '+' : '' }}{{ number_format($modification['montant'], 0, ',', ' ') }}
                 </div>
             </div>
             @endforeach
 
-            {{-- Dotation finale = dotation initiale + Σ collectifs --}}
+            {{-- Dotation finale = dotation initiale + Σ modifications (= budget rectifié) --}}
             @php
-                $dotationFinale = $dotationInitiale + $collectifsLigne->sum('montant_modification');
+                $dotationFinale = $dotationInitiale + $collectifsLigne->sum('montant');
             @endphp
             <div class="ligne-montant" style="font-weight:bold;">
                 <div class="lm-label">Dotation finale :</div>

@@ -12,9 +12,16 @@
                 <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
                     Dotation Initiale
                 </div>
+                {{-- ✅ CORRIGÉ — 'dotation_initiale' n'existe pas sur la ligne : c'est 'budget_initial' --}}
                 <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {{ number_format($record->dotation_initiale ?? 0, 0, ',', ' ') }} FCFA
+                    {{ number_format($historique['dotation_initiale'] ?? $record->budget_initial ?? 0, 0, ',', ' ') }} FCFA
                 </div>
+                @if (isset($historique) && $historique['modifications']->isNotEmpty())
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Dotation finale :
+                        <strong>{{ number_format($historique['dotation_finale'], 0, ',', ' ') }} FCFA</strong>
+                    </div>
+                @endif
             </div>
 
             {{-- Total Engagé --}}
@@ -50,6 +57,85 @@
             </div>
         </div>
     </div>
+
+    {{-- ✅ AJOUT — Modifications de la ligne : collectifs budgétaires et virements --}}
+    @if (isset($historique))
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                🔄 Modifications de la ligne ({{ $historique['modifications']->count() }})
+            </h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Collectifs budgétaires (augmentations, réductions, virements) et virements budgétaires.
+            </p>
+        </div>
+
+        @if ($historique['modifications']->isNotEmpty())
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-900/50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Nature</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Origine</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Contrepartie</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Motif</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Montant</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <tr class="bg-blue-50/50 dark:bg-blue-900/10">
+                            <td class="px-4 py-2 text-sm" colspan="5"><strong>Dotation initiale</strong></td>
+                            <td class="px-4 py-2 text-sm text-right font-semibold">
+                                {{ number_format($historique['dotation_initiale'], 0, ',', ' ') }} FCFA
+                            </td>
+                        </tr>
+                        @foreach ($historique['modifications'] as $m)
+                            <tr>
+                                <td class="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">{{ $m['date']?->format('d/m/Y') ?? '—' }}</td>
+                                <td class="px-4 py-2 whitespace-nowrap">
+                                    <span @class([
+                                        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+                                        'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' => $m['montant'] >= 0,
+                                        'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300' => $m['montant'] < 0,
+                                    ])>{{ $m['libelle_nature'] }}</span>
+                                </td>
+                                <td class="px-4 py-2 text-sm">{{ $m['origine'] }} <strong>{{ $m['reference'] }}</strong></td>
+                                <td class="px-4 py-2 text-sm text-gray-500">
+                                    @if ($m['contrepartie'])
+                                        {{ $m['montant'] >= 0 ? 'depuis' : 'vers' }} {{ $m['contrepartie'] }}
+                                    @else
+                                        —
+                                    @endif
+                                </td>
+                                <td class="px-4 py-2 text-sm text-gray-500">{{ $m['motif'] ?? '—' }}</td>
+                                <td @class([
+                                    'px-4 py-2 text-sm text-right font-semibold whitespace-nowrap',
+                                    'text-green-600 dark:text-green-400' => $m['montant'] >= 0,
+                                    'text-red-600 dark:text-red-400' => $m['montant'] < 0,
+                                ])>
+                                    {{ $m['montant'] >= 0 ? '+' : '' }}{{ number_format($m['montant'], 0, ',', ' ') }} FCFA
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot class="bg-gray-50 dark:bg-gray-900/50">
+                        <tr>
+                            <td colspan="5" class="px-4 py-3 text-sm font-bold text-right">DOTATION FINALE :</td>
+                            <td class="px-4 py-3 text-sm font-bold text-right text-blue-600 dark:text-blue-400">
+                                {{ number_format($historique['dotation_finale'], 0, ',', ' ') }} FCFA
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        @else
+            <div class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                Aucune modification : la ligne a conservé sa dotation initiale.
+            </div>
+        @endif
+    </div>
+    @endif
 
     {{-- Liste des Engagements --}}
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
