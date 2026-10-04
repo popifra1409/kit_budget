@@ -2,42 +2,85 @@
 
 namespace App\Exports;
 
-use App\Models\CbmtLigne;
 use App\Models\CdmtExercice;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class CbmtTableauSheet implements FromArray, WithHeadings, WithTitle
+/**
+ * Prévision à moyen terme par titres — détail des lignes sous chaque titre.
+ * Même source que l'écran et le PDF : CbmtExercice::syntheseParTitres().
+ */
+class CbmtTableauSheet implements FromArray, WithHeadings, WithTitle, WithStyles
 {
+    /** Lignes de titre / total (en gras), repérées pendant la construction. */
+    protected array $lignesEnGras = [];
+
     public function __construct(protected CdmtExercice $cdmt, protected string $nature) {}
+
+    protected function colonnes(): array
+    {
+        $n = $this->cdmt->cbmtExercice->anneeReference();
+        $depense = $this->nature === 'depense';
+
+        return array_filter([
+            'prevision_n_initiale'     => "Prévision {$n} initiale",
+            'montant_n'                => "Prévision {$n} actualisée",
+            'realisation_n'            => $depense ? "Réalisation {$n} engagé" : "Réalisation {$n} recouvré",
+            'realisation_n_ordonnance' => $depense ? "Réalisation {$n} ordonnancé" : null,
+            'montant_n_plus_1'         => (string) ($n + 1),
+            'montant_n_plus_2'         => (string) ($n + 2),
+            'montant_n_plus_3'         => (string) ($n + 3),
+        ]);
+    }
 
     public function headings(): array
     {
-        return ['Titre', 'Libellé', 'N-1', 'N', 'N+1', 'N+2', 'N+3'];
+        return array_merge(['Compte', 'Libellé', 'LR/MN'], array_values($this->colonnes()));
     }
 
     public function array(): array
     {
-        $lignes = $this->nature === 'ressource'
-            ? $this->cdmt->cbmtExercice->lignesRessources()->get()
-            : $this->cdmt->cbmtExercice->lignesDepenses()->get();
+        $colonnes = array_keys($this->colonnes());
+        $groupes = $this->cdmt->cbmtExercice->syntheseParTitres($this->nature);
+        $lignes = [];
+        $rang = 2; // ligne 1 = en-têtes
 
-        $libelles = $this->nature === 'ressource' ? CbmtLigne::TITRES_RESSOURCES : CbmtLigne::TITRES_DEPENSES;
+        foreach ($groupes as $g) {
+            $lignes[] = array_merge(['', $g['libelle'], ''], array_map(fn ($c) => $g['totaux'][$c], $colonnes));
+            $this->lignesEnGras[] = $rang++;
 
-        return $lignes->groupBy('titre')->map(fn($l, $t) => [
-            $t,
-            $libelles[$t] ?? $l->first()->libelle_titre,
-            $l->sum('montant_n_moins_1'),
-            $l->sum('montant_n'),
-            $l->sum('montant_n_plus_1'),
-            $l->sum('montant_n_plus_2'),
-            $l->sum('montant_n_plus_3'),
-        ])->values()->toArray();
+            foreach ($g['lignes'] as $l) {
+                $lignes[] = array_merge([(string) $l->code, $l->libelle, $l->type_ligne], array_map(fn ($c) => (float) $l->{$c}, $colonnes));
+                $rang++;
+            }
+        }
+
+        $lignes[] = array_merge(
+            ['', $this->nature === 'depense' ? 'TOTAL DÉPENSES' : 'TOTAL RESSOURCES', ''],
+            array_map(fn ($c) => $groupes->sum(fn ($g) => $g['totaux'][$c]), $colonnes)
+        );
+        $this->lignesEnGras[] = $rang;
+
+        return $lignes;
+    }
+
+    public function styles(Worksheet $sheet): array
+    {
+        $styles = [1 => ['font' => ['bold' => true]]];
+
+        foreach ($this->lignesEnGras as $ligne) {
+            $styles[$ligne] = ['font' => ['bold' => true]];
+        }
+
+        return $styles;
     }
 
     public function title(): string
     {
-        return $this->nature === 'ressource' ? 'Tableau 9' : 'Tableau 10';
+        // Nom d'onglet Excel : 31 caractères maximum
+        return $this->nature === 'ressource' ? 'Ressources par titres' : 'Dépenses par titres';
     }
 }

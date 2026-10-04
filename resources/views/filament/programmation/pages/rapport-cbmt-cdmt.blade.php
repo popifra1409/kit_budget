@@ -4,75 +4,39 @@
     </form>
 
     @php
+        $cbmt = $this->getCbmt();
         $cdmt = $this->getCdmt();
-        $tableau9 = $this->getTableau9();
-        $tableau10 = $this->getTableau10();
         $annexeB = $this->getAnnexeB();
         $ecart = $cdmt?->getEcartAvecCbmt();
     @endphp
 
-    @if ($cdmt)
+    @if ($cbmt)
         <div class="mt-6 space-y-6">
 
-            {{-- TABLEAU 9 --}}
-            <div class="fi-section rounded-xl bg-white p-6 dark:bg-gray-800">
-                <h2 class="text-lg font-bold mb-3">Tableau 9 — Prévision à moyen terme des ressources</h2>
-                <table class="w-full text-sm border">
-                    <thead class="bg-gray-50 dark:bg-gray-900">
-                        <tr><th class="border p-2 text-left">Titre</th><th class="border p-2">N-1</th><th class="border p-2">N</th><th class="border p-2">N+1</th><th class="border p-2">N+2</th><th class="border p-2">N+3</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($tableau9 as $t)
-                            <tr>
-                                <td class="border p-2">Titre {{ $t['titre'] }} — {{ $t['libelle'] }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_moins_1'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_plus_1'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_plus_2'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_plus_3'], 0, ',', ' ') }}</td>
-                            </tr>
-                        @endforeach
-                        <tr class="font-bold bg-gray-100 dark:bg-gray-900">
-                            <td class="border p-2">TOTAL RESSOURCES</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau9->sum('total_n_moins_1'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau9->sum('total_n'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau9->sum('total_n_plus_1'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau9->sum('total_n_plus_2'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau9->sum('total_n_plus_3'), 0, ',', ' ') }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+            {{-- RESSOURCES PAR TITRES (détail des lignes sous chaque titre) --}}
+            <div class="fi-section rounded-xl bg-white p-6 dark:bg-gray-800 overflow-x-auto">
+                <h2 class="text-lg font-bold mb-3">Prévision à moyen terme des ressources par titres</h2>
+                @include('filament.programmation.partials.cbmt-par-titres', ['cbmt' => $cbmt, 'nature' => 'ressource'])
             </div>
 
-            {{-- TABLEAU 10 --}}
-            <div class="fi-section rounded-xl bg-white p-6 dark:bg-gray-800">
-                <h2 class="text-lg font-bold mb-3">Tableau 10 — Prévision à moyen terme des dépenses</h2>
-                <table class="w-full text-sm border">
-                    <thead class="bg-gray-50 dark:bg-gray-900">
-                        <tr><th class="border p-2 text-left">Titre</th><th class="border p-2">N-1</th><th class="border p-2">N</th><th class="border p-2">N+1</th><th class="border p-2">N+2</th><th class="border p-2">N+3</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($tableau10 as $t)
-                            <tr>
-                                <td class="border p-2">Titre {{ $t['titre'] }} — {{ $t['libelle'] }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_moins_1'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_plus_1'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_plus_2'], 0, ',', ' ') }}</td>
-                                <td class="border p-2 text-right">{{ number_format($t['total_n_plus_3'], 0, ',', ' ') }}</td>
-                            </tr>
-                        @endforeach
-                        <tr class="font-bold bg-gray-100 dark:bg-gray-900">
-                            <td class="border p-2">TOTAL DÉPENSES</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau10->sum('total_n_moins_1'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau10->sum('total_n'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau10->sum('total_n_plus_1'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau10->sum('total_n_plus_2'), 0, ',', ' ') }}</td>
-                            <td class="border p-2 text-right">{{ number_format($tableau10->sum('total_n_plus_3'), 0, ',', ' ') }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+            {{-- DÉPENSES PAR TITRES (détail des lignes sous chaque titre) --}}
+            <div class="fi-section rounded-xl bg-white p-6 dark:bg-gray-800 overflow-x-auto">
+                <h2 class="text-lg font-bold mb-3">Prévision à moyen terme des dépenses par titres</h2>
+                @include('filament.programmation.partials.cbmt-par-titres', ['cbmt' => $cbmt, 'nature' => 'depense'])
             </div>
+
+            {{-- ÉQUILIBRE RESSOURCES / DÉPENSES --}}
+            <div class="fi-section rounded-xl bg-white p-6 dark:bg-gray-800">
+                <h2 class="text-lg font-bold mb-3">Équilibre ressources − dépenses</h2>
+                @include('filament.programmation.partials.cbmt-equilibre', ['cbmt' => $cbmt])
+            </div>
+
+            {{-- Sections du CDMT : uniquement si un CDMT est choisi --}}
+            @if (!$cdmt)
+                <div class="fi-section rounded-xl bg-gray-50 p-4 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-400">
+                    Choisissez un CDMT de ce CBMT pour afficher le test de cohérence CDMT ↔ CBMT et la programmation (Annexe B).
+                </div>
+            @else
 
             {{-- TEST ECART CDMT <-> CBMT --}}
             <div class="fi-section rounded-xl bg-white p-6 dark:bg-gray-800">
@@ -133,6 +97,8 @@
                     </div>
                 @endforeach
             </div>
+
+            @endif
 
         </div>
     @endif

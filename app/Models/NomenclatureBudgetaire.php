@@ -36,6 +36,7 @@ class NomenclatureBudgetaire extends Model
         'modifie_par',
         'ordre',
         'actif',
+        'titre',
     ];
 
     protected $casts = [

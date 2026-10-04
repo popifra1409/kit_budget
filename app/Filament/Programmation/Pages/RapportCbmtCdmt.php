@@ -2,8 +2,8 @@
 
 namespace App\Filament\Programmation\Pages;
 
+use App\Models\CbmtExercice;
 use App\Models\CdmtExercice;
-use App\Models\CbmtLigne;
 use Filament\Pages\Page;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -22,29 +22,55 @@ class RapportCbmtCdmt extends Page implements HasForms
 
     protected static string $view = 'filament.programmation.pages.rapport-cbmt-cdmt';
 
+    /** CBMT affiché (obligatoire) : suffit pour les ressources et dépenses par titres. */
+    public ?int $cbmt_exercice_id = null;
+
+    /** CDMT de ce CBMT (facultatif) : ajoute le test de cohérence et l'Annexe B. */
     public ?int $cdmt_exercice_id = null;
 
     public function mount(): void
     {
-        $this->form->fill();
+        // Par défaut : le CBMT le plus récent
+        $this->form->fill([
+            'cbmt_exercice_id' => CbmtExercice::latest('id')->value('id'),
+        ]);
     }
 
     protected function getFormSchema(): array
     {
         return [
-            Forms\Components\Select::make('cdmt_exercice_id')
-                ->label('CDMT')
-                ->options(
-                    CdmtExercice::with('cbmtExercice.planStrategiqueEp')
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Select::make('cbmt_exercice_id')
+                    ->label('CBMT')
+                    ->options(fn() => CbmtExercice::with(['planStrategiqueEp', 'exerciceReference'])
+                        ->latest('id')
                         ->get()
                         ->mapWithKeys(fn($c) => [
-                            $c->id => "{$c->numero} — {$c->version} ({$c->cbmtExercice?->planStrategiqueEp?->libelle})",
-                        ])
-                )
-                ->searchable()
-                ->live()
-                ->required(),
+                            $c->id => "{$c->numero} — exercice {$c->exerciceReference?->annee} ({$c->planStrategiqueEp?->libelle})",
+                        ]))
+                    ->searchable()
+                    ->live()
+                    ->afterStateUpdated(fn() => $this->cdmt_exercice_id = null)
+                    ->required(),
+
+                Forms\Components\Select::make('cdmt_exercice_id')
+                    ->label('CDMT (facultatif)')
+                    ->placeholder('Aucun : CBMT seul')
+                    ->options(fn() => CdmtExercice::where('cbmt_exercice_id', $this->cbmt_exercice_id)
+                        ->latest('id')
+                        ->get()
+                        ->mapWithKeys(fn($c) => [$c->id => "{$c->numero} — {$c->version}"]))
+                    ->live()
+                    ->disabled(fn() => !$this->cbmt_exercice_id),
+            ]),
         ];
+    }
+
+    public function getCbmt(): ?CbmtExercice
+    {
+        return $this->cbmt_exercice_id
+            ? CbmtExercice::with(['planStrategiqueEp', 'exerciceReference'])->find($this->cbmt_exercice_id)
+            : null;
     }
 
     public function getCdmt(): ?CdmtExercice
@@ -59,38 +85,9 @@ class RapportCbmtCdmt extends Page implements HasForms
             'lignes.sousProgrammeEp',
             'lignes.action',
             'lignes.activite',
-        ])->find($this->cdmt_exercice_id);
-    }
-
-    public function getTableau9(): \Illuminate\Support\Collection
-    {
-        return $this->getCdmt()?->cbmtExercice->lignesRessources()->get()
-            ->groupBy('titre')
-            ->map(fn($lignes, $titre) => [
-                'titre' => $titre,
-                'libelle' => CbmtLigne::TITRES_RESSOURCES[$titre] ?? $lignes->first()->libelle_titre,
-                'lignes' => $lignes,
-                'total_n_moins_1' => $lignes->sum('montant_n_moins_1'),
-                'total_n' => $lignes->sum('montant_n'),
-                'total_n_plus_1' => $lignes->sum('montant_n_plus_1'),
-                'total_n_plus_2' => $lignes->sum('montant_n_plus_2'),
-                'total_n_plus_3' => $lignes->sum('montant_n_plus_3'),
-            ])->values() ?? collect();
-    }
-
-    public function getTableau10(): \Illuminate\Support\Collection
-    {
-        return $this->getCdmt()?->cbmtExercice->lignesDepenses()->get()
-            ->groupBy('titre')
-            ->map(fn($lignes, $titre) => [
-                'titre' => $titre,
-                'libelle' => CbmtLigne::TITRES_DEPENSES[$titre] ?? $lignes->first()->libelle_titre,
-                'total_n_moins_1' => $lignes->sum('montant_n_moins_1'),
-                'total_n' => $lignes->sum('montant_n'),
-                'total_n_plus_1' => $lignes->sum('montant_n_plus_1'),
-                'total_n_plus_2' => $lignes->sum('montant_n_plus_2'),
-                'total_n_plus_3' => $lignes->sum('montant_n_plus_3'),
-            ])->values() ?? collect();
+        ])
+            ->where('cbmt_exercice_id', $this->cbmt_exercice_id)
+            ->find($this->cdmt_exercice_id);
     }
 
     /**

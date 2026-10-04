@@ -83,6 +83,18 @@ class NomenclatureBudgetaireResource extends Resource
                             ->label('Libellé')->required()->maxLength(255)->columnSpanFull()
                             ->placeholder('Ex: CHARGES DE PERSONNEL, SALAIRES DE BASE'),
 
+                        Forms\Components\Select::make('titre')
+                            ->label('Titre (CBMT)')
+                            ->options(fn(Forms\Get $get) => \App\Services\Programmation\TitreNomenclatureService::options($get('type')))
+                            ->placeholder(fn($record) => $record
+                                ? 'Proposé : ' . (\App\Services\Programmation\TitreNomenclatureService::libelle(
+                                    $record->type,
+                                    app(\App\Services\Programmation\TitreNomenclatureService::class)->titrePropose($record->code, $record->type)
+                                ) ?? 'aucun')
+                                : 'Calculé d\'après le code')
+                            ->helperText('Regroupement des lignes dans la prévision à moyen terme (CBMT). Laisser vide pour le titre proposé.')
+                            ->visible(fn(Forms\Get $get) => $get('niveau') === 'paragraphe'),
+
                         Forms\Components\Select::make('classe')
                             ->label('Classe comptable OHADA')
                             ->options([
@@ -347,6 +359,13 @@ class NomenclatureBudgetaireResource extends Resource
                 Tables\Columns\TextColumn::make('code')
                     ->label('Code')->searchable()->sortable()->weight('bold'),
 
+                Tables\Columns\TextColumn::make('titre')
+                    ->label('Titre')
+                    ->badge()
+                    ->formatStateUsing(fn($state) => $state ? "T{$state}" : '—')
+                    ->tooltip(fn($record) => \App\Services\Programmation\TitreNomenclatureService::libelle($record->type, $record->titre))
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')->searchable()->sortable()->limit(50)->wrap(),
 
@@ -417,6 +436,10 @@ class NomenclatureBudgetaireResource extends Resource
                 Tables\Columns\IconColumn::make('actif')->label('Actif')->boolean(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('titre')
+                    ->label('Titre (CBMT)')
+                    ->options([1 => 'Titre 1', 2 => 'Titre 2', 3 => 'Titre 3', 4 => 'Titre 4', 5 => 'Titre 5', 6 => 'Titre 6']),
+
                 Tables\Filters\SelectFilter::make('classe_type')
                     ->label('Classe + Type')
                     ->options([

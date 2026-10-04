@@ -13,8 +13,8 @@ class CbmtCdmtExport implements WithMultipleSheets
     public function sheets(): array
     {
         return [
-            'Tableau 9 - Ressources' => new CbmtTableauSheet($this->cdmt, 'ressource'),
-            'Tableau 10 - Dépenses' => new CbmtTableauSheet($this->cdmt, 'depense'),
+            'Ressources par titres' => new CbmtTableauSheet($this->cdmt, 'ressource'),
+            'Dépenses par titres' => new CbmtTableauSheet($this->cdmt, 'depense'),
             'Annexe C - Activités' => new CdmtAnnexeCSheet($this->cdmt),
         ];
     }

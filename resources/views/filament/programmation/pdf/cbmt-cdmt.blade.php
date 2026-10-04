@@ -15,7 +15,7 @@
     <h1>CBMT / CDMT — {{ $cdmt->numero }}</h1>
     <p>PSP : {{ $cdmt->cbmtExercice->planStrategiqueEp?->libelle }} | Version : {{ $cdmt->version }}</p>
 
-    <h2>Tableau 9 — Ressources</h2>
+    <h2>Prévision à moyen terme des ressources par titres</h2>
     <table>
         <thead><tr><th>Titre</th><th>N-1</th><th>N</th><th>N+1</th><th>N+2</th><th>N+3</th></tr></thead>
         <tbody>
@@ -32,7 +32,7 @@
         </tbody>
     </table>
 
-    <h2>Tableau 10 — Dépenses</h2>
+    <h2>Prévision à moyen terme des dépenses par titres</h2>
     <table>
         <thead><tr><th>Titre</th><th>N-1</th><th>N</th><th>N+1</th><th>N+2</th><th>N+3</th></tr></thead>
         <tbody>
