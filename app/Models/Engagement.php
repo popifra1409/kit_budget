@@ -192,6 +192,10 @@ class Engagement extends Model
     // =========================================================
     // RELATIONS
     // =========================================================
+    public function liquidations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Liquidation::class);
+    }
     public function lignesBordereau(): HasMany
     {
         return $this->hasMany(BordereauEngagementLigne::class, 'engagement_id');

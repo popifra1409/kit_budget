@@ -113,6 +113,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->pages([
                 Pages\Dashboard::class,
+                \App\Filament\Admin\Pages\ParametresExecutionPage::class,
             ])
             ->widgets([
                 Widgets\AccountWidget::class,

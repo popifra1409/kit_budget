@@ -99,7 +99,10 @@ class OrdonnancePaiement extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
-
+    public function liquidations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Liquidation::class);
+    }
     public function engagement(): BelongsTo
     {
         return $this->belongsTo(Engagement::class);

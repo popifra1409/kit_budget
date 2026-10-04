@@ -97,6 +97,10 @@ return [
                 'App\Models\TauxIr'                    => "Taux d'IR",
                 'App\Models\RegimeFiscal'              => 'Régime fiscal',
                 'App\Models\EtatConfig'                => "Configuration d'état",
+                'App\Models\NatureServiceFait'  => 'Nature de service fait',
+                'App\Models\PreuveServiceFait'  => 'Preuve de service fait',
+                'App\Models\Liquidation'        => 'Liquidation',
+                'App\Models\LiquidationPreuve'  => 'Preuve de liquidation',
             ],
         ],
 
@@ -180,6 +184,7 @@ return [
                 'App\Models\Exercice'            => 'Exercice',
                 'App\Models\ParametresStructure' => 'Paramètres de la structure',
                 'App\Models\Transmission'        => 'Transmission',
+                'App\Models\ParametreExecution'  => "Paramètre d'exécution",
             ],
         ],
     ],

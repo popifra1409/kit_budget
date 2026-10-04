@@ -317,6 +317,15 @@ class RolePermissionSeeder extends Seeder
             // ✅ AJOUTE : acces au panel Administration (/admin), controle par User::canAccessPanel()
             //    super_admin et admin la recoivent automatiquement.
             'access_module_admin',
+            'gerer_parametres_execution',
+
+            //Service fait et liquidation
+            'view_any_liquidation',
+            'create_liquidation',
+            'certifier_service_fait',
+            'liquider_depense',
+            'viser_liquidation',
+            'gerer_natures_service_fait',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -415,6 +424,10 @@ class RolePermissionSeeder extends Seeder
                 'view_service',
                 'create_service',
                 'update_service',
+
+                //liquidation et service fait
+                'view_any_liquidation',
+                'create_liquidation',
             ],
             'operateur_budget'
         );
@@ -493,6 +506,10 @@ class RolePermissionSeeder extends Seeder
                 'view_service',
                 'create_service',
                 'update_service',
+
+                //liquidation et service fait
+                'view_any_liquidation',
+                'create_liquidation',
             ],
             'chef_service_budget'
         );
@@ -648,6 +665,12 @@ class RolePermissionSeeder extends Seeder
                 'view_service',
                 'create_service',
                 'update_service',
+
+                //liquidation et service fait
+                'view_any_liquidation',
+                'create_liquidation',
+                'liquider_depense',
+                'gerer_natures_service_fait',
             ],
             'daaf'
         );
@@ -715,6 +738,9 @@ class RolePermissionSeeder extends Seeder
                 // ✅ AJOUTE : consultation du journal d'audit (panel Administration, lecture seule)
                 'view_any_activity',
                 'view_activity',
+
+                'viser_liquidation',
+                'view_any_liquidation',
             ],
             'controleur_financier'
         );
@@ -803,6 +829,8 @@ class RolePermissionSeeder extends Seeder
                 // ✅ AJOUTE : consultation du journal d'audit (panel Administration, lecture seule)
                 'view_any_activity',
                 'view_activity',
+
+                'liquider_depense',
             ],
             'directeur_general'
         );
@@ -883,6 +911,8 @@ class RolePermissionSeeder extends Seeder
                 // Collectifs (lecture)
                 'view_any_collectif_budgetaire',
                 'view_collectif_budgetaire',
+
+                'view_any_liquidation',
             ],
             'agence_comptable'
         );
@@ -987,6 +1017,10 @@ class RolePermissionSeeder extends Seeder
                 'view_any_registre_consommation',
                 'view_registre_consommation',
                 'generer_bon_commande_expression_besoin',
+                //liquidation et service fait
+                'view_any_liquidation',
+                'create_liquidation',
+                'certifier_service_fait',
             ],
             'comptable_matieres'
         );

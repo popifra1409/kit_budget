@@ -80,6 +80,7 @@ class AppServiceProvider extends ServiceProvider
             'type_engagement' => \App\Models\TypeEngagement::class,
             'parametre_structure' => \App\Models\ParametresStructure::class,
             'parametre_fournisseur' => \App\Models\ParametresFournisseur::class,
+            'parametre_execution'          => \App\Models\ParametreExecution::class,
             // Documents
             'bon_commande' => \App\Models\BonCommande::class,
             'engagement'   => \App\Models\Engagement::class,
@@ -184,6 +185,12 @@ class AppServiceProvider extends ServiceProvider
 
             // Administration
             'transmission'                 => \App\Models\Transmission::class,
+
+            //liquidation et service fait
+            'nature_service_fait'  => \App\Models\NatureServiceFait::class,
+            'preuve_service_fait'  => \App\Models\PreuveServiceFait::class,
+            'liquidation'          => \App\Models\Liquidation::class,
+            'liquidation_preuve'   => \App\Models\LiquidationPreuve::class,
         ]);
 
         // Modele de role propre a l'application (s'il existe et differe du modele Spatie) :
