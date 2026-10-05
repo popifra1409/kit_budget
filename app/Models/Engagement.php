@@ -192,10 +192,6 @@ class Engagement extends Model
     // =========================================================
     // RELATIONS
     // =========================================================
-    public function liquidations(): \Illuminate\Database\Eloquent\Relations\HasMany
-    {
-        return $this->hasMany(\App\Models\Liquidation::class);
-    }
     public function lignesBordereau(): HasMany
     {
         return $this->hasMany(BordereauEngagementLigne::class, 'engagement_id');
@@ -578,9 +574,76 @@ class Engagement extends Model
     }
 
     // =========================================================
+    // LIQUIDATION (service fait → dette arrêtée → ordonnancement)
+    // =========================================================
+
+    public function liquidations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Liquidation::class);
+    }
+
+    /**
+     * La liquidation est-elle obligatoire avant ordonnancement pour cet engagement ?
+     * Oui si l'exercice de l'engagement est ≥ au paramètre « liquidation_obligatoire_des ».
+     */
+    public function liquidationRequise(): bool
+    {
+        $annee = (int) (\App\Models\Exercice::find($this->exercice_id)?->annee ?? now()->year);
+
+        return $annee >= (int) \App\Services\ParametresExecution::get('liquidation_obligatoire_des');
+    }
+
+    /** Liquidation prête pour l'ordonnancement (visée, ou liquidée si le visa du CF n'est pas exigé). */
+    public function liquidationPourOrdonnancement(): ?\App\Models\Liquidation
+    {
+        $service = app(\App\Services\Budget\LiquidationService::class);
+
+        return $this->liquidations()->orderByDesc('id')->get()
+            ->first(fn($l) => $service->estPretePourOrdonnancement($l));
+    }
+
+    /**
+     * Liquidation à rattacher aux OP. Contrôles :
+     *  - obligatoire selon l'exercice (paramètre) ;
+     *  - liquidation de CET engagement, prête pour l'ordonnancement ;
+     *  - totale : les liquidations partielles (OP partielles) ne sont pas encore gérées.
+     */
+    protected function liquidationPourCreationOP(?\App\Models\Liquidation $liquidation): ?\App\Models\Liquidation
+    {
+        $liquidation ??= $this->liquidationPourOrdonnancement();
+
+        if (!$liquidation) {
+            if ($this->liquidationRequise()) {
+                $visa = \App\Services\ParametresExecution::get('visa_cf_obligatoire') ? 'visée par le contrôleur financier' : 'liquidée';
+                throw new \Exception(
+                    "Ordonnancement impossible : la liquidation est obligatoire pour l'exercice de cet engagement. "
+                        . "Aucune liquidation {$visa} n'existe pour l'engagement {$this->numero}."
+                );
+            }
+            return null;
+        }
+
+        if ((int) $liquidation->engagement_id !== (int) $this->id) {
+            throw new \Exception("La liquidation {$liquidation->numero} ne porte pas sur l'engagement {$this->numero}.");
+        }
+
+        if (!app(\App\Services\Budget\LiquidationService::class)->estPretePourOrdonnancement($liquidation)) {
+            throw new \Exception("La liquidation {$liquidation->numero} n'est pas prête pour l'ordonnancement (statut : {$liquidation->statut_label}).");
+        }
+
+        if (abs((float) $liquidation->montant_liquide - (float) $this->montant_engage) > 1) {
+            throw new \Exception(
+                "La liquidation {$liquidation->numero} est partielle : l'ordonnancement d'une liquidation partielle n'est pas encore disponible."
+            );
+        }
+
+        return $liquidation;
+    }
+
+    // =========================================================
     // CRÉATION DES ORDONNANCES DE PAIEMENT
     // =========================================================
-    public function creerOrdonnancesPaiement(): array
+    public function creerOrdonnancesPaiement(?\App\Models\Liquidation $liquidation = null): array
     {
         if (!$this->peutCreerOrdonnances()) {
             throw new \Exception("Impossible de créer les ordonnances : l'engagement doit être au statut DÉFINITIF.");
@@ -592,7 +655,10 @@ class Engagement extends Model
             throw new \Exception("Montant d'engagement invalide.");
         }
 
-        return DB::transaction(function () {
+        // ✅ AJOUT — liquidation préalable (obligatoire selon l'exercice, paramètre d'exécution)
+        $liquidation = $this->liquidationPourCreationOP($liquidation);
+
+        return DB::transaction(function () use ($liquidation) {
             // Montants toujours recalcules a la creation des OP (jamais depuis le cache)
             $donnees = $this->extraireDonneesDocument(true);
 
@@ -623,6 +689,15 @@ class Engagement extends Model
                 'created_by'          => auth()->id(),
             ]);
             $ordonnances['standard'] = $opStandard;
+
+            // ✅ AJOUT — rattachement à la liquidation et échéance de paiement figée
+            if ($liquidation) {
+                $opStandard->forceFill([
+                    'liquidation_id'         => $liquidation->id,
+                    'delai_paiement_jours'   => $liquidation->delai_paiement_jours,
+                    'date_echeance_paiement' => $liquidation->date_echeance_paiement,
+                ])->saveQuietly();
+            }
 
             \Log::info("OP Standard créée", [
                 'numero'       => $opStandard->numero,
@@ -709,6 +784,14 @@ class Engagement extends Model
                 ]);
 
                 $ordonnances['impot'] = $opImpot;
+
+                if ($liquidation) {
+                    $opImpot->forceFill([
+                        'liquidation_id'         => $liquidation->id,
+                        'delai_paiement_jours'   => $liquidation->delai_paiement_jours,
+                        'date_echeance_paiement' => $liquidation->date_echeance_paiement,
+                    ])->saveQuietly();
+                }
                 \Log::info("OP Impôt créée", ['numero' => $opImpot->numero, 'montant' => $opImpot->montant_net]);
             } else {
                 \Log::info("Pas d'OP Impôt — aucune retenue", ['type_document' => $this->estBonCommande() ? 'BC' : 'DA']);

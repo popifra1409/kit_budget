@@ -111,6 +111,8 @@ class OrdonnancePaiementResource extends Resource
                                 ->whereDoesntHave('ordonnancesPaiement')
                                 ->orderBy('date_engagement', 'desc')
                                 ->get()
+                                // ✅ Liquidation obligatoire (selon l'exercice) : engagement prêt seulement
+                                ->filter(fn($eng) => !$eng->liquidationRequise() || $eng->liquidationPourOrdonnancement() !== null)
                                 ->mapWithKeys(fn($eng) => [
                                     $eng->id => sprintf(
                                         '%s - %s (%s FCFA)',
@@ -124,7 +126,7 @@ class OrdonnancePaiementResource extends Resource
                         ->searchable()
                         ->preload()
                         ->live()
-                        ->helperText('💡 Seuls les engagements définitifs sans ordonnances sont listés')
+                        ->helperText('💡 Engagements définitifs sans ordonnances. Lorsque la liquidation est obligatoire (selon l\'exercice), seuls les engagements dont la liquidation est prête sont listés.')
                         ->columnSpanFull(),
 
                     Forms\Components\Placeholder::make('apercu')
@@ -254,6 +256,21 @@ class OrdonnancePaiementResource extends Resource
                 Tables\Columns\TextColumn::make('date_paiement')
                     ->label('Date paiement')->date('d/m/Y')
                     ->toggleable(isToggledHiddenByDefault: true),
+
+                // ✅ AJOUT — compte à rebours de paiement (échéance figée à la liquidation)
+                Tables\Columns\TextColumn::make('date_echeance_paiement')
+                    ->label('Échéance')
+                    ->sortable()
+                    ->badge()
+                    ->formatStateUsing(fn($record) => app(\App\Services\Budget\EcheancePaiementService::class)->etat($record)['texte'] ?? '—')
+                    ->color(fn($record) => app(\App\Services\Budget\EcheancePaiementService::class)->etat($record)['couleur'] ?? 'gray')
+                    ->description(fn($record) => $record->date_echeance_paiement
+                        ? 'au ' . \Illuminate\Support\Carbon::parse($record->date_echeance_paiement)->format('d/m/Y')
+                        . (($i = app(\App\Services\Budget\EcheancePaiementService::class)->etat($record)['interets'] ?? 0) > 0
+                            ? ' · intérêts est. ' . number_format($i, 0, ',', ' ')
+                            : '')
+                        : null)
+                    ->placeholder('—'),
             ])
             ->filters([
                 Tables\Filters\Filter::make('periode')
@@ -309,6 +326,19 @@ class OrdonnancePaiementResource extends Resource
                 Tables\Filters\SelectFilter::make('type_ordonnance')
                     ->label('Type')
                     ->options(['standard' => 'Standard', 'impot' => 'Impôt']),
+
+                // ✅ AJOUT — suivi des délais de paiement après liquidation
+                Tables\Filters\SelectFilter::make('echeance')
+                    ->label('Délai de paiement')
+                    ->options([
+                        'arriere'      => 'Arriérés (échéance dépassée)',
+                        'alerte_forte' => 'Échéance proche (2e alerte)',
+                        'alerte'       => 'En alerte (1re alerte)',
+                        'dans_delai'   => 'Dans les délais',
+                    ])
+                    ->query(fn($query, array $data) => filled($data['value'] ?? null)
+                        ? app(\App\Services\Budget\EcheancePaiementService::class)->filtrer($query, $data['value'])
+                        : $query),
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
