@@ -227,10 +227,10 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('cbmt-cdmt.pdf');
             Route::get('/cbmt-cdmt/{cdmt}/excel', [RapportCbmtCdmtController::class, 'excel'])
                 ->name('cbmt-cdmt.excel');
-            Route::get('/cbmt/{cbmt}/pdf', [\App\Http\Controllers\Programmation\RapportCbmtController::class, 'pdf'])
-                ->name('cbmt.pdf');
-            Route::get('/cbmt/{cbmt}/excel', [\App\Http\Controllers\Programmation\RapportCbmtController::class, 'excel'])
-                ->name('cbmt.excel');
+            Route::get('/programmation/rapports/cbmt/{cbmt}/pdf', [\App\Http\Controllers\Programmation\RapportCbmtController::class, 'pdf'])
+                ->name('programmation.rapports.cbmt.pdf');
+            Route::get('/programmation/rapports/cbmt/{cbmt}/excel', [\App\Http\Controllers\Programmation\RapportCbmtController::class, 'excel'])
+                ->name('programmation.rapports.cbmt.excel');
         });
 
 

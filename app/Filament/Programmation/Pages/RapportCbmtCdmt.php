@@ -137,23 +137,38 @@ class RapportCbmtCdmt extends Page implements HasForms
         })->values();
     }
 
+    /**
+     * Exports PDF et Excel, toujours disponibles dès qu'un CBMT est choisi :
+     *  - CBMT seul        → exports du CBMT (ressources, dépenses par titres, équilibre) ;
+     *  - CBMT + CDMT      → exports CBMT/CDMT (avec test de cohérence et annexes).
+     */
     protected function getHeaderActions(): array
     {
+        $url = function (string $format): ?string {
+            if ($this->cdmt_exercice_id) {
+                return route("programmation.rapports.cbmt-cdmt.{$format}", ['cdmt' => $this->cdmt_exercice_id]);
+            }
+
+            return $this->cbmt_exercice_id
+                ? route("programmation.rapports.cbmt.{$format}", ['cbmt' => $this->cbmt_exercice_id])
+                : null;
+        };
+
         return [
             Action::make('exportPdf')
-                ->label('Télécharger PDF')
+                ->label(fn() => $this->cdmt_exercice_id ? 'PDF (CBMT et CDMT)' : 'PDF (CBMT)')
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('danger')
-                ->visible(fn() => $this->cdmt_exercice_id !== null)
-                ->url(fn() => route('programmation.rapports.cbmt-cdmt.pdf', ['cdmt' => $this->cdmt_exercice_id]))
+                ->visible(fn() => $this->cbmt_exercice_id !== null)
+                ->url(fn() => $url('pdf'))
                 ->openUrlInNewTab(),
 
             Action::make('exportExcel')
-                ->label('Télécharger Excel')
+                ->label(fn() => $this->cdmt_exercice_id ? 'Excel (CBMT et CDMT)' : 'Excel (CBMT)')
                 ->icon('heroicon-o-table-cells')
                 ->color('success')
-                ->visible(fn() => $this->cdmt_exercice_id !== null)
-                ->url(fn() => route('programmation.rapports.cbmt-cdmt.excel', ['cdmt' => $this->cdmt_exercice_id]))
+                ->visible(fn() => $this->cbmt_exercice_id !== null)
+                ->url(fn() => $url('excel'))
                 ->openUrlInNewTab(),
         ];
     }

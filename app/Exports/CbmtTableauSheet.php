@@ -2,8 +2,9 @@
 
 namespace App\Exports;
 
-use App\Models\CdmtExercice;
+use App\Models\CbmtExercice;
 use Maatwebsite\Excel\Concerns\FromArray;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
@@ -12,17 +13,18 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 /**
  * Prévision à moyen terme par titres — détail des lignes sous chaque titre.
  * Même source que l'écran et le PDF : CbmtExercice::syntheseParTitres().
+ * Reçoit directement le CBMT : utilisable avec ou sans CDMT.
  */
-class CbmtTableauSheet implements FromArray, WithHeadings, WithTitle, WithStyles
+class CbmtTableauSheet implements FromArray, WithHeadings, WithTitle, WithStyles, ShouldAutoSize
 {
     /** Lignes de titre / total (en gras), repérées pendant la construction. */
     protected array $lignesEnGras = [];
 
-    public function __construct(protected CdmtExercice $cdmt, protected string $nature) {}
+    public function __construct(protected CbmtExercice $cbmt, protected string $nature) {}
 
     protected function colonnes(): array
     {
-        $n = $this->cdmt->cbmtExercice->anneeReference();
+        $n = $this->cbmt->anneeReference();
         $depense = $this->nature === 'depense';
 
         return array_filter([
@@ -44,23 +46,23 @@ class CbmtTableauSheet implements FromArray, WithHeadings, WithTitle, WithStyles
     public function array(): array
     {
         $colonnes = array_keys($this->colonnes());
-        $groupes = $this->cdmt->cbmtExercice->syntheseParTitres($this->nature);
+        $groupes = $this->cbmt->syntheseParTitres($this->nature);
         $lignes = [];
         $rang = 2; // ligne 1 = en-têtes
 
         foreach ($groupes as $g) {
-            $lignes[] = array_merge(['', $g['libelle'], ''], array_map(fn ($c) => $g['totaux'][$c], $colonnes));
+            $lignes[] = array_merge(['', $g['libelle'], ''], array_map(fn($c) => $g['totaux'][$c], $colonnes));
             $this->lignesEnGras[] = $rang++;
 
             foreach ($g['lignes'] as $l) {
-                $lignes[] = array_merge([(string) $l->code, $l->libelle, $l->type_ligne], array_map(fn ($c) => (float) $l->{$c}, $colonnes));
+                $lignes[] = array_merge([(string) $l->code, $l->libelle, $l->type_ligne], array_map(fn($c) => (float) $l->{$c}, $colonnes));
                 $rang++;
             }
         }
 
         $lignes[] = array_merge(
             ['', $this->nature === 'depense' ? 'TOTAL DÉPENSES' : 'TOTAL RESSOURCES', ''],
-            array_map(fn ($c) => $groupes->sum(fn ($g) => $g['totaux'][$c]), $colonnes)
+            array_map(fn($c) => $groupes->sum(fn($g) => $g['totaux'][$c]), $colonnes)
         );
         $this->lignesEnGras[] = $rang;
 
@@ -69,8 +71,12 @@ class CbmtTableauSheet implements FromArray, WithHeadings, WithTitle, WithStyles
 
     public function styles(Worksheet $sheet): array
     {
-        $styles = [1 => ['font' => ['bold' => true]]];
+        // Montants au format « 1 234 567 »
+        $derniereColonne = chr(ord('A') + count($this->headings()) - 1);
+        $sheet->getStyle("D2:{$derniereColonne}" . ($sheet->getHighestRow()))
+            ->getNumberFormat()->setFormatCode('#,##0');
 
+        $styles = [1 => ['font' => ['bold' => true]]];
         foreach ($this->lignesEnGras as $ligne) {
             $styles[$ligne] = ['font' => ['bold' => true]];
         }
