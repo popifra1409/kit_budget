@@ -20,6 +20,22 @@ $decideurs = [
 
 return [
 
+    // ── Mouvements de crédits ───────────────────────────────────
+    'types_mouvement' => [
+        'fongibilite' => ['libelle' => 'Fongibilité', 'aide' => 'À l\'intérieur d\'un même sous-programme', 'parametre_decideur' => 'decideur_fongibilite', 'plafonne' => false],
+        'virement'    => ['libelle' => 'Virement', 'aide' => 'Entre sous-programmes ou programmes du même ministère', 'parametre_decideur' => 'decideur_virement', 'plafonne' => true],
+        'transfert'   => ['libelle' => 'Transfert', 'aide' => 'Entre programmes de ministères distincts', 'parametre_decideur' => 'decideur_transfert', 'plafonne' => false],
+    ],
+
+    // Motifs d'un mouvement de crédits (« Pourquoi ? ») — liste modifiable
+    'motifs_mouvement' => [
+        'sous_execution' => "Sous-exécution d'un sous-programme ou d'une ligne",
+        'besoin_nouveau' => 'Besoin nouveau',
+        'economie'       => 'Économie constatée',
+        'urgence'        => 'Urgence',
+        'reallocation'   => 'Réallocation',
+    ],
+
     'groupes' => [
         'liquidation'   => 'Liquidation et délais de paiement',
         'plafonds'      => 'Plafonds des mouvements de crédits',

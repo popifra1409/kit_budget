@@ -29,12 +29,31 @@ class VirementBudgetaire extends Model
         'statut',
         'valide_par',
         'date_validation',
+
+        // ✅ AJOUT — mouvement de crédits typé, cycle avant / pendant / après
+        'type_mouvement',
+        'origine',
+        'sous_programme_source_id',
+        'sous_programme_destination_id',
+        'categorie_motif',
+        'analyse_ecart',
+        'impact_performance_verifie',
+        'impact_commentaire',
+        'decideur',
+        'date_acte',
+        'piece_acte',
+        'controle_plafond',
+        'integrer_collectif',
     ];
 
     protected $casts = [
         'montant' => 'decimal:2',
         'date_virement' => 'date',
         'date_validation' => 'datetime',
+        'date_acte' => 'date',
+        'controle_plafond' => 'array',
+        'impact_performance_verifie' => 'boolean',
+        'integrer_collectif' => 'boolean',
     ];
 
     /**
@@ -49,6 +68,33 @@ class VirementBudgetaire extends Model
                 $virement->numero = $virement->genererNumero();
             }
         });
+
+        // ✅ AJOUT — type (fongibilité / virement) et sous-programmes déduits des lignes.
+        //    Un transfert saisi explicitement n'est jamais requalifié.
+        static::saving(function ($virement) {
+            if ($virement->type_mouvement === 'transfert') {
+                return;
+            }
+
+            if ($virement->isDirty(['ligne_source_id', 'ligne_destination_id']) || blank($virement->type_mouvement)) {
+                $q = app(\App\Services\Budget\MouvementCreditService::class)
+                    ->qualifier($virement->ligneSource()->first(), $virement->ligneDestination()->first());
+
+                $virement->type_mouvement = $q['type'];
+                $virement->sous_programme_source_id = $q['sp_source']?->id;
+                $virement->sous_programme_destination_id = $q['sp_destination']?->id;
+            }
+        });
+    }
+
+    public function sousProgrammeSource(): BelongsTo
+    {
+        return $this->belongsTo(SousProgrammeEp::class, 'sous_programme_source_id');
+    }
+
+    public function sousProgrammeDestination(): BelongsTo
+    {
+        return $this->belongsTo(SousProgrammeEp::class, 'sous_programme_destination_id');
     }
 
     /**
@@ -140,6 +186,11 @@ class VirementBudgetaire extends Model
      */
     public function approuver(User $user): void
     {
+        // ✅ AJOUT — acte formel et plafond des virements (paramètres d'exécution),
+        //    contrôle figé sur le mouvement. Lève une DomainException si non conforme.
+        $this->controle_plafond = app(\App\Services\Budget\MouvementCreditService::class)
+            ->verifierAvantApprobation($this);
+
         $this->statut = 'approuve';
         $this->valide_par = $user->id;
         $this->date_validation = now();
@@ -252,6 +303,7 @@ class VirementBudgetaire extends Model
             'motif'                => '[Collectif ' . $collectif->numero . '] ' . $mouvement->motif,
             'reference_decision'   => $collectif->numero,
             'statut'               => 'en_attente',
+            'origine'              => 'collectif',   // ✅ hors plafond des virements de gestion
         ]);
     }
 

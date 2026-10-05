@@ -15,14 +15,15 @@ use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use App\Services\Budget\MouvementCreditService;
 
 class VirementBudgetaireResource extends Resource
 {
     protected static ?string $model = VirementBudgetaire::class;
     protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
-    protected static ?string $navigationLabel = 'Virements Budgétaires';
-    protected static ?string $modelLabel = 'Virement';
-    protected static ?string $pluralModelLabel = 'Virements Budgétaires';
+    protected static ?string $navigationLabel = 'Mouvements de crédits';
+    protected static ?string $modelLabel = 'mouvement de crédits';
+    protected static ?string $pluralModelLabel = 'Mouvements de crédits';
     protected static ?string $navigationGroup = 'Gestion Budgétaire';
     protected static ?int $navigationSort = 2;
 
@@ -153,11 +154,12 @@ class VirementBudgetaireResource extends Resource
                     ])
                     ->columns(1),
 
-                Forms\Components\Section::make('Détails du Virement')
+                // ═══ AVANT : pourquoi, analyse, autorisation et plafond ═══
+                Forms\Components\Section::make('Avant : analyse et autorisation')
                     ->schema([
                         Forms\Components\TextInput::make('montant')
-                            ->label('Montant à virer')->required()->numeric()
-                            ->prefix('FCFA')->minValue(1)->helperText('Montant en FCFA')->reactive()
+                            ->label('Montant')->required()->numeric()
+                            ->prefix('FCFA')->minValue(1)->live(onBlur: true)
                             ->rules([
                                 function (callable $get) {
                                     return function (string $attribute, $value, callable $fail) use ($get) {
@@ -173,17 +175,104 @@ class VirementBudgetaireResource extends Resource
                             ]),
 
                         Forms\Components\DatePicker::make('date_virement')
-                            ->label('Date du virement')->required()->default(now()),
+                            ->label('Date du mouvement')->required()->default(now()),
 
-                        Forms\Components\Textarea::make('motif')
-                            ->label('Motif du virement')->required()->rows(3)
-                            ->placeholder('Ex: Renforcement du budget carburant suite à augmentation des prix')
+                        Forms\Components\Placeholder::make('qualification')
+                            ->label('Type de mouvement (déduit des lignes)')
+                            ->content(function (callable $get) {
+                                $src = LigneBudgetaire::find($get('ligne_source_id'));
+                                $dst = LigneBudgetaire::find($get('ligne_destination_id'));
+                                if (!$src || !$dst) return 'Choisissez les deux lignes.';
+                                $q = app(MouvementCreditService::class)->qualifier($src, $dst);
+                                $decideur = app(MouvementCreditService::class)->decideurRequis($q['type']);
+                                return new \Illuminate\Support\HtmlString(
+                                    '<strong>' . e(MouvementCreditService::libelleType($q['type'])) . '</strong>'
+                                        . ' — ' . e($q['sp_source']?->code ?? '?') . ' → ' . e($q['sp_destination']?->code ?? '?')
+                                        . ($q['determine'] ? '' : '<br><span style="color:#b45309">⚠️ Sous-programme d\'une ligne non déterminé : traité comme virement (plafonné).</span>')
+                                        . '<br>Décideur requis : <strong>' . e(MouvementCreditService::optionsDecideurs()[$decideur] ?? '—') . '</strong>'
+                                );
+                            })
                             ->columnSpanFull(),
 
+                        Forms\Components\Placeholder::make('controle_plafond_apercu')
+                            ->label('Plafond des virements')
+                            ->content(function (callable $get, $record) {
+                                $src = LigneBudgetaire::find($get('ligne_source_id'));
+                                $dst = LigneBudgetaire::find($get('ligne_destination_id'));
+                                if (!$src || !$dst || !$get('budget_id') || !$get('montant')) return '—';
+                                $service = app(MouvementCreditService::class);
+                                $type = $service->qualifier($src, $dst)['type'];
+                                return $service->resumePlafond($service->controlerPlafond((int) $get('budget_id'), $type, (float) $get('montant'), $record?->id, $record?->origine ?? 'gestion'));
+                            })
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('categorie_motif')
+                            ->label('Pourquoi ?')
+                            ->options(config('execution.motifs_mouvement', []))
+                            ->required()->native(false),
+
+                        Forms\Components\Toggle::make('integrer_collectif')
+                            ->label('À intégrer au prochain collectif budgétaire')
+                            ->inline(false),
+
+                        Forms\Components\Textarea::make('motif')
+                            ->label('Justification')->required()->rows(2)
+                            ->placeholder('Ex : renforcement du carburant suite à la hausse des prix')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Textarea::make('analyse_ecart')
+                            ->label('Analyse des écarts (sous-exécution, besoin, économie...)')
+                            ->rows(2)
+                            ->helperText(function (callable $get) {
+                                $service = app(MouvementCreditService::class);
+                                $f = fn($s) => $s ? "{$s['code']} : dotation " . number_format($s['dotation'], 0, ',', ' ') . ", engagé {$s['taux']} %, disponible " . number_format($s['disponible'], 0, ',', ' ') : null;
+                                return collect([
+                                    $f($service->situationLigne(LigneBudgetaire::find($get('ligne_source_id')))),
+                                    $f($service->situationLigne(LigneBudgetaire::find($get('ligne_destination_id')))),
+                                ])->filter()->implode(' · ') ?: null;
+                            })
+                            ->columnSpanFull(),
+
+                        Forms\Components\Placeholder::make('impact_apercu')
+                            ->label('Impact sur la performance')
+                            ->content(function (callable $get) {
+                                $service = app(MouvementCreditService::class);
+                                $src = $service->sousProgrammeDe(LigneBudgetaire::find($get('ligne_source_id')));
+                                $i = $service->impactPerformance($src);
+                                return $i
+                                    ? "Sous-programme cédant {$i['sous_programme']} : {$i['activites']} activité(s), {$i['indicateurs']} indicateur(s) à vérifier (objectifs et PPA)."
+                                    : 'Sous-programme de la ligne source non déterminé.';
+                            })
+                            ->columnSpanFull(),
+
+                        Forms\Components\Toggle::make('impact_performance_verifie')
+                            ->label('Impact sur les objectifs, indicateurs et activités du PPA vérifié')
+                            ->inline(false),
+
+                        Forms\Components\Textarea::make('impact_commentaire')
+                            ->label('Commentaire sur l\'impact')->rows(2),
+                    ])
+                    ->columns(2),
+
+                // ═══ PENDANT : décision et acte formel ═══
+                Forms\Components\Section::make('Pendant : décision et acte formel')
+                    ->description('L\'acte (référence et date) est exigé pour approuver le mouvement.')
+                    ->schema([
+                        Forms\Components\Select::make('decideur')
+                            ->label('Décideur')
+                            ->options(MouvementCreditService::optionsDecideurs())
+                            ->native(false),
+
                         Forms\Components\TextInput::make('reference_decision')
-                            ->label('Référence de la décision')->maxLength(255)
-                            ->placeholder('Ex: Décision N°123/2026 du 15/01/2026')
-                            ->helperText('Référence de la décision autorisant le virement'),
+                            ->label('Référence de l\'acte')->maxLength(255)
+                            ->placeholder('Ex : Décision N°123/2026/DG'),
+
+                        Forms\Components\DatePicker::make('date_acte')->label('Date de l\'acte'),
+
+                        Forms\Components\FileUpload::make('piece_acte')
+                            ->label('Acte signé (PDF)')
+                            ->disk('public')->directory('mouvements-credits')
+                            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])->maxSize(10240),
                     ])
                     ->columns(2),
             ]);
@@ -211,6 +300,21 @@ class VirementBudgetaireResource extends Resource
                         'gray'    => fn($record) => $record->exercice instanceof \App\Models\Exercice && $record->exercice->estBrouillon(),
                     ])
                     ->tooltip(fn($record) => $record->exercice instanceof \App\Models\Exercice ? $record->exercice->libelle : null)
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('type_mouvement')
+                    ->label('Type')->badge()
+                    ->formatStateUsing(fn($state) => MouvementCreditService::libelleType($state))
+                    ->color(fn($state) => match ($state) {
+                        'fongibilite' => 'info',
+                        'virement' => 'warning',
+                        'transfert' => 'danger',
+                        default => 'gray'
+                    }),
+
+                Tables\Columns\TextColumn::make('origine')
+                    ->badge()->formatStateUsing(fn($state) => $state === 'collectif' ? 'Collectif' : 'Gestion')
+                    ->color(fn($state) => $state === 'collectif' ? 'gray' : 'primary')
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('numero')
@@ -277,6 +381,13 @@ class VirementBudgetaireResource extends Resource
                     ->relationship('budget', 'libelle')
                     ->searchable()->preload(),
 
+                Tables\Filters\SelectFilter::make('type_mouvement')
+                    ->label('Type')
+                    ->options(collect(config('execution.types_mouvement', []))->map(fn($t) => $t['libelle'])->all()),
+
+                Tables\Filters\SelectFilter::make('origine')
+                    ->options(['gestion' => 'Gestion', 'collectif' => 'Collectif']),
+
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
                     ->options([
@@ -306,13 +417,19 @@ class VirementBudgetaireResource extends Resource
                         ->visible(fn($record) => $record->statut === 'en_attente')
                         ->requiresConfirmation()
                         ->modalHeading('Approuver le virement')
-                        ->modalDescription(
-                            fn($record) =>
-                            "Approuver le virement de " . number_format($record->montant, 0, ',', ' ') . " FCFA ?"
-                        )
+                        ->modalDescription(function ($record) {
+                            $service = app(MouvementCreditService::class);
+                            $type = $service->typeDe($record);
+                            return MouvementCreditService::libelleType($type) . ' de ' . number_format($record->montant, 0, ',', ' ') . " FCFA.\n"
+                                . $service->resumePlafond($service->controlerPlafond((int) $record->budget_id, $type, (float) $record->montant, $record->id, $record->origine ?? 'gestion'));
+                        })
                         ->action(function ($record) {
-                            $record->approuver(auth()->user());
-                            Notification::make()->title('Virement approuvé')->success()->send();
+                            try {
+                                $record->approuver(auth()->user());
+                                Notification::make()->title('Mouvement approuvé')->success()->send();
+                            } catch (\DomainException $e) {
+                                Notification::make()->title('Approbation impossible')->warning()->body($e->getMessage())->persistent()->send();
+                            }
                         }),
 
                     Tables\Actions\Action::make('executer')
@@ -359,7 +476,18 @@ class VirementBudgetaireResource extends Resource
 
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    // ✅ Seuls les mouvements en attente ou rejetés : un mouvement exécuté
+                    //    entre dans le budget rectifié des lignes, le supprimer fausserait les dotations.
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->action(function ($records) {
+                            $supprimables = $records->filter(fn($r) => in_array($r->statut, ['en_attente', 'rejete'], true));
+                            $supprimables->each->delete();
+                            $refuses = $records->count() - $supprimables->count();
+                            Notification::make()
+                                ->title($supprimables->count() . ' mouvement(s) supprimé(s)')
+                                ->body($refuses ? "{$refuses} mouvement(s) approuvé(s) ou exécuté(s) conservé(s)." : null)
+                                ->success()->send();
+                        }),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');
