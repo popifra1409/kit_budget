@@ -331,6 +331,7 @@ class RolePermissionSeeder extends Seeder
             'autoriser_paiement_exceptionnel',
             'payer_paiement_exceptionnel',
             'regulariser_paiement_exceptionnel',
+            'annuler_execution_mouvement_credit',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -520,6 +521,7 @@ class RolePermissionSeeder extends Seeder
                 'view_any_paiement_exceptionnel',
                 'create_paiement_exceptionnel',
                 'regulariser_paiement_exceptionnel',
+                'update_virement_budgetaire',
             ],
             'chef_service_budget'
         );
@@ -686,6 +688,8 @@ class RolePermissionSeeder extends Seeder
                 'view_any_paiement_exceptionnel',
                 'create_paiement_exceptionnel',
                 'regulariser_paiement_exceptionnel',
+                'annuler_execution_mouvement_credit',
+                'update_virement_budgetaire',
             ],
             'daaf'
         );
@@ -854,6 +858,7 @@ class RolePermissionSeeder extends Seeder
                 'view_any_liquidation',
                 'view_any_paiement_exceptionnel',
                 'autoriser_paiement_exceptionnel',
+                'annuler_execution_mouvement_credit',
             ],
             'directeur_general'
         );

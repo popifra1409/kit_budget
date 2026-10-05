@@ -45,9 +45,15 @@ class VirementBudgetaireResource extends Resource
     {
         if (!auth()->check()) return false;
         $user = auth()->user();
+        // ✅ Workflow : seul un mouvement de gestion « en attente » est modifiable.
+        //    (un mouvement approuvé se remet d'abord en attente ; un rejeté se récupère)
+        if (!$record->estModifiableWorkflow()) return false;
         if ($user->can('super_admin_virement_budgetaire')) return true;
-        if (!$user->can('chef_service_budget_virement_budgetaire')) return false;
-        return $record->estModifiable();
+
+        // ✅ Permission standard du module (update_) ou permission historique du chef de service
+        if (!$user->can('update_virement_budgetaire') && !$user->can('chef_service_budget_virement_budgetaire')) return false;
+
+        return $record->estModifiable();   // exercice non clôturé
     }
 
     public static function canDelete($record): bool
@@ -352,12 +358,14 @@ class VirementBudgetaireResource extends Resource
                         'success'   => 'approuve',
                         'primary'   => 'execute',
                         'danger'    => 'rejete',
+                        'gray'      => 'annule',
                     ])
                     ->formatStateUsing(fn(string $state): string => match ($state) {
                         'en_attente' => 'En attente',
                         'approuve'   => 'Approuvé',
                         'execute'    => 'Exécuté',
                         'rejete'     => 'Rejeté',
+                        'annule'     => 'Annulé',
                         default      => $state,
                     }),
 
@@ -395,6 +403,7 @@ class VirementBudgetaireResource extends Resource
                         'approuve'   => 'Approuvé',
                         'execute'    => 'Exécuté',
                         'rejete'     => 'Rejeté',
+                        'annule'     => 'Annulé',
                     ]),
             ])
 
@@ -408,62 +417,79 @@ class VirementBudgetaireResource extends Resource
                     Tables\Actions\ViewAction::make(),
 
                     Tables\Actions\EditAction::make()
-                        ->visible(fn($record) => $record->statut === 'en_attente'),
+                        ->visible(fn($record) => static::canEdit($record)),
 
-                    // ── Workflow ──────────────────────────────────
+                    // ── Workflow : tout est réversible tant que le mouvement n'est pas exécuté ──
                     Tables\Actions\Action::make('approuver')
                         ->label('Approuver')
                         ->icon('heroicon-o-check-circle')->color('success')
-                        ->visible(fn($record) => $record->statut === 'en_attente')
+                        ->visible(fn($record) => $record->statut === 'en_attente' && !$record->estPiloteParCollectif())
                         ->requiresConfirmation()
-                        ->modalHeading('Approuver le virement')
+                        ->modalHeading('Approuver le mouvement')
                         ->modalDescription(function ($record) {
                             $service = app(MouvementCreditService::class);
                             $type = $service->typeDe($record);
                             return MouvementCreditService::libelleType($type) . ' de ' . number_format($record->montant, 0, ',', ' ') . " FCFA.\n"
                                 . $service->resumePlafond($service->controlerPlafond((int) $record->budget_id, $type, (float) $record->montant, $record->id, $record->origine ?? 'gestion'));
                         })
-                        ->action(function ($record) {
-                            try {
-                                $record->approuver(auth()->user());
-                                Notification::make()->title('Mouvement approuvé')->success()->send();
-                            } catch (\DomainException $e) {
-                                Notification::make()->title('Approbation impossible')->warning()->body($e->getMessage())->persistent()->send();
-                            }
-                        }),
+                        ->action(fn($record) => static::transition(fn() => $record->approuver(auth()->user()), 'Mouvement approuvé')),
 
                     Tables\Actions\Action::make('executer')
                         ->label('Exécuter')
                         ->icon('heroicon-o-bolt')->color('primary')
-                        ->visible(fn($record) => $record->statut === 'approuve')
+                        ->visible(fn($record) => $record->statut === 'approuve' && !$record->estPiloteParCollectif())
                         ->requiresConfirmation()
-                        ->modalHeading('Exécuter le virement')
-                        ->modalDescription(
-                            fn($record) =>
-                            "Exécuter le virement de " . number_format($record->montant, 0, ',', ' ') . " FCFA ? Cette action est irréversible."
-                        )
-                        ->action(function ($record) {
-                            try {
-                                $record->executer();
-                                Notification::make()
-                                    ->title('Virement exécuté avec succès')->success()
-                                    ->body('Les lignes budgétaires ont été mises à jour.')->send();
-                            } catch (\Exception $e) {
-                                Notification::make()->title('Erreur')->danger()->body($e->getMessage())->send();
-                            }
-                        }),
+                        ->modalHeading('Exécuter le mouvement')
+                        ->modalDescription(fn($record) => 'Les crédits (' . number_format($record->montant, 0, ',', ' ') . ' FCFA) seront déplacés. Une annulation ultérieure passera par une contre-passation.')
+                        ->action(fn($record) => static::transition(fn() => $record->executer(), 'Mouvement exécuté : lignes budgétaires mises à jour')),
+
+                    Tables\Actions\Action::make('retirer_approbation')
+                        ->label("Retirer l'approbation")
+                        ->icon('heroicon-o-arrow-uturn-left')->color('warning')
+                        ->visible(fn($record) => $record->statut === 'approuve' && !$record->estPiloteParCollectif())
+                        ->form([Forms\Components\Textarea::make('motif')->label('Motif (ex. : correction du montant)')->required()->rows(2)])
+                        ->action(fn($record, array $data) => static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement remis en attente : il est de nouveau modifiable')),
 
                     Tables\Actions\Action::make('rejeter')
                         ->label('Rejeter')
                         ->icon('heroicon-o-x-circle')->color('danger')
-                        ->visible(fn($record) => $record->statut === 'en_attente')
-                        ->requiresConfirmation()
-                        ->modalHeading('Rejeter le virement')
-                        ->modalDescription('Êtes-vous sûr de vouloir rejeter ce virement ?')
-                        ->action(function ($record) {
-                            $record->rejeter(auth()->user());
-                            Notification::make()->title('Virement rejeté')->warning()->send();
-                        }),
+                        ->visible(fn($record) => in_array($record->statut, ['en_attente', 'approuve'], true) && !$record->estPiloteParCollectif())
+                        ->form([Forms\Components\Textarea::make('motif')->label('Motif du rejet')->required()->rows(2)])
+                        ->action(fn($record, array $data) => static::transition(fn() => $record->rejeter(auth()->user(), $data['motif']), 'Mouvement rejeté')),
+
+                    Tables\Actions\Action::make('recuperer')
+                        ->label('Récupérer (remettre en attente)')
+                        ->icon('heroicon-o-arrow-path')->color('info')
+                        ->visible(fn($record) => $record->statut === 'rejete' && !$record->estPiloteParCollectif())
+                        ->modalDescription(fn($record) => $record->motif_rejet ? 'Motif du rejet : ' . $record->motif_rejet : null)
+                        ->form([Forms\Components\Textarea::make('motif')->label('Motif de la récupération (corrections prévues)')->required()->rows(2)])
+                        ->action(fn($record, array $data) => static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement récupéré : il est de nouveau modifiable')),
+
+                    Tables\Actions\Action::make('annuler_mouvement')
+                        ->label('Annuler le mouvement')
+                        ->icon('heroicon-o-no-symbol')->color('gray')
+                        ->visible(fn($record) => in_array($record->statut, ['en_attente', 'approuve', 'rejete'], true) && !$record->estPiloteParCollectif())
+                        ->modalDescription('Le mouvement reste consultable, et pourra être réactivé si nécessaire.')
+                        ->form([Forms\Components\Textarea::make('motif')->label("Motif de l'annulation")->required()->rows(2)])
+                        ->action(fn($record, array $data) => static::transition(fn() => $record->annulerMouvement(auth()->user(), $data['motif']), 'Mouvement annulé')),
+
+                    Tables\Actions\Action::make('reactiver')
+                        ->label('Réactiver (remettre en attente)')
+                        ->icon('heroicon-o-arrow-path')->color('info')
+                        ->visible(fn($record) => $record->statut === 'annule' && !$record->estPiloteParCollectif())
+                        ->modalDescription(fn($record) => 'Le mouvement repasse en attente et redevient modifiable ; il devra être approuvé à nouveau.'
+                            . ($record->motif_annulation ? "\nMotif de l'annulation : " . $record->motif_annulation : ''))
+                        ->form([Forms\Components\Textarea::make('motif')->label('Motif de la réactivation')->required()->rows(2)])
+                        ->action(fn($record, array $data) => static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement réactivé : il est de nouveau modifiable')),
+
+                    Tables\Actions\Action::make('annuler_execution')
+                        ->label("Annuler l'exécution (contre-passation)")
+                        ->icon('heroicon-o-arrow-uturn-down')->color('danger')
+                        ->visible(fn($record) => $record->statut === 'execute' && !$record->estPiloteParCollectif()
+                            && (auth()->user()?->can('annuler_execution_mouvement_credit') || auth()->user()?->can('super_admin_virement_budgetaire')))
+                        ->modalDescription('Les crédits reviennent sur la ligne source, et le mouvement repasse en attente. Refusé si la ligne destination a déjà engagé les crédits reçus.')
+                        ->form([Forms\Components\Textarea::make('motif')->label('Motif de la contre-passation')->required()->rows(2)])
+                        ->action(fn($record, array $data) => static::transition(fn() => $record->annulerExecution(auth()->user(), $data['motif']), 'Exécution annulée : crédits restitués à la ligne source')),
 
                 ])
                     ->label('Actions')
@@ -496,6 +522,19 @@ class VirementBudgetaireResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    /** Exécute une transition du workflow avec un message clair en cas de règle non respectée. */
+    protected static function transition(callable $etape, string $succes): void
+    {
+        try {
+            $etape();
+            Notification::make()->title($succes)->success()->send();
+        } catch (\DomainException $e) {
+            Notification::make()->title('Action impossible')->warning()->body($e->getMessage())->persistent()->send();
+        } catch (\Exception $e) {
+            Notification::make()->title('Erreur')->danger()->body($e->getMessage())->persistent()->send();
+        }
     }
 
     public static function getPages(): array
