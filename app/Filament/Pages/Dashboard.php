@@ -72,6 +72,7 @@ class Dashboard extends BaseDashboard
             \App\Filament\Budget\Widgets\TauxRealisationWidget::class,
             \App\Filament\Budget\Widgets\EcheancesPaiementWidget::class,
             \App\Filament\Budget\Widgets\MouvementsCreditsWidget::class,
+            \App\Filament\Budget\Widgets\PaiementsExceptionnelsWidget::class,
         ];
 
         $advancedBudgetWidgets = [

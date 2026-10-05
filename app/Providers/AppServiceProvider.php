@@ -191,6 +191,8 @@ class AppServiceProvider extends ServiceProvider
             'preuve_service_fait'  => \App\Models\PreuveServiceFait::class,
             'liquidation'          => \App\Models\Liquidation::class,
             'liquidation_preuve'   => \App\Models\LiquidationPreuve::class,
+
+            'paiement_exceptionnel' => \App\Models\PaiementExceptionnel::class,
         ]);
 
         // Modele de role propre a l'application (s'il existe et differe du modele Spatie) :

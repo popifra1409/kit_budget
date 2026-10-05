@@ -101,6 +101,7 @@ return [
                 'App\Models\PreuveServiceFait'  => 'Preuve de service fait',
                 'App\Models\Liquidation'        => 'Liquidation',
                 'App\Models\LiquidationPreuve'  => 'Preuve de liquidation',
+                'App\Models\PaiementExceptionnel' => 'Paiement exceptionnel',
             ],
         ],
 

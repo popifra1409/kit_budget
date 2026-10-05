@@ -36,6 +36,15 @@ return [
         'reallocation'   => 'Réallocation',
     ],
 
+    // Motifs d'un paiement sans ordonnancement préalable (procédure exceptionnelle) — liste modifiable
+    'motifs_paiement_exceptionnel' => [
+        'urgence_sanitaire'     => 'Urgence sanitaire ou vitale',
+        'continuite_service'    => 'Continuité du service public',
+        'catastrophe'           => 'Catastrophe ou événement imprévisible',
+        'obligation_legale'     => 'Obligation légale ou décision de justice',
+        'autre'                 => 'Autre motif dûment justifié',
+    ],
+
     'groupes' => [
         'liquidation'   => 'Liquidation et délais de paiement',
         'plafonds'      => 'Plafonds des mouvements de crédits',

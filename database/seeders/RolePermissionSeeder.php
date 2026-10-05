@@ -311,8 +311,6 @@ class RolePermissionSeeder extends Seeder
             'view_all_matrice_arrimage',  // voir tous les sous-programmes du PSP
             'exporter_matrice_arrimage',  // export PDF / Excel
             // ── Audit (journal d'activite, panel Administration) ──
-            'view_any_activity',
-            'view_activity',
 
             // ✅ AJOUTE : acces au panel Administration (/admin), controle par User::canAccessPanel()
             //    super_admin et admin la recoivent automatiquement.
@@ -326,6 +324,13 @@ class RolePermissionSeeder extends Seeder
             'liquider_depense',
             'viser_liquidation',
             'gerer_natures_service_fait',
+
+            // ── Exécution budgétaire : liquidation, procédure exceptionnelle, paramètres ──
+            'view_any_paiement_exceptionnel',
+            'create_paiement_exceptionnel',
+            'autoriser_paiement_exceptionnel',
+            'payer_paiement_exceptionnel',
+            'regulariser_paiement_exceptionnel',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -510,6 +515,11 @@ class RolePermissionSeeder extends Seeder
                 //liquidation et service fait
                 'view_any_liquidation',
                 'create_liquidation',
+
+                // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
+                'view_any_paiement_exceptionnel',
+                'create_paiement_exceptionnel',
+                'regulariser_paiement_exceptionnel',
             ],
             'chef_service_budget'
         );
@@ -671,6 +681,11 @@ class RolePermissionSeeder extends Seeder
                 'create_liquidation',
                 'liquider_depense',
                 'gerer_natures_service_fait',
+
+                // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
+                'view_any_paiement_exceptionnel',
+                'create_paiement_exceptionnel',
+                'regulariser_paiement_exceptionnel',
             ],
             'daaf'
         );
@@ -741,6 +756,9 @@ class RolePermissionSeeder extends Seeder
 
                 'viser_liquidation',
                 'view_any_liquidation',
+
+                // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
+                'view_any_paiement_exceptionnel',
             ],
             'controleur_financier'
         );
@@ -831,6 +849,11 @@ class RolePermissionSeeder extends Seeder
                 'view_activity',
 
                 'liquider_depense',
+
+                // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
+                'view_any_liquidation',
+                'view_any_paiement_exceptionnel',
+                'autoriser_paiement_exceptionnel',
             ],
             'directeur_general'
         );
@@ -913,6 +936,10 @@ class RolePermissionSeeder extends Seeder
                 'view_collectif_budgetaire',
 
                 'view_any_liquidation',
+
+                // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
+                'view_any_paiement_exceptionnel',
+                'payer_paiement_exceptionnel',
             ],
             'agence_comptable'
         );
