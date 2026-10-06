@@ -41,6 +41,18 @@ class TypeDecision extends Model
     }
 
     /**
+     * ✅ Préfixe de numérotation des décisions de ce type (comme le code des types d'engagement) :
+     * le CODE du type, en majuscules, lettres et chiffres uniquement (ex. « OM » → OM26-00001).
+     * Renvoie null si le code est vide ou trop long (> 6 caractères) : la règle de repli s'applique.
+     */
+    public function prefixeNumero(): ?string
+    {
+        $prefixe = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $this->code));
+
+        return ($prefixe !== '' && strlen($prefixe) <= 6) ? $prefixe : null;
+    }
+
+    /**
      * Relation : Décisions administratives
      */
     public function decisionsAdministratives()

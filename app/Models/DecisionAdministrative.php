@@ -187,6 +187,37 @@ class DecisionAdministrative extends Model
             ) {
                 throw new \Exception('Modification interdite : décision en cours de transmission.');
             }
+
+            // ✅ AJOUT — Changement de type de décision : le numéro suit la série du nouveau type
+            //    (prochain numéro LIBRE de cette série : jamais de doublon, ex. DA26-00003 → OM26-00008).
+            //    Interdit une fois la décision engagée : son numéro figure sur des documents émis.
+            if ($decision->isDirty('type_decision_id')) {
+                $ancienPrefixe  = static::getPrefixParType($decision->getOriginal('type_decision_id'));
+                $nouveauPrefixe = static::getPrefixParType($decision->type_decision_id);
+
+                if ($ancienPrefixe !== $nouveauPrefixe) {
+                    if ($decision->getOriginal('engagee') || $decision->engagement()->exists()) {
+                        throw new \Exception(
+                            "Changement de type impossible : la décision {$decision->getOriginal('numero')} est déjà engagée, "
+                                . "et son numéro figure sur des documents émis (certificat d'engagement, OP). "
+                                . "Annulez d'abord l'engagement."
+                        );
+                    }
+
+                    $decision->numero = static::genererNumero($decision->exercice_id, $decision->type_decision_id);
+                }
+            }
+        });
+
+        // ✅ AJOUT — Traçabilité de la renumérotation (ancien et nouveau numéro)
+        static::updated(function ($decision) {
+            if ($decision->wasChanged('numero')) {
+                \App\Models\ActivityLog::logAction($decision, 'renumerotation', [
+                    'ancien_numero' => $decision->getOriginal('numero'),
+                    'nouveau_numero' => $decision->numero,
+                    'motif'          => 'Changement de type de décision',
+                ]);
+            }
         });
 
         static::deleting(function ($decision) {
@@ -428,7 +459,14 @@ class DecisionAdministrative extends Model
     }
 
     /**
-     * ✅ Préfixe selon le type de décision
+     * ✅ Préfixe de numérotation selon le type de décision.
+     *
+     * 1. Le CODE du type de décision (paramétrable dans l'écran des types) : OM, AR, NS, D...
+     *    → OM26-00001, AR26-00001, D26-00001 — même principe que les types d'engagement des BC.
+     * 2. À défaut de code exploitable : ancienne règle par libellé (compatibilité).
+     * 3. À défaut : DA.
+     *
+     * La séquence est propre à chaque préfixe et à chaque exercice.
      */
     public static function getPrefixParType(?int $typeDecisionId): string
     {
@@ -437,19 +475,23 @@ class DecisionAdministrative extends Model
         $type = \App\Models\TypeDecision::find($typeDecisionId);
         if (!$type) return 'DA';
 
-        $libelle = strtolower(trim($type->libelle ?? ''));
+        // 1. Code du type
+        if ($prefixe = $type->prefixeNumero()) {
+            return $prefixe;
+        }
+
+        // 2. Repli : ancienne règle par libellé (mb_strtolower gère les accents : « Arrêté »)
+        $libelle = mb_strtolower(trim($type->libelle ?? ''));
 
         return match (true) {
-            // ✅ Correspondances exactes depuis votre liste
-            str_contains($libelle, 'ordre de mission')       => 'OM',
-            str_contains($libelle, 'arrêté')                 => 'AR',
-            str_contains($libelle, 'arrete')                 => 'AR',
-            str_contains($libelle, 'note de service')        => 'NS',
-            str_contains($libelle, 'circulaire')             => 'CI',
-            str_contains($libelle, 'contrat')                => 'CT',
-            str_contains($libelle, 'convention')             => 'CP',
-
-            default => 'DA',
+            str_contains($libelle, 'ordre de mission') => 'OM',
+            str_contains($libelle, 'arrêté'),
+            str_contains($libelle, 'arrete')           => 'AR',
+            str_contains($libelle, 'note de service')  => 'NS',
+            str_contains($libelle, 'circulaire')       => 'CI',
+            str_contains($libelle, 'contrat')          => 'CT',
+            str_contains($libelle, 'convention')       => 'CP',
+            default                                    => 'DA',
         };
     }
 
