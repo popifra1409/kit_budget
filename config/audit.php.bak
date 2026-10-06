@@ -97,8 +97,6 @@ return [
                 'App\Models\TauxIr'                    => "Taux d'IR",
                 'App\Models\RegimeFiscal'              => 'Régime fiscal',
                 'App\Models\EtatConfig'                => "Configuration d'état",
-                'App\Models\ClotureExercice'        => "Clôture d'exercice",
-                'App\Models\ClotureLigne'           => 'Ligne de clôture',
                 'App\Models\NatureServiceFait'  => 'Nature de service fait',
                 'App\Models\PreuveServiceFait'  => 'Preuve de service fait',
                 'App\Models\Liquidation'        => 'Liquidation',
