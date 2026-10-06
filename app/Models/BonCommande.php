@@ -226,6 +226,15 @@ class BonCommande extends Model
         parent::boot();
 
         static::creating(function ($bc) {
+            // ✅ CORRIGÉ — le type d'engagement (déduit du montant s'il n'est pas choisi) est fixé
+            //    AVANT le numéro : sinon le préfixe par défaut (BC) était attribué à un marché (MA).
+            if (!$bc->type_engagement_id && (float) $bc->montant_ttc > 0) {
+                $type = \App\Models\TypeEngagement::determinerParMontant((float) $bc->montant_ttc);
+                if ($type) {
+                    $bc->type_engagement_id = $type->id;
+                }
+            }
+
             if (empty($bc->numero)) {
                 $bc->numero = $bc->genererNumero();
             }
@@ -621,6 +630,56 @@ class BonCommande extends Model
         });
 
         /**
+         * ✅ AJOUT — Type d'engagement et numérotation, POUR TOUS LES STATUTS (y compris brouillon,
+         * que le contrôle ci-dessus laisse passer sans aller plus loin).
+         *  1. Le montant change sans choix explicite du type → type déduit du montant.
+         *  2. Le type change et le préfixe avec → nouveau numéro : prochain numéro LIBRE de la
+         *     série du nouveau type (jamais de doublon). Interdit une fois le BC engagé.
+         */
+        static::updating(function ($bonCommande) {
+            if ($bonCommande->isDirty('montant_ttc') && !$bonCommande->isDirty('type_engagement_id') && (float) $bonCommande->montant_ttc > 0) {
+                $type = \App\Models\TypeEngagement::determinerParMontant((float) $bonCommande->montant_ttc);
+                if ($type && (int) $type->id !== (int) $bonCommande->type_engagement_id) {
+                    $bonCommande->type_engagement_id = $type->id;
+                }
+            }
+
+            if (!$bonCommande->isDirty('type_engagement_id')) {
+                return;
+            }
+
+            $ancienPrefixe  = static::prefixeDepuisType($bonCommande->getOriginal('type_engagement_id'));
+            $nouveauPrefixe = static::prefixeDepuisType($bonCommande->type_engagement_id);
+
+            if ($ancienPrefixe === $nouveauPrefixe) {
+                return;
+            }
+
+            if ($bonCommande->getOriginal('engage') || $bonCommande->engagement()->exists()) {
+                throw new \Exception(
+                    "Changement de type d'engagement impossible : le bon de commande {$bonCommande->getOriginal('numero')} "
+                        . "est déjà engagé, et son numéro figure sur des documents émis (certificat d'engagement, "
+                        . "dossier fournisseur, OP). Annulez d'abord l'engagement."
+                );
+            }
+
+            $bonCommande->numero = $bonCommande->genererNumero($nouveauPrefixe);
+        });
+
+        /**
+         * ✅ AJOUT — Traçabilité de la renumérotation (ancien et nouveau numéro)
+         */
+        static::updated(function ($bonCommande) {
+            if ($bonCommande->wasChanged('numero')) {
+                \App\Models\ActivityLog::logAction($bonCommande, 'renumerotation', [
+                    'ancien_numero'  => $bonCommande->getOriginal('numero'),
+                    'nouveau_numero' => $bonCommande->numero,
+                    'motif'          => "Changement de type d'engagement",
+                ]);
+            }
+        });
+
+        /**
          * AVANT SUPPRESSION
          */
         static::deleting(function ($bonCommande) {
@@ -740,7 +799,7 @@ class BonCommande extends Model
      * Générer le numéro de BC
      * Format : BC26-00001 (au lieu de BC-2026-00001)
      */
-    public function genererNumero(): string
+    public function genererNumero(?string $prefixeImpose = null): string
     {
         $exercice = $this->exercice
             ?? ($this->exercice_id ? \App\Models\Exercice::find($this->exercice_id) : null)
@@ -751,7 +810,7 @@ class BonCommande extends Model
         }
 
         $annee   = substr($exercice->annee, -2);
-        $prefixe = $this->determinerPrefixeNumero();
+        $prefixe = $prefixeImpose ?? $this->determinerPrefixeNumero();
 
         return \DB::transaction(function () use ($annee, $exercice, $prefixe) {
             // ✅ SQL direct — bypass tous les scopes Eloquent
@@ -774,17 +833,23 @@ class BonCommande extends Model
 
     protected function determinerPrefixeNumero(): string
     {
-        if ($this->type_engagement_id && !$this->relationLoaded('typeEngagement')) {
-            $this->load('typeEngagement');
-        }
+        return static::prefixeDepuisType($this->type_engagement_id);
+    }
 
-        return match ($this->typeEngagement?->code ?? 'BC') {
-            'LC'   => 'LC',
-            'MA'   => 'MA',
-            'DL'   => 'DL',
-            'DM'   => 'DM',
-            default => 'BC',
-        };
+    /**
+     * ✅ Préfixe de numérotation d'un type d'engagement : son CODE (BC, LC, MA, DL, DM, ou tout
+     * nouveau code), en majuscules, lettres et chiffres, 6 caractères au plus. Par défaut : BC.
+     * Lu en base à chaque fois : jamais la relation chargée, qui peut contenir l'ancien type.
+     */
+    public static function prefixeDepuisType(?int $typeEngagementId): string
+    {
+        $code = $typeEngagementId
+            ? \App\Models\TypeEngagement::withTrashed()->whereKey($typeEngagementId)->value('code')
+            : null;
+
+        $prefixe = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $code));
+
+        return ($prefixe !== '' && strlen($prefixe) <= 6) ? $prefixe : 'BC';
     }
 
     /**
