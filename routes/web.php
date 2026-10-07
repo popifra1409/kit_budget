@@ -270,3 +270,9 @@ if (config('app.env') !== 'production') {
 }
 
 Route::redirect('/', '/portal');
+
+// ── Exports de la clôture d'exercice (dossier PDF et classeur Excel) ──
+Route::middleware(['web', 'auth'])->prefix('budget/cloture')->name('budget.cloture.')->group(function () {
+    Route::get('/{cloture}/pdf', [\App\Http\Controllers\Budget\ClotureExerciceExportController::class, 'pdf'])->name('pdf');
+    Route::get('/{cloture}/excel', [\App\Http\Controllers\Budget\ClotureExerciceExportController::class, 'excel'])->name('excel');
+});

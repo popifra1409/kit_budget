@@ -19,49 +19,27 @@ class ClotureExercice extends Model
     protected $table = 'clotures_exercice';
 
     protected $fillable = [
-        'exercice_id',
-        'budget_id',
-        'statut',
-        'reference_arrete',
-        'date_arrete',
-        'piece_arrete',
-        'arrete_par',
-        'avis_ca',
-        'reference_avis_ca',
-        'date_avis_ca',
-        'piece_avis_ca',
-        'report_fonctionnement_autorise',
-        'date_calcul',
-        'totaux',
-        'observations',
-        'created_by',
+        'exercice_id', 'budget_id', 'statut',
+        'reference_arrete', 'date_arrete', 'piece_arrete', 'arrete_par',
+        'avis_ca', 'reference_avis_ca', 'date_avis_ca', 'piece_avis_ca',
+        'report_fonctionnement_autorise', 'date_calcul', 'totaux', 'observations', 'created_by',
+        'collectif_reports_id', 'bilan_reprise',
     ];
 
     protected $casts = [
-        'date_arrete' => 'date',
-        'date_avis_ca' => 'date',
-        'date_calcul' => 'datetime',
-        'totaux' => 'array',
-        'report_fonctionnement_autorise' => 'boolean',
+        'date_arrete' => 'date', 'date_avis_ca' => 'date', 'date_calcul' => 'datetime',
+        'totaux' => 'array', 'report_fonctionnement_autorise' => 'boolean', 'bilan_reprise' => 'array',
     ];
 
     protected static function booted(): void
     {
-        static::creating(fn(self $c) => $c->created_by ??= auth()->id());
+        static::creating(fn (self $c) => $c->created_by ??= auth()->id());
     }
 
-    public function exercice(): BelongsTo
-    {
-        return $this->belongsTo(Exercice::class);
-    }
-    public function budget(): BelongsTo
-    {
-        return $this->belongsTo(Budget::class)->withoutGlobalScope('exercice');
-    }
-    public function lignes(): HasMany
-    {
-        return $this->hasMany(ClotureLigne::class);
-    }
+    public function exercice(): BelongsTo { return $this->belongsTo(Exercice::class); }
+    public function budget(): BelongsTo   { return $this->belongsTo(Budget::class)->withoutGlobalScope('exercice'); }
+    public function lignes(): HasMany     { return $this->hasMany(ClotureLigne::class); }
+    public function collectifReports(): BelongsTo { return $this->belongsTo(CollectifBudgetaire::class, 'collectif_reports_id'); }
 
     public function estModifiable(): bool
     {

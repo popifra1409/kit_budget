@@ -38,6 +38,19 @@ class ViewClotureExercice extends ViewRecord
             ->disk('public')->directory('clotures')->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png']);
 
         return [
+            // ── Exports : dossier PDF (conseil d'administration) et classeur Excel ──
+            Actions\ActionGroup::make([
+                Actions\Action::make('export_pdf')
+                    ->label('Dossier PDF')->icon('heroicon-o-document-arrow-down')
+                    ->url(fn() => route('budget.cloture.pdf', ['cloture' => $r()]))
+                    ->openUrlInNewTab(),
+                Actions\Action::make('export_excel')
+                    ->label('Classeur Excel')->icon('heroicon-o-table-cells')
+                    ->url(fn() => route('budget.cloture.excel', ['cloture' => $r()]))
+                    ->openUrlInNewTab(),
+            ])
+                ->label('Exporter')->icon('heroicon-o-arrow-down-tray')->color('gray')->button(),
+
             Actions\Action::make('recalculer')
                 ->label('Recalculer la situation')->icon('heroicon-o-arrow-path')->color('gray')
                 ->visible(fn() => $r()->statut === 'preparation' && auth()->user()?->can('gerer_cloture_exercice'))
@@ -73,6 +86,34 @@ class ViewClotureExercice extends ViewRecord
                     fn() => $this->service()->enregistrerAvisCa($r(), $data),
                     $data['avis_ca'] === 'conforme' ? 'Avis conforme enregistré' : 'Avis défavorable : reports à revoir (retour en préparation)'
                 )),
+
+            Actions\Action::make('reprendre_n1')
+                ->label('Reprendre les reports en N+1')->icon('heroicon-o-arrow-right-circle')->color('success')
+                ->visible(fn() => $r()->statut === 'avis_ca' && auth()->user()?->can('gerer_cloture_exercice'))
+                ->requiresConfirmation()
+                ->modalHeading('Reprise des reports dans l\'exercice suivant')
+                ->modalDescription(function () use ($r) {
+                    $suivant = $this->service()->exerciceSuivant($r());
+                    $budget = $suivant ? $this->service()->budgetSuivant($suivant) : null;
+                    return $suivant && $budget
+                        ? "Un PROJET de collectif « Reports de crédits de l'exercice {$r()->exercice->annee} » sera créé dans l'exercice {$suivant->annee} "
+                        . "(budget {$budget->libelle}), pour " . number_format((float) ($r()->totaux['report_retenu'] ?? 0), 0, ',', ' ') . ' FCFA. '
+                        . 'Il sera sans effet tant qu\'il n\'est pas adopté.'
+                        : 'Exercice ' . ($r()->exercice->annee + 1) . ' ou son budget introuvable : créez-les avant la reprise.';
+                })
+                ->action(function () use ($r) {
+                    try {
+                        $b = $this->service()->reprendreEnN1($r());
+                        $corps = "Collectif {$b['collectif']} (projet) : {$b['lignes_reprises']} ligne(s), "
+                            . number_format($b['montant_repris'], 0, ',', ' ') . ' FCFA.'
+                            . (count($b['lignes_manquantes']) ? "\n⚠️ " . count($b['lignes_manquantes']) . " ligne(s) absente(s) du budget {$b['exercice_suivant']} : voir la fiche." : '')
+                            . ($b['avertissement_recette'] ? "\n⚠️ " . $b['avertissement_recette'] : '');
+                        Notification::make()->success()->title('Reports repris en ' . $b['exercice_suivant'])->body($corps)->persistent()->send();
+                        $this->redirect(\App\Filament\Budget\Resources\ClotureExerciceResource::getUrl('view', ['record' => $r()]));
+                    } catch (\DomainException $e) {
+                        Notification::make()->warning()->title('Reprise impossible')->body($e->getMessage())->persistent()->send();
+                    }
+                }),
 
             Actions\Action::make('rouvrir')
                 ->label('Retour en préparation')->icon('heroicon-o-arrow-uturn-left')->color('danger')

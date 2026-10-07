@@ -15,3 +15,5 @@ Schedule::command('workflow:traiter-expirees')
     ->runInBackground();
 
 Schedule::command('activity:archive --months=6')->monthly();
+
+Schedule::command('budget:synchroniser-taches --appliquer --force')->dailyAt('02:00');

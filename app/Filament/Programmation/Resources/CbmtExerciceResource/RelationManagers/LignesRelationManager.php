@@ -132,7 +132,7 @@ class LignesRelationManager extends RelationManager
             ->groups([
                 Group::make('titre')
                     ->label('Titre')
-                    ->getTitleFromRecordUsing(fn(CbmtLigne $r) => $r->libelle_titre_complet)
+                    ->getTitleFromRecordUsing(fn(CbmtLigne $record) => $record->libelle_titre_complet)
                     ->orderQueryUsing(fn(Builder $q, string $direction) => $q->orderByRaw('titre IS NULL')->orderBy('titre', $direction)),
             ])
             ->defaultGroup('titre')
@@ -191,7 +191,7 @@ class LignesRelationManager extends RelationManager
             ->actions([
                 Tables\Actions\EditAction::make()->visible(fn() => $this->modifiable()),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn(CbmtLigne $r) => $this->modifiable() && $r->type_ligne === 'MN'),
+                    ->visible(fn(CbmtLigne $record) => $this->modifiable() && $record->type_ligne === 'MN'),
             ])
             ->bulkActions([]);
     }

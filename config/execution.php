@@ -45,12 +45,17 @@ return [
         'autre'                 => 'Autre motif dûment justifié',
     ],
 
+    // Clôture : compte de RECETTES qui finance la reprise des reports dans le collectif de N+1
+    // (excédent / report de trésorerie de N). Code de la nomenclature des recettes.
+    'compte_recette_reports' => env('COMPTE_RECETTE_REPORTS', '779100'),
+
     'groupes' => [
         'liquidation'   => 'Liquidation et délais de paiement',
         'plafonds'      => 'Plafonds des mouvements de crédits',
         'decideurs'     => 'Décideurs des mouvements de crédits',
         'cloture'       => "Clôture d'exercice et reports",
         'exceptionnel'  => 'Procédure exceptionnelle',
+        'concordance'   => 'Concordance programmation / budget',
     ],
 
     'parametres' => [
@@ -175,6 +180,32 @@ return [
             'defaut' => false,
             'libelle' => 'Autoriser le report de CP sur les dépenses de fonctionnement',
             'aide' => "Par défaut non : les bons de commande de fonctionnement doivent être exécutés avant le 31 décembre.",
+        ],
+
+        'periode_complementaire_jours' => [
+            'groupe' => 'cloture',
+            'type' => 'entier',
+            'defaut' => 31,
+            'unite' => 'jours après le 31 décembre',
+            'libelle' => 'Durée de la période complémentaire',
+            'aide' => "Pendant cette période : plus d'engagement sur N, mais liquidation, ordonnancement et paiement des dépenses engagées en N. Au-delà, ces opérations sont bloquées.",
+        ],
+
+        'base_taux_execution' => [
+            'groupe' => 'cloture',
+            'type' => 'choix',
+            'defaut' => 'actualise',
+            'options' => ['initial' => 'Crédits initiaux votés', 'actualise' => 'Crédits actualisés (collectifs et virements)'],
+            'libelle' => 'Base de crédits retenue pour les taux de liquidation et d\'ordonnancement',
+        ],
+
+        // ── Concordance programmation / budget ───────────────────
+        'verrouiller_taches_budget_adopte' => [
+            'groupe' => 'concordance',
+            'type' => 'booleen',
+            'defaut' => true,
+            'libelle' => 'Interdire la modification directe des AE/CP des sous-tâches une fois le budget adopté',
+            'aide' => 'Les crédits se modifient alors par collectif ou virement, et les sous-tâches suivent automatiquement.',
         ],
 
         // ── Procédure exceptionnelle ─────────────────────────────

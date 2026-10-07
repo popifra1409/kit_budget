@@ -332,6 +332,12 @@ class RolePermissionSeeder extends Seeder
             'payer_paiement_exceptionnel',
             'regulariser_paiement_exceptionnel',
             'annuler_execution_mouvement_credit',
+
+            // ── Clôture d'exercice : reports, annulations, états de fin de gestion ──
+            'view_any_cloture_exercice',
+            'gerer_cloture_exercice',
+            'arreter_reports_credits',
+            'enregistrer_avis_ca',
         ];
 
         $this->command->info('📝 Création permissions spéciales...');
@@ -521,7 +527,10 @@ class RolePermissionSeeder extends Seeder
                 'view_any_paiement_exceptionnel',
                 'create_paiement_exceptionnel',
                 'regulariser_paiement_exceptionnel',
+
                 'update_virement_budgetaire',
+                'view_any_cloture_exercice',
+                'gerer_cloture_exercice',
             ],
             'chef_service_budget'
         );
@@ -690,6 +699,10 @@ class RolePermissionSeeder extends Seeder
                 'regulariser_paiement_exceptionnel',
                 'annuler_execution_mouvement_credit',
                 'update_virement_budgetaire',
+
+                'view_any_cloture_exercice',
+                'gerer_cloture_exercice',
+                'enregistrer_avis_ca',
             ],
             'daaf'
         );
@@ -763,6 +776,8 @@ class RolePermissionSeeder extends Seeder
 
                 // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
                 'view_any_paiement_exceptionnel',
+
+                'view_any_cloture_exercice',
             ],
             'controleur_financier'
         );
@@ -859,6 +874,9 @@ class RolePermissionSeeder extends Seeder
                 'view_any_paiement_exceptionnel',
                 'autoriser_paiement_exceptionnel',
                 'annuler_execution_mouvement_credit',
+
+                'view_any_cloture_exercice',
+                'arreter_reports_credits',
             ],
             'directeur_general'
         );
@@ -945,6 +963,7 @@ class RolePermissionSeeder extends Seeder
                 // ── Exécution budgétaire (liquidation, paiements exceptionnels) ──
                 'view_any_paiement_exceptionnel',
                 'payer_paiement_exceptionnel',
+                'view_any_cloture_exercice',
             ],
             'agence_comptable'
         );

@@ -23,6 +23,8 @@ use App\Models\DepenseRegie;
 use App\Observers\DepenseRegieObserver;
 use App\Models\BonCommandeRegie;
 use App\Observers\BonCommandeRegieObserver;
+use App\Models\LigneBudgetaire;
+use App\Observers\LigneBudgetaireConcordanceObserver;
 use App\Support\Audit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\Permission\Models\Role;
@@ -210,6 +212,7 @@ class AppServiceProvider extends ServiceProvider
         PieceDossier::observe(PieceDossierObserver::class);
         DepenseRegie::observe(DepenseRegieObserver::class);
         BonCommandeRegie::observe(BonCommandeRegieObserver::class);
+        LigneBudgetaire::observe(LigneBudgetaireConcordanceObserver::class);
 
         // ✅ AJOUT — Audit de tous les modules (modeles listes dans config/audit.php,
         //    hors modeles deja journalises nativement par LogsActivity)

@@ -210,6 +210,33 @@ class Tache extends Model
     {
         parent::boot();
 
+        // ✅ AJOUT — Concordance programmation / budget : une fois le budget de l'exercice ADOPTÉ,
+        //    les AE/CP d'une sous-tâche ne se modifient plus à la main (paramètre d'exécution) :
+        //    on passe par un collectif ou un virement, et la synchronisation ajuste les sous-tâches.
+        static::saving(function ($tache) {
+            if (!$tache->exists || !$tache->estSousTache() || !$tache->isDirty(['ae', 'cp'])) {
+                return;
+            }
+            if (\App\Services\Budget\SynchronisationTachesService::$enCours) {
+                return;
+            }
+            if (!\App\Services\ParametresExecution::get('verrouiller_taches_budget_adopte')) {
+                return;
+            }
+
+            $budgetAdopte = \App\Models\Budget::withoutGlobalScope('exercice')
+                ->where('exercice_id', $tache->exercice_id)
+                ->where('statut', 'adopte')
+                ->exists();
+
+            if ($budgetAdopte) {
+                throw new \DomainException(
+                    "Le budget de l'exercice est adopté : les AE/CP de la sous-tâche {$tache->code} ne se modifient plus directement. "
+                        . "Passez par un collectif budgétaire ou un mouvement de crédits : la sous-tâche sera ajustée automatiquement."
+                );
+            }
+        });
+
         // Recalculer après sauvegarde d'une sous-tâche
         static::saved(function ($tache) {
             if ($tache->estSousTache() && $tache->parent) {
