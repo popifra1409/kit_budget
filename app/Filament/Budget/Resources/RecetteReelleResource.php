@@ -131,6 +131,12 @@ class RecetteReelleResource extends Resource
 
     public static function form(Form $form): Form
     {
+        // ✅ Création : saisie GROUPÉE (exercice et mois fixés une fois, une ligne par recette).
+        //    Modification : formulaire individuel ci-dessous.
+        if ($form->getOperation() === 'create') {
+            return $form->schema(static::schemaSaisieGroupee());
+        }
+
         return $form->schema([
 
             Forms\Components\Section::make('Identification')
@@ -257,7 +263,6 @@ class RecetteReelleResource extends Resource
                         ->options(fn() => \App\Models\TiersRecette::optionsGroupees())
                         ->searchable()
                         ->required()
-                        ->placeholder('Facultatif')
                         ->createOptionForm([
                             Forms\Components\TextInput::make('nom')->label('Nom')->required()->maxLength(255)
                                 ->unique('tiers_recettes', 'nom', modifyRuleUsing: fn($rule) => $rule->whereNull('deleted_at')),
@@ -478,6 +483,188 @@ class RecetteReelleResource extends Resource
             ])
             ->defaultGroup('mois')
             ->defaultSort('date_recette', 'desc');
+    }
+
+    /**
+     * Au changement d'exercice ou de mois : efface la ligne de prévision de chaque recette saisie,
+     * SANS remplacer le répétiteur (ses lignes gardent leur identifiant interne et leurs montants).
+     * ⚠️ Remplacer le répétiteur ($set('recettes', [[]])) créait une ligne sans identifiant :
+     *    la valeur choisie n'était plus lue à l'enregistrement (« champ obligatoire »).
+     */
+    protected static function effacerLignesPrevision(Get $get, Forms\Set $set): void
+    {
+        foreach (array_keys($get('recettes') ?? []) as $cle) {
+            $set("recettes.{$cle}.prevision_recette_mensuelle_id", null);
+        }
+    }
+
+    /** Prévision mensuelle (mise en cache pour la requête : plusieurs libellés la lisent). */
+    protected static array $cacheMensuelles = [];
+
+    public static function mensuelle($id): ?PrevisionRecetteMensuelle
+    {
+        if (!$id) {
+            return null;
+        }
+
+        return static::$cacheMensuelles[$id] ??= PrevisionRecetteMensuelle::find($id);
+    }
+
+    /** Options des lignes de prévision pour un exercice et un mois. */
+    public static function optionsLignes(?int $exerciceId, ?int $mois, ?string $recherche = null): array
+    {
+        if (!$exerciceId || !$mois) {
+            return [];
+        }
+
+        return PrevisionRecetteMensuelle::with('lignePrevisionRecette')
+            ->where('exercice_id', $exerciceId)
+            ->where('mois', $mois)
+            ->when($recherche, fn($q) => $q->whereHas('lignePrevisionRecette', fn($l) => $l
+                ->where('libelle_nomenclature', 'ilike', "%{$recherche}%")
+                ->orWhere('code_nomenclature', 'ilike', "%{$recherche}%")))
+            ->get()
+            ->sortBy(fn($pm) => $pm->lignePrevisionRecette?->code_nomenclature)
+            ->mapWithKeys(fn($pm) => [$pm->id => "[{$pm->lignePrevisionRecette?->code_nomenclature}] {$pm->lignePrevisionRecette?->libelle_nomenclature}"])
+            ->all();
+    }
+
+    /**
+     * ✅ Saisie groupée : exercice, mois et date une seule fois ; une ligne par recette.
+     * Les lignes sont créées une à une par CreateRecetteReelle::handleRecordCreation().
+     */
+    public static function schemaSaisieGroupee(): array
+    {
+        $f = fn($v) => number_format((float) $v, 0, ',', ' ');
+
+        return [
+            Forms\Components\Section::make('Période')
+                ->description('Fixée une fois pour toutes les recettes saisies ci-dessous.')
+                ->schema([
+                    Forms\Components\Select::make('exercice_id')
+                        ->label('Exercice')
+                        ->options(fn() => Exercice::orderByDesc('annee')->pluck('annee', 'id'))
+                        ->default(fn() => Exercice::getActif()?->id)
+                        ->required()->live()
+                        ->afterStateUpdated(fn(Get $get, Forms\Set $set) => static::effacerLignesPrevision($get, $set)),
+
+                    Forms\Components\Select::make('mois')
+                        ->label('Mois')
+                        ->options(self::$moisOptions)
+                        ->default(now()->month)
+                        ->required()->live()
+                        ->afterStateUpdated(fn(Get $get, Forms\Set $set) => static::effacerLignesPrevision($get, $set)),
+
+                    Forms\Components\DatePicker::make('date_recette')
+                        ->label('Date des recettes')
+                        ->default(now())->required(),
+                ])
+                ->columns(3),
+
+            Forms\Components\Section::make('Recettes')
+                ->schema([
+                    Forms\Components\Repeater::make('recettes')
+                        ->label('')
+                        ->schema([
+                            // Ligne de prévision, avec sous elle le prévu du mois et le restant théorique
+                            Forms\Components\Group::make([
+                                Forms\Components\Select::make('prevision_recette_mensuelle_id')
+                                    ->label('Ligne de prévision')
+                                    ->options(fn(Get $get) => static::optionsLignes($get('../../exercice_id'), $get('../../mois')))
+                                    ->getSearchResultsUsing(fn(string $search, Get $get) => static::optionsLignes($get('../../exercice_id'), $get('../../mois'), $search))
+                                    ->searchable()->required()->live(),
+
+                                Forms\Components\Grid::make(2)->schema([
+                                    Forms\Components\Placeholder::make('_montant_prevu')
+                                        ->label('Montant prévu du mois')
+                                        ->content(fn(Get $get) => ($pm = static::mensuelle($get('prevision_recette_mensuelle_id')))
+                                            ? $f($pm->montant_prevu) . ' FCFA' : '—'),
+
+                                    Forms\Components\Placeholder::make('_restant_theorique')
+                                        ->label('Restant à recouvrer théorique')
+                                        ->content(fn(Get $get) => ($pm = static::mensuelle($get('prevision_recette_mensuelle_id')))
+                                            ? $f(max(0, (float) $pm->montant_prevu - (float) $pm->montant_recouvre)) . ' FCFA' : '—'),
+                                ])->visible(fn(Get $get) => filled($get('prevision_recette_mensuelle_id'))),
+                            ])->columnSpan(3),
+
+                            Forms\Components\TextInput::make('montant_constate')
+                                ->label('Attendue')
+                                ->numeric()->required()->minValue(1)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function ($state, Get $get, Forms\Set $set) {
+                                    if ($get('montant') === null || $get('montant') === '') {
+                                        $set('montant', $state);   // encaissé = attendu par défaut
+                                    }
+                                }),
+
+                            Forms\Components\TextInput::make('montant')
+                                ->label('Encaissée')
+                                ->numeric()->required()->minValue(0)
+                                ->lte('montant_constate')
+                                ->validationMessages(['lte' => "L'encaissé ne peut pas dépasser l'attendu."])
+                                ->live(onBlur: true),
+
+                            Forms\Components\Placeholder::make('_rar')
+                                ->label('RAR')
+                                ->content(function (Get $get) use ($f) {
+                                    $rar = max(0, (float) $get('montant_constate') - (float) $get('montant'));
+                                    return new \Illuminate\Support\HtmlString('<span style="color:' . ($rar > 0 ? '#b45309' : '#166534') . ';font-weight:600;">' . $f($rar) . '</span>');
+                                }),
+
+                            Forms\Components\Select::make('tiers_recette_id')
+                                ->label('Débiteur / Payeur')
+                                ->options(fn() => \App\Models\TiersRecette::optionsGroupees())
+                                ->searchable()->required()
+                                ->createOptionForm([
+                                    Forms\Components\TextInput::make('nom')->label('Nom')->required()->maxLength(255)
+                                        ->unique('tiers_recettes', 'nom', modifyRuleUsing: fn($rule) => $rule->whereNull('deleted_at')),
+                                    Forms\Components\Select::make('categorie')->label('Catégorie')
+                                        ->options(\App\Models\TiersRecette::CATEGORIES)->default('autre')->required(),
+                                ])
+                                ->createOptionUsing(fn(array $data) => \App\Models\TiersRecette::create($data + ['actif' => true])->id)
+                                ->createOptionModalHeading('Nouveau débiteur / payeur')
+                                ->columnSpan(2),
+
+                            Forms\Components\Select::make('mode_paiement')
+                                ->label('Mode')
+                                ->options(['virement' => 'Virement', 'cheque' => 'Chèque', 'especes' => 'Espèces', 'mobile' => 'Mobile Money', 'autre' => 'Autre'])
+                                ->default('especes'),
+
+                            Forms\Components\TextInput::make('reference_paiement')
+                                ->label('Référence')
+                                ->maxLength(100)
+                                ->columnSpan(2),
+
+                            Forms\Components\TextInput::make('observations')
+                                ->label('Observation')
+                                ->maxLength(255)
+                                ->columnSpan(2),
+                        ])
+                        ->columns(6)
+                        ->defaultItems(1)
+                        ->minItems(1)
+                        ->addActionLabel('Ajouter une recette')
+                        ->cloneable()
+                        ->reorderable(false)
+                        ->itemLabel(fn(array $state) => ($state['montant_constate'] ?? null)
+                            ? $f($state['montant_constate']) . ' attendu · ' . $f($state['montant'] ?? 0) . ' encaissé'
+                            : 'Nouvelle recette')
+                        ->live(),
+
+                    Forms\Components\Placeholder::make('_totaux')
+                        ->label('Totaux de la saisie')
+                        ->content(function (Get $get) use ($f) {
+                            $lignes = collect($get('recettes') ?? []);
+                            $attendu = $lignes->sum(fn($l) => (float) ($l['montant_constate'] ?? 0));
+                            $encaisse = $lignes->sum(fn($l) => (float) ($l['montant'] ?? 0));
+                            return new \Illuminate\Support\HtmlString(
+                                '<strong>' . $lignes->count() . '</strong> recette(s) · attendu <strong>' . $f($attendu) . '</strong>'
+                                    . ' · encaissé <strong style="color:#166534;">' . $f($encaisse) . '</strong>'
+                                    . ' · RAR <strong style="color:#b45309;">' . $f(max(0, $attendu - $encaisse)) . '</strong> FCFA'
+                            );
+                        }),
+                ]),
+        ];
     }
 
     public static function getPages(): array
