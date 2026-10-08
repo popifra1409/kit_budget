@@ -44,6 +44,10 @@ class Avenant extends Model
         'beneficiaire_corrige_type',
         'beneficiaire_corrige_id',
         'dossier_fournisseur_cree_id',
+
+        // ✅ CORRIGÉ — données de correction (taxes, montant brut, objet) : absentes de $fillable,
+        //    elles étaient ignorées silencieusement → taxes de l'OP standard remises à zéro.
+        'donnees_correction',
     ];
 
     /** Type de correction de l'avenant de changement de bénéficiaire. */
@@ -56,6 +60,8 @@ class Avenant extends Model
         'date_application' => 'datetime',
         'montant_taxes_original' => 'decimal:2',
         'montant_taxes_corrige'  => 'decimal:2',
+        'donnees_correction'     => 'array',
+        'corriger_ordonnances'   => 'boolean',
     ];
 
     public function documentSource(): MorphTo
@@ -215,6 +221,15 @@ class Avenant extends Model
 
             $this->mettreAJourOrdonnances();
 
+            // ✅ AJOUT — recalcul des lignes budgétaires touchées, depuis les engagements :
+            //    garantit l'engagé exact, sans transfert manuel supplémentaire (supprimé de ViewEngagement).
+            foreach (array_unique(array_filter([$this->nomenclature_originale_id, $this->nomenclature_corrigee_id])) as $nomenclatureId) {
+                $ligne = LigneBudgetaire::where('budget_id', $budgetId)->where('nomenclature_id', $nomenclatureId)->first();
+                if ($ligne && method_exists($ligne, 'recalculerDepuisEngagements')) {
+                    $ligne->recalculerDepuisEngagements();
+                }
+            }
+
             $this->update([
                 'statut'           => 'applique',
                 'applique_par'     => auth()->id(),
@@ -271,8 +286,37 @@ class Avenant extends Model
         ]);
     }
 
+    /**
+     * ✅ Taxes corrigées : valeur saisie dans l'avenant, sinon valeur du document source.
+     * Utilisé pour l'OP standard ET l'OP impôt, qui restent ainsi cohérentes.
+     */
+    protected function taxesCorrigees($document, array $corrections): array
+    {
+        $valeur = fn(string $cle) => (float) ($corrections[$cle] ?? $document?->{$cle} ?? 0);
+
+        $taxes = ['montant_cnps' => 0.0, 'montant_ir' => 0.0, 'montant_irnc' => 0.0, 'montant_tva' => 0.0, 'montant_tsr' => 0.0, 'autres_retenues' => 0.0];
+
+        if ($document instanceof \App\Models\DecisionAdministrative) {
+            foreach (['montant_cnps', 'montant_ir', 'montant_irnc', 'montant_tva', 'autres_retenues'] as $cle) {
+                $taxes[$cle] = $valeur($cle);
+            }
+        } elseif ($document instanceof \App\Models\BonCommande) {
+            foreach (['montant_ir', 'montant_tva', 'montant_tsr'] as $cle) {
+                $taxes[$cle] = $valeur($cle);
+            }
+        }
+
+        return $taxes + ['total' => array_sum($taxes)];
+    }
+
     protected function mettreAJourOrdonnances(): void
     {
+        // ✅ Option « corriger les ordonnances » de l'avenant
+        if ($this->corriger_ordonnances === false) {
+            \Log::info("Avenant {$this->numero_avenant} : ordonnances non corrigées (option désactivée)");
+            return;
+        }
+
         // Recharger l'engagement depuis la base
         $engagement = Engagement::withoutGlobalScope('exercice')
             ->with('ordonnancesPaiement')
@@ -297,17 +341,23 @@ class Avenant extends Model
 
         $montantBrutCorrige = (float) ($this->montant_corrige ?? 0);
 
-        $montantTaxesCorrige =
-            (float) ($corrections['montant_cnps'] ?? 0) +
-            (float) ($corrections['montant_ir'] ?? 0) +
-            (float) ($corrections['montant_irnc'] ?? 0) +
-            (float) ($corrections['montant_tva'] ?? 0) +
-            (float) ($corrections['montant_tsr'] ?? 0) +
-            (float) ($corrections['autres_retenues'] ?? 0);
+        // ✅ CORRIGÉ — taxes : corrigées, sinon celles du document (et non 0 par défaut)
+        $taxes = $this->taxesCorrigees($document, $corrections);
+        $montantTaxesCorrige = $taxes['total'];
 
         $montantNetCorrige = max(0, $montantBrutCorrige - $montantTaxesCorrige);
 
         foreach ($ordonnances as $op) {
+
+            // ✅ Une OP déjà PAYÉE n'est jamais modifiée : le décaissement est fait.
+            //    L'écart se régularise par une OP complémentaire ou un ordre de recette.
+            if ($op->statut === 'payee') {
+                \Log::warning("Avenant {$this->numero_avenant} : OP {$op->numero} déjà payée, non modifiée — écart à régulariser", [
+                    'montant_brut_paye' => $op->montant_brut,
+                    'montant_brut_corrige' => $montantBrutCorrige,
+                ]);
+                continue;
+            }
 
             // ====================================================
             // OP STANDARD
@@ -336,76 +386,14 @@ class Avenant extends Model
             // ====================================================
             elseif ($op->type_ordonnance === 'impot') {
 
-                $montantCnps = 0;
-                $montantIr = 0;
-                $montantIrnc = 0;
-                $montantTva = 0;
-                $montantTsr = 0;
-                $autresRetenues = 0;
-
-                // Cas Décision Administrative
-                if ($document instanceof \App\Models\DecisionAdministrative) {
-
-                    $montantCnps = (float) (
-                        $corrections['montant_cnps']
-                        ?? $document->montant_cnps
-                        ?? 0
-                    );
-
-                    $montantIr = (float) (
-                        $corrections['montant_ir']
-                        ?? $document->montant_ir
-                        ?? 0
-                    );
-
-                    $montantIrnc = (float) (
-                        $corrections['montant_irnc']
-                        ?? $document->montant_irnc
-                        ?? 0
-                    );
-
-                    $montantTva = (float) (
-                        $corrections['montant_tva']
-                        ?? $document->montant_tva
-                        ?? 0
-                    );
-
-                    $autresRetenues = (float) (
-                        $corrections['autres_retenues']
-                        ?? $document->autres_retenues
-                        ?? 0
-                    );
-                }
-
-                // Cas Bon de commande
-                elseif ($document instanceof \App\Models\BonCommande) {
-
-                    $montantIr = (float) (
-                        $corrections['montant_ir']
-                        ?? $document->montant_ir
-                        ?? 0
-                    );
-
-                    $montantTva = (float) (
-                        $corrections['montant_tva']
-                        ?? $document->montant_tva
-                        ?? 0
-                    );
-
-                    $montantTsr = (float) (
-                        $corrections['montant_tsr']
-                        ?? $document->montant_tsr
-                        ?? 0
-                    );
-                }
-
-                $totalTaxes =
-                    $montantCnps +
-                    $montantIr +
-                    $montantIrnc +
-                    $montantTva +
-                    $montantTsr +
-                    $autresRetenues;
+                // ✅ Même calcul que l'OP standard (helper taxesCorrigees)
+                $montantCnps    = $taxes['montant_cnps'];
+                $montantIr      = $taxes['montant_ir'];
+                $montantIrnc    = $taxes['montant_irnc'];
+                $montantTva     = $taxes['montant_tva'];
+                $montantTsr     = $taxes['montant_tsr'];
+                $autresRetenues = $taxes['autres_retenues'];
+                $totalTaxes     = $taxes['total'];
 
                 $op->updateQuietly([
                     'montant_brut'         => $montantBrutCorrige,

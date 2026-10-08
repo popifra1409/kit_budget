@@ -326,6 +326,8 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                 'created_by'                => auth()->id(),
                                 'donnees_correction'        => !empty($donneesCorrection)
                                     ? $donneesCorrection : null,
+                                // ✅ AJOUT — l'option du formulaire est enfin transmise à l'avenant
+                                'corriger_ordonnances'      => $corrigerOp,
                             ]);
 
                             $avenant->appliquer();
@@ -390,90 +392,11 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                                 $engagement->updateQuietly(['objet' => $donneesCorrection['objet']]);
                             }
 
-                            // ═══════════════════════════════════════════════════════
-                            // ✅ FIX — TRANSFERT DE NOMENCLATURE BUDGÉTAIRE
-                            //    Déclenché pour : 'nomenclature', 'mixte', 'complet'
-                            //    Quand la ligne budgétaire change :
-                            //      1. Libérer crédits ancienne ligne
-                            //      2. Créditer nouvelle ligne
-                            //      3. Mettre à jour engagement.nomenclature_principale_id
-                            //      4. Mettre à jour lignes_engagement
-                            //      5. Recalculer les deux LigneBudgetaire
-                            // ═══════════════════════════════════════════════════════
-                            if (
-                                in_array($typeCorrection, ['nomenclature', 'mixte', 'complet'])
-                                && !empty($data['nomenclature_corrigee_id'])
-                                && (int) $data['nomenclature_corrigee_id'] !== (int) $nomenclatureOriginaleId
-                            ) {
-                                // Montant à transférer = montant corrigé (après avenant)
-                                $montantTransfere = $montantCorrige;
+                            // ✅ CORRIGÉ — le transfert de nomenclature (crédits des deux lignes, engagement,
+                            //    ligne d'imputation) est fait UNE SEULE FOIS, dans Avenant::appliquer(),
+                            //    suivi d'un recalcul des deux lignes depuis les engagements.
+                            //    L'ancien bloc qui refaisait ce transfert ici a été retiré (double transfert).
 
-                                // 1. Libérer les crédits sur l'ancienne ligne
-                                $ancienneLigne = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-                                    ->where('nomenclature_id', $nomenclatureOriginaleId)
-                                    ->first();
-
-                                if ($ancienneLigne) {
-                                    $ancienneLigne->engage = max(0, (float) $ancienneLigne->engage - $montantTransfere);
-                                    $ancienneLigne->disponible_engagement =
-                                        (float) $ancienneLigne->budget_rectifie - $ancienneLigne->engage;
-                                    $ancienneLigne->saveQuietly();
-
-                                    Log::info('Avenant nomenclature — crédits libérés ancienne ligne', [
-                                        'engagement'       => $engagement->numero,
-                                        'nomenclature_old' => $nomenclatureOriginaleId,
-                                        'montant_libere'   => $montantTransfere,
-                                        'engage_restant'   => $ancienneLigne->engage,
-                                    ]);
-                                }
-
-                                // 2. Créditer la nouvelle ligne
-                                $nouvelleLigne = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-                                    ->where('nomenclature_id', $nomenclatureCorrigeeId)
-                                    ->first();
-
-                                if (!$nouvelleLigne) {
-                                    throw new \Exception(
-                                        "Ligne budgétaire introuvable pour la nomenclature ID {$nomenclatureCorrigeeId}."
-                                    );
-                                }
-
-                                $nouvelleLigne->engage = (float) $nouvelleLigne->engage + $montantTransfere;
-                                $nouvelleLigne->disponible_engagement =
-                                    (float) $nouvelleLigne->budget_rectifie - $nouvelleLigne->engage;
-                                $nouvelleLigne->saveQuietly();
-
-                                Log::info('Avenant nomenclature — crédits ajoutés nouvelle ligne', [
-                                    'engagement'       => $engagement->numero,
-                                    'nomenclature_new' => $nomenclatureCorrigeeId,
-                                    'montant_ajoute'   => $montantTransfere,
-                                    'engage_nouveau'   => $nouvelleLigne->engage,
-                                ]);
-
-                                // 3. Mettre à jour engagement.nomenclature_principale_id
-                                $engagement->updateQuietly([
-                                    'nomenclature_principale_id' => $nomenclatureCorrigeeId,
-                                ]);
-
-                                // 4. Mettre à jour les lignes_engagement
-                                $engagement->lignes()
-                                    ->where('nomenclature_id', $nomenclatureOriginaleId)
-                                    ->update(['nomenclature_id' => $nomenclatureCorrigeeId]);
-
-                                Log::info('Avenant nomenclature appliqué', [
-                                    'engagement'        => $engagement->numero,
-                                    'nomenclature_old'  => $nomenclatureOriginaleId,
-                                    'nomenclature_new'  => $nomenclatureCorrigeeId,
-                                    'montant_transfere' => $montantTransfere,
-                                ]);
-
-                                // 5. Recalculer les deux lignes budgétaires
-                                $ancienneLigne?->recalculerDepuisEngagements();
-                                $nouvelleLigne->recalculerDepuisEngagements();
-                            }
-                            // ═══════════════════════════════════════════════════════
-                            // FIN FIX — suite du code original
-                            // ═══════════════════════════════════════════════════════
 
                             // ── Rafraîchir depuis la DB ───────────────────────────
                             $engagement->refresh();
