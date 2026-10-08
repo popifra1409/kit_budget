@@ -186,6 +186,7 @@ class AppServiceProvider extends ServiceProvider
             'rapport_activite_ligne'       => \App\Models\RapportActiviteLigne::class,
             'cloture_exercice'             => \App\Models\ClotureExercice::class,
             'cloture_ligne'                => \App\Models\ClotureLigne::class,
+            'tiers_recette'                => \App\Models\TiersRecette::class,
 
             // Administration
             'transmission'                 => \App\Models\Transmission::class,

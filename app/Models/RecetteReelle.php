@@ -28,12 +28,30 @@ class RecetteReelle extends Model
         'reference_paiement',
         'statut',
         'observations',
+        'date_constatation',   // ✅ créance certaine enregistrée
+        'date_encaissement',   // ✅ paiement effectif
+        'montant_constate',    // ✅ recette ATTENDUE ; « montant » = recette ENCAISSÉE
+        'tiers_recette_id',    // ✅ débiteur / payeur (référentiel)
     ];
+
+    /** Statuts : seuls « encaissee », « comptabilisee » et « validee » comptent dans le recouvré. */
+    public const STATUTS = [
+        'prevue'        => 'Prévue',
+        'constatee'     => 'Constatée (à recouvrer)',
+        'encaissee'     => 'Encaissée',
+        'comptabilisee' => 'Comptabilisée',
+        'validee'       => 'Validée',
+    ];
+
+    public const STATUTS_RECOUVRES = ['encaissee', 'comptabilisee', 'validee'];
 
     protected $casts = [
         'montant'               => 'decimal:2',
+        'montant_constate'      => 'decimal:2',
         'date_recette'          => 'date',
         'date_comptabilisation' => 'date',
+        'date_constatation'     => 'date',
+        'date_encaissement'     => 'date',
         'mois'                  => 'integer',
         'annee'                 => 'integer',
     ];
@@ -49,6 +67,12 @@ class RecetteReelle extends Model
         return $this->belongsTo(PrevisionRecetteMensuelle::class);
     }
 
+    /** ✅ Débiteur / payeur (référentiel des tiers). */
+    public function tiers(): BelongsTo
+    {
+        return $this->belongsTo(TiersRecette::class, 'tiers_recette_id')->withTrashed();
+    }
+
     public function validateur(): BelongsTo
     {
         return $this->belongsTo(\App\Models\User::class, 'validateur_id');
@@ -62,6 +86,37 @@ class RecetteReelle extends Model
     {
         return $this->statut === 'prevue';
     }
+    /** ✅ Créance certaine, non encore encaissée (RAR à la clôture). */
+    public function estConstatee(): bool
+    {
+        return $this->statut === 'constatee';
+    }
+
+    /** ✅ Recette comptée dans le recouvré. */
+    public function estRecouvree(): bool
+    {
+        return in_array($this->statut, self::STATUTS_RECOUVRES, true);
+    }
+
+    public function scopeConstatees($query)
+    {
+        return $query->where('statut', 'constatee');
+    }
+
+    /** ✅ RAR de la recette : attendu − encaissé (jamais négatif). */
+    public function getResteARecouvrerAttribute(): float
+    {
+        return max(0, round((float) ($this->montant_constate ?? $this->montant) - (float) $this->montant, 2));
+    }
+
+    /** Expression SQL du reste à recouvrer (pour les totaux). */
+    public static function sqlResteARecouvrer(string $alias = ''): string
+    {
+        $p = $alias ? "{$alias}." : '';
+
+        return "GREATEST(COALESCE(CAST({$p}montant_constate AS FLOAT), CAST({$p}montant AS FLOAT)) - CAST({$p}montant AS FLOAT), 0)";
+    }
+
     public function estEncaissee(): bool
     {
         return $this->statut === 'encaissee';
@@ -78,6 +133,35 @@ class RecetteReelle extends Model
     // ====================================
     // ACTIONS
     // ====================================
+
+    /**
+     * ✅ Encaissement (total ou PARTIEL) d'une recette attendue : le montant encaissé augmente,
+     * le reste à recouvrer diminue ; le statut se met à jour automatiquement à l'enregistrement.
+     */
+    public function encaisser(array $paiement = []): bool
+    {
+        $reste = $this->reste_a_recouvrer;
+        $montant = round((float) ($paiement['montant'] ?? $reste), 2);
+
+        if ($reste <= 0 || $montant <= 0 || $montant > $reste + 0.01) {
+            return false;
+        }
+
+        $this->update([
+            'montant'            => (float) $this->montant + $montant,
+            'date_encaissement'  => $paiement['date_encaissement'] ?? now()->toDateString(),
+            'mode_paiement'      => $paiement['mode_paiement'] ?? $this->mode_paiement,
+            'reference_paiement' => $paiement['reference_paiement'] ?? $this->reference_paiement,
+        ]);
+
+        \App\Models\ActivityLog::logAction($this, 'encaisser', [
+            'montant_encaisse' => $montant,
+            'reste_a_recouvrer' => $this->reste_a_recouvrer,
+            'date' => $this->date_encaissement?->format('d/m/Y'),
+        ]);
+
+        return true;
+    }
 
     public function comptabiliser(): bool
     {
@@ -149,6 +233,32 @@ class RecetteReelle extends Model
             }
         });
 
+        // ✅ Statut automatique : « constatée » tant qu'il reste à recouvrer, « encaissée » une fois soldée.
+        //    Les étapes comptabilisée / validée ne sont pas modifiées.
+        static::saving(function ($recette) {
+            // ✅ Le champ texte « payeur » reprend le nom du tiers (compatibilité des états existants)
+            if ($recette->isDirty('tiers_recette_id')) {
+                $recette->payeur = $recette->tiers_recette_id
+                    ? \App\Models\TiersRecette::withTrashed()->whereKey($recette->tiers_recette_id)->value('nom')
+                    : $recette->payeur;
+            }
+
+            if ($recette->montant_constate === null) {
+                $recette->montant_constate = $recette->montant;
+            }
+
+            if (!in_array($recette->statut, ['comptabilisee', 'validee', 'prevue'], true)) {
+                $recette->statut = (float) $recette->montant + 0.01 >= (float) $recette->montant_constate ? 'encaissee' : 'constatee';
+            }
+
+            if ((float) $recette->montant > 0 && !$recette->date_encaissement) {
+                $recette->date_encaissement = $recette->date_recette ?? now()->toDateString();
+            }
+            if (!$recette->date_constatation) {
+                $recette->date_constatation = $recette->date_recette ?? now()->toDateString();
+            }
+        });
+
         // ── Après création ───────────────────────────────────────
         static::created(function ($recette) {
             self::recalculerDepuisId($recette->prevision_recette_mensuelle_id);
@@ -195,7 +305,7 @@ class RecetteReelle extends Model
             // ── 1. Recalculer le montant recouvré du mois ────────
             $montantRecouvre = \DB::table('recettes_reelles')
                 ->where('prevision_recette_mensuelle_id', $mensuelleId)
-                ->whereIn('statut', ['encaissee', 'comptabilisee', 'validee'])
+                ->where('statut', '!=', 'prevue')   // « montant » = part ENCAISSÉE (0 pour une créance non perçue)
                 ->whereNull('deleted_at')
                 ->sum(\DB::raw('CAST(montant AS FLOAT)'));
 

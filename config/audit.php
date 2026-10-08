@@ -99,6 +99,7 @@ return [
                 'App\Models\EtatConfig'                => "Configuration d'état",
                 'App\Models\ClotureExercice'        => "Clôture d'exercice",
                 'App\Models\ClotureLigne'           => 'Ligne de clôture',
+                'App\Models\TiersRecette'           => 'Débiteur / payeur',
                 'App\Models\NatureServiceFait'  => 'Nature de service fait',
                 'App\Models\PreuveServiceFait'  => 'Preuve de service fait',
                 'App\Models\Liquidation'        => 'Liquidation',

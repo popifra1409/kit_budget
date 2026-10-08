@@ -23,6 +23,8 @@ use App\Models\DepenseRegie;
 use App\Observers\DepenseRegieObserver;
 use App\Models\BonCommandeRegie;
 use App\Observers\BonCommandeRegieObserver;
+use App\Models\LigneBudgetaire;
+use App\Observers\LigneBudgetaireConcordanceObserver;
 use App\Support\Audit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\Permission\Models\Role;
@@ -182,6 +184,8 @@ class AppServiceProvider extends ServiceProvider
 
             // Suivi et évaluation
             'rapport_activite_ligne'       => \App\Models\RapportActiviteLigne::class,
+            'cloture_exercice'             => \App\Models\ClotureExercice::class,
+            'cloture_ligne'                => \App\Models\ClotureLigne::class,
 
             // Administration
             'transmission'                 => \App\Models\Transmission::class,
@@ -208,6 +212,7 @@ class AppServiceProvider extends ServiceProvider
         PieceDossier::observe(PieceDossierObserver::class);
         DepenseRegie::observe(DepenseRegieObserver::class);
         BonCommandeRegie::observe(BonCommandeRegieObserver::class);
+        LigneBudgetaire::observe(LigneBudgetaireConcordanceObserver::class);
 
         // ✅ AJOUT — Audit de tous les modules (modeles listes dans config/audit.php,
         //    hors modeles deja journalises nativement par LogsActivity)

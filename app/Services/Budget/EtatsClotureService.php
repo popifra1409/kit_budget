@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/EtatsClotureService.php
 
 namespace App\Services\Budget;
 
@@ -60,11 +61,13 @@ class EtatsClotureService
 
         $dette = max(0, $engage - $paye);
 
+        // RAR = Σ (recette attendue − recette encaissée), sur les recettes de l'exercice
         $rar = 0.0;
         $rarNombre = 0;
-        if (Schema::hasColumn('recettes_reelles', 'statut')) {
-            $rarQuery = RecetteReelle::where('exercice_id', $exercice->id)->where('statut', 'constatee');
-            $rar = (float) (clone $rarQuery)->sum('montant');
+        if (Schema::hasColumn('recettes_reelles', 'montant_constate')) {
+            $expression = RecetteReelle::sqlResteARecouvrer();
+            $rarQuery = RecetteReelle::where('exercice_id', $exercice->id)->where('statut', '!=', 'prevue')->whereRaw("{$expression} > 0");
+            $rar = (float) (clone $rarQuery)->sum(\Illuminate\Support\Facades\DB::raw($expression));
             $rarNombre = (clone $rarQuery)->count();
         }
 
@@ -99,7 +102,7 @@ class EtatsClotureService
                 'rar'           => [
                     'montant' => $rar,
                     'nombre' => $rarNombre,
-                    'note' => $rarNombre ? null : "Aucune recette au statut « constatée » : RAR non disponible tant que les créances certaines ne sont pas enregistrées."
+                    'note' => $rarNombre ? null : 'Aucun reste à recouvrer : toutes les recettes attendues sont encaissées.'
                 ],
                 'deno'          => ['montant' => $deno],
                 'reste_a_payer' => ['montant' => $rap, 'net' => $rapNet, 'nombre' => (clone $resteAPayer)->count()],

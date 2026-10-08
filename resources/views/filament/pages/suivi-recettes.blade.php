@@ -1,4 +1,4 @@
-{{-- resources/views/filament/pages/suivi-recettes.blade.php --}}
+
 <x-filament-panels::page>
 
     @php
@@ -363,6 +363,16 @@
                 <div class="kpi-sub">Au {{ now()->format('d/m/Y') }}</div>
             </div>
 
+            {{-- ✅ Créances constatées non encaissées (futur RAR) --}}
+            <div class="kpi-card">
+                <div class="kpi-label">Constaté non encaissé (RAR)</div>
+                <div class="kpi-value" style="color:#854d0e;">
+                    {{ number_format($totalConstate, 0, ',', ' ') }}
+                    <span style="font-size:.65rem; font-weight:400;"> FCFA</span>
+                </div>
+                <div class="kpi-sub">Créances certaines à recouvrer</div>
+            </div>
+
             <div class="kpi-card">
                 <div class="kpi-label">Taux de recouvrement</div>
                 <div class="kpi-value"
@@ -421,6 +431,10 @@
 
                                     <th colspan="2">Cumul</th>
                                     <th rowspan="2" style="text-align:right;">Écart</th>
+                                    <th rowspan="2" style="text-align:right;" title="Créances constatées non encaissées">Constaté<br>non encaissé</th>
+                                    @if($peutRetirer)
+                                        <th rowspan="2"></th>
+                                    @endif
                                 </tr>
 
                                 {{-- Ligne 2 : Prévu / Réel / Taux --}}
@@ -489,6 +503,23 @@
         <td class="td-num" style="font-weight:600; color:{{ $row['ecart'] >= 0 ? '#166534' : '#991b1b' }};">
             {{ $row['ecart'] >= 0 ? '+' : '' }}{{ number_format($row['ecart'], 0, ',', ' ') }}
         </td>
+        <td class="td-num" style="color:#854d0e;">
+            {{ $row['constate'] > 0 ? number_format($row['constate'], 0, ',', ' ') : '—' }}
+        </td>
+        @if($peutRetirer)
+            <td style="text-align:center;">
+                @if($row['nb_recettes'] === 0 && !$row['a_mouvements'])
+                    <button type="button"
+                        wire:click="retirerLigne({{ $row['id'] }})"
+                        wire:confirm="Retirer la ligne {{ $row['code'] }} — {{ addslashes($row['libelle']) }} et ses 12 prévisions mensuelles ?"
+                        title="Retirer cette ligne de la prévision"
+                        style="color:#991b1b; font-size:.75rem; background:none; border:none; cursor:pointer;">✕</button>
+                @else
+                    <span title="{{ $row['nb_recettes'] > 0 ? $row['nb_recettes'] . ' recette(s) enregistrée(s)' : 'Modifiée par un collectif' }}"
+                        style="color:#9ca3af; font-size:.7rem; cursor:help;">🔒</span>
+                @endif
+            </td>
+        @endif
     </tr>
     @endforeach
 </tbody>
@@ -531,6 +562,10 @@
                                     <td class="td-num" style="color:{{ $totalEcart >= 0 ? '#166534' : '#991b1b' }};">
                                         {{ $totalEcart >= 0 ? '+' : '' }}{{ number_format($totalEcart, 0, ',', ' ') }}
                                     </td>
+                                    <td class="td-num" style="color:#854d0e;">{{ number_format($totalConstate, 0, ',', ' ') }}</td>
+                                    @if($peutRetirer)
+                                        <td></td>
+                                    @endif
                                 </tr>
 
                                 {{-- Ligne taux global --}}
@@ -556,6 +591,10 @@
                                         <span class="taux-badge {{ $tc2 }}" style="font-size:.76rem;">{{ $tauxGlobal }}%</span>
                                     </td>
                                     <td></td>
+                                    <td></td>
+                                    @if($peutRetirer)
+                                        <td></td>
+                                    @endif
                             </tr>
                         </tfoot>
             </table>

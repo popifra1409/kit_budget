@@ -82,6 +82,29 @@ class SuiviRecettes extends Page
             ->get()
             ->groupBy('ligne_prevision_recette_id');
 
+        // ✅ Recettes CONSTATÉES non encaissées (futur RAR) et nombre de recettes, par ligne
+        $parLigne = DB::table('recettes_reelles as r')
+            ->join('previsions_recettes_mensuelles as m', 'm.id', '=', 'r.prevision_recette_mensuelle_id')
+            ->whereIn('m.ligne_prevision_recette_id', $ligneIds)
+            ->whereNull('r.deleted_at')
+            ->groupBy('m.ligne_prevision_recette_id')
+            ->select(
+                'm.ligne_prevision_recette_id as ligne_id',
+                // ✅ RAR = Σ (recette attendue − recette encaissée), calculé
+                DB::raw('SUM(' . \App\Models\RecetteReelle::sqlResteARecouvrer('r') . ') as constate'),
+                DB::raw('COUNT(*) as nb_recettes')
+            )
+            ->get()
+            ->keyBy('ligne_id');
+
+        // ✅ Lignes modifiées par un collectif (non retirables)
+        $avecMouvements = DB::table('mouvements_collectifs')
+            ->whereIn('ligne_recette_id', $ligneIds)
+            ->when(\Illuminate\Support\Facades\Schema::hasColumn('mouvements_collectifs', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'))
+            ->pluck('ligne_recette_id')
+            ->unique()
+            ->flip();
+
         $anneeExercice = DB::table('exercices')
             ->where('id', $this->exerciceId)
             ->value('annee');
@@ -102,6 +125,9 @@ class SuiviRecettes extends Page
                 'cumul_recouvre' => 0,
                 'taux_global'    => 0,
                 'ecart'          => 0,
+                'constate'       => (float) ($parLigne->get($ligne->id)->constate ?? 0),
+                'nb_recettes'    => (int) ($parLigne->get($ligne->id)->nb_recettes ?? 0),
+                'a_mouvements'   => $avecMouvements->has($ligne->id),
             ];
 
             $cumulPrevu    = 0;
@@ -172,6 +198,8 @@ class SuiviRecettes extends Page
             'totalRecouvre' => $totalRecouvre,
             'totalEcart'    => $totalEcart,
             'tauxGlobal'    => $tauxGlobal,
+            'totalConstate' => collect($data)->sum('constate'),   // ✅ futur RAR
+            'peutRetirer'   => $this->peutRetirerDesLignes(),
 
             // ✅ AJOUTER — tableau des labels de mois
             'moisLabels'    => [
@@ -241,6 +269,75 @@ class SuiviRecettes extends Page
     public function changerPrevision(int $previsionId): void
     {
         $this->previsionId = $previsionId;
+        $this->lastRefresh = time();
+    }
+
+    // =========================================================
+    // ✅ RETRAIT D'UNE LIGNE DE PRÉVISION
+    // =========================================================
+
+    public function peutRetirerDesLignes(): bool
+    {
+        $u = auth()->user();
+
+        return $u && ($u->hasAnyRole(['super_admin', 'admin']) || $u->can('delete_prevision_recette'));
+    }
+
+    /**
+     * Retire une ligne de prévision (et ses 12 prévisions mensuelles), en suppression récupérable.
+     * Refusé si des recettes sont enregistrées sur la ligne ou si un collectif l'a modifiée :
+     * la retirer fausserait alors le recouvré ou le budget rectifié.
+     */
+    public function retirerLigne(int $ligneId): void
+    {
+        if (!$this->peutRetirerDesLignes()) {
+            \Filament\Notifications\Notification::make()->danger()->title('Action non autorisée')->send();
+            return;
+        }
+
+        $ligne = \App\Models\LignePrevisionRecette::where('prevision_recette_id', $this->previsionId)->find($ligneId);
+        if (!$ligne) {
+            return;
+        }
+
+        $nbRecettes = DB::table('recettes_reelles as r')
+            ->join('previsions_recettes_mensuelles as m', 'm.id', '=', 'r.prevision_recette_mensuelle_id')
+            ->where('m.ligne_prevision_recette_id', $ligne->id)
+            ->whereNull('r.deleted_at')
+            ->count();
+
+        if ($nbRecettes > 0) {
+            \Filament\Notifications\Notification::make()->warning()->title('Retrait impossible')
+                ->body("{$nbRecettes} recette(s) sont enregistrées sur la ligne {$ligne->code_nomenclature} : supprimez-les ou réimputez-les d'abord.")
+                ->persistent()->send();
+            return;
+        }
+
+        if (DB::table('mouvements_collectifs')->where('ligne_recette_id', $ligne->id)
+            ->when(\Illuminate\Support\Facades\Schema::hasColumn('mouvements_collectifs', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'))
+            ->exists()
+        ) {
+            \Filament\Notifications\Notification::make()->warning()->title('Retrait impossible')
+                ->body("La ligne {$ligne->code_nomenclature} a été modifiée par un collectif budgétaire : la retirer fausserait le budget rectifié.")
+                ->persistent()->send();
+            return;
+        }
+
+        DB::transaction(function () use ($ligne) {
+            \App\Models\PrevisionRecetteMensuelle::where('ligne_prevision_recette_id', $ligne->id)->get()->each->delete();
+            $ligne->delete();
+
+            \App\Models\ActivityLog::logAction($ligne, 'retrait_ligne_prevision', [
+                'code' => $ligne->code_nomenclature,
+                'libelle' => $ligne->libelle_nomenclature,
+                'montant_prevu' => (float) $ligne->montant_rectifie,
+            ]);
+        });
+
+        \Filament\Notifications\Notification::make()->success()->title('Ligne retirée')
+            ->body("{$ligne->code_nomenclature} — {$ligne->libelle_nomenclature} (suppression récupérable par un administrateur).")
+            ->send();
+
         $this->lastRefresh = time();
     }
 

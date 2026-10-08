@@ -112,9 +112,10 @@ class RecetteReelleResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
+        // ⚠️ Pas de tri ici : il passerait avant le regroupement par mois et fragmenterait les groupes.
+        //    Le tri par date est assuré par defaultSort(), à l'intérieur de chaque mois.
         $query = parent::getEloquentQuery()
-            ->with(['previsionRecetteMensuelle.lignePrevisionRecette'])
-            ->orderByDesc('date_recette');
+            ->with(['previsionRecetteMensuelle.lignePrevisionRecette']);
 
         $exerciceActif = Exercice::getActif();
         if ($exerciceActif) {
@@ -149,7 +150,8 @@ class RecetteReelleResource extends Resource
                         ->afterStateUpdated(fn($set) => $set('prevision_recette_mensuelle_id', null)),
 
                     Forms\Components\DatePicker::make('date_recette')
-                        ->label("Date d'encaissement")->default(now())->required(),
+                        ->label('Date de la recette (constatation)')
+                        ->default(now())->required(),
                 ])
                 ->columns(3),
 
@@ -218,16 +220,56 @@ class RecetteReelleResource extends Resource
                     ]),
                 ]),
 
-            Forms\Components\Section::make('Montant et paiement')
+            Forms\Components\Section::make('Recette attendue et recette encaissée')
+                ->description('Le reste à recouvrer (RAR) = attendue − encaissée est calculé automatiquement. Seul l\'encaissé compte dans le recouvré.')
                 ->schema([
-                    Forms\Components\TextInput::make('montant')
-                        ->label('Montant encaissé (FCFA)')
-                        ->numeric()->required()->minValue(1)->prefix('FCFA'),
+                    Forms\Components\TextInput::make('montant_constate')
+                        ->label('Recette attendue (constatée)')
+                        ->helperText('Créance : facture, prise en charge, convention, subvention notifiée…')
+                        ->numeric()->required()->minValue(1)->prefix('FCFA')
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(function ($state, Get $get, Forms\Set $set) {
+                            // À la saisie : encaissé = attendu par défaut (cas le plus fréquent), modifiable
+                            if ($get('montant') === null || $get('montant') === '') {
+                                $set('montant', $state);
+                            }
+                        }),
 
-                    Forms\Components\TextInput::make('payeur')
-                        ->label('Payeur / Source')->maxLength(255),
+                    Forms\Components\TextInput::make('montant')
+                        ->label('Recette encaissée')
+                        ->helperText('0 si rien n\'est encore perçu ; montant partiel si la créance n\'est payée qu\'en partie.')
+                        ->numeric()->required()->minValue(0)->prefix('FCFA')
+                        ->lte('montant_constate')
+                        ->validationMessages(['lte' => "L'encaissé ne peut pas dépasser la recette attendue."])
+                        ->live(onBlur: true),
+
+                    Forms\Components\Placeholder::make('_rar')
+                        ->label('Reste à recouvrer (RAR)')
+                        ->content(function (Get $get) {
+                            $rar = max(0, (float) $get('montant_constate') - (float) $get('montant'));
+                            return new \Illuminate\Support\HtmlString('<strong style="color:' . ($rar > 0 ? '#b45309' : '#166534') . ';">'
+                                . number_format($rar, 0, ',', ' ') . ' FCFA</strong>' . ($rar > 0 ? ' — à recouvrer' : ' — soldée'));
+                        }),
+
+                    // ✅ Débiteur / payeur : référentiel des tiers, facultatif, création possible sur place
+                    Forms\Components\Select::make('tiers_recette_id')
+                        ->label('Débiteur / Payeur')
+                        ->options(fn() => \App\Models\TiersRecette::optionsGroupees())
+                        ->searchable()
+                        ->required()
+                        ->placeholder('Facultatif')
+                        ->createOptionForm([
+                            Forms\Components\TextInput::make('nom')->label('Nom')->required()->maxLength(255)
+                                ->unique('tiers_recettes', 'nom', modifyRuleUsing: fn($rule) => $rule->whereNull('deleted_at')),
+                            Forms\Components\Select::make('categorie')->label('Catégorie')
+                                ->options(\App\Models\TiersRecette::CATEGORIES)->default('autre')->required(),
+                            Forms\Components\TextInput::make('telephone')->label('Téléphone')->tel()->maxLength(50),
+                        ])
+                        ->createOptionUsing(fn(array $data) => \App\Models\TiersRecette::create($data + ['actif' => true])->id)
+                        ->createOptionModalHeading('Nouveau débiteur / payeur'),
 
                     Forms\Components\Select::make('mode_paiement')
+                        ->visible(fn(Get $get) => (float) $get('montant') > 0)
                         ->label('Mode de paiement')
                         ->options([
                             'virement' => 'Virement bancaire',
@@ -239,16 +281,8 @@ class RecetteReelleResource extends Resource
                         ->default('virement'),
 
                     Forms\Components\TextInput::make('reference_paiement')
-                        ->label('Référence paiement')->maxLength(100),
-
-                    Forms\Components\Select::make('statut')
-                        ->label('Statut')
-                        ->options([
-                            'encaissee'     => 'Encaissée',
-                            'comptabilisee' => 'Comptabilisée',
-                            'validee'       => 'Validée',
-                        ])
-                        ->default('encaissee')->required(),
+                        ->label('Référence paiement')->maxLength(100)
+                        ->visible(fn(Get $get) => (float) $get('montant') > 0),
 
                     Forms\Components\Textarea::make('libelle')
                         ->label('Libellé / Objet')->rows(2),
@@ -298,14 +332,26 @@ class RecetteReelleResource extends Resource
                             ?->libelle_nomenclature
                     ),
 
+                Tables\Columns\TextColumn::make('montant_constate')
+                    ->label('Attendue')->money('XAF')->sortable()
+                    ->summarize(Tables\Columns\Summarizers\Sum::make()->money('XAF')->label('Attendue')),
+
                 Tables\Columns\TextColumn::make('montant')
-                    ->label('Montant')->money('XAF')->sortable()->weight('bold')->color('success')
-                    ->summarize([
-                        Tables\Columns\Summarizers\Sum::make()->money('XAF')->label('Total'),
-                    ]),
+                    ->label('Encaissée')->money('XAF')->sortable()->weight('bold')->color('success')
+                    ->summarize(Tables\Columns\Summarizers\Sum::make()->money('XAF')->label('Encaissée')),
+
+                Tables\Columns\TextColumn::make('reste_a_recouvrer')
+                    ->label('RAR')
+                    ->getStateUsing(fn($record) => $record->reste_a_recouvrer)
+                    ->money('XAF')
+                    ->color(fn($state) => (float) $state > 0 ? 'warning' : 'gray')
+                    ->summarize(Tables\Columns\Summarizers\Summarizer::make()->label('RAR')
+                        ->using(fn($query) => (float) $query->sum(\Illuminate\Support\Facades\DB::raw(RecetteReelle::sqlResteARecouvrer())))
+                        ->money('XAF')),
 
                 Tables\Columns\TextColumn::make('payeur')
-                    ->label('Payeur')->searchable()->limit(25)->toggleable(),
+                    ->label('Débiteur / Payeur')->searchable()->limit(25)->toggleable()
+                    ->description(fn($record) => $record->tiers?->categorie_label),
 
                 Tables\Columns\TextColumn::make('mode_paiement')
                     ->label('Mode')->badge()->color('gray')->toggleable(),
@@ -313,17 +359,13 @@ class RecetteReelleResource extends Resource
                 Tables\Columns\TextColumn::make('statut')
                     ->label('Statut')->badge()
                     ->color(fn(string $state) => match ($state) {
-                        'encaissee'     => 'warning',
+                        'constatee'     => 'warning',
+                        'encaissee'     => 'success',
                         'comptabilisee' => 'info',
-                        'validee'       => 'success',
+                        'validee'       => 'primary',
                         default         => 'gray',
                     })
-                    ->formatStateUsing(fn(string $state) => match ($state) {
-                        'encaissee'     => 'Encaissée',
-                        'comptabilisee' => 'Comptabilisée',
-                        'validee'       => 'Validée',
-                        default         => $state,
-                    }),
+                    ->formatStateUsing(fn(string $state) => RecetteReelle::STATUTS[$state] ?? $state),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('mois')
@@ -331,11 +373,24 @@ class RecetteReelleResource extends Resource
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
-                    ->options([
-                        'encaissee'     => 'Encaissée',
-                        'comptabilisee' => 'Comptabilisée',
-                        'validee'       => 'Validée',
-                    ]),
+                    ->options(RecetteReelle::STATUTS),
+
+                // ✅ Créances constatées non perçues (futur RAR)
+                Tables\Filters\SelectFilter::make('tiers_recette_id')
+                    ->label('Débiteur / Payeur')
+                    ->relationship('tiers', 'nom')
+                    ->searchable()->preload(),
+
+                Tables\Filters\SelectFilter::make('categorie_tiers')
+                    ->label('Catégorie de débiteur')
+                    ->options(\App\Models\TiersRecette::CATEGORIES)
+                    ->query(fn($query, array $data) => filled($data['value'] ?? null)
+                        ? $query->whereHas('tiers', fn($q) => $q->where('categorie', $data['value']))
+                        : $query),
+
+                Tables\Filters\Filter::make('non_percues')
+                    ->label('Avec reste à recouvrer (RAR)')
+                    ->query(fn($query) => $query->whereRaw(RecetteReelle::sqlResteARecouvrer() . ' > 0')),
             ])
 
             // ════════════════════════════════════════════════════════
@@ -344,6 +399,32 @@ class RecetteReelleResource extends Resource
             // ════════════════════════════════════════════════════════
             ->actions([
                 Tables\Actions\ActionGroup::make([
+
+                    // ✅ Encaissement (total ou partiel) du reste à recouvrer
+                    Tables\Actions\Action::make('encaisser')
+                        ->label('Encaisser')
+                        ->icon('heroicon-o-banknotes')
+                        ->color('success')
+                        ->visible(fn($record) => $record->reste_a_recouvrer > 0 && !in_array($record->statut, ['comptabilisee', 'validee'], true))
+                        ->modalDescription(fn($record) => 'Attendue : ' . number_format((float) $record->montant_constate, 0, ',', ' ')
+                            . ' · déjà encaissée : ' . number_format((float) $record->montant, 0, ',', ' ')
+                            . ' · reste à recouvrer : ' . number_format($record->reste_a_recouvrer, 0, ',', ' ') . ' FCFA'
+                            . ($record->payeur ? " ({$record->payeur})" : ''))
+                        ->form(fn($record) => [
+                            Forms\Components\TextInput::make('montant')->label('Montant encaissé')
+                                ->numeric()->required()->minValue(1)->maxValue($record->reste_a_recouvrer)
+                                ->default($record->reste_a_recouvrer)->prefix('FCFA'),
+                            Forms\Components\DatePicker::make('date_encaissement')->label("Date d'encaissement")->default(now())->maxDate(now())->required(),
+                            Forms\Components\Select::make('mode_paiement')->label('Mode de paiement')
+                                ->options(['virement' => 'Virement bancaire', 'cheque' => 'Chèque', 'especes' => 'Espèces', 'mobile' => 'Mobile Money', 'autre' => 'Autre'])
+                                ->default('virement')->required(),
+                            Forms\Components\TextInput::make('reference_paiement')->label('Référence paiement')->maxLength(100),
+                        ])
+                        ->action(function ($record, array $data) {
+                            $record->encaisser($data);
+                            \Filament\Notifications\Notification::make()->success()->title('Encaissement enregistré')
+                                ->body("{$record->numero} : reste à recouvrer " . number_format($record->fresh()->reste_a_recouvrer, 0, ',', ' ') . ' FCFA.')->send();
+                        }),
 
                     Tables\Actions\EditAction::make(),
 
@@ -377,6 +458,25 @@ class RecetteReelleResource extends Resource
                         }),
                 ]),
             ])
+            // ✅ Regroupement par mois de la prévision (avec sous-totaux encaissé / constaté par mois)
+            ->groups([
+                Tables\Grouping\Group::make('mois')
+                    ->label('Mois')
+                    ->getTitleFromRecordUsing(fn($record) => (self::$moisOptions[(int) $record->mois] ?? $record->mois) . ' ' . $record->annee)
+                    ->orderQueryUsing(fn(Builder $query, string $direction) => $query->orderBy('annee', 'desc')->orderBy('mois', 'desc'))
+                    ->collapsible(),
+
+                Tables\Grouping\Group::make('tiers.nom')
+                    ->label('Débiteur / Payeur')
+                    ->collapsible(),
+
+                Tables\Grouping\Group::make('code_nomenclature')
+                    ->label('Ligne de nomenclature')
+                    ->getTitleFromRecordUsing(fn($record) => $record->code_nomenclature . ' — '
+                        . ($record->previsionRecetteMensuelle?->lignePrevisionRecette?->libelle_nomenclature ?? ''))
+                    ->collapsible(),
+            ])
+            ->defaultGroup('mois')
             ->defaultSort('date_recette', 'desc');
     }
 
