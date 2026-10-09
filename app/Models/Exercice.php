@@ -114,6 +114,14 @@ class Exercice extends Model
     }
 
     /**
+     * Relation : Prévisions de recettes liées à cet exercice
+     */
+    public function previsionRecettes(): HasMany
+    {
+        return $this->hasMany(PrevisionRecette::class, 'exercice_id');
+    }
+
+    /**
      * Relation : Bordereaux d'engagement
      */
     public function bordereaux(): HasMany
