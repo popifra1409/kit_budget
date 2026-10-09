@@ -151,7 +151,7 @@ class MouvementCollectif extends Model
                         //    pour que la réapplication après correction fonctionne.
                         $ligne->updateQuietly([
                             'est_issue_collectif'   => true,
-                            'collectif_creation_id' => $this->collectif_id,
+                            'collectif_creation_id' => $this->collectif_budgetaire_id,
                             'budget_initial'        => $this->montant_modification,
                             'budget_rectifie'       => $this->montant_modification,
                             'montant_initial'       => $this->montant_modification,
@@ -160,7 +160,9 @@ class MouvementCollectif extends Model
                 } elseif ($this->ligne_depense_id) {
                     $ligne = $this->ligneDepense;
                     if ($ligne) {
-                        // ✅ Recalcul complet — budget_rectifie = initial + Σ collectifs adoptés
+                        // ✅ Recalcul complet — budget_rectifie = initial + Σ collectifs adoptés.
+                        //    Le mouvement doit être actif AVANT le recalcul pour y être compté.
+                        $this->updateQuietly(['statut' => 'actif', 'date_annulation' => null, 'annule_par' => null]);
                         \App\Filament\Budget\Resources\FicheControleEngagementsResource::recalculerLigne($ligne);
                     }
                 }
@@ -170,7 +172,7 @@ class MouvementCollectif extends Model
                     if ($ligne) {
                         $ligne->updateQuietly([
                             'est_issue_collectif'   => true,
-                            'collectif_creation_id' => $this->collectif_id,
+                            'collectif_creation_id' => $this->collectif_budgetaire_id,
                             'montant_prevu_initial' => $this->montant_modification,
                             'montant_rectifie'      => $this->montant_modification,
                         ]);
@@ -233,8 +235,10 @@ class MouvementCollectif extends Model
         if ($this->type === 'depense' && $this->ligne_depense_id && $this->montant_modification > 0) {
             $ligne = $this->ligneDepense;
             if ($ligne) {
-                // Après annulation, budget_rectifie sera réduit du montant du mouvement
-                $futureRectifie = (float) $ligne->budget_rectifie - (float) $this->montant_modification;
+                // Après annulation, budget_rectifie sera réduit du montant du mouvement.
+                // getBudgetRectifieReel() plutôt que la colonne stockée : l'analyse de
+                // réinitialisation utilise la même formule, elles ne peuvent plus diverger.
+                $futureRectifie = $ligne->getBudgetRectifieReel() - (float) $this->montant_modification;
                 $futureDisponible = $futureRectifie - (float) $ligne->engage;
                 if ($futureDisponible < 0) {
                     throw new \Exception(
@@ -302,7 +306,9 @@ class MouvementCollectif extends Model
             } elseif ($this->ligne_depense_id) {
                 $ligne = $this->ligneDepense;
                 if ($ligne) {
-                    // ✅ Recalcul complet — collectif annulé sera exclu du SUM
+                    // ✅ Le mouvement est marqué annulé AVANT le recalcul, qui l'exclut
+                    //    alors du total. Symétrique de la branche « recette » ci-dessous.
+                    $this->updateQuietly(['statut' => 'annule', 'date_annulation' => now(), 'annule_par' => $user?->id]);
                     \App\Filament\Budget\Resources\FicheControleEngagementsResource::recalculerLigne($ligne);
                 }
             }

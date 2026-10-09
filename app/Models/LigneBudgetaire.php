@@ -362,11 +362,16 @@ class LigneBudgetaire extends Model
      * budget_rectifie = budget_initial
      *                 + Σ virements EXÉCUTÉS (entrants - sortants)
      *                 + Σ mouvements de collectifs ADOPTÉS de type "dépense"
-     *                   (nouvelle ligne / modification directe — jamais les
-     *                   virements, déjà comptés ci-dessus pour éviter le
-     *                   double comptage, qu'ils soient manuels ou issus
-     *                   d'un collectif : un virement de collectif devient un
-     *                   VirementBudgetaire à statut 'execute' comme un autre).
+     *                   portant sur une ligne EXISTANTE (modification directe)
+     *                   — jamais les virements, déjà comptés ci-dessus pour
+     *                   éviter le double comptage, qu'ils soient manuels ou
+     *                   issus d'un collectif : un virement de collectif devient
+     *                   un VirementBudgetaire à statut 'execute' comme un autre.
+     *
+     * Une ligne créée par un collectif (nouvelle_ligne_depense_id) a pour
+     * budget_initial le montant du mouvement qui l'a créée : ce mouvement n'est
+     * donc PAS ajouté une seconde fois. Symétrique de la côté recette — cf.
+     * LignePrevisionRecette::getMontantRectifieReel().
      */
     public function getBudgetRectifieReel(): float
     {
@@ -385,11 +390,14 @@ class LigneBudgetaire extends Model
             ->where('statut', 'execute')
             ->sum('montant');
 
-        $mouvements = \App\Models\MouvementCollectif::where(function ($q) {
-            $q->where('ligne_depense_id', $this->id)
-                ->orWhere('nouvelle_ligne_depense_id', $this->id);
-        })
+        $mouvements = \App\Models\MouvementCollectif::where('ligne_depense_id', $this->id)
             ->where('type', 'depense')
+            // Un mouvement annulé ne doit plus peser sur la ligne. Sans ce filtre,
+            // « Annuler ce mouvement » était sans effet sur budget_rectifie côté
+            // dépense (le côté recette, lui, filtrait déjà — cf.
+            // LignePrevisionRecette::getMontantRectifieReel).
+            ->where(fn($q) => $q->whereNull('statut')->orWhereNotIn('statut', ['annule', 'annulee']))
+            ->whereNull('date_annulation')
             ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'))
             ->sum('montant_modification');
 

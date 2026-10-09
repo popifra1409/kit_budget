@@ -94,6 +94,20 @@ class HistoriqueLigneBudgetaireService
         $entrants = (float) (clone $virements)->whereIn('ligne_destination_id', $ligneIds)->sum('montant');
         $sortants = (float) (clone $virements)->whereIn('ligne_source_id', $ligneIds)->sum('montant');
 
+        // ✅ Un collectif adopté peut ne faire QUE transvaser des crédits (mouvements
+        //    de type « virement »). Compté uniquement sur les mouvements de ligne, il
+        //    restait invisible au tableau de bord : « 0 FCFA · Aucun collectif adopté ».
+        $mouvementsVirements = MouvementCollectif::query()
+            ->where('type', 'virement')
+            ->whereIn('virement_budgetaire_id', (clone $virements)->pluck('id'))
+            ->where(fn($q) => $q->whereNull('statut')->orWhereNotIn('statut', ['annule', 'annulee']))
+            ->whereNull('date_annulation')
+            ->whereHas('collectif', fn($q) => $q->where('statut', 'adopte'));
+
+        $idsCollectifs = (clone $mouvements)->distinct()->pluck('collectif_budgetaire_id')
+            ->merge($mouvementsVirements->distinct()->pluck('collectif_budgetaire_id'))
+            ->filter()->unique();
+
         return [
             'budget_initial'      => $initial,
             'augmentations'       => $augmentations,
@@ -101,10 +115,16 @@ class HistoriqueLigneBudgetaireService
             'collectifs_net'      => $augmentations + $reductions,
             'nb_augmentations'    => (clone $mouvements)->where('montant_modification', '>', 0)->count(),
             'nb_reductions'       => (clone $mouvements)->where('montant_modification', '<', 0)->count(),
-            'nb_collectifs'       => (clone $mouvements)->distinct()->count('collectif_budgetaire_id'),
+            'nb_collectifs'       => $idsCollectifs->count(),
             'virements_montant'   => (float) (clone $virements)->sum('montant'),  // crédits déplacés
             'virements_nombre'    => (clone $virements)->count(),
             'virements_net'       => $entrants - $sortants,                     // 0 si interne au budget
+            // Part des virements réellement issue d'un collectif : affichée par la carte
+            // « Collectifs », le solde restant porté par la carte « Virements ».
+            'virements_collectif_nombre'  => (clone $mouvementsVirements)->count(),
+            'virements_collectif_montant' => (float) VirementBudgetaire::query()
+                ->whereIn('id', (clone $mouvementsVirements)->pluck('virement_budgetaire_id')->filter())
+                ->sum('montant'),
             'budget_actualise'    => $initial + $augmentations + $reductions + $entrants - $sortants,
         ];
     }

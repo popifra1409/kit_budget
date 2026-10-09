@@ -246,6 +246,26 @@ class VirementBudgetaire extends Model
         // Marquer le virement comme exécuté
         $this->statut = 'execute';
         $this->save();
+
+        $this->repercuterSurLignes();
+    }
+
+    /**
+     * budget_rectifie est une colonne stockée, recalculée par getBudgetRectifieReel()
+     * à chaque sauvegarde de ligne — donc uniquement APRÈS la bascule de notre propre
+     * statut. Sans ce recalcul final, la ligne garde le solde d'avant le mouvement
+     * (crédits restitués comptés deux fois, ou jamais retirés).
+     */
+    private function repercuterSurLignes(): void
+    {
+        $this->ligneSource?->recalculerDepuisEngagements();
+        $this->ligneDestination?->recalculerDepuisEngagements();
+
+        \App\Models\Budget::find($this->budget_id)?->recalculerTotaux();
+
+        // Le tableau de bord multi-exercices lit un instantané persisté des
+        // statistiques : sans ce recalcul, le mouvement n'y apparaîtrait pas.
+        \App\Models\Exercice::find($this->exercice_id)?->mettreAJourStatistiques();
     }
 
     // ════════════════════════════════════════════════════════
@@ -410,6 +430,8 @@ class VirementBudgetaire extends Model
         // Marquer comme en attente
         $this->statut = 'en_attente';
         $this->save();
+
+        $this->repercuterSurLignes();
     }
 
     /**

@@ -27,6 +27,11 @@ class LignePrevisionRecette extends Model
         'ordre',
         'actif',
         'observations',
+        // Renseigner la provenance depuis un collectif passe par create() dans
+        // MouvementsRelationManager ; sans ces clés, l'attribution était
+        // silencieusement ignorée par la protection de mass assignment.
+        'est_issue_collectif',
+        'collectif_creation_id',
     ];
 
     protected $casts = [
@@ -37,6 +42,7 @@ class LignePrevisionRecette extends Model
         'taux_recouvrement' => 'decimal:2',
         'ordre' => 'integer',
         'actif' => 'boolean',
+        'est_issue_collectif' => 'boolean',
     ];
 
     public function getLibelleAttribute()

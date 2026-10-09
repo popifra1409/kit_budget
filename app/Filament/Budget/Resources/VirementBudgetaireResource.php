@@ -491,6 +491,18 @@ class VirementBudgetaireResource extends Resource
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif de la contre-passation')->required()->rows(2)])
                         ->action(fn($record, array $data) => static::transition(fn() => $record->annulerExecution(auth()->user(), $data['motif']), 'Exécution annulée : crédits restitués à la ligne source')),
 
+                    Tables\Actions\Action::make('supprimer_mouvement')
+                        ->label('Supprimer le mouvement')
+                        ->icon('heroicon-o-trash')->color('danger')
+                        ->requiresConfirmation()
+                        ->visible(fn($record) => auth()->user()?->can('delete_virement_budgetaire')
+                            || auth()->user()?->can('super_admin_virement_budgetaire'))
+                        ->modalHeading(fn($record) => 'Supprimer ' . $record->numero . ' ?')
+                        ->modalDescription(fn($record) => static::descriptionSuppression($record))
+                        ->modalSubmitActionLabel('Supprimer définitivement des listes')
+                        ->action(fn($record) => static::transition(fn() => static::supprimer($record),
+                            'Mouvement supprimé : il ne figure plus dans les listes.')),
+
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -502,17 +514,49 @@ class VirementBudgetaireResource extends Resource
 
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    // ✅ Seuls les mouvements en attente ou rejetés : un mouvement exécuté
-                    //    entre dans le budget rectifié des lignes, le supprimer fausserait les dotations.
+                    // ✅ Une ligne de collectif ne se supprime pas toute seule : ses effets
+                    //    sont portés par les lignes budgétaires, et sa source est le collectif.
+                    //    La suppression en bloc traite donc les mouvements de gestion, et rend
+                    //    ceux qui sont pilotés par un collectif.
                     Tables\Actions\DeleteBulkAction::make()
                         ->action(function ($records) {
-                            $supprimables = $records->filter(fn($r) => in_array($r->statut, ['en_attente', 'rejete'], true));
-                            $supprimables->each->delete();
-                            $refuses = $records->count() - $supprimables->count();
+                            $supprimes = 0;
+                            $enCause   = 0;
+                            $parCollectif = [];
+                            $exerciceClos = 0;
+
+                            foreach ($records as $record) {
+                                try {
+                                    static::supprimer($record);
+                                    $supprimes++;
+                                } catch (\DomainException $e) {
+                                    if ($record->estPiloteParCollectif()) {
+                                        $parCollectif[] = $record->numero;
+                                    } elseif (!$record->estModifiable()) {
+                                        $exerciceClos++;
+                                    } else {
+                                        $enCause++;
+                                    }
+                                }
+                            }
+
+                            $refus = [];
+                            if ($parCollectif) {
+                                $refus[] = count($parCollectif) . ' mouvement(s) de collectif(s) : réinitialisez-les depuis « Réinitialiser les collectifs »';
+                            }
+                            if ($exerciceClos) {
+                                $refus[] = $exerciceClos . ' mouvement(s) d\'un exercice clôturé';
+                            }
+                            if ($enCause) {
+                                $refus[] = $enCause . ' mouvement(s) dont la ligne destination a déjà engagé les crédits (contre-passation impossible)';
+                            }
+
                             Notification::make()
-                                ->title($supprimables->count() . ' mouvement(s) supprimé(s)')
-                                ->body($refuses ? "{$refuses} mouvement(s) approuvé(s) ou exécuté(s) conservé(s)." : null)
-                                ->success()->send();
+                                ->title($supprimes . ' mouvement(s) supprimé(s)')
+                                ->body($refus ? 'Conservés : ' . implode(' ; ', $refus) . '.' : null)
+                                ->color($refus ? 'warning' : 'success')
+                                ->persistent()
+                                ->send();
                         }),
                 ]),
             ])
@@ -535,6 +579,85 @@ class VirementBudgetaireResource extends Resource
         } catch (\Exception $e) {
             Notification::make()->title('Erreur')->danger()->body($e->getMessage())->persistent()->send();
         }
+    }
+
+    /**
+     * Le collectif qui pilote un mouvement. La liaison peut pendre dans les deux
+     * sens : virement.mouvement_collectif_id est renseigné à la création par le
+     * collectif, mais les mouvements existants ne portent la référence que de
+     * l'autre côté (mouvement_collectif.virement_budgetaire_id).
+     */
+    protected static function collectifPilote(VirementBudgetaire $record): ?\App\Models\CollectifBudgetaire
+    {
+        $id = $record->mouvementCollectif?->collectif_budgetaire_id
+            ?? \App\Models\MouvementCollectif::where('virement_budgetaire_id', $record->id)->value('collectif_budgetaire_id');
+
+        return $id ? \App\Models\CollectifBudgetaire::find($id) : null;
+    }
+
+    /** Ce qu'on s'apprête à perdre, selon le statut du mouvement. */
+    protected static function descriptionSuppression(VirementBudgetaire $record): string
+    {
+        if ($record->estPiloteParCollectif()) {
+            $collectif = static::collectifPilote($record);
+
+            return 'Mouvement engendré par ' . ($collectif ? 'le collectif ' . $collectif->numero : 'un collectif budgétaire')
+                . ' : il ne se supprime pas ici, il part avec la réinitialisation de son collectif.';
+        }
+
+        if ($record->statut === 'execute') {
+            return 'Ce mouvement transporte encore des crédits (' . number_format((float) $record->montant, 0, ',', ' ')
+                . ' FCFA) : sa suppression commence par une contre-passation, les crédits reviennent à la ligne '
+                . 'source. Elle sera refusée si la ligne destination a déjà engagé ces crédits. La suppression est '
+                . 'logique : l\'écriture reste en base pour l\'audit.';
+        }
+
+        return "Statut « {$record->statut} » : aucun crédit n'est en mouvement, la ligne disparaît simplement des "
+            . 'listes. Suppression logique, l\'écriture reste en base.';
+    }
+
+    /**
+     * Fait disparaître un mouvement des listes.
+     *
+     * Un mouvement exécuté ne peut pas être effacé tel quel : ses effets resteraient
+     * portés par les lignes sans écriture pour les justifier. Il est donc d'abord
+     * contre-passé.
+     *
+     * @throws \DomainException mouvement d'un collectif, exercice clos, contre-passation impossible
+     */
+    protected static function supprimer(VirementBudgetaire $record): void
+    {
+        if ($record->estPiloteParCollectif()) {
+            $collectif = static::collectifPilote($record);
+
+            throw new \DomainException('Ce mouvement est piloté par '
+                . ($collectif ? 'le collectif ' . $collectif->numero : 'un collectif budgétaire')
+                . '. Réinitialisez ce collectif depuis « Réinitialiser les collectifs » : le mouvement partira avec lui.');
+        }
+
+        if (!$record->estModifiable()) {
+            throw new \DomainException("L'exercice " . (optional($record->exercice)->annee ?? '')
+                . ' n\'est plus ouvert : ses écritures ne peuvent plus être supprimées.');
+        }
+
+        $statutAvant = $record->statut;
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($record, $statutAvant) {
+            if ($statutAvant === 'execute') {
+                // Ouvre aussi sa propre transaction (savepoint) et recalcule les lignes.
+                $record->annulerExecution(auth()->user(), 'Suppression du mouvement');
+            }
+
+            $record->delete();
+
+            \App\Models\ActivityLog::logAction($record, 'supprimer', [
+                'statut_avant'  => $statutAvant,
+                'contre_passe'  => $statutAvant === 'execute',
+                'par'           => auth()->user()?->name ?? 'Système',
+                'montant'       => (float) $record->montant,
+                'motif'         => 'Suppression manuelle depuis la liste des mouvements de crédits',
+            ]);
+        });
     }
 
     public static function getPages(): array

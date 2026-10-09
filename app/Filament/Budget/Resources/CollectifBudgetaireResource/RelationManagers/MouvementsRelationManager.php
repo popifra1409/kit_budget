@@ -18,6 +18,94 @@ class MouvementsRelationManager extends RelationManager
     protected static ?string $recordTitleAttribute = 'id';
 
     /**
+     * Niveau hiérarchiques OHADA et parents admissibles pour chacun.
+     * Doit rester aligné sur les règles du saving() de NomenclatureBudgetaire.
+     */
+    private const PARENTS_AUTORISES = [
+        'classe'      => ['chapitre'],
+        'chapitre'    => [],
+        'article'     => ['chapitre'],
+        'paragraphe'  => ['article', 'chapitre'],
+        'compte'      => ['chapitre', 'classe'],
+        'sous_compte' => ['classe', 'compte'],
+        'ligne'       => ['compte', 'sous_compte', 'paragraphe'],
+    ];
+
+    private const NIVEAUX = [
+        'chapitre'    => 'Chapitre',
+        'article'     => 'Article',
+        'paragraphe'  => 'Paragraphe',
+        'classe'      => 'Classe',
+        'compte'      => 'Compte',
+        'sous_compte' => 'Sous-compte',
+        'ligne'       => 'Ligne',
+    ];
+
+    /**
+     * Toutes les nomenclatures d'un type doivent être atteignables : Choices.js
+     * tronque l'affichage à optionsLimit (50 par défaut), ce qui masquait le reste.
+     */
+    private const OPTIONS_LIMIT = 500;
+
+    /**
+     * Classe comptable déduite du code saisi (1-8), sinon la classe par défaut du type.
+     * Une dépense n'est pas limitée à la classe 6 : immobilisations (2), stocks (3)...
+     */
+    private function devinerClasse(?string $code, ?string $type): string
+    {
+        $premiere = $code !== null && $code !== '' ? substr($code, 0, 1) : '';
+
+        if (in_array($premiere, ['1', '2', '3', '4', '5', '6', '7', '8'], true)) {
+            return $premiere;
+        }
+
+        return $type === 'recette' ? '7' : '6';
+    }
+
+    /**
+     * Libellé de classe OHADA, pour l'aide à la saisie du code.
+     */
+    private function libelleClasse(string $classe): string
+    {
+        return match ($classe) {
+            '1'     => 'Classe 1 — Comptes de capitaux (recette ou dépense selon le contexte)',
+            '2'     => 'Classe 2 — Actif immobilisé (dépenses d\'investissement)',
+            '3'     => 'Classe 3 — Comptes de stocks',
+            '4'     => 'Classe 4 — Comptes de tiers',
+            '5'     => 'Classe 5 — Comptes de trésorerie',
+            '6'     => 'Classe 6 — Comptes de charges (dépenses)',
+            '7'     => 'Classe 7 — Comptes de produits (recettes)',
+            '8'     => 'Classe 8 — Comptes de résultats',
+            default => 'Classe non reconnue — vérifiez le code saisi',
+        };
+    }
+
+    /**
+     * Lignes déjà existantes pour le type choisi, dans le budget / la prévision
+     * actif de l'exercice du collectif courant.
+     */
+    private function nomenclaturesDejaInscrites(?string $type): array
+    {
+        $exercice = $this->getOwnerRecord()->exercice;
+
+        if ($type === 'recette') {
+            $previsionId = $exercice?->previsionRecettes()->where('actif', true)->value('id');
+
+            return $previsionId
+                ? LignePrevisionRecette::where('prevision_recette_id', $previsionId)
+                    ->pluck('nomenclature_id')->all()
+                : [];
+        }
+
+        $budgetId = $exercice?->budgets()->where('actif', true)->value('id');
+
+        return $budgetId
+            ? LigneBudgetaire::where('budget_id', $budgetId)
+                ->pluck('nomenclature_id')->all()
+            : [];
+    }
+
+    /**
      * ✅ Par défaut, Filament passe cette RelationManager en lecture seule
      *    dès que CollectifBudgetaireResource::canEdit() renvoie false pour
      *    le collectif parent (ce qui est le cas dès qu'il est 'adopte').
@@ -53,6 +141,7 @@ class MouvementsRelationManager extends RelationManager
                     $set('nomenclature_existante_id', null);
                     $set('nouveau_code', null);
                     $set('nouveau_libelle', null);
+                    $set('nouveau_parent_id', null);
                     $set('montant_modification', null);
                 }),
 
@@ -129,12 +218,12 @@ class MouvementsRelationManager extends RelationManager
                     Forms\Components\Select::make('nomenclature_existante_id')
                         ->label('Nomenclature budgétaire')
                         ->options(function ($get) {
-                            $type = $get('type');
-                            $classe = $type === 'depense' ? '6' : '7';
-                            // Nomenclatures existantes SANS ligne dans le budget courant
-                            $dejaDansLeBudget = LigneBudgetaire::pluck('nomenclature_id')->toArray();
-                            return NomenclatureBudgetaire::where('classe', $classe)
-                                ->whereNotIn('id', $dejaDansLeBudget)
+                            // Le type budgétaire (depense/recette) est la vraie clé de tri :
+                            // une dépense peut porter une autre classe que 6 (2, 3, 5...).
+                            return NomenclatureBudgetaire::query()
+                                ->type($get('type'))
+                                ->actives()
+                                ->whereNotIn('id', $this->nomenclaturesDejaInscrites($get('type')))
                                 ->orderBy('code')
                                 ->get()
                                 ->mapWithKeys(fn($n) => [
@@ -143,8 +232,9 @@ class MouvementsRelationManager extends RelationManager
                         })
                         ->searchable()
                         ->preload()
+                        ->optionsLimit(self::OPTIONS_LIMIT)
                         ->required()
-                        ->helperText('Nomenclatures déjà créées mais sans ligne dans le budget actuel'),
+                        ->helperText('Nomenclatures de ce type déjà créées mais sans ligne dans le budget actuel'),
 
                     Forms\Components\TextInput::make('montant_modification')
                         ->label('Montant à provisionner (FCFA)')
@@ -169,37 +259,47 @@ class MouvementsRelationManager extends RelationManager
                             ->label('Code OHADA')
                             ->required()
                             ->maxLength(20)
-                            ->placeholder(fn($get) => $get('type') === 'depense' ? 'Ex: 621101' : 'Ex: 712001')
-                            ->helperText(fn($get) => $get('type') === 'depense'
-                                ? 'Classe 6 — Comptes de charges'
-                                : 'Classe 7 — Comptes de produits'),
+                            ->live(onBlur: true)
+                            ->placeholder(fn($get) => $get('type') === 'recette' ? 'Ex: 712001' : 'Ex: 621101')
+                            ->helperText(fn($get) => $this->libelleClasse(
+                                $this->devinerClasse($get('nouveau_code'), $get('type'))
+                            )),
 
                         Forms\Components\Select::make('nouveau_niveau')
                             ->label('Niveau')
-                            ->options([
-                                'chapitre'   => 'Chapitre (ex: 62)',
-                                'article'    => 'Article (ex: 621)',
-                                'paragraphe' => 'Paragraphe (ex: 621101)',
-                                'compte'     => 'Compte',
-                                'ligne'      => 'Ligne détaillée',
-                            ])
+                            ->options(self::NIVEAUX)
                             ->default('paragraphe')
-                            ->required(),
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(fn($set) => $set('nouveau_parent_id', null)),
 
                         Forms\Components\Select::make('nouveau_parent_id')
                             ->label('Rattacher à (parent)')
-                            ->placeholder('Aucun — niveau chapitre')
+                            ->placeholder(fn($get) => $get('nouveau_niveau') === 'chapitre'
+                                ? 'Un chapitre ne peut pas avoir de parent'
+                                : 'Aucun — niveau chapitre')
                             ->options(function ($get) {
-                                $type = $get('type');
-                                $classe = $type === 'depense' ? '6' : '7';
-                                return NomenclatureBudgetaire::where('classe', $classe)
+                                $niveau = $get('nouveau_niveau') ?: 'paragraphe';
+                                $niveauxParents = self::PARENTS_AUTORISES[$niveau] ?? array_keys(self::NIVEAUX);
+
+                                if ($niveauxParents === []) {
+                                    return [];
+                                }
+
+                                return NomenclatureBudgetaire::query()
+                                    ->type($get('type'))
+                                    ->actives()
+                                    ->whereIn('niveau', $niveauxParents)
                                     ->orderBy('code')
                                     ->get()
                                     ->mapWithKeys(fn($n) => [
                                         $n->id => "{$n->code} — {$n->libelle} ({$n->niveau})"
                                     ]);
                             })
-                            ->searchable(),
+                            ->searchable()
+                            ->preload()
+                            ->optionsLimit(self::OPTIONS_LIMIT)
+                            ->disabled(fn($get) => $get('nouveau_niveau') === 'chapitre'),
                     ]),
 
                     Forms\Components\TextInput::make('nouveau_libelle')
@@ -379,7 +479,7 @@ class MouvementsRelationManager extends RelationManager
                                 $ligne = LignePrevisionRecette::create([
                                     'prevision_recette_id'   => $prevision->id,
                                     'nomenclature_id'        => $data['nomenclature_existante_id'],
-                                    'montant_initial'        => $data['montant_modification'] ?? 0,
+                                    'montant_prevu_initial'  => $data['montant_modification'] ?? 0,
                                     'montant_rectifie'       => $data['montant_modification'] ?? 0,
                                     'est_issue_collectif'    => true,
                                     'collectif_creation_id'  => $collectif->id,
@@ -395,7 +495,7 @@ class MouvementsRelationManager extends RelationManager
                             $nomenclature = NomenclatureBudgetaire::create([
                                 'code'      => $data['nouveau_code'],
                                 'libelle'   => $data['nouveau_libelle'],
-                                'classe'    => $type === 'depense' ? '6' : '7',
+                                'classe'    => $this->devinerClasse($data['nouveau_code'] ?? null, $type),
                                 'type'      => $type,
                                 'niveau'    => $data['nouveau_niveau'] ?? 'paragraphe',
                                 'parent_id' => $data['nouveau_parent_id'] ?? null,
@@ -422,7 +522,7 @@ class MouvementsRelationManager extends RelationManager
                                 $ligne = LignePrevisionRecette::create([
                                     'prevision_recette_id'   => $prevision->id,
                                     'nomenclature_id'        => $nomenclature->id,
-                                    'montant_initial'        => $data['montant_modification'] ?? 0,
+                                    'montant_prevu_initial'  => $data['montant_modification'] ?? 0,
                                     'montant_rectifie'       => $data['montant_modification'] ?? 0,
                                     'est_issue_collectif'    => true,
                                     'collectif_creation_id'  => $collectif->id,
@@ -448,6 +548,11 @@ class MouvementsRelationManager extends RelationManager
                                 'motif'                => '[Collectif ' . $collectif->numero . '] ' . ($data['motif'] ?? ''),
                                 'reference_decision'   => $collectif->numero,
                                 'statut'               => 'en_attente',
+                                // Sans cette marque, le virement passait pour un
+                                // mouvement de gestion : actions manuelles possibles
+                                // et comptabilisé dans le plafond des virements.
+                                // Symétrique de VirementBudgetaire::creerDepuisCollectif().
+                                'origine'              => 'collectif',
                             ]);
                             $data['virement_budgetaire_id'] = $virement->id;
                         }
