@@ -110,27 +110,44 @@ class PrevisionRecetteMensuelle extends Model
     // CALCULS
     // ====================================
 
+    /**
+     * Écrit les indicateurs recalculés via le query builder.
+     *
+     * Ces méthodes sont rappelées par le hook saved() : un $this->update() Eloquent
+     * redéclencherait saved() sans fin (mort par épuisement mémoire observée).
+     * Le builder n'émet aucun événement — le hook reste donc exécuté une seule fois.
+     */
+    private function enregistrer(array $attributs): void
+    {
+        static::query()->whereKey($this->getKey())->update($attributs);
+        $this->setRawAttributes(array_merge($this->getAttributes(), $attributs), true);
+    }
+
     public function calculerMontantRecouvre(): float
     {
-        $total = $this->recettesReelles()
-            ->whereIn('statut', ['encaissee', 'comptabilisee', 'validee'])
-            ->sum('montant');
+        // ✅ Même règle que RecetteReelle::recalculerDepuisId() : tout sauf « prevue »
+        //    (une créance constatée compte dans le recouvré du mois). L'ancienne liste
+        //    de statuts retirait les constatées et amputait le recouvrement affiché.
+        $total = (float) $this->recettesReelles()
+            ->where('statut', '!=', 'prevue')
+            ->whereNull('deleted_at')
+            ->sum(\Illuminate\Support\Facades\DB::raw('CAST(montant AS FLOAT)'));
 
-        $this->update(['montant_recouvre' => $total]);
+        $this->enregistrer(['montant_recouvre' => $total]);
         return $total;
     }
 
     public function calculerEcart(): float
     {
         $ecart = $this->montant_recouvre - $this->montant_prevu;
-        $this->update(['ecart' => $ecart]);
+        $this->enregistrer(['ecart' => $ecart]);
         return $ecart;
     }
 
     public function calculerTauxRealisation(): float
     {
         $taux = $this->montant_prevu > 0 ? ($this->montant_recouvre / $this->montant_prevu) * 100 : 0;
-        $this->update(['taux_realisation' => $taux]);
+        $this->enregistrer(['taux_realisation' => $taux]);
         return $taux;
     }
 
@@ -146,7 +163,7 @@ class PrevisionRecetteMensuelle extends Model
         $cumuleRecouvre = $previsions->sum('montant_recouvre');
         $tauxCumule = $cumulePrevu > 0 ? ($cumuleRecouvre / $cumulePrevu) * 100 : 0;
 
-        $this->update([
+        $this->enregistrer([
             'montant_cumule_prevu' => $cumulePrevu,
             'montant_cumule_recouvre' => $cumuleRecouvre,
             'taux_realisation_cumule' => $tauxCumule,

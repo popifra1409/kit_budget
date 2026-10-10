@@ -52,6 +52,11 @@ class BudgetOverviewWidget extends BaseWidget
 
         $collectifActif = $s['nb_collectifs'] > 0;
 
+        // « 0 FCFA » sans précision se lit comme une absence de collectif : ajouter la
+        // mention de l'effet net quand le collectif ne fait que déplacer des crédits.
+        $valeurCollectifs = ($s['collectifs_net'] > 0 ? '+' : '') . $f($s['collectifs_net'])
+            . ($s['collectifs_net'] == 0.0 && $s['virements_collectif_nombre'] > 0 ? ' (effet net)' : '');
+
         // ── Virements ─────────────────────────────────────────────
         $detailVirements = $s['virements_nombre'] > 0
             ? $s['virements_nombre'] . ' virement(s) · solde net ' . $f($s['virements_net'])
@@ -63,7 +68,7 @@ class BudgetOverviewWidget extends BaseWidget
                 ->descriptionIcon('heroicon-m-calendar')
                 ->color('primary'),
 
-            Stat::make('Collectifs budgétaires', ($s['collectifs_net'] > 0 ? '+' : '') . $f($s['collectifs_net']))
+            Stat::make('Collectifs budgétaires', $valeurCollectifs)
                 ->description($detailCollectifs)
                 ->descriptionIcon($s['collectifs_net'] >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
                 ->color($s['collectifs_net'] > 0 ? 'success' : ($s['collectifs_net'] < 0 ? 'danger' : ($collectifActif ? 'info' : 'gray'))),

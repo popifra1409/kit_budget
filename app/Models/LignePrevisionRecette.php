@@ -136,6 +136,37 @@ class LignePrevisionRecette extends Model
     }
 
     /**
+     * ✅ Aligne totalement les 12 mois de la ligne sur son montant rectifié :
+     *   mois retirés à tort ranimés, mois manquants recréés, montant de chaque mois
+     *   recalé, puis écart / taux / cumulés recalculés dans l'ordre des mois.
+     *
+     * Les recouvrements ne sont pas touchés : ils sont resynchronisés depuis les
+     * recettes réelles enregistrées sur chaque mois.
+     *
+     * Les mois en suppression reviennent d'abord car la contrainte unique
+     * (ligne, mois, année) n'est pas partielle : un mois retiré bloquerait
+     * silencieusement sa recréation par l'upsert.
+     */
+    public function alignerMensuelles(): void
+    {
+        PrevisionRecetteMensuelle::onlyTrashed()
+            ->where('ligne_prevision_recette_id', $this->id)
+            ->get()
+            ->each
+            ->restore();
+
+        PrevisionRecetteMensuelle::creerPrevisionsAnnuelles($this);
+
+        PrevisionRecetteMensuelle::where('ligne_prevision_recette_id', $this->id)
+            ->orderBy('mois')
+            ->get()
+            ->each
+            ->recalculer();
+
+        $this->refresh()->recalculer();
+    }
+
+    /**
      * Calculer l'écart
      */
     public function calculerEcart(): float

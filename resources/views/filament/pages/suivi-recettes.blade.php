@@ -399,6 +399,32 @@
             </div>
         </div>
 
+        {{-- ── Diagnostic des 12 mois ─────────────────────────── --}}
+        @if($peutModifier && ($etat['lignes_incompletes'] > 0 || $etat['mois_orphelins'] > 0))
+            <div style="margin:0 0 .75rem; padding:.6rem .8rem; border-radius:var(--border-radius-md);
+                        background:#fffbeb; border:1px solid #fcd34d; color:#78350f; font-size:.78rem;">
+                <strong>⚠️ Fractionnement mensuel à mettre à jour</strong>
+                @if($etat['lignes_incompletes'] > 0)
+                    <div>
+                        {{ $etat['lignes_incompletes'] }} ligne(s) de ce tableau n'ont pas leurs 12 mois calés sur leur
+                        montant rectifié (ligne ajoutée après adoption, mois retirés à tort) — bouton
+                        <span style="color:#b45309;">↻</span> sur la ligne, ou
+                        <strong>« Régénérer les 12 mois »</strong> en haut de page pour toutes les traiter.
+                    </div>
+                @endif
+                @if($etat['mois_orphelins'] > 0)
+                    <div>
+                        {{ $etat['mois_orphelins'] }} mois ({{ number_format($etat['mois_orphelins_montant'], 0, ',', ' ') }} FCFA
+                        de prévu) restent attachés à des lignes déjà retirées ou désactivées : ils encombrent le tableau
+                        de bord « Réalisation Mensuelle par Nomenclature » —
+                        <strong>« Purger les mois orphelins »</strong>
+                        ({{ $etat['mois_orphelins_retirables'] }} mois purgables@if($etat['mois_orphelins_retirables'] < $etat['mois_orphelins'])
+                            , {{ $etat['mois_orphelins'] - $etat['mois_orphelins_retirables'] }} conservés car ils portent encore des recettes@endif).
+                    </div>
+                @endif
+            </div>
+        @endif
+
         {{-- ── Tableau 12 colonnes ────────────────────────────── --}}
         @if(empty($data))
             <div style="text-align:center; padding:3rem; color:var(--color-text-tertiary); font-size:.85rem;
@@ -432,7 +458,7 @@
                                     <th colspan="2">Cumul</th>
                                     <th rowspan="2" style="text-align:right;">Écart</th>
                                     <th rowspan="2" style="text-align:right;" title="Créances constatées non encaissées">Constaté<br>non encaissé</th>
-                                    @if($peutRetirer)
+                                    @if($peutRetirer || $peutModifier)
                                         <th rowspan="2"></th>
                                     @endif
                                 </tr>
@@ -506,17 +532,29 @@
         <td class="td-num" style="color:#854d0e;">
             {{ $row['constate'] > 0 ? number_format($row['constate'], 0, ',', ' ') : '—' }}
         </td>
-        @if($peutRetirer)
-            <td style="text-align:center;">
-                @if($row['nb_recettes'] === 0 && !$row['a_mouvements'])
+        @if($peutRetirer || $peutModifier)
+            <td style="text-align:center; white-space:nowrap;">
+                @if($peutModifier && !$row['mois_coherents'])
+                    <button type="button"
+                        wire:click="alignerLigne({{ $row['id'] }})"
+                        wire:confirm="Régénérer les 12 mois de {{ $row['code'] }} ({{ number_format($row['prevu_annuel'] / 12, 0, ',', ' ') }} FCFA par mois) ? Les montants déjà recouvrés sont conservés."
+                        title="{{ $row['nb_mois'] }}/12 mois — régénérer le fractionnement mensuel"
+                        style="color:#b45309; font-size:.8rem; background:none; border:none; cursor:pointer;">↻</button>
+                @endif
+                @if($peutRetirer)
+                    @php
+                        $motif = $row['nb_recettes'] > 0
+                            ? $row['nb_recettes'] . ' recette(s) enregistrée(s)'
+                            : ($row['a_mouvements'] ? 'ligne issue d\'un collectif' : '');
+                    @endphp
                     <button type="button"
                         wire:click="retirerLigne({{ $row['id'] }})"
-                        wire:confirm="Retirer la ligne {{ $row['code'] }} — {{ addslashes($row['libelle']) }} et ses 12 prévisions mensuelles ?"
-                        title="Retirer cette ligne de la prévision"
+                        @if($motif === '') wire:confirm="Retirer la ligne {{ $row['code'] }} — {{ addslashes($row['libelle']) }} et ses 12 prévisions mensuelles ?" @endif
+                        title="{{ $motif === '' ? 'Retirer cette ligne de la prévision' : 'Retrait possible après levée du blocage : ' . $motif }}"
                         style="color:#991b1b; font-size:.75rem; background:none; border:none; cursor:pointer;">✕</button>
-                @else
-                    <span title="{{ $row['nb_recettes'] > 0 ? $row['nb_recettes'] . ' recette(s) enregistrée(s)' : 'Modifiée par un collectif' }}"
-                        style="color:#9ca3af; font-size:.7rem; cursor:help;">🔒</span>
+                    @if($motif !== '')
+                        <div style="font-size:.6rem; color:#9ca3af; line-height:1.1;">🔒 {{ $motif }}</div>
+                    @endif
                 @endif
             </td>
         @endif
@@ -563,7 +601,7 @@
                                         {{ $totalEcart >= 0 ? '+' : '' }}{{ number_format($totalEcart, 0, ',', ' ') }}
                                     </td>
                                     <td class="td-num" style="color:#854d0e;">{{ number_format($totalConstate, 0, ',', ' ') }}</td>
-                                    @if($peutRetirer)
+                                    @if($peutRetirer || $peutModifier)
                                         <td></td>
                                     @endif
                                 </tr>
@@ -592,7 +630,7 @@
                                     </td>
                                     <td></td>
                                     <td></td>
-                                    @if($peutRetirer)
+                                    @if($peutRetirer || $peutModifier)
                                         <td></td>
                                     @endif
                             </tr>

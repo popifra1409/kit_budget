@@ -146,6 +146,9 @@ class TableRecettesMensuelles extends BaseWidget
         return PrevisionRecetteMensuelle::query()
             ->where('exercice_id', $exerciceActif->id)
             ->where('actif', true)
+            // Les mois d'une ligne de prévision retirée ou désactivée ne doivent
+            // plus gonfler ni totaliser ce tableau.
+            ->whereHas('lignePrevisionRecette', fn($q) => $q->where('actif', true))
             ->with(['lignePrevisionRecette.nomenclature']);
     }
 

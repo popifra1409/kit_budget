@@ -9,7 +9,6 @@ use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Support\Enums\FontWeight;
 use Illuminate\Database\Eloquent\Builder;
-use App\Models\PrevisionRecetteMensuelle;
 
 class ViewPrevisionRecette extends ViewRecord
 {
@@ -64,7 +63,10 @@ class ViewPrevisionRecette extends ViewRecord
                                 ])->find($ligne->id);
 
                                 if ($ligneComplete) {
-                                    \App\Models\PrevisionRecetteMensuelle::creerPrevisionsAnnuelles($ligneComplete);
+                                    // Même alignement que le tableau de suivi des recettes :
+                                    // mois manquants recréés, mois retirés à tort ranimés,
+                                    // écart / taux / cumulés recalculés.
+                                    $ligneComplete->alignerMensuelles();
                                     $count++;
                                 }
 
