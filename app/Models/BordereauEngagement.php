@@ -206,18 +206,25 @@ class BordereauEngagement extends Model
     public function genererNumero(): string
     {
         $annee = now()->year;
-        $dernier = self::where('numero', 'like', "BDE-{$annee}-%")
-            ->orderBy('numero', 'desc')
-            ->first();
 
-        if ($dernier) {
-            $dernierNumero = intval(substr($dernier->numero, -5));
-            $nouveauNumero = $dernierNumero + 1;
-        } else {
-            $nouveauNumero = 1;
-        }
+        return \DB::transaction(function () use ($annee) {
+            // Une pièce mise à la corbeille garde son numéro : sans withTrashed() la numérotation
+            // le réémet et l'index unique (numero) refuse l'insertion.
+            $dernier = static::withTrashed()
+                ->where('numero', 'like', "BDE-{$annee}-%")
+                ->lockForUpdate()
+                ->orderBy('numero', 'desc')
+                ->value('numero');
 
-        return sprintf('BDE-%d-%05d', $annee, $nouveauNumero);
+            $compteur = $dernier ? intval(substr($dernier, -5)) + 1 : 1;
+
+            do {
+                $numero = sprintf('BDE-%d-%05d', $annee, $compteur);
+                $compteur++;
+            } while (static::withTrashed()->where('numero', $numero)->exists());
+
+            return $numero;
+        });
     }
 
     /**

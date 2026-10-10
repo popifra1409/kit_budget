@@ -19,6 +19,7 @@ class MouvementCollectif extends Model
         'ligne_recette_id',
         'nouvelle_ligne_depense_id',
         'nouvelle_ligne_recette_id',
+        'nomenclature_creee_id',
         'montant_modification',
         'motif',
         'virement_budgetaire_id', // ✅ VirementBudgetaire lié
@@ -31,6 +32,157 @@ class MouvementCollectif extends Model
         'montant_modification' => 'decimal:2',
         'date_annulation'      => 'datetime',
     ];
+
+    /**
+     * Ce que la suppression de ce mouvement emportera avec lui, pour l'annoncer avant.
+     */
+    public function resumeDeCeQuIlCreait(): string
+    {
+        $parties = [];
+
+        if ($this->nouvelle_ligne_recette_id) {
+            $parties[] = 'la ligne de recette ' . ($this->nouvelleLigneRecette?->code_nomenclature ?? 'n°' . $this->nouvelle_ligne_recette_id);
+        }
+
+        if ($this->nouvelle_ligne_depense_id) {
+            $parties[] = 'la ligne de dépense ' . ($this->nouvelleLigneDepense?->nomenclature?->code ?? 'n°' . $this->nouvelle_ligne_depense_id);
+        }
+
+        if ($this->nomenclature_creee_id) {
+            $parties[] = 'la nomenclature ' . (NomenclatureBudgetaire::withTrashed()->find($this->nomenclature_creee_id)?->code ?? 'n°' . $this->nomenclature_creee_id);
+        }
+
+        if ($this->virement_budgetaire_id && $this->virementBudgetaire?->statut === 'en_attente') {
+            $parties[] = 'le virement encore en attente';
+        }
+
+        return implode(', ', $parties);
+    }
+
+    protected static function booted(): void
+    {
+        // ✅ Les mouvements sont supprimés PHYSIQUEMENT (pas de deleted_at sur cette
+        //    table). Sans cette cascade, supprimer puis réajouter le même mouvement
+        //    laissait la ligne créée la première fois en place : doublon de code
+        //    dans le budget / la prévision, impossible à retirer une fois la
+        //    prévision « adopté ».
+        static::deleting(function (self $mouvement) {
+            $mouvement->retirerCeQuIlCreait();
+        });
+    }
+
+    /**
+     * Nettoie ce que la création de ce mouvement avait inséré : ligne(s) de budget
+     * ou de prévision, nomenclature de nouvelle création, virement mis en attente.
+     *
+     * Refuse dès qu'une de ces traces porte déjà une opération comptable : on ne
+     * détruit jamais un engagement, un paiement ou un recouvrement.
+     */
+    public function retirerCeQuIlCreait(): void
+    {
+        if ($this->nouvelle_ligne_recette_id) {
+            $ligne = LignePrevisionRecette::find($this->nouvelle_ligne_recette_id);
+
+            if ($ligne) {
+                // Même règle que le recouvrement : une recette « prevue » n'est pas
+                // encore de l'argent, elle ne doit pas verrouiller la ligne.
+                $recouvre = (float) $ligne->montant_recouvre;
+                $constatees = $ligne->recettesReelles()->where('statut', '!=', 'prevue')->count();
+
+                if ($recouvre > 0 || $constatees > 0) {
+                    throw new \RuntimeException(
+                        'Suppression impossible : la ligne ' . ($ligne->code_nomenclature ?? $ligne->id)
+                            . ' créée par ce mouvement a encaissé '
+                            . number_format($recouvre, 0, ',', ' ') . ' FCFA ('
+                            . $constatees . ' recette(s) enregistrée(s)). Épursez-la d\'abord.'
+                    );
+                }
+
+                $ligne->delete();   // l'observateur propage le retrait aux 12 mois
+            }
+        }
+
+        if ($this->nouvelle_ligne_depense_id) {
+            $ligne = LigneBudgetaire::find($this->nouvelle_ligne_depense_id);
+
+            if ($ligne) {
+                $dejaUtilisee = (float) $ligne->engage + (float) $ligne->ordonne
+                    + (float) $ligne->liquide + (float) $ligne->paye;
+
+                if ($dejaUtilisee > 0) {
+                    throw new \RuntimeException(
+                        'Suppression impossible : la ligne ' . ($ligne->nomenclature?->code ?? $ligne->id)
+                            . ' créée par ce mouvement porte déjà des opérations ('
+                            . number_format($dejaUtilisee, 0, ',', ' ') . ' FCFA engagés/ordonancés/payés).'
+                    );
+                }
+
+                $ligne->delete();
+            }
+        }
+
+        // Nomenclature née de ce mouvement (mode « créer une nouvelle nomenclature ») :
+        // elle doit partir avec lui, sinon son code reste proposé aux sélecteurs et le
+        // réajout du mouvement est refusé — ou pire, son code est recréé en doublon.
+        // On ne la retire que si plus aucune ligne VIVANTE ne l'utilise.
+        if ($this->nomenclature_creee_id) {
+            $nomenclature = NomenclatureBudgetaire::find($this->nomenclature_creee_id);
+
+            if ($nomenclature) {
+                $referencee = LigneBudgetaire::where('nomenclature_id', $nomenclature->id)->exists()
+                    || LignePrevisionRecette::where('nomenclature_id', $nomenclature->id)->exists();
+
+                if (!$referencee) {
+                    $nomenclature->delete();
+                }
+            }
+        }
+
+        // Virement créé en attente par ce mouvement : s'il n'a jamais été exécuté,
+        // il ne doit pas survivre seul à la suppression du mouvement.
+        if ($this->virement_budgetaire_id) {
+            $virement = VirementBudgetaire::find($this->virement_budgetaire_id);
+
+            if ($virement && $virement->statut === 'en_attente') {
+                $virement->delete();
+            }
+        }
+
+        // ✅ Même rattrapage d'agrégats que ReinitialisationCollectifsService :
+        //    sans lui, budget, prévision et tableau de bord garderaient les montants
+        //    de la ligne retirée.
+        PrevisionRecette::find($this->previsionRecetteIdConcernee())?->recalculerTotaux();
+        Budget::find($this->budgetIdConcerne())?->recalculerTotaux();
+        Exercice::find($this->collectif?->exercice_id)?->mettreAJourStatistiques();
+    }
+
+    /**
+     * Prévision touchée par les lignes créées de ce mouvement.
+     */
+    private function previsionRecetteIdConcernee(): ?int
+    {
+        $ligne = $this->nouvelle_ligne_recette_id
+            ? LignePrevisionRecette::withTrashed()->find($this->nouvelle_ligne_recette_id)
+            : null;
+
+        if ($ligne) return (int) $ligne->prevision_recette_id;
+
+        $autre = $this->ligne_recette_id ? LignePrevisionRecette::find($this->ligne_recette_id) : null;
+
+        return $autre ? (int) $autre->prevision_recette_id : null;
+    }
+
+    /**
+     * Budget touché par les lignes créées de ce mouvement.
+     */
+    private function budgetIdConcerne(): ?int
+    {
+        $ligne = $this->nouvelle_ligne_depense_id
+            ? LigneBudgetaire::withTrashed()->find($this->nouvelle_ligne_depense_id)
+            : ($this->ligne_depense_id ? LigneBudgetaire::find($this->ligne_depense_id) : null);
+
+        return $ligne ? (int) $ligne->budget_id : null;
+    }
 
     public function collectif(): BelongsTo
     {

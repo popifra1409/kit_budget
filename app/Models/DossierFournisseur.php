@@ -268,22 +268,26 @@ class DossierFournisseur extends Model
         // ✅ Prendre les 2 derniers chiffres de l'année
         $annee = substr($exercice->annee, -2); // 2026 → 26
 
-        // Chercher le dernier dossier de cet exercice
-        $dernier = self::where('exercice_id', $exercice->id)
-            ->where('numero_dossier', 'like', "DF{$annee}-%")
-            ->orderBy('numero_dossier', 'desc')
-            ->first();
+        return \DB::transaction(function () use ($annee, $exercice) {
+            // Un dossier mis à la corbeille garde son numéro_dossier : sans withTrashed() la
+            // numérotation le réémet et l'index unique refuse l'insertion.
+            $dernier = static::withTrashed()
+                ->where('exercice_id', $exercice->id)
+                ->where('numero_dossier', 'like', "DF{$annee}-%")
+                ->lockForUpdate()
+                ->orderBy('numero_dossier', 'desc')
+                ->value('numero_dossier');
 
-        if ($dernier) {
-            // Extraire le numéro séquentiel (les 5 derniers chiffres)
-            $dernierNumero = intval(substr($dernier->numero_dossier, -5));
-            $nouveauNumero = $dernierNumero + 1;
-        } else {
-            $nouveauNumero = 1;
-        }
+            $compteur = $dernier ? intval(substr($dernier, -5)) + 1 : 1;
 
-        // ✅ Format : DF26-00001
-        return sprintf('DF%s-%05d', $annee, $nouveauNumero);
+            do {
+                $numero = sprintf('DF%s-%05d', $annee, $compteur);
+                $compteur++;
+            } while (static::withTrashed()->where('numero_dossier', $numero)->exists());
+
+            // ✅ Format : DF26-00001
+            return $numero;
+        });
     }
     
     /**

@@ -106,6 +106,103 @@ class MouvementsRelationManager extends RelationManager
     }
 
     /**
+     * Budget / prévision actif de l'exercice du collectif, cible des nouvelles lignes.
+     */
+    private function cible(?string $type): ?object
+    {
+        $exercice = $this->getOwnerRecord()->exercice;
+
+        return $type === 'recette'
+            ? $exercice?->previsionRecettes()->where('actif', true)->first()
+            : $exercice?->budgets()->where('actif', true)->first();
+    }
+
+    /**
+     * Nomenclature encore en vie portant ce code dans l'exercice du collectif.
+     *
+     * Le code est la clé métier : deux lignes « 731207 » sont un doublon même si
+     * elles pointent sur deux enregistrements de nomenclature différents.
+     */
+    private function nomenclatureAvecCode(?string $code, ?string $type): ?NomenclatureBudgetaire
+    {
+        return NomenclatureBudgetaire::doublonDeCode(
+            $this->getOwnerRecord()->exercice_id ? (int) $this->getOwnerRecord()->exercice_id : null,
+            $code ? trim((string) $code) : null,
+            $type
+        );
+    }
+
+    /**
+     * Ligne déjà inscrite pour ce code dans le budget / la prévision de l'exercice.
+     */
+    private function ligneAvecCode(?string $code, ?string $type): ?object
+    {
+        $cible = $this->cible($type);
+        $code  = $code ? trim((string) $code) : null;
+        if (!$cible || !$code) return null;
+
+        return $type === 'recette'
+            ? LignePrevisionRecette::doublonDeCode((int) $cible->id, $code)
+            : LigneBudgetaire::doublonDeCode((int) $cible->id, $code);
+    }
+
+    /**
+     * Message de refus de doublon, avec l'endroit où retrouver la ligne existante.
+     */
+    private function messageDoublon(?string $code, ?string $type, ?object $ligne): string
+    {
+        $libelle = $type === 'recette' ? 'prévision de recettes' : 'budget';
+
+        if (!$ligne) {
+            return "Le code « {$code} » existe déjà dans la nomenclature de cet exercice"
+                . " — choisissez l'action « 📋 Ajouter une nomenclature existante sans ligne budgétaire »"
+                . " plutôt que d'en créer une seconde fois.";
+        }
+
+        return "Le code « {$code} » a déjà une ligne dans ce {$libelle}"
+            . ' (ligne n°' . $ligne->id . ', montant '
+            . number_format((float) ($type === 'recette' ? $ligne->montant_rectifie : $ligne->budget_rectifie), 0, ',', ' ')
+            . " FCFA). Pour le modifier, utilisez l'action « ✏️ Modifier une ligne existante »"
+            . ' — deux lignes au même code fausseraient le budget.';
+    }
+
+    /**
+     * Contrôles anti-doublon exécutés avant la moindre écriture du formulaire.
+     */
+    private function verifierAbsenceDeDoublon(array $data): void
+    {
+        $type = $data['type'] ?? null;
+        if (!in_array($type, ['depense', 'recette'])) return;
+
+        $mode = $data['mode_action'] ?? 'modifier';
+
+        if ($mode === 'creer_nouvelle') {
+            $code = trim((string) ($data['nouveau_code'] ?? ''));
+            if ($code === '') return;
+
+            $existante = $this->nomenclatureAvecCode($code, $type);
+            if ($existante) {
+                throw new \Exception(
+                    $this->messageDoublon($code, $type, $this->ligneAvecCode($code, $type))
+                    . ' Nomenclature existante : n°' . $existante->id . ' — ' . $existante->libelle . '.'
+                );
+            }
+        }
+
+        if ($mode === 'ajouter_existante') {
+            $nomenclature = NomenclatureBudgetaire::find($data['nomenclature_existante_id'] ?? null);
+            if (!$nomenclature) return;
+
+            $ligne = $this->ligneAvecCode($nomenclature->code, $type);
+            // La ligne portée par cette même nomenclature est filtrée par le sélecteur ;
+            // on ne refuse que si c'est un ENREGISTREMENT différent au même code.
+            if ($ligne && (int) $ligne->nomenclature_id !== (int) $nomenclature->id) {
+                throw new \Exception($this->messageDoublon($nomenclature->code, $type, $ligne));
+            }
+        }
+    }
+
+    /**
      * ✅ Par défaut, Filament passe cette RelationManager en lecture seule
      *    dès que CollectifBudgetaireResource::canEdit() renvoie false pour
      *    le collectif parent (ce qui est le cas dès qu'il est 'adopte').
@@ -456,6 +553,10 @@ class MouvementsRelationManager extends RelationManager
                         $type      = $data['type'];
                         $mode      = $data['mode_action'] ?? 'modifier';
 
+                        // ✅ Anti-doublon AVANT toute écriture : ni nomenclature ni ligne
+                        //    ne doivent être créées quand le code existe déjà dans l'exercice.
+                        $this->verifierAbsenceDeDoublon($data);
+
                         // ── CAS 2 : Nomenclature existante sans ligne ──────
                         if ($mode === 'ajouter_existante' && in_array($type, ['depense', 'recette'])) {
                             if ($type === 'depense') {
@@ -501,6 +602,10 @@ class MouvementsRelationManager extends RelationManager
                                 'parent_id' => $data['nouveau_parent_id'] ?? null,
                                 'actif'     => true,
                             ]);
+
+                            // ✅ Trace du lien : sans elle, la nomenclature survivait seule
+                            //    au mouvement supprimé et son code réapparaissait en doublon.
+                            $data['nomenclature_creee_id'] = $nomenclature->id;
 
                             if ($type === 'depense') {
                                 $budget = $exercice->budgets()->where('actif', true)->first();
@@ -769,12 +874,71 @@ class MouvementsRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => $this->getOwnerRecord()->statut === 'projet'),
+                    ->visible(fn() => $this->getOwnerRecord()->statut === 'projet')
+                    ->requiresConfirmation()
+                    ->modalHeading('Supprimer ce mouvement')
+                    ->modalDescription(fn($record) => $record->resumeDeCeQuIlCreait()
+                        ? 'Seront retirés avec lui : ' . $record->resumeDeCeQuIlCreait()
+                            . '. Impossible si ces éléments portent déjà des opérations.'
+                        : 'Ce mouvement n\'a créé aucun élément en base.')
+                    ->action(function ($record) {
+                        try {
+                            $avant  = $record->resumeDeCeQuIlCreait();
+                            $record->delete();
+
+                            Notification::make()
+                                ->success()
+                                ->title('Mouvement supprimé')
+                                ->body($avant
+                                    ? 'Retiré avec : ' . $avant . '. Vous pouvez le recréer, plus aucun doublon.'
+                                    : 'Aucune ligne créée par ce mouvement.')
+                                ->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->danger()
+                                ->persistent()
+                                ->title('❌ Suppression impossible')
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => $this->getOwnerRecord()->statut === 'projet'),
+                        ->visible(fn() => $this->getOwnerRecord()->statut === 'projet')
+                        ->requiresConfirmation()
+                        ->action(function (\Illuminate\Support\Collection $records) {
+                            $part         = 0;
+                            $protegees    = [];
+
+                            // ✅ Un mouvement verrouillé ne doit pas bloquer les autres.
+                            foreach ($records as $record) {
+                                try {
+                                    $record->delete();
+                                    $part++;
+                                } catch (\Throwable $e) {
+                                    $protegees[] = 'Mouvement n°' . $record->id . ' : ' . $e->getMessage();
+                                }
+                            }
+
+                            if ($part > 0) {
+                                Notification::make()
+                                    ->success()
+                                    ->title($part . ' mouvement(s) supprimé(s)')
+                                    ->body('Les lignes, nomenclatures et virements en attente créés par ces mouvements ont été retirés.')
+                                    ->send();
+                            }
+
+                            if ($protegees) {
+                                Notification::make()
+                                    ->danger()
+                                    ->persistent()
+                                    ->title(count($protegees) . ' mouvement(s) non supprimé(s)')
+                                    ->body(implode("\n", $protegees))
+                                    ->send();
+                            }
+                        }),
                 ]),
             ]);
     }

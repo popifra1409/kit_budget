@@ -545,7 +545,7 @@
                     @php
                         $motif = $row['nb_recettes'] > 0
                             ? $row['nb_recettes'] . ' recette(s) enregistrée(s)'
-                            : ($row['a_mouvements'] ? 'ligne issue d\'un collectif' : '');
+                            : ($row['a_mouvements'] ? 'mouvement collectif encore actif' : '');
                     @endphp
                     <button type="button"
                         wire:click="retirerLigne({{ $row['id'] }})"

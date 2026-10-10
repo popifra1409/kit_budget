@@ -334,17 +334,62 @@ class LignePrevisionRecette extends Model
                 }
             }
 
+            self::interdireDoublonDeCode($ligne);
+
             if ($ligne->montant_rectifie == 0) {
                 $ligne->montant_rectifie = $ligne->montant_prevu_initial;
             }
         });
 
         static::saving(function ($ligne) {
+            if ($ligne->exists
+                && ($ligne->isDirty('code_nomenclature') || $ligne->isDirty('prevision_recette_id'))) {
+                self::interdireDoublonDeCode($ligne);
+            }
+
             $ligne->ecart = $ligne->montant_recouvre - $ligne->montant_rectifie;
 
             $ligne->taux_recouvrement = $ligne->montant_rectifie == 0
                 ? 0
                 : ($ligne->montant_recouvre / $ligne->montant_rectifie) * 100;
         });
+    }
+
+    /**
+     * Autre ligne vivante portant le même CODE de nomenclature dans la même prévision.
+     *
+     * La clé métier est le code, pas nomenclature_id : deux enregistrements de
+     * nomenclature créés pour « 731207 » produisent quand même un doublon visible
+     * que l'index unique (prevision_recette_id, nomenclature_id) ne voit pas.
+     */
+    public static function doublonDeCode(
+        ?int $previsionRecetteId,
+        ?string $code,
+        ?int $excepteurId = null
+    ): ?self {
+        if (!$previsionRecetteId || !$code) return null;
+
+        return static::where('prevision_recette_id', $previsionRecetteId)
+            ->where('code_nomenclature', $code)
+            ->when($excepteurId, fn($q) => $q->where('id', '!=', $excepteurId))
+            ->first();
+    }
+
+    protected static function interdireDoublonDeCode(self $ligne): void
+    {
+        $doublon = self::doublonDeCode(
+            $ligne->prevision_recette_id ? (int) $ligne->prevision_recette_id : null,
+            $ligne->code_nomenclature,
+            $ligne->exists ? (int) $ligne->id : null
+        );
+
+        if (!$doublon) return;
+
+        throw new \RuntimeException(
+            'Doublon refusé : le code ' . $ligne->code_nomenclature . ' a déjà une ligne dans cette '
+                . "prévision de recettes (ligne n°{$doublon->id}, "
+                . number_format((float) $doublon->montant_rectifie, 0, ',', ' ') . ' FCFA).'
+                . " Modifiez cette ligne existante au lieu d'en créer une seconde."
+        );
     }
 }

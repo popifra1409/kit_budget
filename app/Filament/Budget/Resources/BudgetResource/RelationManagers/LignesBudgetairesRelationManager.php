@@ -48,7 +48,27 @@ class LignesBudgetairesRelationManager extends RelationManager
                                 $n = NomenclatureBudgetaire::find($value);
                                 return $n ? "{$n->code} - {$n->libelle}" : null;
                             })
-                            // ✅ Pas de ->rules() — le using() gère tout
+                            // ✅ Un code par budget : using() sait restaurer/recharger la ligne
+                            //    de cette nomenclature, mais une AUTRE nomenclature portant le
+                            //    même code créerait un doublon invisible dans les totaux.
+                            ->rules([
+                                function (string $attribute, $value, \Closure $fail) {
+                                    $code = NomenclatureBudgetaire::withTrashed()->find($value)?->code;
+                                    if (!$code) return;
+
+                                    $doublon = LigneBudgetaire::doublonDeCode(
+                                        (int) $this->getOwnerRecord()->id,
+                                        $code
+                                    );
+
+                                    if ($doublon && (int) $doublon->nomenclature_id !== (int) $value) {
+                                        $fail("Le code {$code} est déjà inscrit dans ce budget"
+                                            . ' (ligne n°' . $doublon->id . ', '
+                                            . number_format((float) $doublon->budget_rectifie, 0, ',', ' ')
+                                            . ' FCFA). Modifiez cette ligne plutôt que d\'en créer une seconde.');
+                                    }
+                                },
+                            ])
                             ->helperText('Sélectionnez la ligne budgétaire'),
                     ]),
 

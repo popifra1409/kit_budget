@@ -53,6 +53,26 @@ class LignesPrevisionsRelationManager extends RelationManager
                             ->where('prevision_recette_id', $this->getOwnerRecord()->id)
                             ->whereNull('deleted_at')
                             ->ignore($record?->id),
+
+                        // ✅ Le code, pas seulement l'id : deux nomenclatures portant le
+                        //    même code produiraient deux lignes identiques à l'écran.
+                        function (string $attribute, $value, \Closure $fail) use ($record) {
+                            $code = NomenclatureBudgetaire::withTrashed()->find($value)?->code;
+                            if (!$code) return;
+
+                            $doublon = \App\Models\LignePrevisionRecette::doublonDeCode(
+                                (int) $this->getOwnerRecord()->id,
+                                $code,
+                                $record?->id
+                            );
+
+                            if ($doublon) {
+                                $fail("Le code {$code} est déjà inscrit dans cette prévision"
+                                    . ' (ligne n°' . $doublon->id . ', '
+                                    . number_format((float) $doublon->montant_rectifie, 0, ',', ' ')
+                                    . ' FCFA). Modifiez cette ligne plutôt que de la doublonner.');
+                            }
+                        },
                     ])
                     ->reactive()
                     ->afterStateUpdated(function ($state, callable $set) {

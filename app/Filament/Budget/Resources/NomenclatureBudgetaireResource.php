@@ -77,7 +77,27 @@ class NomenclatureBudgetaireResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('code')
                             ->label('Code')->required()->maxLength(20)
-                            ->placeholder('Ex: 62, 620, 620000'),
+                            ->placeholder('Ex: 62, 620, 620000')
+                            ->rule(function (callable $get, $record) {
+                                return function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                    $exerciceId = $get('exercice_id') ?: Exercice::getActif()?->id;
+
+                                    if (!$exerciceId || !$value) {
+                                        return;
+                                    }
+
+                                    $doublon = NomenclatureBudgetaire::doublonDeCode(
+                                        (int) $exerciceId, (string) $value, $get('type') ?: null, $record?->id
+                                    );
+
+                                    if ($doublon) {
+                                        $fail("Le code {$value} existe déjà dans cet exercice "
+                                            . "(nomenclature n°{$doublon->id} — « {$doublon->libelle} », type {$doublon->type}). "
+                                            . 'Une nomenclature par code : complétez ou corrigez celle qui existe '
+                                            . 'au lieu d\'en créer une seconde.');
+                                    }
+                                };
+                            }),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')->required()->maxLength(255)->columnSpanFull()

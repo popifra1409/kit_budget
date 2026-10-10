@@ -108,16 +108,20 @@ class SuiviRecettes extends Page
             ->get()
             ->keyBy('ligne_id');
 
-        // ✅ Lignes modifiées ou créées par un collectif (non retirables ici :
-        //    c'est la réinitialisation du collectif qui doit les traiter)
-        $avecMouvements = DB::table('mouvements_collectifs')
+        // ✅ Lignes créées ou modifiées par un mouvement encore ACTIF (non retirables
+        //    ici : c'est la réinitialisation du collectif qui doit les traiter).
+        //    Un mouvement annulé ne pèse plus, sa ligne résiduelle reste retirable.
+        $mouvementsActifs = fn() => DB::table('mouvements_collectifs')
+            ->whereRaw("COALESCE(statut, '') <> 'annule' AND date_annulation IS NULL")
+            ->when(\Illuminate\Support\Facades\Schema::hasColumn('mouvements_collectifs', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'));
+
+        $avecMouvements = $mouvementsActifs()
             ->where(function ($q) use ($ligneIds) {
                 $q->whereIn('ligne_recette_id', $ligneIds)->orWhereIn('nouvelle_ligne_recette_id', $ligneIds);
             })
-            ->when(\Illuminate\Support\Facades\Schema::hasColumn('mouvements_collectifs', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'))
             ->pluck('ligne_recette_id')
             ->merge(
-                DB::table('mouvements_collectifs')
+                $mouvementsActifs()
                     ->whereIn('nouvelle_ligne_recette_id', $ligneIds)
                     ->pluck('nouvelle_ligne_recette_id')
             )
@@ -595,9 +599,10 @@ class SuiviRecettes extends Page
 
     /**
      * Retire une ligne de prévision (et ses 12 prévisions mensuelles), en suppression récupérable.
-     * Refusé si des recettes sont enregistrées sur la ligne ou si un collectif l'a modifiée ou
-     * créée : la retirer fausserait alors le recouvré ou le budget rectifié — le refus s'affiche,
-     * le bouton ne disparaît pas.
+     * Refusé si des recettes sont enregistrées sur la ligne ou si un mouvement collectif encore
+     * actif l'a créée ou modifiée : la retirer fausserait le recouvré ou le budget rectifié —
+     * le refus s'affiche, le bouton ne disparaît pas. Une ligne résiduelle d'un collectif annulé
+     * (à zéro) reste retirable, sinon elle serait bloquée tant que la prévision est « adopté ».
      */
     public function retirerLigne(int $ligneId): void
     {
@@ -625,20 +630,31 @@ class SuiviRecettes extends Page
             return;
         }
 
-        $mouvement = DB::table('mouvements_collectifs')
+        $mouvements = DB::table('mouvements_collectifs')
             ->where(fn($q) => $q->where('ligne_recette_id', $ligne->id)->orWhere('nouvelle_ligne_recette_id', $ligne->id))
             ->when(\Illuminate\Support\Facades\Schema::hasColumn('mouvements_collectifs', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'))
             ->orderByDesc('id')
-            ->first();
+            ->get();
 
-        if ($mouvement) {
-            $numero = \App\Models\CollectifBudgetaire::find($mouvement->collectif_budgetaire_id)?->numero ?? 'un collectif';
-            $creee = (int) $mouvement->nouvelle_ligne_recette_id === (int) $ligne->id;
-            $this->refus('Retrait impossible',
-                "La ligne {$ligne->code_nomenclature} " . ($creee ? 'a été créée par' : 'a été modifiée par')
-                . " le collectif {$numero} : réinitialisez ce collectif depuis « Réinitialisation des collectifs budgétaires », "
-                . 'il retirera la ligne et ses effets en une fois.');
-            return;
+        if ($mouvements->isNotEmpty()) {
+            // Même règle que ReinitialisationCollectifsService : un mouvement annulé ne
+            // compte plus. La ligne vidée par son annulation ne pèse plus sur le budget,
+            // donc rien ne justifie de la rendre ingérable : c'est exactement le piège du
+            // doublon créé par un collectif puis retiré de la prévision « adopté ».
+            $actifs = $mouvements->reject(
+                fn($m) => $m->statut === 'annule' || $m->date_annulation !== null
+            );
+
+            if ($actifs->isNotEmpty()) {
+                $numero = \App\Models\CollectifBudgetaire::find($actifs[0]->collectif_budgetaire_id)?->numero ?? 'un collectif';
+                $creee = $actifs->contains(fn($m) => (int) $m->nouvelle_ligne_recette_id === (int) $ligne->id);
+                $this->refus('Retrait impossible',
+                    "La ligne {$ligne->code_nomenclature} " . ($creee ? 'a été créée par' : 'a été modifiée par')
+                    . " le collectif {$numero}, qui pèse encore "
+                    . number_format((float) $ligne->getMontantRectifieReel(), 0, ',', ' ') . ' FCFA : réinitialisez ce '
+                    . 'collectif depuis « Réinitialisation des collectifs budgétaires », il retirera la ligne et ses effets en une fois.');
+                return;
+            }
         }
 
         $prevision = PrevisionRecette::find($this->previsionId);

@@ -60,8 +60,55 @@ class LigneBudgetaire extends Model
         parent::boot();
 
         static::saving(function ($ligne) {
+            if (!$ligne->exists
+                || $ligne->isDirty('nomenclature_id')
+                || $ligne->isDirty('budget_id')) {
+                self::interdireDoublonDeCode($ligne);
+            }
+
             $ligne->calculerMontants();
         });
+    }
+
+    /**
+     * Autre ligne vivante portant le même CODE de nomenclature dans le même budget.
+     *
+     * La clé métier est le code : deux enregistrements de nomenclature créés pour
+     * un même code (cas des mouvements « créer une nouvelle nomenclature ») donnent
+     * deux lignes identiques à l'écran, que l'index unique par id ne voit pas.
+     */
+    public static function doublonDeCode(
+        ?int $budgetId,
+        ?string $code,
+        ?int $excepteurId = null
+    ): ?self {
+        if (!$budgetId || !$code) return null;
+
+        return static::where('budget_id', $budgetId)
+            ->whereHas('nomenclature', fn($q) => $q->where('code', $code))
+            ->when($excepteurId, fn($q) => $q->where('id', '!=', $excepteurId))
+            ->first();
+    }
+
+    protected static function interdireDoublonDeCode(self $ligne): void
+    {
+        if (!$ligne->nomenclature_id) return;
+
+        $code = NomenclatureBudgetaire::whereKey($ligne->nomenclature_id)->value('code');
+
+        $doublon = self::doublonDeCode(
+            $ligne->budget_id ? (int) $ligne->budget_id : null,
+            $code,
+            $ligne->exists ? (int) $ligne->id : null
+        );
+
+        if (!$doublon) return;
+
+        throw new \RuntimeException(
+            "Doublon refusé : le code {$code} a déjà une ligne dans ce budget (ligne n°{$doublon->id}, "
+                . number_format((float) $doublon->budget_rectifie, 0, ',', ' ') . ' FCFA).'
+                . " Modifiez cette ligne existante au lieu d'en créer une seconde."
+        );
     }
 
     public function getLibelleAttribute()

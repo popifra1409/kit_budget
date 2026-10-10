@@ -44,13 +44,30 @@ class CollectifBudgetaire extends Model
 
     public static function generateNumero($exerciceId): string
     {
-        $exercice = Exercice::find($exerciceId);
-        $year = $exercice ? $exercice->annee : date('Y');
+        $year = (int) (Exercice::find($exerciceId)?->annee ?: date('Y'));
+        $prefixe = 'CB-' . $year . '-';
+        // Une séquence par exercice : le compteur ne redémarre pas et ne revient jamais
+        // en arrière, même si le collectif le plus récent est supprimé (pas de SoftDeletes ici).
+        $sequence = 'collectifs_budgetaires_numero_' . $year;
 
-        // Compter les collectifs déjà créés pour cet exercice
-        $count = self::where('exercice_id', $exerciceId)->count() + 1;
+        return DB::transaction(function () use ($prefixe, $sequence) {
+            DB::statement("CREATE SEQUENCE IF NOT EXISTS {$sequence}");
 
-        return 'CB-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+            $suite = (int) DB::selectOne("SELECT nextval('{$sequence}') AS suite")->suite;
+
+            // Rattraper les numéros posés avant l'existence de la séquence.
+            $dejaPosee = self::where('numero', 'like', $prefixe . '%')
+                ->pluck('numero')
+                ->map(fn(string $numero) => (int) substr($numero, strlen($prefixe)))
+                ->max() ?? 0;
+
+            if ($suite <= $dejaPosee) {
+                DB::statement("SELECT setval('{$sequence}', ?)", [$dejaPosee]);
+                $suite = (int) DB::selectOne("SELECT nextval('{$sequence}') AS suite")->suite;
+            }
+
+            return $prefixe . str_pad($suite, 3, '0', STR_PAD_LEFT);
+        });
     }
 
     public function exercice(): BelongsTo

@@ -197,6 +197,15 @@ class NomenclatureBudgetaire extends Model
         parent::boot();
 
         static::saving(function ($nomenclature) {
+            // ✅ Le code est la clé métier d'un exercice : deux nomenclatures « 731207 »
+            //    engendrent deux lignes budgétaires au même code, donc des doublons
+            //    que l'unicité par nomenclature_id ne peut pas voir.
+            if (!$nomenclature->exists
+                || $nomenclature->isDirty('code')
+                || $nomenclature->isDirty('exercice_id')) {
+                self::interdireDoublonDeCode($nomenclature);
+            }
+
             // Valider la cohérence parent/niveau
             if ($nomenclature->parent_id) {
                 $parent = NomenclatureBudgetaire::find($nomenclature->parent_id);
@@ -227,6 +236,48 @@ class NomenclatureBudgetaire extends Model
                 }
             }
         });
+    }
+
+    /**
+     * Autre nomenclature vivante portant le même code (et le même type budgétaire)
+     * dans le même exercice.
+     */
+    public static function doublonDeCode(
+        ?int $exerciceId,
+        ?string $code,
+        ?string $type = null,
+        ?int $excepteurId = null
+    ): ?self {
+        if (!$exerciceId || !$code) return null;
+
+        return static::parExercice($exerciceId)
+            ->where('code', $code)
+            ->when($type, fn($q) => $q->where('type', $type))
+            ->when($excepteurId, fn($q) => $q->where('id', '!=', $excepteurId))
+            ->orderBy('id')
+            ->first();
+    }
+
+    protected static function interdireDoublonDeCode(self $nomenclature): void
+    {
+        // saving() précède creating() : l'exercice peut encore être vide,
+        // il sera rempli par le hook du trait HasExercice.
+        $exerciceId = $nomenclature->exercice_id ?: \App\Models\Exercice::getActif()?->id;
+
+        $doublon = self::doublonDeCode(
+            $exerciceId ? (int) $exerciceId : null,
+            $nomenclature->code,
+            $nomenclature->type,
+            $nomenclature->exists ? (int) $nomenclature->id : null
+        );
+
+        if (!$doublon) return;
+
+        throw new \RuntimeException(
+            'Doublon refusé : le code ' . $nomenclature->code . ' existe déjà dans cet exercice'
+                . " (nomenclature n°{$doublon->id} — «{$doublon->libelle}»)."
+                . ' Une nomenclature par code : complétez la ligne existante au lieu de recréer le code.'
+        );
     }
 
     public function getActivitylogOptions(): LogOptions
