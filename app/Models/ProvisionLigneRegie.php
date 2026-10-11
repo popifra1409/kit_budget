@@ -66,10 +66,23 @@ class ProvisionLigneRegie extends Model
     public function debiter(float $montant): void
     {
         if (!$this->peutEngager($montant)) {
+            $autreEncaisse = (float) $this->ligneRegie
+                ?->poolEncaisses()
+                ->sum(fn($l) => max(0, (float) $l->montant_alloue - $l->montantConsommeReel()));
+
             throw new \Exception(
-                "Provision insuffisante sur la ligne {$this->ligneRegie->nomenclature->code}.\n"
-                    . "Disponible : " . number_format($this->montant_disponible, 0, ',', ' ') . " FCFA\n"
-                    . "Demandé : "    . number_format($montant, 0, ',', ' ') . " FCFA"
+                "⛔ Encaisse insuffisant — veuillez approvisionner la régie.\n"
+                    . 'Encaisse ' . ($this->decaissement?->numero ?? 'hors tranche')
+                    . ' « ' . ($this->decaissement?->libelle_tranche ?? 'hors tranche') . ' » — nomenclature '
+                    . ($this->ligneRegie?->nomenclature?->code ?? 'sans code') . "\n"
+                    . "Disponible sur cet encaisse : " . number_format($this->montant_disponible, 0, ',', ' ') . " FCFA\n"
+                    . "Demandé : " . number_format($montant, 0, ',', ' ') . " FCFA\n"
+                    . ($autreEncaisse > (float) $this->montant_disponible
+                        ? 'Total disponible sur tous les encaisses de cette nomenclature : '
+                            . number_format($autreEncaisse, 0, ',', ' ')
+                            . " FCFA — sélectionne un autre encaisse.\n"
+                        : '')
+                    . 'Solution : nouvelle DA sur la régie, puis « Accorder & Verser » une tranche.'
             );
         }
         $this->updateQuietly([
@@ -88,22 +101,22 @@ class ProvisionLigneRegie extends Model
 
     public function recalculer(): void
     {
-        // Dépenses validées/payées sur cette provision
-        $depenses = $this->depenses()
-            ->whereNotIn('statut', ['annule'])
+        // Dépenses validées/payées imputées sur CETTE provision
+        $depenses = (float) $this->depenses()
+            ->whereIn('statut', ['valide', 'paye'])
             ->sum('montant_ttc');
 
-        // BCR engagés sur cette provision
-        $bonsCommande = $this->bonsCommande()
-            ->where('engage', true)
-            ->whereNotIn('statut', ['annule'])
-            ->sum('montant_ttc');
+        // Sommes réellement prises sur CETTE provision par les engagements BCR
+        // (traçabilité provision_consommations). Compter le TTC complet de chaque
+        // BCR lié re-solde à tort une provision déjà partiellement consommée, et
+        // double une consommation répartie sur plusieurs décaissements.
+        $consommations = (float) $this->consommations()->sum('montant');
 
-        $consomme = $depenses + $bonsCommande;
+        $consomme = $depenses + $consommations;
 
         $this->updateQuietly([
             'montant_consomme'   => $consomme,
-            'montant_disponible' => $this->montant_provisionne - $consomme,
+            'montant_disponible' => (float) $this->montant_provisionne - $consomme,
         ]);
     }
 }

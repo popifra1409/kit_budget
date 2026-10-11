@@ -252,6 +252,80 @@ class PrevisionRecetteResource extends Resource
                         )
                         ->openUrlInNewTab(),
 
+                    // ── ✅ Suppression EXCEPTIONNELLE d'une ligne (même prévision adoptée) ──
+                    Tables\Actions\Action::make('supprimerLigneExceptionnelle')
+                        ->label('Supprimer une ligne (exceptionnel)')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->color('danger')
+                        ->visible(fn() => \App\Services\Budget\SuppressionLignePrevisionService::autorise())
+                        ->modalHeading('Suppression exceptionnelle d\'une ligne de prévision')
+                        ->modalDescription(fn(PrevisionRecette $record) => "Prévision {$record->code} (" . $record->statut . '). '
+                            . 'La ligne et ses 12 prévisions mensuelles seront supprimées de façon récupérable ; '
+                            . 'le motif, la référence et votre nom seront conservés et inscrits au journal d\'audit.')
+                        ->form(fn(PrevisionRecette $record) => [
+                            Forms\Components\Select::make('ligne_id')
+                                ->label('Ligne à supprimer')
+                                ->options(fn() => \App\Models\LignePrevisionRecette::where('prevision_recette_id', $record->id)
+                                    ->orderBy('code_nomenclature')->get()
+                                    ->mapWithKeys(fn($l) => [$l->id => "{$l->code_nomenclature} — {$l->libelle_nomenclature} ("
+                                        . number_format((float) $l->montant_rectifie, 0, ',', ' ') . ' FCFA)']))
+                                ->searchable()->required()->live(),
+                            Forms\Components\Placeholder::make('obstacles')
+                                ->label('Contrôle')
+                                ->visible(fn(Forms\Get $get) => filled($get('ligne_id')))
+                                ->content(function (Forms\Get $get) {
+                                    $ligne = \App\Models\LignePrevisionRecette::find($get('ligne_id'));
+                                    $obstacles = $ligne ? app(\App\Services\Budget\SuppressionLignePrevisionService::class)->obstacles($ligne) : [];
+                                    return new \Illuminate\Support\HtmlString($obstacles
+                                        ? '<span style="color:#b91c1c;">⛔ ' . implode('<br>⛔ ', array_map('e', $obstacles)) . '</span>'
+                                        : '<span style="color:#166534;">✅ Aucune recette ni aucun collectif sur cette ligne : suppression possible.</span>');
+                                }),
+                            Forms\Components\Textarea::make('motif')
+                                ->label('Motif de la suppression')->required()->minLength(15)->rows(3)
+                                ->placeholder('Ex. : ligne créée par erreur lors de la saisie de la prévision, compte non applicable au CHUY'),
+                            Forms\Components\TextInput::make('reference')
+                                ->label('Référence de la décision (si disponible)')
+                                ->placeholder('Ex. : Note n° 125/DG/DAAF du 10/10/2026')->maxLength(255),
+                        ])
+                        ->action(function (array $data) {
+                            try {
+                                $ligne = \App\Models\LignePrevisionRecette::findOrFail($data['ligne_id']);
+                                app(\App\Services\Budget\SuppressionLignePrevisionService::class)->supprimer($ligne, $data['motif'], $data['reference'] ?? null);
+                                \Filament\Notifications\Notification::make()->success()->title('Ligne supprimée')
+                                    ->body("{$ligne->code_nomenclature} — {$ligne->libelle_nomenclature} : suppression tracée, restaurable.")->send();
+                            } catch (\DomainException $e) {
+                                \Filament\Notifications\Notification::make()->warning()->title('Suppression refusée')->body($e->getMessage())->persistent()->send();
+                            }
+                        }),
+
+                    // ── ✅ Restauration d'une ligne supprimée ──
+                    Tables\Actions\Action::make('restaurerLigne')
+                        ->label('Restaurer une ligne supprimée')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('gray')
+                        ->visible(fn(PrevisionRecette $record) => \App\Services\Budget\SuppressionLignePrevisionService::autorise()
+                            && \App\Models\LignePrevisionRecette::onlyTrashed()->where('prevision_recette_id', $record->id)->exists())
+                        ->form(fn(PrevisionRecette $record) => [
+                            Forms\Components\Select::make('ligne_id')
+                                ->label('Ligne supprimée')
+                                ->options(fn() => \App\Models\LignePrevisionRecette::onlyTrashed()->where('prevision_recette_id', $record->id)
+                                    ->with('nomenclature')->get()
+                                    ->mapWithKeys(fn($l) => [$l->id => "{$l->code_nomenclature} — {$l->libelle_nomenclature} — supprimée le "
+                                        . $l->deleted_at?->format('d/m/Y') . ($l->motif_suppression ? ' : « ' . \Str::limit($l->motif_suppression, 60) . ' »' : '')]))
+                                ->required(),
+                            Forms\Components\Textarea::make('motif')->label('Motif de la restauration')->required()->rows(2),
+                        ])
+                        ->action(function (array $data) {
+                            try {
+                                $ligne = \App\Models\LignePrevisionRecette::onlyTrashed()->findOrFail($data['ligne_id']);
+                                app(\App\Services\Budget\SuppressionLignePrevisionService::class)->restaurer($ligne, $data['motif']);
+                                \Filament\Notifications\Notification::make()->success()->title('Ligne restaurée')
+                                    ->body("{$ligne->code_nomenclature} — {$ligne->libelle_nomenclature}")->send();
+                            } catch (\DomainException $e) {
+                                \Filament\Notifications\Notification::make()->warning()->title('Restauration refusée')->body($e->getMessage())->persistent()->send();
+                            }
+                        }),
+
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')

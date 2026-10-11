@@ -90,6 +90,14 @@ class LignesRegieRelationManager extends RelationManager
                     ->label('Code')->weight('bold')->sortable(),
                 Tables\Columns\TextColumn::make('nomenclature.libelle')
                     ->label('Nomenclature')->limit(40)->wrap(),
+                Tables\Columns\TextColumn::make('decaissementRegie.numero')
+                    ->label('Encaisse')
+                    ->badge()->color('info')
+                    ->formatStateUsing(
+                        fn($record) => $record->decaissementRegie
+                            ? ($record->decaissementRegie->libelle_tranche ?: $record->decaissementRegie->numero)
+                            : 'hors tranche'
+                    ),
                 Tables\Columns\TextColumn::make('montant_alloue')
                     ->label('Alloué')->money('XAF')
                     ->summarize([

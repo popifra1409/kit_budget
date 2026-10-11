@@ -59,6 +59,9 @@ class ViewRegieAvance extends ViewRecord
                 ->columns(3),
 
             Infolists\Components\Section::make('Situation financière')
+                ->description(fn($record) => (float) $record->montant_disponible < 0
+                    ? '⚠️ La consommation dépasse les encaisses versés : le taux supérieur à 100 % correspond à un dépassement réel, à financer.'
+                    : null)
                 ->schema([
                     Infolists\Components\TextEntry::make('montant_alloue')
                         ->label('💰 Montant alloué')
@@ -76,13 +79,23 @@ class ViewRegieAvance extends ViewRecord
                         )
                         ->color('warning'),
 
-                    Infolists\Components\TextEntry::make('montant_depense')
-                        ->label('💸 Total dépensé')
+                    Infolists\Components\TextEntry::make('montant_engage')
+                        ->label('🔒 Engagé (déjà consommé)')
                         ->formatStateUsing(
                             fn($state) =>
                             number_format($state, 0, ',', ' ') . ' FCFA'
                         )
-                        ->color('danger'),
+                        ->color('danger')->weight('bold')
+                        ->tooltip('BCR au statut engagé + achats directs validés : '
+                            . "la régie est consommée dès l'engagement."),
+
+                    Infolists\Components\TextEntry::make('montant_depense')
+                        ->label('💸 Livré / payé')
+                        ->formatStateUsing(
+                            fn($state) =>
+                            number_format($state, 0, ',', ' ') . ' FCFA'
+                        )
+                        ->color('warning'),
 
                     Infolists\Components\TextEntry::make('montant_disponible')
                         ->label('✅ Disponible')
@@ -94,10 +107,38 @@ class ViewRegieAvance extends ViewRecord
                             fn($record) =>
                             $record->montant_disponible < 0 ? 'danger' : 'success'
                         )
-                        ->weight('bold'),
+                        ->weight('bold')
+                        ->tooltip('= Total décaissé − Engagé')
+                        // ✅ Dépassement expliqué : la régie a consommé plus que ce qui lui a été versé
+                        ->helperText(fn($record) => (float) $record->montant_disponible < 0
+                            ? '⚠️ Dépassement à financer : ' . number_format(abs((float) $record->montant_disponible), 0, ',', ' ')
+                            . ' FCFA. Approvisionner la régie (nouvelle DA, puis « Accorder & Verser » une tranche).'
+                            : null),
+
+                    // ✅ BCR validés ou livrés dont une part n'est pas encore engagée : ils ne
+                    //    consomment rien tant qu'ils ne sont pas engagés, mais devront l'être.
+                    Infolists\Components\TextEntry::make('engagements_en_attente')
+                        ->label('⏳ BCR en attente d\'engagement')
+                        ->getStateUsing(function ($record) {
+                            $bons = $record->bonsCommande()->whereIn('statut', ['valide', 'livre'])->get();
+                            $montant = (float) $bons->sum(fn($b) => $b->resteNonTrace());
+                            return number_format($montant, 0, ',', ' ') . ' FCFA (' . $bons->filter(fn($b) => $b->resteNonTrace() > 0.01)->count() . ' BCR)';
+                        })
+                        ->color(function ($record) {
+                            $montant = (float) $record->bonsCommande()->whereIn('statut', ['valide', 'livre'])->get()->sum(fn($b) => $b->resteNonTrace());
+                            return $montant > max(0, (float) $record->montant_disponible) + 0.01 ? 'danger' : 'gray';
+                        })
+                        ->helperText(function ($record) {
+                            $montant = (float) $record->bonsCommande()->whereIn('statut', ['valide', 'livre'])->get()->sum(fn($b) => $b->resteNonTrace());
+                            $dispo = max(0, (float) $record->montant_disponible);
+                            return $montant > $dispo + 0.01
+                                ? '⚠️ Dépassent le disponible de ' . number_format($montant - $dispo, 0, ',', ' ') . ' FCFA : ils ne pourront pas tous être engagés sans nouvel encaisse.'
+                                : 'Couverts par le disponible.';
+                        }),
 
                     Infolists\Components\TextEntry::make('taux_consommation')
                         ->label('📊 Taux consommation')
+                        ->tooltip('Engagé / total décaissé. Au-delà de 100 % : la régie a consommé plus que ses encaisses.')
                         ->getStateUsing(
                             fn($record) =>
                             number_format($record->taux_consommation, 1) . '%'

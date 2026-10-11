@@ -26,6 +26,7 @@ class RegieAvance extends Model
         'montant_alloue',
         'montant_decaisse',
         'montant_depense',
+        'montant_engage',
         'montant_disponible',
         'encaisse_annuelle',
         'objet',
@@ -43,6 +44,7 @@ class RegieAvance extends Model
         'montant_alloue'     => 'decimal:2',
         'montant_decaisse'   => 'decimal:2',
         'montant_depense'    => 'decimal:2',
+        'montant_engage'     => 'decimal:2',
         'montant_disponible' => 'decimal:2',
     ];
 
@@ -76,11 +78,15 @@ class RegieAvance extends Model
         static::updating(function (RegieAvance $regie) {
             $regie->updated_by = auth()->id();
 
-            // ✅ montant_disponible = décaissé - dépensé
-            // Ne pas recalculer montant_depense ici pour éviter
-            // les boucles infinies avec DecaissementRegie
-            $regie->montant_disponible = (float) $regie->montant_decaisse
-                - (float) $regie->montant_depense;
+            // Disponible = décaissé - ENGAGÉ. La consommation de la régie se fait à
+            // l'engagement du BCR, pas à son paiement. Ne pas recalculer
+            // montant_depense/montant_engage ici pour éviter les boucles avec
+            // DecaissementRegie.
+            $engage = $regie->isDirty('montant_engage')
+                ? (float) $regie->montant_engage
+                : $regie->montantEngageReel();
+
+            $regie->montant_disponible = (float) $regie->montant_decaisse - $engage;
         });
     }
 
@@ -199,27 +205,67 @@ class RegieAvance extends Model
     }
 
     /**
+     * Ce que la régie a déjà consommé : les BCR au statut engagé et les achats
+     * directs validés. Livrer ou payer un BCR ne change rien ici — la somme avait
+     * déjà été réservée sur l'encaisse au moment de l'engagement.
+     */
+    public function montantEngageReel(): float
+    {
+        return (float) $this->decaissements()
+            ->whereIn('statut', ['verse', 'apure'])
+            ->get()
+            ->sum(fn($d) => $d->montantEngageReel())
+            + $this->montantPayeNonEngage();
+    }
+
+    /**
+     * Déficit historique : ce que des BCR payés ont réellement réglé au-delà de
+     * leur engagement tracé. L'argent est sorti de la régie — ne pas le compter
+     * rendrait le Disponible fictif. budget:audit-regie les liste sous
+     * « … sans encaisse » tant qu'une nouvelle DA ne vient pas les financer.
+     */
+    public function montantPayeNonEngage(): float
+    {
+        $bons = $this->bonsCommande()->where('statut', 'paye')->get(['id', 'montant_ttc']);
+
+        if ($bons->isEmpty()) {
+            return 0.0;
+        }
+
+        $traces = \App\Models\ProvisionConsommation::whereIn('bon_commande_regie_id', $bons->pluck('id'))
+            ->selectRaw('bon_commande_regie_id, SUM(montant) as total')
+            ->groupBy('bon_commande_regie_id')
+            ->pluck('total', 'bon_commande_regie_id');
+
+        return (float) $bons->sum(
+            fn($b) => max(0, (float) $b->montant_ttc - (float) ($traces[$b->id] ?? 0))
+        );
+    }
+
+    /**
      * ✅ CORRIGÉ — source : DecaissementRegie.montant_depense
      *
      * Architecture de la régie :
      *   RegieAvance
      *     └── DecaissementRegie (tranches : 01ERE ENCAISSE, 02EME ENCAISSE...)
-     *           └── montant_depense = dépenses réelles de la tranche
+     *           ├── montant_engage = consommation réelle (BCR engagés + achats directs)
+     *           └── montant_depense = part déjà livrée/payée
      *
-     * montant_depense (régie)  = Σ decaissements.montant_depense
-     * montant_disponible (régie) = montant_decaisse - montant_depense
+     * montant_disponible (régie) = montant_decaisse - montant_engage
      *
-     * Avant : sommait DepenseRegie (toujours vide → 0)
-     * Après : somme DecaissementRegie.montant_depense (correct)
+     * Avant : sommait DepenseRegie (toujours vide → 0), puis le payé seul, ce qui
+     * laissait un BCR engagé plein d'argent « disponible ».
      */
     public function recalculerMontants(): void
     {
         $totalDepense = $this->decaissements()->sum('montant_depense');
         $totalIr      = $this->decaissements()->sum('montant_ir_collecte');
+        $totalEngage  = $this->montantEngageReel();
 
         $this->updateQuietly([
             'montant_depense'    => $totalDepense,
-            'montant_disponible' => (float) $this->montant_decaisse - $totalDepense,
+            'montant_engage'     => $totalEngage,
+            'montant_disponible' => (float) $this->montant_decaisse - $totalEngage,
         ]);
     }
 
@@ -276,20 +322,25 @@ class RegieAvance extends Model
     }
 
     /**
-     * Taux calculé à la volée depuis les colonnes en base
-     * (montant_depense mis à jour par recalculerMontants())
+     * Taux de consommation de l'encaisse : sur la somme DÉJÀ ENGAGÉE, la régie
+     * étant consommée dès l'engagement du BCR et non à son paiement.
      */
     public function getTauxConsommationAttribute(): float
     {
         $base = (float) $this->montant_decaisse;
         if ($base <= 0) return 0.0;
-        return round(((float) $this->montant_depense / $base) * 100, 2);
+
+        $engage = $this->isDirty('montant_engage')
+            ? (float) $this->montant_engage
+            : $this->montantEngageReel();
+
+        return round(($engage / $base) * 100, 2);
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['statut', 'montant_alloue', 'montant_disponible', 'montant_consomme', 'date_cloture'])
+            ->logOnly(['statut', 'montant_alloue', 'montant_engage', 'montant_disponible', 'date_cloture'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->useLogName('workflow')

@@ -25,6 +25,7 @@ class DecaissementRegie extends Model
         'certificat_fichier',
         'statut',
         'montant_depense',
+        'montant_engage',
         'montant_ir_collecte',
         'montant_solde',
         'observations',
@@ -38,6 +39,7 @@ class DecaissementRegie extends Model
         'montant_demande'    => 'decimal:2',
         'montant_accorde'    => 'decimal:2',
         'montant_depense'    => 'decimal:2',
+        'montant_engage'     => 'decimal:2',
         'montant_ir_collecte' => 'decimal:2',
         'montant_solde'      => 'decimal:2',
     ];
@@ -73,6 +75,15 @@ class DecaissementRegie extends Model
         return $this->hasMany(ProvisionLigneRegie::class, 'decaissement_regie_id');
     }
 
+    /**
+     * Les lignes de mini-budget propres à CETTE tranche (un encaisse = une ligne
+     * par nomenclature). Les lignes sans tranche sont les lignes héritées.
+     */
+    public function lignes(): HasMany
+    {
+        return $this->hasMany(LigneRegieAvance::class, 'decaissement_regie_id');
+    }
+
     public function decisionAdministrative(): BelongsTo
     {
         return $this->belongsTo(DecisionAdministrative::class, 'decision_administrative_id');
@@ -98,6 +109,31 @@ class DecaissementRegie extends Model
     }
 
     // ── Méthodes ──────────────────────────────────────────────
+    /**
+     * Consommation RÉELLE de la tranche : la régie est consommée dès l'ENGAGEMENT
+     * du BCR (traçabilité provision_consommations) et dès la validation d'un achat
+     * direct. Le paiement ne fait que soldater ce qui a déjà été réservé.
+     */
+    public function montantEngageReel(): float
+    {
+        $provisionIds = \App\Models\ProvisionLigneRegie::where('decaissement_regie_id', $this->id)
+            ->pluck('id');
+
+        $engages = (float) \App\Models\ProvisionConsommation::whereIn(
+            'provision_ligne_regie_id',
+            $provisionIds
+        )->sum('montant');
+
+        $directes = (float) \App\Models\DepenseRegie::where(function ($q) use ($provisionIds) {
+            $q->where('decaissement_regie_id', $this->id)
+                ->orWhereIn('provision_ligne_regie_id', $provisionIds);
+        })
+            ->whereIn('statut', ['valide', 'paye'])
+            ->sum('montant_ttc');
+
+        return $engages + $directes;
+    }
+
     public function recalculerDepenses(): void
     {
         // ✅ Mettre à jour montant_consomme sur chaque provision, en se basant
@@ -121,6 +157,12 @@ class DecaissementRegie extends Model
                 'montant_consomme'   => $consommeProv,
                 'montant_disponible' => $prov->montant_provisionne - $consommeProv,
             ]);
+
+            // ✅ La ligne de mini-budget se lit à partir de ses provisions :
+            //    resynchronisée ici, plus de consommé affiché en retard après
+            //    un engagement ou un paiement (engager() passe par updateQuietly,
+            //    donc aucun observateur ne prévient la ligne).
+            $prov->ligneRegie?->recalculerMontants();
         }
 
         // ✅ Mettre à jour le décaissement — dépenses réellement livrées/payées.
@@ -158,21 +200,30 @@ class DecaissementRegie extends Model
         $totalDepenseGlobal = $totalDepense + $totalBcr;
         $totalIr            = $totalIrDepenses + $totalIrBcr;
 
+        $totalEngage = $this->montantEngageReel();
+
         $this->updateQuietly([
             'montant_depense'     => $totalDepenseGlobal,
+            'montant_engage'      => $totalEngage,
             'montant_ir_collecte' => $totalIr,
-            'montant_solde'       => ($this->montant_accorde ?? 0) - $totalDepenseGlobal,
+            // Ce qui reste employable sur la tranche se juge à l'engagement :
+            // un BCR engagé n'est plus dépensable, même non livré ni payé.
+            'montant_solde'       => ($this->montant_accorde ?? 0) - $totalEngage,
         ]);
 
         // ✅ Mettre à jour la régie parente
         $regie = $this->regieAvance;
         if ($regie) {
-            $totalDepenseRegie = $regie->decaissements()
+            $encaissees = $regie->decaissements()
                 ->whereIn('statut', ['verse', 'apure'])
-                ->sum('montant_depense');
+                ->get();
+
+            $totalEngageRegie = (float) $encaissees->sum('montant_engage');
 
             $regie->updateQuietly([
-                'montant_depense' => $totalDepenseRegie,
+                'montant_depense'    => (float) $encaissees->sum('montant_depense'),
+                'montant_engage'     => $totalEngageRegie,
+                'montant_disponible' => (float) $regie->montant_decaisse - $totalEngageRegie,
             ]);
         }
     }
@@ -182,67 +233,132 @@ class DecaissementRegie extends Model
     // DecaissementsRelationManager pour être réutilisable (notamment
     // par RegieAvance::reapprovisionner(), qui crée une tranche sans
     // passer par l'action "Accorder & Verser" du RelationManager).
+    //
+    // Chaque tranche crée SES PROPRES lignes de mini-budget : le 2e encaisse
+    // trimestriel ne se cumule plus sur la ligne du 1er déjà en consommation.
     // =========================================================
     public function creerProvisions(RegieAvance $regie, float $montantAccorde): void
     {
-        $lignes = $regie->lignes()->with('nomenclature')->get();
+        $sources = $this->sourcesAllocation($regie);
 
-        if ($lignes->isEmpty()) {
-            return;
+        if ($sources->isEmpty()) {
+            throw new \Exception(
+                "Aucune nomenclature d'allocation pour cette régie : associez d'abord une DA source "
+                    . "(onglet « Décision source ») ou une ligne de mini-budget, puis accordez la tranche."
+            );
         }
 
-        // ── RAV : 1 seule ligne → provision automatique totale ──
-        if ($regie->type === 'rav' || $lignes->count() === 1) {
-            $ligne = $lignes->first();
+        $repartition = [];
 
-            $existante = ProvisionLigneRegie::where([
-                'decaissement_regie_id' => $this->id,
-                'ligne_regie_avance_id' => $ligne->id,
-            ])->first();
+        // ── RAV (ou allocation unique) : la tranche entière sur la ligne ──
+        if ($regie->type === 'rav' || $sources->count() === 1) {
+            $repartition[] = ['source' => $sources->first(), 'montant' => $montantAccorde];
+        } else {
+            // ── Menu Dépense : répartition proportionnelle aux enveloppes ──
+            $totalPoids = (float) $sources->sum('poids');
+            $sources    = $sources->values();
+            $restant    = $montantAccorde;
 
-            if (!$existante) {
-                ProvisionLigneRegie::create([
-                    'decaissement_regie_id' => $this->id,
-                    'ligne_regie_avance_id' => $ligne->id,
-                    'montant_provisionne'   => $montantAccorde,
-                    'montant_consomme'      => 0,
-                    'montant_disponible'    => $montantAccorde,
-                ]);
+            foreach ($sources as $index => $source) {
+                if ($index === $sources->count() - 1) {
+                    $montant = round($restant, 2);
+                } else {
+                    $montant = $totalPoids > 0
+                        ? round($montantAccorde * ((float) $source['poids'] / $totalPoids), 2)
+                        : round($montantAccorde / $sources->count(), 2);
+                    $restant -= $montant;
+                }
+
+                $repartition[] = ['source' => $source, 'montant' => $montant];
+            }
+        }
+
+        foreach ($repartition as $part) {
+            $ligne = $this->lignePourLaTranche($regie, $part['source'], $part['montant']);
+            $this->creerOuMettreAJourProvision($ligne, $part['montant']);
+        }
+    }
+
+    /**
+     * Nomenclatures que la tranche doit approvisionner, avec le poids qui sert à
+     * la répartition : les enveloppes des DA sources, à défaut les lignes de
+     * mini-budget saisies à la main.
+     */
+    private function sourcesAllocation(RegieAvance $regie): \Illuminate\Support\Collection
+    {
+        $sources = [];
+
+        foreach ($regie->decisionsSource()->with('nomenclature')->get() as $liaison) {
+            if (!$liaison->nomenclature_id) {
+                continue;
             }
 
-            return;
+            $sources[$liaison->nomenclature_id] ??= [
+                'nomenclature_id'      => $liaison->nomenclature_id,
+                'ligne_budgetaire_id'  => $liaison->ligne_budgetaire_id,
+                'poids'                => 0.0,
+            ];
+            $sources[$liaison->nomenclature_id]['poids'] += (float) $liaison->montant_da;
         }
 
-        // ── Menu Dépense : N lignes → répartition proportionnelle ──
-        $totalAlloue = $lignes->sum('montant_alloue');
+        if ($sources !== []) {
+            return collect(array_values($sources));
+        }
 
-        if ($totalAlloue <= 0) {
-            $montantParLigne = round($montantAccorde / $lignes->count(), 2);
-            foreach ($lignes as $index => $ligne) {
-                $montant = ($index === $lignes->count() - 1)
-                    ? $montantAccorde - ($montantParLigne * ($lignes->count() - 1))
-                    : $montantParLigne;
+        return $regie->lignes()
+            ->with('nomenclature')
+            ->get()
+            ->map(fn($ligne) => [
+                'nomenclature_id'     => $ligne->nomenclature_id,
+                'ligne_budgetaire_id' => $ligne->ligne_budgetaire_id,
+                'poids'               => (float) $ligne->montant_alloue,
+            ])
+            ->values();
+    }
 
-                $this->creerOuMettreAJourProvision($ligne, $montant);
+    /**
+     * La ligne de mini-budget de CETTE tranche pour cette nomenclature.
+     * Son alloué ne descend jamais sous ce qui est déjà consommé.
+     */
+    public function lignePourLaTranche(
+        RegieAvance $regie,
+        array $source,
+        float $montant
+    ): LigneRegieAvance {
+        $ligne = LigneRegieAvance::where([
+            'decaissement_regie_id' => $this->id,
+            'nomenclature_id'       => $source['nomenclature_id'],
+        ])->first();
+
+        if (!$ligne) {
+            $ligneBudgetaireId = $source['ligne_budgetaire_id']
+                ?: LigneBudgetaire::where('budget_id', $regie->budget_id)
+                    ->where('nomenclature_id', $source['nomenclature_id'])
+                    ->value('id');
+
+            if (!$ligneBudgetaireId) {
+                throw new \Exception(
+                    'Aucune ligne budgétaire pour la nomenclature '
+                        . ($source['nomenclature_id'])
+                        . ' dans le budget de la régie : la tranche ne peut pas être provisionnée.'
+                );
             }
-            return;
+
+            $ligne = LigneRegieAvance::create([
+                'regie_avance_id'        => $regie->id,
+                'decaissement_regie_id'  => $this->id,
+                'nomenclature_id'        => $source['nomenclature_id'],
+                'ligne_budgetaire_id'    => $ligneBudgetaireId,
+                'montant_alloue'         => $montant,
+                'montant_consomme'       => 0,
+            ]);
+        } elseif ($montant > (float) $ligne->montant_alloue) {
+            $ligne->update(['montant_alloue' => $montant]);
         }
 
-        $totalCree   = 0;
-        $lignesArray = $lignes->values();
+        $ligne->recalculerMontants();
 
-        foreach ($lignesArray as $index => $ligne) {
-            $proportion = (float) $ligne->montant_alloue / $totalAlloue;
-
-            if ($index === $lignesArray->count() - 1) {
-                $montant = round($montantAccorde - $totalCree, 2);
-            } else {
-                $montant = round($montantAccorde * $proportion, 2);
-            }
-
-            $totalCree += $montant;
-            $this->creerOuMettreAJourProvision($ligne, $montant);
-        }
+        return $ligne;
     }
 
     public function creerOuMettreAJourProvision(LigneRegieAvance $ligne, float $montant): void
@@ -253,9 +369,13 @@ class DecaissementRegie extends Model
         ])->first();
 
         if ($existante) {
+            // Ré-accord d'une même tranche : on ne peut pas raboter en dessous
+            // de ce qui est déjà consommé sur cette provision.
+            $nouveau = max($montant, (float) $existante->montant_consomme);
+
             $existante->updateQuietly([
-                'montant_provisionne' => $montant,
-                'montant_disponible'  => $montant - $existante->montant_consomme,
+                'montant_provisionne' => $nouveau,
+                'montant_disponible'  => $nouveau - $existante->montant_consomme,
             ]);
         } else {
             ProvisionLigneRegie::create([

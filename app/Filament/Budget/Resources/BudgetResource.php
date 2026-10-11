@@ -326,6 +326,88 @@ class BudgetResource extends Resource
                             return response()->streamDownload(fn() => print($pdf->output()), $filename);
                         }),
 
+                    // ── ✅ Suppression EXCEPTIONNELLE d'une ligne budgétaire (même budget adopté) ──
+                    Tables\Actions\Action::make('supprimerLigneExceptionnelle')
+                        ->label('Supprimer une ligne (exceptionnel)')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->color('danger')
+                        ->visible(fn() => \App\Services\Budget\SuppressionLigneBudgetaireService::autorise())
+                        ->modalHeading('Suppression exceptionnelle d\'une ligne budgétaire')
+                        ->modalDescription(fn(Budget $record) => "Budget {$record->code} ({$record->statut}). La ligne sera supprimée de façon récupérable ; "
+                            . 'les AE/CP des sous-tâches du compte seront ramenés à 0 (et rétablis en cas de restauration). '
+                            . 'Le motif, la référence et votre nom seront conservés et inscrits au journal d\'audit.')
+                        ->form(fn(Budget $record) => [
+                            Forms\Components\Select::make('ligne_id')
+                                ->label('Ligne à supprimer')
+                                ->options(fn() => \App\Models\LigneBudgetaire::withoutGlobalScope('exercice')->where('budget_id', $record->id)
+                                    ->with('nomenclature')->get()->sortBy(fn($l) => $l->nomenclature?->code)
+                                    ->mapWithKeys(fn($l) => [$l->id => ($l->nomenclature?->code ?? '?') . ' — ' . ($l->nomenclature?->libelle ?? '')
+                                        . ' (initial ' . number_format((float) $l->budget_initial, 0, ',', ' ') . ' FCFA)']))
+                                ->searchable()->required()->live(),
+                            Forms\Components\Placeholder::make('controle')
+                                ->label('Contrôle')
+                                ->visible(fn(Forms\Get $get) => filled($get('ligne_id')))
+                                ->content(function (Forms\Get $get) {
+                                    $service = app(\App\Services\Budget\SuppressionLigneBudgetaireService::class);
+                                    $ligne = \App\Models\LigneBudgetaire::withoutGlobalScope('exercice')->with(['nomenclature', 'budget'])->find($get('ligne_id'));
+                                    if (!$ligne) return '—';
+                                    $obstacles = $service->obstacles($ligne);
+                                    $taches = $service->sousTaches($ligne);
+                                    $html = $obstacles
+                                        ? '<span style="color:#b91c1c;">⛔ ' . implode('<br>⛔ ', array_map('e', $obstacles)) . '</span>'
+                                        : '<span style="color:#166534;">✅ Aucun engagement, mouvement, collectif ni régie : suppression possible.</span>';
+                                    if ($taches->isNotEmpty()) {
+                                        $html .= '<br><span style="color:#b45309;">ℹ️ Sous-tâches ramenées à 0 : '
+                                            . e($taches->map(fn($t) => $t->code . ' (CP ' . number_format((float) $t->cp, 0, ',', ' ') . ')')->implode(', ')) . '</span>';
+                                    }
+                                    return new \Illuminate\Support\HtmlString($html);
+                                }),
+                            Forms\Components\Textarea::make('motif')
+                                ->label('Motif de la suppression')->required()->minLength(15)->rows(3)
+                                ->placeholder('Ex. : ligne créée par erreur, compte remplacé par un autre lors de la révision'),
+                            Forms\Components\TextInput::make('reference')
+                                ->label('Référence de la décision (si disponible)')
+                                ->placeholder('Ex. : Délibération du CA n° … du …')->maxLength(255),
+                        ])
+                        ->action(function (array $data) {
+                            try {
+                                $ligne = \App\Models\LigneBudgetaire::withoutGlobalScope('exercice')->with(['nomenclature', 'budget'])->findOrFail($data['ligne_id']);
+                                app(\App\Services\Budget\SuppressionLigneBudgetaireService::class)->supprimer($ligne, $data['motif'], $data['reference'] ?? null);
+                                \Filament\Notifications\Notification::make()->success()->title('Ligne budgétaire supprimée')
+                                    ->body(($ligne->nomenclature?->code ?? '') . ' : suppression tracée, restaurable.')->send();
+                            } catch (\DomainException $e) {
+                                \Filament\Notifications\Notification::make()->warning()->title('Suppression refusée')->body($e->getMessage())->persistent()->send();
+                            }
+                        }),
+
+                    // ── ✅ Restauration d'une ligne budgétaire supprimée ──
+                    Tables\Actions\Action::make('restaurerLigne')
+                        ->label('Restaurer une ligne supprimée')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('gray')
+                        ->visible(fn(Budget $record) => \App\Services\Budget\SuppressionLigneBudgetaireService::autorise()
+                            && \App\Models\LigneBudgetaire::withoutGlobalScope('exercice')->onlyTrashed()->where('budget_id', $record->id)->exists())
+                        ->form(fn(Budget $record) => [
+                            Forms\Components\Select::make('ligne_id')
+                                ->label('Ligne supprimée')
+                                ->options(fn() => \App\Models\LigneBudgetaire::withoutGlobalScope('exercice')->onlyTrashed()->where('budget_id', $record->id)
+                                    ->with('nomenclature')->get()
+                                    ->mapWithKeys(fn($l) => [$l->id => ($l->nomenclature?->code ?? '?') . ' — supprimée le ' . $l->deleted_at?->format('d/m/Y')
+                                        . ($l->motif_suppression ? ' : « ' . \Str::limit($l->motif_suppression, 60) . ' »' : '')]))
+                                ->required(),
+                            Forms\Components\Textarea::make('motif')->label('Motif de la restauration')->required()->rows(2),
+                        ])
+                        ->action(function (array $data) {
+                            try {
+                                $ligne = \App\Models\LigneBudgetaire::withoutGlobalScope('exercice')->onlyTrashed()->with(['nomenclature', 'budget'])->findOrFail($data['ligne_id']);
+                                app(\App\Services\Budget\SuppressionLigneBudgetaireService::class)->restaurer($ligne, $data['motif']);
+                                \Filament\Notifications\Notification::make()->success()->title('Ligne budgétaire restaurée')
+                                    ->body(($ligne->nomenclature?->code ?? '') . ' : sous-tâches rétablies.')->send();
+                            } catch (\DomainException $e) {
+                                \Filament\Notifications\Notification::make()->warning()->title('Restauration refusée')->body($e->getMessage())->persistent()->send();
+                            }
+                        }),
+
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')

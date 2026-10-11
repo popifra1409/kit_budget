@@ -918,20 +918,26 @@ class BonCommandeRegieResource extends Resource
                                 && auth()->user()?->can('valider_bon_commande_regie')
                         )
                         ->form(function ($record) {
-                            $prov         = $record->provisionLigneRegie;
                             $montantTtc   = (float) $record->montant_ttc;
                             $dejaEngage   = (float) ($record->montant_engage ?? 0);
                             $montantRestant = max(0, $montantTtc - $dejaEngage);
 
-                            // ✅ Disponibilité CUMULÉE sur toutes les provisions
-                            //    (tous décaissements "versés") de la même ligne —
-                            //    et non plus une seule provision isolée.
-                            $disponible = (float) \App\Models\ProvisionLigneRegie::where(
-                                'ligne_regie_avance_id',
-                                $record->ligne_regie_avance_id
-                            )
-                                ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
-                                ->sum('montant_disponible');
+                            // ✅ Disponibilité de la nomenclature sur TOUS les
+                            //    encaisses versés de la régie : le plus ancien
+                            //    s'épuise, puis le BCR déborde sur le suivant.
+                            $ligne  = $record->ligneRegieAvance;
+                            $resume = $ligne
+                                ? $ligne->resumeEncaisses()
+                                : ['alloue' => 0.0, 'consomme' => 0.0, 'disponible' => 0.0, 'encaisses' => []];
+
+                            $detailEncaisses = '';
+                            foreach ($resume['encaisses'] as $e) {
+                                $detailEncaisses .= '<div>• ' . htmlspecialchars((string) $e['numero'])
+                                    . ' « ' . htmlspecialchars((string) $e['libelle']) . ' » : alloué '
+                                    . number_format($e['alloue'], 0, ',', ' ') . ', consommé '
+                                    . number_format($e['consomme'], 0, ',', ' ') . ', disponible <strong>'
+                                    . number_format($e['dispo'], 0, ',', ' ') . '</strong> FCFA</div>';
+                            }
 
                             return [
                                 Forms\Components\Placeholder::make('info_bcr')
@@ -941,9 +947,13 @@ class BonCommandeRegieResource extends Resource
                                             . "<strong>Montant TTC total :</strong> " . number_format($montantTtc, 0, ',', ' ') . " FCFA<br>"
                                             . ($dejaEngage > 0 ? "<strong>Déjà engagé :</strong> " . number_format($dejaEngage, 0, ',', ' ') . " FCFA<br>" : '')
                                             . "<strong>Reste à engager :</strong> " . number_format($montantRestant, 0, ',', ' ') . " FCFA<br>"
-                                            . "<strong>Provision disponible (cumul décaissements) :</strong> " . number_format($disponible, 0, ',', ' ') . " FCFA<br>"
-                                            . "<strong>Ligne :</strong> " . ($prov?->ligneRegie?->nomenclature?->code ?? '—')
-                                            . " — " . ($prov?->ligneRegie?->nomenclature?->libelle ?? '—')
+                                            . "<strong>Ligne :</strong> " . ($ligne?->nomenclature?->code ?? '—')
+                                            . " — " . ($ligne?->nomenclature?->libelle ?? '—') . '<br>'
+                                            . "<strong>Total encaissé sur cette nomenclature :</strong> "
+                                            . number_format($resume['alloue'], 0, ',', ' ') . " FCFA — déjà consommé "
+                                            . number_format($resume['consomme'], 0, ',', ' ') . " FCFA — disponible <strong>"
+                                            . number_format($resume['disponible'], 0, ',', ' ') . "</strong> FCFA"
+                                            . ($detailEncaisses ? "<div style='margin-top:.4rem;'>{$detailEncaisses}</div>" : '')
                                             . '</div>'
                                     ))
                                     ->columnSpanFull(),
@@ -1004,9 +1014,9 @@ class BonCommandeRegieResource extends Resource
 
                                 Forms\Components\Placeholder::make('resume_engagement')
                                     ->label('Montant qui sera engagé')
-                                    ->content(function (Forms\Get $get) use ($montantTtc, $disponible) {
+                                    ->content(function (Forms\Get $get) use ($montantTtc, $montantRestant, $resume) {
                                         if ($get('mode_engagement') === 'total') {
-                                            $montant = $montantTtc;
+                                            $montant = $montantRestant;
                                             $pct     = 100;
                                         } elseif ($get('type_partiel') === 'pourcentage') {
                                             $pct     = (float) ($get('pourcentage') ?? 40);
@@ -1018,10 +1028,14 @@ class BonCommandeRegieResource extends Resource
                                                 : 0;
                                         }
 
-                                        $reste     = $montantTtc - $montant;
-                                        $suffisant = $montant <= $disponible;
-                                        $couleur   = $suffisant ? 'green' : 'red';
-                                        $alerte    = $suffisant ? '' : ' ⚠️ Provision insuffisante !';
+                                        $reste   = max(0, $montantTtc - $montant);
+                                        $manque  = round($montant - $resume['disponible'], 2);
+                                        $depasse = $manque > 0.01;
+                                        $couleur = $depasse ? 'red' : 'green';
+                                        $alerte  = $depasse
+                                            ? ' ⚠️ Encaisses épuisés — veuillez approvisionner la régie (il manque '
+                                            . number_format($manque, 0, ',', ' ') . ' FCFA) !'
+                                            : '';
 
                                         return new \Illuminate\Support\HtmlString(
                                             '<div style="background:#f8fafc;padding:.75rem;border-radius:.5rem;font-size:.85rem;line-height:2;">'
@@ -1029,8 +1043,8 @@ class BonCommandeRegieResource extends Resource
                                                 . number_format($montant, 0, ',', ' ') . " FCFA ({$pct}%)</strong>{$alerte}<br>"
                                                 . "<strong>Reste non engagé après :</strong> "
                                                 . number_format($reste, 0, ',', ' ') . " FCFA<br>"
-                                                . "<strong>Provision disponible :</strong> "
-                                                . number_format($disponible, 0, ',', ' ') . " FCFA"
+                                                . "<strong>Disponible sur les encaisses de la nomenclature :</strong> "
+                                                . number_format($resume['disponible'], 0, ',', ' ') . ' FCFA'
                                                 . '</div>'
                                         );
                                     })
@@ -1140,8 +1154,9 @@ class BonCommandeRegieResource extends Resource
                         ->visible(fn($record) => $record && $record->statut === 'livre')
                         ->form(function ($record) {
                             $montantTtc = (float) $record->montant_ttc;
-                            $dejaEngage = (float) ($record->montant_engage ?? 0);
-                            $reste      = max(0, $montantTtc - $dejaEngage);
+                            // ✅ Sur la consommation TRACÉE sur les encaisses (et non le champ montant_engage)
+                            $dejaEngage = $record->montantTrace();
+                            $reste      = $record->resteNonTrace();
 
                             $champFacture = [
                                 Forms\Components\TextInput::make('numero_facture_definitive')
@@ -1161,12 +1176,12 @@ class BonCommandeRegieResource extends Resource
                                 return $champFacture;
                             }
 
-                            $disponible = (float) \App\Models\ProvisionLigneRegie::where(
-                                'ligne_regie_avance_id',
-                                $record->ligne_regie_avance_id
-                            )
-                                ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
-                                ->sum('montant_disponible');
+                            // Disponible sur TOUS les encaisses de la nomenclature :
+                            // le paiement déborde sur l'encaisse suivant une fois le
+                            // premier épuisé.
+                            $disponible = $record->ligneRegieAvance
+                                ? (float) $record->ligneRegieAvance->resumeEncaisses()['disponible']
+                                : 0.0;
 
                             return array_merge([
                                 Forms\Components\Placeholder::make('info_paiement')
@@ -1176,9 +1191,21 @@ class BonCommandeRegieResource extends Resource
                                             . 'border-radius:.5rem;padding:.75rem;font-size:.85rem;line-height:1.8;">'
                                             . "📦 <strong>Livré</strong> — le paiement peut se faire en plusieurs fois "
                                             . "jusqu'au solde complet.<br>"
-                                            . "Déjà engagé/payé : <strong>" . number_format($dejaEngage, 0, ',', ' ') . " FCFA</strong><br>"
-                                            . "Reste à payer : <strong style='color:#dc2626;'>" . number_format($reste, 0, ',', ' ') . " FCFA</strong><br>"
-                                            . "Provision disponible (cumul décaissements) : <strong>" . number_format($disponible, 0, ',', ' ') . " FCFA</strong>"
+                                            . "Déjà engagé (déjà consommé de l'encaisse) : <strong>"
+                                            . number_format($dejaEngage, 0, ',', ' ') . " FCFA</strong><br>"
+                                            . "Reste à payer <em>non encore engagé</em> : <strong style='color:#dc2626;'>"
+                                            . number_format($reste, 0, ',', ' ') . " FCFA</strong><br>"
+                                            . "Disponible sur les encaisses de la nomenclature : <strong>"
+                                            . number_format($disponible, 0, ',', ' ') . " FCFA</strong>"
+                                            . ($reste > $disponible + 0.01
+                                                ? "<br><span style='color:#b91c1c;font-weight:600;'>⚠️ La partie non engagée dépasse les encaisses : il manque "
+                                                . number_format($reste - $disponible, 0, ',', ' ')
+                                                . " FCFA — veuillez approvisionner la régie (nouvelle DA + tranche).</span>"
+                                                : '')
+                                            . "<br><span style='font-size:.78rem;color:#64748b;'>"
+                                            . "L'encaisse est consommé à l'engagement : payer une part déjà engagée "
+                                            . "ne consomme rien de plus. Seule la part non engagée utilise le disponible."
+                                            . '</span>'
                                             . '</div>'
                                     ))
                                     ->columnSpanFull(),
@@ -1222,8 +1249,8 @@ class BonCommandeRegieResource extends Resource
                                     }
 
                                     $montantTtc = (float) $record->montant_ttc;
-                                    $dejaEngage = (float) ($record->montant_engage ?? 0);
-                                    $reste      = max(0, $montantTtc - $dejaEngage);
+                                    // ✅ Reste = part non imputée sur les encaisses (source de vérité)
+                                    $reste      = $record->resteNonTrace();
 
                                     if ($reste > 0.01) {
                                         $montantAPayer = ($data['mode_paiement'] ?? 'total') === 'total'
@@ -1243,7 +1270,7 @@ class BonCommandeRegieResource extends Resource
                                     // ✅ Ne passe en statut final 'paye' que si réellement soldé
                                     //    à 100% — sinon reste en 'livre' pour permettre un
                                     //    paiement ultérieur (livraison totale ≠ paiement total).
-                                    $resteApres = max(0, (float) $record->montant_ttc - (float) $record->montant_engage);
+                                    $resteApres = $record->resteNonTrace();
                                     if ($resteApres <= 0.01) {
                                         $record->update(['statut' => 'paye']);
                                     }
@@ -1270,7 +1297,7 @@ class BonCommandeRegieResource extends Resource
 
                                 $record->refresh();
                                 $estSolde = $record->statut === 'paye';
-                                $resteFinal = max(0, (float) $record->montant_ttc - (float) $record->montant_engage);
+                                $resteFinal = $record->resteNonTrace();
 
                                 Notification::make()
                                     ->title($estSolde ? '✅ BCR payé intégralement' : '💰 Paiement partiel enregistré')

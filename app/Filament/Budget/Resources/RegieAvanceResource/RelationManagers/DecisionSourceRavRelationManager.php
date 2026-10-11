@@ -4,7 +4,6 @@ namespace App\Filament\Budget\Resources\RegieAvanceResource\RelationManagers;
 
 use App\Models\DecisionAdministrative;
 use App\Models\LigneBudgetaire;
-use App\Models\LigneRegieAvance;
 use App\Models\MenuDepenseDecision;
 use Filament\Forms;
 use Filament\Forms\Get;
@@ -251,31 +250,11 @@ class DecisionSourceRavRelationManager extends RelationManager
                             'montant_da'                 => $montant,
                         ]);
 
-                        // ── 2. Créer OU incrémenter la ligne mini-budget ──
-                        //    ✅ Si une ligne existe déjà pour cette nomenclature
-                        //    (réapprovisionnement sur la même ligne), on ADDITIONNE
-                        //    le nouveau montant — firstOrCreate() l'ignorait
-                        //    silencieusement, ce qui masquait le réapprovisionnement.
-                        if ($nomId && $montant > 0) {
-                            $ligne = LigneRegieAvance::where([
-                                'regie_avance_id' => $regie->id,
-                                'nomenclature_id' => $nomId,
-                            ])->first();
-
-                            if ($ligne) {
-                                $ligne->increment('montant_alloue', $montant);
-                                $ligne->increment('montant_disponible', $montant);
-                            } else {
-                                LigneRegieAvance::create([
-                                    'regie_avance_id'     => $regie->id,
-                                    'nomenclature_id'     => $nomId,
-                                    'ligne_budgetaire_id' => $lbId,
-                                    'montant_alloue'      => $montant,
-                                    'montant_consomme'    => 0,
-                                    'montant_disponible'  => $montant,
-                                ]);
-                            }
-                        }
+                        // ── 2. ✅ La DA alimente l'enveloppe annuelle, PAS les lignes ──
+                        //    Les lignes de mini-budget sont créées par chaque encaisse
+                        //    (DecaissementRegie::creerProvisions) : cumuler le montant
+                        //    d'une nouvelle DA sur la ligne d'un encaisse déjà consommé
+                        //    faussait son alloué et son taux.
 
                         // ── 3. ✅ Mettre à jour la régie via DB::table —
                         //    ADDITIONNER (pas écraser), puisqu'il peut déjà y
@@ -309,7 +288,7 @@ class DecisionSourceRavRelationManager extends RelationManager
                         Notification::make()
                             ->title('✅ DA source associée')
                             ->success()
-                            ->body('La ligne de mini-budget et les montants ont été mis à jour.')
+                            ->body("L'enveloppe annuelle de la régie est mise à jour ; chaque encaisse créera sa ligne de mini-budget.")
                     ),
             ])
             ->actions([
@@ -323,22 +302,19 @@ class DecisionSourceRavRelationManager extends RelationManager
                         $regie   = $this->getOwnerRecord();
                         $montant = (float) $record->montant_da;
 
-                        // ── Décrémenter la ligne mini-budget (jamais sous 0) ──
-                        $ligne = LigneRegieAvance::where([
-                            'regie_avance_id' => $regie->id,
-                            'nomenclature_id' => $record->nomenclature_id,
-                        ])->first();
+                        // ── Les lignes de mini-budget appartiennent aux encaisses,
+                        //    pas à la DA : on ne touche que l'enveloppe annuelle. ──
+                        $dejaEncaisse = (float) $regie->decaissements()
+                            ->whereIn('statut', ['verse', 'apure'])
+                            ->sum('montant_accorde');
 
-                        if ($ligne && $ligne->montant_consomme == 0) {
-                            $nouvelAlloue = max(0, (float) $ligne->montant_alloue - $montant);
-                            if ($nouvelAlloue <= 0.01) {
-                                $ligne->delete();
-                            } else {
-                                $ligne->update([
-                                    'montant_alloue'     => $nouvelAlloue,
-                                    'montant_disponible' => $nouvelAlloue,
-                                ]);
-                            }
+                        if ((float) $regie->montant_alloue - $montant < $dejaEncaisse - 0.01) {
+                            throw new \Exception(
+                                "Impossible de retirer cette DA : elle finance des encaisses déjà versés.\n"
+                                    . 'Enveloppes des DA : ' . number_format((float) $regie->montant_alloue, 0, ',', ' ') . " FCFA\n"
+                                    . 'DA retirée : ' . number_format($montant, 0, ',', ' ') . " FCFA\n"
+                                    . 'Déjà encaissé : ' . number_format($dejaEncaisse, 0, ',', ' ') . ' FCFA'
+                            );
                         }
 
                         $record->delete();

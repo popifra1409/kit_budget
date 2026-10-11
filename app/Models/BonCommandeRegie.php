@@ -67,7 +67,39 @@ class BonCommandeRegie extends Model
 
         static::updating(function ($bc) {
             $bc->updated_by = auth()->id();
+
+            // ✅ VERROU — un BCR ne passe à « payé » que si toute sa consommation est TRACÉE sur
+            //    les encaisses (provision_consommations). Empêche les BCR payés sans engagement
+            //    (déficit de régie), quel que soit l'écran ou le code à l'origine du changement.
+            if ($bc->isDirty('statut') && $bc->statut === 'paye') {
+                $reste = $bc->resteNonTrace();
+
+                if ($reste > 0.01) {
+                    throw new \Exception(
+                        "⛔ Paiement impossible : la consommation du BCR {$bc->numero} n'est pas entièrement imputée sur les encaisses de la régie.\n"
+                            . 'TTC : ' . number_format((float) $bc->montant_ttc, 0, ',', ' ') . ' FCFA — imputé : '
+                            . number_format($bc->montantTrace(), 0, ',', ' ') . ' FCFA — reste à engager : '
+                            . number_format($reste, 0, ',', ' ') . " FCFA.\n"
+                            . 'Engagez le solde (action « Marquer payé » ou « Engager ») ; si les encaisses sont épuisés, '
+                            . 'approvisionnez la régie (nouvelle DA, puis « Accorder & Verser » une tranche).'
+                    );
+                }
+            }
         });
+    }
+
+    /** ✅ Consommation réellement imputée sur les encaisses (source de vérité). */
+    public function montantTrace(): float
+    {
+        return $this->exists
+            ? (float) \App\Models\ProvisionConsommation::where('bon_commande_regie_id', $this->id)->sum('montant')
+            : 0.0;
+    }
+
+    /** ✅ Part du TTC non encore imputée sur les encaisses. */
+    public function resteNonTrace(): float
+    {
+        return max(0, round((float) $this->montant_ttc - $this->montantTrace(), 2));
     }
 
     // ── Relations ─────────────────────────────────────────────
@@ -140,7 +172,9 @@ class BonCommandeRegie extends Model
         ?string $commentaire    = null
     ): void {
         $montantAEngager = $montantPartiel ?? (float) $this->montant_ttc;
-        $dejaEngage      = (float) ($this->montant_engage ?? 0);
+        // ✅ Déjà engagé = consommation TRACÉE sur les encaisses (et non le champ montant_engage,
+        //    qui peut dériver) : le plafond « engagé ≤ TTC » reste juste.
+        $dejaEngage      = $this->montantTrace();
 
         // ✅ Autorise l'engagement incrémental (solde progressif) au lieu
         //    de bloquer dès qu'une première tranche a été engagée.
@@ -157,34 +191,35 @@ class BonCommandeRegie extends Model
             throw new \Exception("Aucune ligne de régie associée à ce BCR.");
         }
 
-        // ── Cascade : toutes les provisions de cette ligne, tous décaissements
-        //    "versés", triées par ordre chronologique (le plus ancien d'abord)
-        $provisions = ProvisionLigneRegie::where('ligne_regie_avance_id', $this->ligne_regie_avance_id)
-            ->whereHas('decaissement', fn($q) => $q->where('statut', 'verse'))
-            ->with('decaissement')
-            ->get()
-            ->sortBy(fn($p) => [
-                $p->decaissement?->date_decaissement?->format('Y-m-d') ?? '9999-99-99',
-                $p->decaissement?->numero ?? '',
-            ])
-            ->values();
+        // ✅ Blocage dur : on ne consomme pas plus que ce que la régie a encaissé
+        //    sur cette nomenclature ; au-delà il faut un nouvel encaisse.
+        $ligne = $this->ligneRegieAvance;
+        $ligne->controlerPlafond($montantAEngager);
 
-        // ✅ On ne compte que les disponibilités POSITIVES : un décaissement en
+        // ── Cascade : tous les encaisses versés de cette nomenclature, du plus
+        //    ancien au plus récent — le 1er s'épuise, puis le suivant.
+        $provisions = $ligne->provisionsConsommables();
+
+        // ✅ On ne compte que les disponibilités POSITIVES : un encaisse en
         //    négatif (dépassement historique) ne doit jamais réduire ce qui est
-        //    réellement disponible sur un AUTRE décaissement de la même ligne.
+        //    réellement disponible sur un AUTRE encaisse.
         $totalDisponible = (float) $provisions->sum(fn($p) => max(0, (float) $p->montant_disponible));
 
-        if ($montantAEngager > $totalDisponible) {
+        if ($montantAEngager > $totalDisponible + 0.01) {
             throw new \Exception(
-                "Provision insuffisante sur l'ensemble des décaissements de cette ligne. "
-                    . "Disponible cumulé : " . number_format($totalDisponible, 0, ',', ' ') . " FCFA — "
-                    . "Demandé : " . number_format($montantAEngager, 0, ',', ' ') . " FCFA"
+                "⛔ Les encaisses de la régie sont épuisés — veuillez approvisionner la régie.\n"
+                    . 'Nomenclature ' . ($ligne->nomenclature?->code ?? 'sans code') . " :\n"
+                    . 'Disponible cumulé sur les encaisses versés : '
+                    . number_format($totalDisponible, 0, ',', ' ') . " FCFA\n"
+                    . 'Montant demandé : ' . number_format($montantAEngager, 0, ',', ' ') . " FCFA\n"
+                    . 'Solution : nouvelle DA sur la régie, puis « Accorder & Verser » une tranche.'
             );
         }
 
         $decaissementsImpactes = collect();
+        $lignesImpactees       = collect();
 
-        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provisions, $dejaEngage, &$decaissementsImpactes) {
+        \DB::transaction(function () use ($montantAEngager, $pourcentage, $commentaire, $provisions, $dejaEngage, &$decaissementsImpactes, &$lignesImpactees) {
             $restant = $montantAEngager;
             $premiereProvisionUtilisee = null;
 
@@ -209,6 +244,10 @@ class BonCommandeRegie extends Model
                 ]);
 
                 $decaissementsImpactes->push($provision->decaissement_regie_id);
+                $lignesImpactees->push([
+                    'ligne'   => $provision->ligne_regie_avance_id,
+                    'montant' => $pris,
+                ]);
 
                 $premiereProvisionUtilisee ??= $provision->id;
                 $restant -= $pris;
@@ -217,8 +256,20 @@ class BonCommandeRegie extends Model
             $nouveauMontantEngage = $dejaEngage + $montantAEngager;
             $montantTtc           = (float) $this->montant_ttc;
 
+            // Le BCR est rattaché à l'encaisse qui en absorbe la plus grosse part,
+            // sinon le mini-budget afficherait une consommation sur un encaisse
+            // que le BCR n'a pas consommé.
+            $partsParLigne = $lignesImpactees
+                ->groupBy('ligne')
+                ->map(fn($g) => (float) $g->sum('montant'));
+
+            $ligneMajoritaire = $partsParLigne->isEmpty()
+                ? null
+                : $partsParLigne->sortDesc()->keys()->first();
+
             $this->updateQuietly([
                 'provision_ligne_regie_id' => $this->provision_ligne_regie_id ?? $premiereProvisionUtilisee,
+                'ligne_regie_avance_id'    => $ligneMajoritaire ?? $this->ligne_regie_avance_id,
                 'engage'                   => true,
                 'montant_engage'           => $nouveauMontantEngage,
                 'pourcentage_engage'       => $montantTtc > 0

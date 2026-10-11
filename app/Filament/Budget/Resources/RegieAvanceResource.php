@@ -59,6 +59,8 @@ class RegieAvanceResource extends Resource
     {
         return auth()->user()?->can('delete_regie_avance')
             && $record->statut === 'actif'
+            // Un BCR engagé a déjà consommé l'encaisse : la régie n'est plus vide.
+            && (float) $record->montant_engage == 0.0
             && $record->montant_depense == 0;
     }
 
@@ -332,11 +334,30 @@ class RegieAvanceResource extends Resource
                     ->money('XAF')->sortable()
                     ->color('info'),
 
+                Tables\Columns\TextColumn::make('montant_engage')
+                    ->label('Engagé')
+                    ->money('XAF')->sortable()
+                    ->color('danger')
+                    ->weight('bold')
+                    ->tooltip(function ($record) {
+                        $texte = "BCR engagés + achats directs validés : la régie est "
+                            . "consommée dès l'engagement, avant livraison et paiement.";
+
+                        $deficit = $record->montantPayeNonEngage();
+                        if ($deficit > 0.01) {
+                            $texte .= ' — dont ' . number_format($deficit, 0, ',', ' ')
+                                . ' FCFA payés sans engagement ni encaisse, à régulariser '
+                                . "par une nouvelle DA (budget:audit-regie les liste).";
+                        }
+
+                        return $texte;
+                    }),
+
                 Tables\Columns\TextColumn::make('montant_depense')
-                    ->label('Dépensé')
+                    ->label('Livré / payé')
                     ->money('XAF')->sortable()
                     ->color('warning')
-                    ->tooltip('Somme des dépenses apurées par décaissement'),
+                    ->tooltip('Part déjà livrée ou payée — déjà comprise dans « Engagé »'),
 
                 // ✅ NOUVEAU — IR collecté sur l'ensemble des décaissements
                 Tables\Columns\TextColumn::make('montant_ir_collecte')
@@ -355,7 +376,7 @@ class RegieAvanceResource extends Resource
                     ->weight('bold')
                     ->color(fn($record) => (float) $record->montant_disponible < 0
                         ? 'danger' : 'success')
-                    ->tooltip('= Décaissé − Dépensé'),
+                    ->tooltip('= Décaissé − Engagé'),
 
                 Tables\Columns\TextColumn::make('taux_consommation')
                     ->label('Consommation')

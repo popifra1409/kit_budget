@@ -86,18 +86,29 @@ class DecaissementsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('montant_accorde')
                     ->label('Accordé')->money('XAF')->color('success'),
 
+                Tables\Columns\TextColumn::make('montant_engage')
+                    ->label('Engagé')
+                    ->money('XAF')
+                    ->color('danger')
+                    ->tooltip(fn($record) =>
+                        'Consommation de l\'encaisse dès l\'engagement des BCR et la '
+                        . 'validation des achats directs — avant livraison et paiement.'),
+
                 Tables\Columns\TextColumn::make('montant_depense')
-                    ->label('Dépensé')->money('XAF')->color('danger'),
+                    ->label('Payé / livré')->money('XAF')->color('warning'),
 
                 Tables\Columns\TextColumn::make('montant_ir_collecte')
                     ->label('IR collecté')->money('XAF')->color('warning')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('montant_solde')
-                    ->label('Solde')->money('XAF')
+                    ->label('Reste employable')->money('XAF')
                     ->color(
                         fn($record) => ($record->montant_solde ?? 0) < 0 ? 'danger' : 'success'
-                    ),
+                    )
+                    ->tooltip(fn($record) =>
+                        'Accordé ' . number_format((float) $record->montant_accorde, 0, ',', ' ')
+                        . ' − engagé ' . number_format((float) $record->montant_engage, 0, ',', ' ') . ' FCFA'),
 
                 Tables\Columns\TextColumn::make('date_decaissement')
                     ->label('Date versement')->date('d/m/Y'),
@@ -141,6 +152,14 @@ class DecaissementsRelationManager extends RelationManager
                     )
                     ->modalHeading('Accorder et verser la tranche')
                     ->form(function ($record) {  // ✅ closure pour accéder à $record
+                        $regie        = $this->getOwnerRecord();
+                        $enveloppe    = (float) ($regie->montant_alloue ?? 0);
+                        $dejaEncaisse = (float) $regie->decaissements()
+                            ->where('id', '!=', $record->id)
+                            ->whereIn('statut', ['verse', 'apure'])
+                            ->sum('montant_accorde');
+                        $plafondTranche = max(0, $enveloppe - $dejaEncaisse);
+
                         return [
                             Forms\Components\TextInput::make('montant_accorde')
                                 ->label('Montant accordé (FCFA)')
@@ -150,8 +169,10 @@ class DecaissementsRelationManager extends RelationManager
                                 ->helperText(
                                     'Montant demandé : '
                                         . number_format($record->montant_demande, 0, ',', ' ')
-                                        . ' FCFA'
-                                ),
+                                        . ' FCFA — plafond de la régie (DA sources) : '
+                                        . number_format($plafondTranche, 0, ',', ' ') . ' FCFA'
+                                )
+                                ->maxValue($enveloppe > 0 ? $plafondTranche : null),
 
                             Forms\Components\DatePicker::make('date_decaissement')
                                 ->label('Date de versement')
@@ -161,7 +182,28 @@ class DecaissementsRelationManager extends RelationManager
                         ];
                     })
                     ->action(function ($record, array $data) {
-                        $regie = $this->getOwnerRecord();
+                        $regie     = $this->getOwnerRecord();
+                        $enveloppe = (float) ($regie->montant_alloue ?? 0);
+                        $accorde   = (float) $data['montant_accorde'];
+
+                        $dejaEncaisse = (float) $regie->decaissements()
+                            ->where('id', '!=', $record->id)
+                            ->whereIn('statut', ['verse', 'apure'])
+                            ->sum('montant_accorde');
+
+                        if ($enveloppe > 0 && $accorde > $enveloppe - $dejaEncaisse + 0.01) {
+                            throw new \Exception(
+                                "Plafond de la régie dépassé — cette tranche ne peut pas être versée.\n"
+                                    . 'Enveloppe des DA : ' . number_format($enveloppe, 0, ',', ' ') . " FCFA\n"
+                                    . 'Déjà encaissé par les autres tranches : '
+                                    . number_format($dejaEncaisse, 0, ',', ' ') . " FCFA\n"
+                                    . 'Maximum pour cette tranche : '
+                                    . number_format(max(0, $enveloppe - $dejaEncaisse), 0, ',', ' ') . " FCFA\n"
+                                    . 'Montant accordé demandé : ' . number_format($accorde, 0, ',', ' ')
+                                    . " FCFA\nSolution : alimenter l'enveloppe de la régie par une nouvelle DA "
+                                    . 'avant de verser cette tranche.'
+                            );
+                        }
 
                         $record->update([
                             'statut'            => 'verse',
@@ -177,14 +219,26 @@ class DecaissementsRelationManager extends RelationManager
                                 ->sum('montant_accorde'),
                         ]);
 
-                        // ✅ Créer les provisions automatiquement
-                        $record->creerProvisions($regie, (float) $data['montant_accorde']);
+                        try {
+                            // ✅ La tranche crée SA propre ligne de mini-budget puis la
+                            //    provisionne — jamais de cumul sur la ligne d'un autre encaisse.
+                            \DB::transaction(
+                                fn() => $record->creerProvisions($regie, (float) $data['montant_accorde'])
+                            );
 
-                        Notification::make()
-                            ->title('✅ Décaissement accordé et versé')
-                            ->success()
-                            ->body('Les provisions ont été créées sur les lignes concernées.')
-                            ->send();
+                            Notification::make()
+                                ->title('✅ Décaissement accordé et versé')
+                                ->success()
+                                ->body('Une ligne de mini-budget propre à cette tranche a été créée et provisionnée.')
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('❌ Tranche versée mais non provisionnée')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                        }
                     }),
 
                 // ── Voir les provisions ────────────────────────
@@ -345,17 +399,9 @@ class DecaissementsRelationManager extends RelationManager
                             $record->refresh();
 
                             $totalDepense = (float) $record->montant_depense;
+                            $totalEngage  = (float) $record->montant_engage;
                             $totalIr      = (float) $record->montant_ir_collecte;
                             $solde        = (float) $record->montant_solde;
-
-                            // Engagé en cours (non livré/payé) — informatif uniquement
-                            $totalEngage = 0;
-                            foreach ($record->provisions as $prov) {
-                                $totalEngage += \App\Models\BonCommandeRegie::where('provision_ligne_regie_id', $prov->id)
-                                    ->where('statut', 'valide')
-                                    ->where('engage', true)
-                                    ->sum('montant_ttc');
-                            }
 
                             $couleurSolde = $solde < 0 ? 'color:#dc2626;' : 'color:#16a34a;';
 
@@ -363,19 +409,18 @@ class DecaissementsRelationManager extends RelationManager
                                 . "<p>Tranche : <strong>{$record->libelle_tranche}</strong></p>"
                                 . "<p>Montant accordé : <strong>"
                                 . number_format($record->montant_accorde, 0, ',', ' ') . " FCFA</strong></p>"
-                                . "<p>Dépensé (livré/payé) : <strong style='color:#1d4ed8;'>"
+                                . "<p>Engagé (déjà consommé de l'encaisse) : <strong style='color:#b91c1c;'>"
+                                . number_format($totalEngage, 0, ',', ' ') . " FCFA</strong></p>"
+                                . "<p>Livré / payé : <strong style='color:#1d4ed8;'>"
                                 . number_format($totalDepense, 0, ',', ' ') . " FCFA</strong></p>"
-                                . ($totalEngage > 0
-                                    ? "<p style='color:#92400e;'>Engagé (en cours) : "
-                                    . number_format($totalEngage, 0, ',', ' ') . " FCFA</p>"
-                                    : "")
                                 . "<p>IR collecté : <strong style='color:#dc2626;'>"
                                 . number_format($totalIr, 0, ',', ' ') . " FCFA</strong></p>"
-                                . "<p>Solde : <strong style='{$couleurSolde}'>"
+                                . "<p>Reste employable : <strong style='{$couleurSolde}'>"
                                 . number_format($solde, 0, ',', ' ') . " FCFA</strong></p>"
                                 . '<hr style="margin:8px 0;border-color:#e2e8f0;">'
-                                . '<p style="font-size:.78rem;color:#64748b;">✅ Seuls les BCR livrés/payés '
-                                . 'sont comptabilisés comme dépenses.</p>'
+                                . '<p style="font-size:.78rem;color:#64748b;">✅ L\'encaisse est consommé dès '
+                                . 'l\'engagement du BCR : ce qui est engagé n\'est plus dépensable, même non '
+                                . 'livré ni payé. L\'apurement comptabilise l\'IR sur le livré/payé.</p>'
                                 . '</div>';
                         })()
                     ))
