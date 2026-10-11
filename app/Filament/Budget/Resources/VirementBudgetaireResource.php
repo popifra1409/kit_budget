@@ -491,18 +491,6 @@ class VirementBudgetaireResource extends Resource
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif de la contre-passation')->required()->rows(2)])
                         ->action(fn($record, array $data) => static::transition(fn() => $record->annulerExecution(auth()->user(), $data['motif']), 'Exécution annulée : crédits restitués à la ligne source')),
 
-                    Tables\Actions\Action::make('supprimer_mouvement')
-                        ->label('Supprimer le mouvement')
-                        ->icon('heroicon-o-trash')->color('danger')
-                        ->requiresConfirmation()
-                        ->visible(fn($record) => auth()->user()?->can('delete_virement_budgetaire')
-                            || auth()->user()?->can('super_admin_virement_budgetaire'))
-                        ->modalHeading(fn($record) => 'Supprimer ' . $record->numero . ' ?')
-                        ->modalDescription(fn($record) => static::descriptionSuppression($record))
-                        ->modalSubmitActionLabel('Supprimer définitivement des listes')
-                        ->action(fn($record) => static::transition(fn() => static::supprimer($record),
-                            'Mouvement supprimé : il ne figure plus dans les listes.')),
-
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -514,51 +502,81 @@ class VirementBudgetaireResource extends Resource
 
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    // ✅ Une ligne de collectif ne se supprime pas toute seule : ses effets
-                    //    sont portés par les lignes budgétaires, et sa source est le collectif.
-                    //    La suppression en bloc traite donc les mouvements de gestion, et rend
-                    //    ceux qui sont pilotés par un collectif.
+                    // ✅ Seuls les mouvements en attente ou rejetés : un mouvement exécuté
+                    //    entre dans le budget rectifié des lignes, le supprimer fausserait les dotations.
                     Tables\Actions\DeleteBulkAction::make()
                         ->action(function ($records) {
-                            $supprimes = 0;
-                            $enCause   = 0;
-                            $parCollectif = [];
-                            $exerciceClos = 0;
-
-                            foreach ($records as $record) {
-                                try {
-                                    static::supprimer($record);
-                                    $supprimes++;
-                                } catch (\DomainException $e) {
-                                    if ($record->estPiloteParCollectif()) {
-                                        $parCollectif[] = $record->numero;
-                                    } elseif (!$record->estModifiable()) {
-                                        $exerciceClos++;
-                                    } else {
-                                        $enCause++;
-                                    }
-                                }
-                            }
-
-                            $refus = [];
-                            if ($parCollectif) {
-                                $refus[] = count($parCollectif) . ' mouvement(s) de collectif(s) : réinitialisez-les depuis « Réinitialiser les collectifs »';
-                            }
-                            if ($exerciceClos) {
-                                $refus[] = $exerciceClos . ' mouvement(s) d\'un exercice clôturé';
-                            }
-                            if ($enCause) {
-                                $refus[] = $enCause . ' mouvement(s) dont la ligne destination a déjà engagé les crédits (contre-passation impossible)';
-                            }
-
+                            $supprimables = $records->filter(fn($r) => in_array($r->statut, ['en_attente', 'rejete'], true));
+                            $supprimables->each->delete();
+                            $refuses = $records->count() - $supprimables->count();
                             Notification::make()
-                                ->title($supprimes . ' mouvement(s) supprimé(s)')
-                                ->body($refus ? 'Conservés : ' . implode(' ; ', $refus) . '.' : null)
-                                ->color($refus ? 'warning' : 'success')
-                                ->persistent()
-                                ->send();
+                                ->title($supprimables->count() . ' mouvement(s) supprimé(s)')
+                                ->body($refuses ? "{$refuses} mouvement(s) approuvé(s) ou exécuté(s) conservé(s)." : null)
+                                ->success()->send();
                         }),
                 ]),
+            ])
+            // ✅ État des mouvements de crédits (PDF) : par type, sous-programme, titres, collectifs
+            ->headerActions([
+                Tables\Actions\Action::make('etatMouvementsPdf')
+                    ->label('État des mouvements (PDF)')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('danger')
+                    ->modalHeading('État des mouvements de crédits')
+                    ->modalSubmitActionLabel('Générer le PDF')
+                    ->form([
+                        Forms\Components\Select::make('budget_id')
+                            ->label('Budget')
+                            ->options(fn() => Budget::withoutGlobalScope('exercice')->orderByDesc('exercice')
+                                ->get()->mapWithKeys(fn($b) => [$b->id => "{$b->code} — {$b->libelle}" . ($b->actif ? ' (actif)' : '')]))
+                            ->default(fn() => \App\Services\StatistiquesBudgetaires::getVueEnsemble()['budget']?->id ?? null)
+                            ->required()->live()
+                            ->afterStateUpdated(fn(Forms\Set $set, $state) => $set('collectif_ids', static::idsCollectifsAdoptes($state))),
+
+                        Forms\Components\Grid::make(2)->schema([
+                            Forms\Components\DatePicker::make('du')->label('Du (facultatif)'),
+                            Forms\Components\DatePicker::make('au')->label('Au (facultatif)'),
+                        ]),
+
+                        Forms\Components\Grid::make(2)->schema([
+                            Forms\Components\Toggle::make('inclure_gestion')
+                                ->label('Inclure les mouvements de gestion (fongibilités, virements, transferts)')
+                                ->default(true),
+                            Forms\Components\Toggle::make('executes_seulement')
+                                ->label('Mouvements exécutés seulement')
+                                ->helperText('Décoché : approuvés et exécutés')
+                                ->default(true),
+                        ]),
+
+                        Forms\Components\CheckboxList::make('collectif_ids')
+                            ->label('Collectifs budgétaires adoptés à inclure')
+                            ->options(fn(Forms\Get $get) => static::optionsCollectifsAdoptes($get('budget_id')))
+                            ->default(fn() => static::idsCollectifsAdoptes(\App\Services\StatistiquesBudgetaires::getVueEnsemble()['budget']?->id ?? null))
+                            ->bulkToggleable()
+                            ->columns(1)
+                            ->helperText('Cochez un, plusieurs ou aucun collectif : chacun aura son tableau A-RECETTES / B-DÉPENSES sur le même état.'),
+                    ])
+                    ->action(function (array $data) {
+                        $budget = Budget::withoutGlobalScope('exercice')->findOrFail($data['budget_id']);
+
+                        $etat = app(\App\Services\Budget\EtatMouvementsCreditsService::class)->construire(
+                            $budget,
+                            $data['du'] ?? null,
+                            $data['au'] ?? null,
+                            (bool) ($data['executes_seulement'] ?? true),
+                            array_map('intval', $data['collectif_ids'] ?? []),
+                            (bool) ($data['inclure_gestion'] ?? true),
+                        );
+
+                        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.etat-mouvements-credits', $etat + [
+                            'structure' => \App\Models\ParametresStructure::where('actif', true)->first() ?? \App\Models\ParametresStructure::first(),
+                        ])->setPaper('a4', 'landscape');
+
+                        return response()->streamDownload(
+                            fn() => print($pdf->output()),
+                            'mouvements_credits_' . $budget->code . '_' . now()->format('Ymd_His') . '.pdf'
+                        );
+                    }),
             ])
             ->defaultSort('created_at', 'desc');
     }
@@ -566,6 +584,23 @@ class VirementBudgetaireResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    /** Collectifs ADOPTÉS de l'exercice d'un budget (état des mouvements). */
+    public static function optionsCollectifsAdoptes($budgetId): array
+    {
+        $budget = $budgetId ? Budget::withoutGlobalScope('exercice')->find($budgetId) : null;
+
+        return $budget
+            ? \App\Models\CollectifBudgetaire::where('exercice_id', $budget->exercice_id)->where('statut', 'adopte')
+            ->orderBy('date_collectif')->get()
+            ->mapWithKeys(fn($c) => [$c->id => "{$c->numero} — {$c->libelle} (" . $c->date_collectif?->format('d/m/Y') . ')'])->all()
+            : [];
+    }
+
+    public static function idsCollectifsAdoptes($budgetId): array
+    {
+        return array_map('strval', array_keys(static::optionsCollectifsAdoptes($budgetId)));
     }
 
     /** Exécute une transition du workflow avec un message clair en cas de règle non respectée. */
@@ -579,85 +614,6 @@ class VirementBudgetaireResource extends Resource
         } catch (\Exception $e) {
             Notification::make()->title('Erreur')->danger()->body($e->getMessage())->persistent()->send();
         }
-    }
-
-    /**
-     * Le collectif qui pilote un mouvement. La liaison peut pendre dans les deux
-     * sens : virement.mouvement_collectif_id est renseigné à la création par le
-     * collectif, mais les mouvements existants ne portent la référence que de
-     * l'autre côté (mouvement_collectif.virement_budgetaire_id).
-     */
-    protected static function collectifPilote(VirementBudgetaire $record): ?\App\Models\CollectifBudgetaire
-    {
-        $id = $record->mouvementCollectif?->collectif_budgetaire_id
-            ?? \App\Models\MouvementCollectif::where('virement_budgetaire_id', $record->id)->value('collectif_budgetaire_id');
-
-        return $id ? \App\Models\CollectifBudgetaire::find($id) : null;
-    }
-
-    /** Ce qu'on s'apprête à perdre, selon le statut du mouvement. */
-    protected static function descriptionSuppression(VirementBudgetaire $record): string
-    {
-        if ($record->estPiloteParCollectif()) {
-            $collectif = static::collectifPilote($record);
-
-            return 'Mouvement engendré par ' . ($collectif ? 'le collectif ' . $collectif->numero : 'un collectif budgétaire')
-                . ' : il ne se supprime pas ici, il part avec la réinitialisation de son collectif.';
-        }
-
-        if ($record->statut === 'execute') {
-            return 'Ce mouvement transporte encore des crédits (' . number_format((float) $record->montant, 0, ',', ' ')
-                . ' FCFA) : sa suppression commence par une contre-passation, les crédits reviennent à la ligne '
-                . 'source. Elle sera refusée si la ligne destination a déjà engagé ces crédits. La suppression est '
-                . 'logique : l\'écriture reste en base pour l\'audit.';
-        }
-
-        return "Statut « {$record->statut} » : aucun crédit n'est en mouvement, la ligne disparaît simplement des "
-            . 'listes. Suppression logique, l\'écriture reste en base.';
-    }
-
-    /**
-     * Fait disparaître un mouvement des listes.
-     *
-     * Un mouvement exécuté ne peut pas être effacé tel quel : ses effets resteraient
-     * portés par les lignes sans écriture pour les justifier. Il est donc d'abord
-     * contre-passé.
-     *
-     * @throws \DomainException mouvement d'un collectif, exercice clos, contre-passation impossible
-     */
-    protected static function supprimer(VirementBudgetaire $record): void
-    {
-        if ($record->estPiloteParCollectif()) {
-            $collectif = static::collectifPilote($record);
-
-            throw new \DomainException('Ce mouvement est piloté par '
-                . ($collectif ? 'le collectif ' . $collectif->numero : 'un collectif budgétaire')
-                . '. Réinitialisez ce collectif depuis « Réinitialiser les collectifs » : le mouvement partira avec lui.');
-        }
-
-        if (!$record->estModifiable()) {
-            throw new \DomainException("L'exercice " . (optional($record->exercice)->annee ?? '')
-                . ' n\'est plus ouvert : ses écritures ne peuvent plus être supprimées.');
-        }
-
-        $statutAvant = $record->statut;
-
-        \Illuminate\Support\Facades\DB::transaction(function () use ($record, $statutAvant) {
-            if ($statutAvant === 'execute') {
-                // Ouvre aussi sa propre transaction (savepoint) et recalcule les lignes.
-                $record->annulerExecution(auth()->user(), 'Suppression du mouvement');
-            }
-
-            $record->delete();
-
-            \App\Models\ActivityLog::logAction($record, 'supprimer', [
-                'statut_avant'  => $statutAvant,
-                'contre_passe'  => $statutAvant === 'execute',
-                'par'           => auth()->user()?->name ?? 'Système',
-                'montant'       => (float) $record->montant,
-                'motif'         => 'Suppression manuelle depuis la liste des mouvements de crédits',
-            ]);
-        });
     }
 
     public static function getPages(): array
