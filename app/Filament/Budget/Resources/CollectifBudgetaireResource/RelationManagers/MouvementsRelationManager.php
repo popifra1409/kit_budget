@@ -93,7 +93,7 @@ class MouvementsRelationManager extends RelationManager
 
             return $previsionId
                 ? LignePrevisionRecette::where('prevision_recette_id', $previsionId)
-                    ->pluck('nomenclature_id')->all()
+                ->pluck('nomenclature_id')->all()
                 : [];
         }
 
@@ -101,7 +101,7 @@ class MouvementsRelationManager extends RelationManager
 
         return $budgetId
             ? LigneBudgetaire::where('budget_id', $budgetId)
-                ->pluck('nomenclature_id')->all()
+            ->pluck('nomenclature_id')->all()
             : [];
     }
 
@@ -182,10 +182,17 @@ class MouvementsRelationManager extends RelationManager
 
             $existante = $this->nomenclatureAvecCode($code, $type);
             if ($existante) {
-                throw new \Exception(
-                    $this->messageDoublon($code, $type, $this->ligneAvecCode($code, $type))
-                    . ' Nomenclature existante : n°' . $existante->id . ' — ' . $existante->libelle . '.'
-                );
+                \Filament\Notifications\Notification::make()
+                    ->title('Nomenclature déjà existante')
+                    ->body(
+                        $this->messageDoublon($code, $type, $this->ligneAvecCode($code, $type))
+                            . ' Nomenclature existante : n°' . $existante->id . ' — ' . $existante->libelle . '.'
+                    )
+                    ->danger()
+                    ->persistent()
+                    ->send();
+
+                throw new \Filament\Support\Exceptions\Halt();
             }
         }
 
@@ -197,11 +204,27 @@ class MouvementsRelationManager extends RelationManager
             // La ligne portée par cette même nomenclature est filtrée par le sélecteur ;
             // on ne refuse que si c'est un ENREGISTREMENT différent au même code.
             if ($ligne && (int) $ligne->nomenclature_id !== (int) $nomenclature->id) {
-                throw new \Exception($this->messageDoublon($nomenclature->code, $type, $ligne));
+                $this->refuser('Nomenclature déjà existante', $this->messageDoublon($nomenclature->code, $type, $ligne));
             }
         }
     }
 
+    /**
+     * Refus d'une opération : message clair à l'utilisateur (notification), puis arrêt propre
+     * de l'action. La fenêtre de saisie reste ouverte, sans page d'erreur 500.
+     */
+    protected function refuser(string $titre, string $message): never
+    {
+        \Filament\Notifications\Notification::make()
+            ->title($titre)
+            ->body($message)
+            ->danger()
+            ->persistent()
+            ->send();
+
+        throw new \Filament\Support\Exceptions\Halt();
+    }
+    
     /**
      * ✅ Par défaut, Filament passe cette RelationManager en lecture seule
      *    dès que CollectifBudgetaireResource::canEdit() renvoie false pour
@@ -561,7 +584,7 @@ class MouvementsRelationManager extends RelationManager
                         if ($mode === 'ajouter_existante' && in_array($type, ['depense', 'recette'])) {
                             if ($type === 'depense') {
                                 $budget = $exercice->budgets()->where('actif', true)->first();
-                                if (!$budget) throw new \Exception('Aucun budget actif trouvé.');
+                                if (!$budget) $this->refuser('Budget introuvable', "Aucun budget actif trouvé : activez le budget de l'exercice avant de saisir ce mouvement.");
 
                                 $ligne = LigneBudgetaire::create([
                                     'budget_id'              => $budget->id,
@@ -575,7 +598,7 @@ class MouvementsRelationManager extends RelationManager
                                 $data['ligne_depense_id']          = null;
                             } else {
                                 $prevision = $exercice->previsionRecettes()->where('actif', true)->first();
-                                if (!$prevision) throw new \Exception('Aucune prévision de recettes active.');
+                                if (!$prevision) $this->refuser('Prévision de recettes introuvable', "Aucune prévision de recettes active : adoptez ou activez la prévision de l'exercice avant de saisir ce mouvement.");
 
                                 $ligne = LignePrevisionRecette::create([
                                     'prevision_recette_id'   => $prevision->id,
@@ -609,7 +632,7 @@ class MouvementsRelationManager extends RelationManager
 
                             if ($type === 'depense') {
                                 $budget = $exercice->budgets()->where('actif', true)->first();
-                                if (!$budget) throw new \Exception('Aucun budget actif trouvé.');
+                                if (!$budget) $this->refuser('Budget introuvable', "Aucun budget actif trouvé : activez le budget de l'exercice avant de saisir ce mouvement.");
 
                                 $ligne = LigneBudgetaire::create([
                                     'budget_id'              => $budget->id,
@@ -622,7 +645,7 @@ class MouvementsRelationManager extends RelationManager
                                 $data['nouvelle_ligne_depense_id'] = $ligne->id;
                             } else {
                                 $prevision = $exercice->previsionRecettes()->where('actif', true)->first();
-                                if (!$prevision) throw new \Exception('Aucune prévision de recettes active.');
+                                if (!$prevision) $this->refuser('Prévision de recettes introuvable', "Aucune prévision de recettes active : adoptez ou activez la prévision de l'exercice avant de saisir ce mouvement.");
 
                                 $ligne = LignePrevisionRecette::create([
                                     'prevision_recette_id'   => $prevision->id,
@@ -879,7 +902,7 @@ class MouvementsRelationManager extends RelationManager
                     ->modalHeading('Supprimer ce mouvement')
                     ->modalDescription(fn($record) => $record->resumeDeCeQuIlCreait()
                         ? 'Seront retirés avec lui : ' . $record->resumeDeCeQuIlCreait()
-                            . '. Impossible si ces éléments portent déjà des opérations.'
+                        . '. Impossible si ces éléments portent déjà des opérations.'
                         : 'Ce mouvement n\'a créé aucun élément en base.')
                     ->action(function ($record) {
                         try {
