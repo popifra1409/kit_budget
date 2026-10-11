@@ -175,11 +175,18 @@ class CollectifBudgetaireResource extends Resource
 
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut')
+                    ->formatStateUsing(fn($state) => CollectifBudgetaire::STATUTS[$state] ?? $state)
                     ->colors([
                         'secondary' => 'projet',
                         'success'   => 'adopte',
                         'danger'    => 'annule',
-                    ]),
+                        'gray'      => 'fusionne',
+                    ])
+                    ->description(fn($record) => match (true) {
+                        $record->statut === 'fusionne' => 'dans ' . ($record->fusionneDans?->numero ?? '?'),
+                        $record->estIssuDeFusion()     => 'fusion de ' . collect($record->fusion_meta['origines'] ?? [])->pluck('numero')->implode(', '),
+                        default                        => null,
+                    }),
 
                 Tables\Columns\TextColumn::make('date_collectif')
                     ->label('Date')
@@ -216,11 +223,7 @@ class CollectifBudgetaireResource extends Resource
 
                 Tables\Filters\SelectFilter::make('statut')
                     ->label('Statut')
-                    ->options([
-                        'projet' => 'Projet',
-                        'adopte' => 'Adopté',
-                        'annule' => 'Annulé',
-                    ]),
+                    ->options(CollectifBudgetaire::STATUTS),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -258,6 +261,34 @@ class CollectifBudgetaireResource extends Resource
                             }
                         }),
 
+                    // ✅ Impression de l'état du collectif (A-RECETTES / B-DÉPENSES), même en projet
+                    Tables\Actions\Action::make('imprimerEtat')
+                        ->label('Imprimer l\'état (PDF)')
+                        ->icon('heroicon-o-printer')
+                        ->color('gray')
+                        ->action(fn($record) => static::telechargerEtat([$record->id], $record->exercice_id)),
+
+                    // ✅ Défaire une fusion (collectif fusionné encore en projet, sans regroupement)
+                    Tables\Actions\Action::make('defaireFusion')
+                        ->label('Défaire la fusion')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('warning')
+                        ->visible(fn($record) => auth()->user()?->can('update_collectif_budgetaire')
+                            && app(\App\Services\Budget\FusionCollectifsService::class)->peutDefaire($record))
+                        ->requiresConfirmation()
+                        ->modalDescription(fn($record) => 'Les mouvements retourneront dans '
+                            . collect($record->fusion_meta['origines'] ?? [])->pluck('numero')->implode(', ')
+                            . ', qui retrouveront le statut « ' . (CollectifBudgetaire::STATUTS[$record->fusion_meta['statut_origine'] ?? 'projet'] ?? '') . ' »'
+                            . " et leurs rattachements. Le collectif {$record->numero} sera supprimé. Les dotations ne changent pas.")
+                        ->action(function ($record) {
+                            try {
+                                app(\App\Services\Budget\FusionCollectifsService::class)->defaire($record);
+                                Notification::make()->title('Fusion défaite')->success()->send();
+                            } catch (\DomainException $e) {
+                                Notification::make()->title('Impossible de défaire la fusion')->body($e->getMessage())->warning()->persistent()->send();
+                            }
+                        }),
+
                     // Action pour annuler le collectif (si déjà adopté)
                     Tables\Actions\Action::make('annuler')
                         ->label('Annuler')
@@ -282,10 +313,103 @@ class CollectifBudgetaireResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    // ✅ Fusion de plusieurs collectifs en projet en un nouveau collectif
+                    Tables\Actions\BulkAction::make('fusionner')
+                        ->label('Fusionner en un nouveau collectif')
+                        ->icon('heroicon-o-square-3-stack-3d')
+                        ->color('primary')
+                        ->visible(fn() => auth()->user()?->can('create_collectif_budgetaire'))
+                        ->modalHeading('Fusion de collectifs budgétaires')
+                        ->modalSubmitActionLabel('Fusionner')
+                        ->form(fn($records) => [
+                            Forms\Components\Placeholder::make('apercu')
+                                ->label('Aperçu')
+                                ->content(function (Forms\Get $get) use ($records) {
+                                    $service = app(\App\Services\Budget\FusionCollectifsService::class);
+                                    try {
+                                        $service->verifier($records);
+                                    } catch (\DomainException $e) {
+                                        return new \Illuminate\Support\HtmlString('<span style="color:#b91c1c;">⛔ ' . e($e->getMessage()) . '</span>');
+                                    }
+                                    $a = $service->apercu($records, (bool) $get('regrouper'));
+                                    $f = fn($v) => number_format((float) $v, 0, ',', ' ');
+                                    return new \Illuminate\Support\HtmlString(
+                                        "Collectifs : <strong>{$a['collectifs']}</strong> — "
+                                            . ($a['statut'] === 'adopte'
+                                                ? '<strong>adoptés</strong> : le nouveau collectif sera adopté, sans réappliquer les mouvements (dotations inchangées).<br>'
+                                                : '<strong>en projet</strong> : le nouveau collectif sera en projet.<br>')
+                                            . "Mouvements : <strong>{$a['mouvements']}</strong>" . ($get('regrouper') ? " → <strong>{$a['mouvements_apres']}</strong> après regroupement" : '')
+                                            . " · lignes regroupables : {$a['lignes_regroupables']}<br>"
+                                            . "Recettes : <strong>{$f($a['recettes'])}</strong> · dépenses : <strong>{$f($a['depenses'])}</strong> · virements : {$f($a['virements'])}<br>"
+                                            . 'Équilibre : ' . (abs($a['equilibre']) < 1 ? '<span style="color:#166534;">✅ équilibré</span>' : '<span style="color:#b91c1c;">⚠️ écart de ' . $f($a['equilibre']) . ' FCFA</span>')
+                                    );
+                                }),
+                            Forms\Components\TextInput::make('libelle')->label('Libellé du collectif issu de la fusion')->required()->maxLength(255)
+                                ->default('Collectif budgétaire n° … — session du Conseil d\'Administration'),
+                            Forms\Components\DatePicker::make('date_collectif')->label('Date du collectif')->default(now())->required(),
+                            Forms\Components\Toggle::make('regrouper')->label('Regrouper les mouvements portant sur une même ligne')
+                                ->helperText('Les virements et les créations de lignes ne sont jamais regroupés. Les dotations ne changent pas (somme identique). Une fusion avec regroupement ne peut plus être défaite automatiquement.')
+                                ->live(),
+                            Forms\Components\Textarea::make('observations')->rows(2),
+                        ])
+                        ->action(function ($records, array $data) {
+                            try {
+                                $fusion = app(\App\Services\Budget\FusionCollectifsService::class)->fusionner(
+                                    $records->pluck('id')->all(),
+                                    $data['libelle'],
+                                    $data['date_collectif'],
+                                    $data['observations'] ?? null,
+                                    (bool) ($data['regrouper'] ?? false)
+                                );
+                                Notification::make()->title("Collectif {$fusion->numero} créé par fusion")
+                                    ->body($records->count() . ' collectifs fusionnés (' . (CollectifBudgetaire::STATUTS[$fusion->statut] ?? $fusion->statut)
+                                        . ') ; ils restent consultables au statut « Fusionné ».')->success()->send();
+                            } catch (\DomainException $e) {
+                                Notification::make()->title('Fusion impossible')->body($e->getMessage())->warning()->persistent()->send();
+                            }
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
+                    // ✅ Impression groupée : plusieurs collectifs sur le même état
+                    Tables\Actions\BulkAction::make('imprimerEtats')
+                        ->label('Imprimer l\'état des collectifs sélectionnés (PDF)')
+                        ->icon('heroicon-o-printer')
+                        ->action(function ($records) {
+                            if ($records->pluck('exercice_id')->unique()->count() > 1) {
+                                Notification::make()->title('Sélection impossible')->body('Les collectifs doivent appartenir au même exercice.')->warning()->send();
+                                return null;
+                            }
+                            return static::telechargerEtat($records->pluck('id')->all(), $records->first()->exercice_id);
+                        }),
+
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');
+    }
+
+    /** ✅ PDF des collectifs choisis (format A-RECETTES / B-DÉPENSES), via l'état des mouvements de crédits. */
+    public static function telechargerEtat(array $ids, int $exerciceId)
+    {
+        $budget = \App\Models\Budget::withoutGlobalScope('exercice')->where('exercice_id', $exerciceId)
+            ->orderByDesc('actif')->orderByDesc('id')->first();
+
+        if (!$budget) {
+            Notification::make()->title('Impression impossible')->body("Aucun budget pour l'exercice de ce collectif.")->warning()->send();
+            return null;
+        }
+
+        $etat = app(\App\Services\Budget\EtatMouvementsCreditsService::class)->construire($budget, null, null, true, $ids, false);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.etat-mouvements-credits', $etat + [
+            'structure' => \App\Models\ParametresStructure::where('actif', true)->first() ?? \App\Models\ParametresStructure::first(),
+        ])->setPaper('a4', 'landscape');
+
+        $nom = count($ids) === 1
+            ? 'collectif_' . (CollectifBudgetaire::find($ids[0])?->numero ?? 'etat')
+            : 'collectifs_' . count($ids);
+
+        return response()->streamDownload(fn() => print($pdf->output()), $nom . '_' . now()->format('Ymd_His') . '.pdf');
     }
 
     // ========================================

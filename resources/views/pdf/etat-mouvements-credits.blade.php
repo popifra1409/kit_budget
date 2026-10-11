@@ -33,7 +33,11 @@
     {{ $structure?->sigle ?? $structure?->nom_structure }} — État des mouvements de crédits — budget {{ $budget->code }} — édité le {{ now()->format('d/m/Y à H:i') }}
 </div>
 
-<h1>ÉTAT DES MOUVEMENTS DE CRÉDITS — EXERCICE {{ $budget->exercice }}</h1>
+@if ($inclureGestion)
+    <h1>ÉTAT DES MOUVEMENTS DE CRÉDITS — EXERCICE {{ $budget->exercice }}</h1>
+@else
+    <h1>{{ $collectifs->count() > 1 ? 'COLLECTIFS BUDGÉTAIRES' : 'COLLECTIF BUDGÉTAIRE' }} — EXERCICE {{ $budget->exercice }}</h1>
+@endif
 <div class="centre gris">
     {{ $structure?->nom_complet ?? $structure?->nom_structure }} · Budget {{ $budget->code }} — {{ $budget->libelle }}
     · {{ $statuts }}
@@ -42,6 +46,7 @@
 
 {{-- ══ 1. SYNTHÈSE ET PLAFONDS ══ --}}
 <h2>1. Synthèse et plafonds</h2>
+@if ($inclureGestion)
 <table>
     <tr>
         <th style="{{ $b }}">Crédits ouverts ({{ $s['base'] }})</th>
@@ -64,9 +69,10 @@
         <td style="{{ $b }}" class="num">{{ $s['nb_mouvements'] }}</td>
     </tr>
 </table>
+@endif
 <table style="margin-top:4px;">
     <tr>
-        <th style="{{ $b }}">Collectifs adoptés</th>
+        <th style="{{ $b }}">Collectifs retenus</th>
         <th style="{{ $b }}">Augmentations de dépenses</th>
         <th style="{{ $b }}">Réductions de dépenses</th>
         <th style="{{ $b }}">Virements en collectif</th>
@@ -218,11 +224,15 @@
 
 {{-- ══ 5. COLLECTIFS BUDGÉTAIRES (A-RECETTES / B-DÉPENSES) ══ --}}
 @if ($collectifs->isNotEmpty())
-    <h2 class="saut">5. Collectifs budgétaires adoptés</h2>
+    <h2 class="{{ $inclureGestion ? 'saut' : '' }}">5. Collectifs budgétaires</h2>
     @foreach ($collectifs as $c)
         @php $col = $c['collectif']; $n = max($c['recettes']->count(), $c['depenses']->count()); @endphp
         <h3>Collectif {{ $col->numero }} — {{ $col->libelle }}
-            ({{ $col->date_collectif?->format('d/m/Y') }}{{ $col->reference ? ', ' . $col->reference : '' }})</h3>
+            ({{ $col->date_collectif?->format('d/m/Y') }}{{ $col->reference ? ', ' . $col->reference : '' }})
+            — {{ \App\Models\CollectifBudgetaire::STATUTS[$col->statut] ?? $col->statut }}</h3>
+        @if (!empty($col->fusion_meta['origines']))
+            <p class="gris">Issu de la fusion des collectifs {{ collect($col->fusion_meta['origines'])->map(fn ($o) => $o['numero'] . ' (' . $o['libelle'] . ')')->implode(', ') }}.</p>
+        @endif
         <table>
             <thead>
                 <tr>

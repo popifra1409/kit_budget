@@ -25,10 +25,23 @@ class CollectifBudgetaire extends Model
         'statut',
         'observations',
         'created_by',
+        // ✅ Fusion
+        'fusionne_dans_id',
+        'date_fusion',
+        'fusion_meta',
     ];
     protected $casts = [
         'date_collectif' => 'date',
         'date_adoption' => 'date',
+        'date_fusion' => 'date',
+        'fusion_meta' => 'array',
+    ];
+
+    public const STATUTS = [
+        'projet'   => 'Projet',
+        'adopte'   => 'Adopté',
+        'annule'   => 'Annulé',
+        'fusionne' => 'Fusionné',
     ];
 
 
@@ -78,6 +91,23 @@ class CollectifBudgetaire extends Model
     public function mouvements(): HasMany
     {
         return $this->hasMany(MouvementCollectif::class);
+    }
+
+    /** ✅ Collectif issu de la fusion (pour un collectif d'origine). */
+    public function fusionneDans(): BelongsTo
+    {
+        return $this->belongsTo(CollectifBudgetaire::class, 'fusionne_dans_id');
+    }
+
+    /** ✅ Collectifs d'origine (pour un collectif issu d'une fusion). */
+    public function collectifsFusionnes(): HasMany
+    {
+        return $this->hasMany(CollectifBudgetaire::class, 'fusionne_dans_id');
+    }
+
+    public function estIssuDeFusion(): bool
+    {
+        return !empty($this->fusion_meta['origines'] ?? null);
     }
 
     public function createdBy(): BelongsTo

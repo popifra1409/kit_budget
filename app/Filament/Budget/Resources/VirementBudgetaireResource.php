@@ -549,7 +549,7 @@ class VirementBudgetaireResource extends Resource
                         ]),
 
                         Forms\Components\CheckboxList::make('collectif_ids')
-                            ->label('Collectifs budgétaires adoptés à inclure')
+                            ->label('Collectifs budgétaires à inclure (adoptés et projets)')
                             ->options(fn(Forms\Get $get) => static::optionsCollectifsAdoptes($get('budget_id')))
                             ->default(fn() => static::idsCollectifsAdoptes(\App\Services\StatistiquesBudgetaires::getVueEnsemble()['budget']?->id ?? null))
                             ->bulkToggleable()
@@ -592,9 +592,10 @@ class VirementBudgetaireResource extends Resource
         $budget = $budgetId ? Budget::withoutGlobalScope('exercice')->find($budgetId) : null;
 
         return $budget
-            ? \App\Models\CollectifBudgetaire::where('exercice_id', $budget->exercice_id)->where('statut', 'adopte')
+            ? \App\Models\CollectifBudgetaire::where('exercice_id', $budget->exercice_id)->whereIn('statut', ['adopte', 'projet'])
             ->orderBy('date_collectif')->get()
-            ->mapWithKeys(fn($c) => [$c->id => "{$c->numero} — {$c->libelle} (" . $c->date_collectif?->format('d/m/Y') . ')'])->all()
+            ->mapWithKeys(fn($c) => [$c->id => "{$c->numero} — {$c->libelle} (" . $c->date_collectif?->format('d/m/Y') . ')'
+                . ($c->statut === 'projet' ? ' — PROJET' : '')])->all()
             : [];
     }
 

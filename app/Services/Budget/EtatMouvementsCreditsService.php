@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/EtatMouvementsCreditsService.php
 
 namespace App\Services\Budget;
 
@@ -213,8 +214,10 @@ class EtatMouvementsCreditsService
     /** Collectifs adoptés de l'exercice : recettes, dépenses (augmentations / réductions) et virements. */
     protected function collectifs(Budget $budget, ?string $du, ?string $au, ?array $ids = null): Collection
     {
+        // Sélection explicite : les collectifs choisis, quel que soit leur statut (projet compris) ;
+        // sinon : les collectifs ADOPTÉS de la période.
         return CollectifBudgetaire::where('exercice_id', $budget->exercice_id)
-            ->where('statut', 'adopte')
+            ->when($ids === null, fn($q) => $q->where('statut', 'adopte'))
             ->when($ids !== null, fn($q) => $q->whereIn('id', $ids))
             ->when($ids === null && $du, fn($q) => $q->whereDate('date_collectif', '>=', $du))
             ->when($ids === null && $au, fn($q) => $q->whereDate('date_collectif', '<=', $au))
