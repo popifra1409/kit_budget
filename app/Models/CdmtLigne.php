@@ -14,6 +14,11 @@ class CdmtLigne extends Model
         'sous_programme_ep_id',
         'action_id',
         'activite_id',
+        'tache_id',          // ✅ sous-tâche du Module 01 (tâche × code budgétaire)
+        'nomenclature_id',
+        'code',
+        'titre',
+        'ordre',
         'libelle',
         'nature',
         'maturite',
@@ -41,6 +46,7 @@ class CdmtLigne extends Model
         'n_plus_2_cp' => 'decimal:2',
         'n_plus_3_ae' => 'decimal:2',
         'n_plus_3_cp' => 'decimal:2',
+        'titre' => 'integer',
     ];
 
     protected static function boot(): void
@@ -109,5 +115,51 @@ class CdmtLigne extends Model
     public function activite(): BelongsTo
     {
         return $this->belongsTo(Activite::class, 'activite_id');
+    }
+
+    public function tache(): BelongsTo
+    {
+        return $this->belongsTo(Tache::class, 'tache_id')->withoutGlobalScope('exercice');
+    }
+
+    public function nomenclature(): BelongsTo
+    {
+        return $this->belongsTo(NomenclatureBudgetaire::class, 'nomenclature_id');
+    }
+
+    /**
+     * ✅ Montants de programmation non renseignés (AE ou CP à zéro pour N+1..N+3),
+     * libellés avec l'année : ['2028 AE', '2028 CP', ...]. Vide si la ligne est complète.
+     */
+    public function montantsManquants(?int $anneeReference = null): array
+    {
+        $n = $anneeReference ?? $this->cdmtExercice?->anneeReference() ?? (int) now()->year;
+        $manquants = [];
+
+        foreach ([1, 2, 3] as $d) {
+            foreach (['ae' => 'AE', 'cp' => 'CP'] as $champ => $libelle) {
+                if ((float) $this->{"n_plus_{$d}_{$champ}"} <= 0) {
+                    $manquants[] = ($n + $d) . " {$libelle}";
+                }
+            }
+        }
+
+        return $manquants;
+    }
+
+    /** Condition SQL : au moins un AE ou CP de N+1..N+3 non renseigné. */
+    public function scopeACompleter($query)
+    {
+        return $query->where(function ($q) {
+            foreach ([1, 2, 3] as $d) {
+                $q->orWhere("n_plus_{$d}_ae", '<=', 0)->orWhereNull("n_plus_{$d}_ae")
+                    ->orWhere("n_plus_{$d}_cp", '<=', 0)->orWhereNull("n_plus_{$d}_cp");
+            }
+        });
+    }
+
+    public function getLibelleTitreAttribute(): string
+    {
+        return $this->titre ? "Titre {$this->titre} — " . (CbmtLigne::TITRES_DEPENSES[$this->titre] ?? '') : 'Sans titre';
     }
 }

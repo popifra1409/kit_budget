@@ -86,6 +86,40 @@ class CdmtExercice extends Model
             ->values();
     }
 
+    /** Année de référence (N) : celle de l'exercice de référence du CBMT. */
+    public function anneeReference(): int
+    {
+        return (int) ($this->cbmtExercice?->exerciceReference?->annee ?? now()->year);
+    }
+
+    /**
+     * ✅ Contrôle PAR TITRE et par année : CP programmés au CDMT face au plafond du CBMT.
+     * @return array<int, array{titre: ?int, libelle: string, annees: array}>
+     */
+    public function getControleParTitre(): array
+    {
+        $cbmt = $this->cbmtExercice?->lignesDepenses()->get() ?? collect();
+        $cdmt = $this->lignes()->get();
+        $titres = $cbmt->pluck('titre')->merge($cdmt->pluck('titre'))->unique()->sort()->values();
+        $resultat = [];
+
+        foreach ($titres as $titre) {
+            $annees = [];
+            foreach ([1, 2, 3] as $d) {
+                $plafond = (float) $cbmt->where('titre', $titre)->sum("montant_n_plus_{$d}");
+                $programme = (float) $cdmt->where('titre', $titre)->sum("n_plus_{$d}_cp");
+                $annees[$d] = ['plafond' => $plafond, 'programme' => $programme, 'ecart' => $plafond - $programme];
+            }
+            $resultat[] = [
+                'titre'   => $titre,
+                'libelle' => $titre ? "Titre {$titre} — " . (CbmtLigne::TITRES_DEPENSES[$titre] ?? '') : 'Sans titre',
+                'annees'  => $annees,
+            ];
+        }
+
+        return $resultat;
+    }
+
     /**
      * Test de soutenabilite CDMT <-> CBMT (I.3 du guide) :
      * compare le total programme (CP) au plafond de depenses du CBMT.

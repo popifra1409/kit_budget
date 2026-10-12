@@ -1,33 +1,29 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
     /**
-     * Run the migrations.
+     * Supprime le contrôle de chevauchement obsolète de la nomenclature
+     * (il référençait date_debut_validite / date_fin_validite, colonnes supprimées).
+     *
+     * ⚠️ Le déclencheur porte un nom différent selon l'historique des bases :
+     *    on supprime tous les noms connus AVANT la fonction (sinon PostgreSQL refuse
+     *    de supprimer une fonction encore utilisée par un déclencheur).
      */
     public function up(): void
     {
-        // Supprimer le trigger obsolète qui référence date_debut_validite et date_fin_validite
-        DB::statement('DROP TRIGGER IF EXISTS check_nomenclature_overlap ON nomenclature_budgetaire;');
+        foreach (['check_nomenclature_overlap', 'trigger_check_no_overlap_nomenclature', 'check_no_overlap_nomenclature'] as $declencheur) {
+            DB::statement("DROP TRIGGER IF EXISTS {$declencheur} ON nomenclature_budgetaire");
+        }
 
-        // Supprimer la fonction associée
-        DB::statement('DROP FUNCTION IF EXISTS check_no_overlap_nomenclature();');
-
-        // Note: Si vous avez besoin de cette validation, recréez le trigger avec les nouveaux noms de colonnes
-        // Voir la section "Recréation du trigger" ci-dessous si nécessaire
+        DB::statement('DROP FUNCTION IF EXISTS check_no_overlap_nomenclature()');
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        // On ne recrée pas le trigger en rollback car il utilisait des colonnes qui n'existent plus
-        // Si rollback nécessaire, il faudra d'abord recréer les colonnes
+        // Pas de recréation : le contrôle utilisait des colonnes qui n'existent plus.
     }
 };

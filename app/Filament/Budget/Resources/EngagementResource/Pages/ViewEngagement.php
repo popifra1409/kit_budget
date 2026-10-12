@@ -58,17 +58,25 @@ class ViewEngagement extends ViewRecord
 
             // ── Créer les ordonnances ─────────────────────────────
             Actions\Action::make('creer_ordonnances')
-                ->label('Créer les OP')
+                ->label(fn($record) => $record->hasOrdonnancesPaiement() ? 'Créer les OP de la tranche suivante' : 'Créer les OP')
                 ->icon('heroicon-o-document-currency-dollar')
                 ->color('primary')
-                ->visible(fn($record) => $record->statut === 'definitif' && !$record->hasOrdonnancesPaiement())
+                // ✅ Possible tant qu'une liquidation prête n'a pas d'OP (liquidations partielles successives)
+                ->visible(fn($record) => $record->peutCreerOrdonnances())
                 ->requiresConfirmation()
                 ->modalHeading('Créer les ordonnances de paiement')
-                ->modalDescription(
-                    fn($record) =>
-                    "Créer les ordonnances pour l'engagement {$record->numero} ?\n\n"
-                        . "Montant : " . number_format($record->montant_engage, 0, ',', ' ') . " FCFA"
-                )
+                ->modalDescription(function ($record) {
+                    $f = fn($v) => number_format((float) $v, 0, ',', ' ');
+                    $s = $record->suiviExecution();
+                    $l = $record->liquidationPourOrdonnancement();
+                    return "Engagement {$record->numero} — engagé {$f($s['engage'])} · liquidé {$f($s['liquide'])} · ordonnancé {$f($s['ordonnance'])} · payé {$f($s['paye'])} FCFA.\n"
+                        . ($l
+                            ? "Liquidation à ordonnancer : {$l->numero} — " . $f($l->montant_liquide) . ' FCFA'
+                            . (abs((float) $l->montant_liquide - (float) $record->montant_engage) > 1
+                                ? ' (partielle : montants et retenues au prorata ; la dernière tranche reçoit le reliquat).'
+                                : ' (totale).')
+                            : 'Ordonnancement direct (liquidation non exigée pour cet exercice).');
+                })
                 ->modalContent(function ($record) {
                     $record->load(['engageable', 'beneficiaire']);
                     $donnees = $record->extraireDonneesDocument();

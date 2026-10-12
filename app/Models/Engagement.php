@@ -406,9 +406,19 @@ class Engagement extends Model
         ]);
     }
 
+    /**
+     * ✅ Création d'OP possible :
+     *  - une liquidation prête n'a pas encore d'OP (liquidations totales ou partielles successives) ;
+     *  - ou, sans liquidation exigée pour l'exercice, l'engagement n'a encore aucune OP (circuit direct).
+     */
     public function peutCreerOrdonnances(): bool
     {
-        return $this->statut === 'definitif' && !$this->hasOrdonnancesPaiement();
+        if ($this->statut !== 'definitif') {
+            return false;
+        }
+
+        return $this->liquidationsAOrdonnancer()->isNotEmpty()
+            || (!$this->hasOrdonnancesPaiement() && !$this->liquidationRequise());
     }
 
     public function peutVoirOP(): bool
@@ -593,13 +603,43 @@ class Engagement extends Model
         return $annee >= (int) \App\Services\ParametresExecution::get('liquidation_obligatoire_des');
     }
 
-    /** Liquidation prête pour l'ordonnancement (visée, ou liquidée si le visa du CF n'est pas exigé). */
-    public function liquidationPourOrdonnancement(): ?\App\Models\Liquidation
+    /**
+     * ✅ Liquidations prêtes (visées, ou liquidées si le visa du CF n'est pas exigé) qui n'ont pas
+     *    encore d'OP active — de la plus ancienne à la plus récente.
+     */
+    public function liquidationsAOrdonnancer(): \Illuminate\Support\Collection
     {
         $service = app(\App\Services\Budget\LiquidationService::class);
+        $dejaOrdonnancees = \App\Models\OrdonnancePaiement::where('engagement_id', $this->id)
+            ->whereNotNull('liquidation_id')->where('statut', '!=', 'annulee')
+            ->pluck('liquidation_id')->all();
 
-        return $this->liquidations()->orderByDesc('id')->get()
-            ->first(fn($l) => $service->estPretePourOrdonnancement($l));
+        return $this->liquidations()->orderBy('date_liquidation')->orderBy('id')->get()
+            ->filter(fn($l) => !in_array($l->id, $dejaOrdonnancees) && $service->estPretePourOrdonnancement($l))
+            ->values();
+    }
+
+    /** Prochaine liquidation à ordonnancer (la plus ancienne). */
+    public function liquidationPourOrdonnancement(): ?\App\Models\Liquidation
+    {
+        return $this->liquidationsAOrdonnancer()->first();
+    }
+
+    /** ✅ Suivi de la dépense : engagé, liquidé, ordonnancé, payé, reste à liquider. */
+    public function suiviExecution(): array
+    {
+        $ops = \App\Models\OrdonnancePaiement::where('engagement_id', $this->id)
+            ->where('type_ordonnance', 'standard')->where('statut', '!=', 'annulee')->get();
+        $liquide = (float) $this->liquidations()->whereIn('statut', ['liquidee', 'visee'])->sum('montant_liquide');
+
+        return [
+            'engage'          => (float) $this->montant_engage,
+            'liquide'         => $liquide,
+            'ordonnance'      => (float) $ops->sum(fn($op) => (float) ($op->montant_brut ?: $op->montant_net)),
+            'paye'            => (float) $ops->where('statut', 'payee')->sum(fn($op) => (float) ($op->montant_brut ?: $op->montant_net)),
+            'reste_a_liquider' => max(0, (float) $this->montant_engage - (float) $this->liquidations()->sum('montant_liquide')),
+            'nb_op'           => $ops->count(),
+        ];
     }
 
     /**
@@ -611,6 +651,13 @@ class Engagement extends Model
     protected function liquidationPourCreationOP(?\App\Models\Liquidation $liquidation): ?\App\Models\Liquidation
     {
         $liquidation ??= $this->liquidationPourOrdonnancement();
+
+        if (!$liquidation && $this->hasOrdonnancesPaiement()) {
+            throw new \Exception(
+                "Des ordonnances existent déjà pour l'engagement {$this->numero}, et aucune nouvelle liquidation prête "
+                    . "n'est à ordonnancer : liquidez d'abord la tranche suivante (service fait)."
+            );
+        }
 
         if (!$liquidation) {
             if ($this->liquidationRequise()) {
@@ -631,10 +678,9 @@ class Engagement extends Model
             throw new \Exception("La liquidation {$liquidation->numero} n'est pas prête pour l'ordonnancement (statut : {$liquidation->statut_label}).");
         }
 
-        if (abs((float) $liquidation->montant_liquide - (float) $this->montant_engage) > 1) {
-            throw new \Exception(
-                "La liquidation {$liquidation->numero} est partielle : l'ordonnancement d'une liquidation partielle n'est pas encore disponible."
-            );
+        // ✅ Liquidation partielle acceptée ; refus si elle a déjà son OP
+        if (\App\Models\OrdonnancePaiement::where('liquidation_id', $liquidation->id)->where('statut', '!=', 'annulee')->exists()) {
+            throw new \Exception("La liquidation {$liquidation->numero} a déjà été ordonnancée.");
         }
 
         return $liquidation;
@@ -645,11 +691,8 @@ class Engagement extends Model
     // =========================================================
     public function creerOrdonnancesPaiement(?\App\Models\Liquidation $liquidation = null): array
     {
-        if (!$this->peutCreerOrdonnances()) {
+        if ($this->statut !== 'definitif') {
             throw new \Exception("Impossible de créer les ordonnances : l'engagement doit être au statut DÉFINITIF.");
-        }
-        if ($this->hasOrdonnancesPaiement()) {
-            throw new \Exception("Des ordonnances existent déjà pour cet engagement.");
         }
         if ($this->montant_engage <= 0) {
             throw new \Exception("Montant d'engagement invalide.");
@@ -661,6 +704,11 @@ class Engagement extends Model
         return DB::transaction(function () use ($liquidation) {
             // Montants toujours recalcules a la creation des OP (jamais depuis le cache)
             $donnees = $this->extraireDonneesDocument(true);
+
+            // ✅ Liquidation partielle (ou tranche suivante) : montants au prorata, reliquat sur la dernière
+            if ($liquidation) {
+                $donnees = $this->repartirPourLiquidation($donnees, $liquidation);
+            }
 
             if (!$donnees['beneficiaire']) {
                 throw new \Exception("Aucun bénéficiaire défini pour cet engagement.");
@@ -682,6 +730,7 @@ class Engagement extends Model
                 'beneficiaire_type'   => $donnees['beneficiaire_type'],
                 'beneficiaire_id'     => $donnees['beneficiaire']->id,
                 'date_emission'       => now(),
+                'montant_brut'        => round((float) ($donnees['montant_ttc'] ?? $donnees['montant_net']), 2),
                 'montant_net'         => round($donnees['montant_net'], 2),
                 'objet'               => $this->objet,
                 'reference_engagement' => $this->numero,
@@ -765,6 +814,7 @@ class Engagement extends Model
                     'beneficiaire_type'    => 'App\Models\Fournisseur',
                     'beneficiaire_id'      => $tresorPublic->id,
                     'date_emission'        => now(),
+                    'montant_brut'         => round((float) ($donnees['montant_ttc'] ?? 0), 2),
                     'montant_net'          => round($totalRetenues, 2),
                     'objet'                => $this->objet,
                     'reference_engagement' => $this->numero,
@@ -797,6 +847,9 @@ class Engagement extends Model
                 \Log::info("Pas d'OP Impôt — aucune retenue", ['type_document' => $this->estBonCommande() ? 'BC' : 'DA']);
             }
 
+            // ✅ Retenues portées aussi sur l'OP standard (net = brut − retenues)
+            $opStandard->forceFill(['montant_impot' => round($totalRetenues, 2)])->saveQuietly();
+
             $totalOP = $opStandard->montant_net + ($ordonnances['impot']->montant_net ?? 0);
             \Log::info("✅ Ordonnances créées", [
                 'engagement'  => $this->numero,
@@ -815,6 +868,73 @@ class Engagement extends Model
 
             return $ordonnances;
         });
+    }
+
+    /**
+     * ✅ Répartition des montants du document pour UNE liquidation :
+     *  - tranche non finale : chaque montant × (liquidé / engagé), arrondi au franc ;
+     *  - dernière tranche (cumul des liquidations ordonnancées + celle-ci ≥ engagé) : RELIQUAT exact
+     *    (total du document − montants des OP déjà émises), pour que la somme des OP égale l'engagement.
+     * Une liquidation totale (seule) reçoit les montants complets.
+     */
+    protected function repartirPourLiquidation(array $donnees, \App\Models\Liquidation $liquidation): array
+    {
+        $engage = (float) $this->montant_engage;
+        if ($engage <= 0) {
+            return $donnees;
+        }
+
+        $opsPrecedentes = \App\Models\OrdonnancePaiement::where('engagement_id', $this->id)
+            ->where('statut', '!=', 'annulee')->whereNotNull('liquidation_id')->get();
+        $liquidationsOrdonnancees = \App\Models\Liquidation::whereIn('id', $opsPrecedentes->pluck('liquidation_id')->unique())->sum('montant_liquide');
+
+        // Liquidation totale, première et unique : montants complets
+        if ($opsPrecedentes->isEmpty() && abs((float) $liquidation->montant_liquide - $engage) <= 1) {
+            return $donnees;
+        }
+
+        $derniere = (float) $liquidationsOrdonnancees + (float) $liquidation->montant_liquide >= $engage - 1;
+        $ratio = (float) $liquidation->montant_liquide / $engage;
+        $taxes = ['montant_ir', 'montant_cnps', 'montant_irnc', 'montant_tva', 'montant_tsr', 'montant_redevance', 'montant_feicom', 'autres_retenues'];
+
+        $ttcTotal = (float) ($donnees['montant_ttc'] ?? $engage);
+        $resultat = $donnees;
+
+        if (!$derniere) {
+            $resultat['montant_ttc'] = round($ttcTotal * $ratio, 0);
+            foreach ($taxes as $t) {
+                $resultat[$t] = round((float) ($donnees[$t] ?? 0) * $ratio, 0);
+            }
+        } else {
+            // Reliquat : total − déjà émis (OP standard : brut ; OP impôt : chaque retenue)
+            $std = $opsPrecedentes->where('type_ordonnance', 'standard');
+            $imp = $opsPrecedentes->where('type_ordonnance', 'impot');
+
+            $resultat['montant_ttc'] = round($ttcTotal - (float) $std->sum('montant_brut'), 2);
+            foreach (['montant_ir', 'montant_cnps', 'montant_irnc', 'montant_tva', 'montant_tsr'] as $t) {
+                $resultat[$t] = round((float) ($donnees[$t] ?? 0) - (float) $imp->sum($t), 2);
+            }
+            // Redevance, FEICOM et autres retenues sont regroupées sur l'OP impôt (montant_autres_taxes)
+            $autresTotal = (float) ($donnees['montant_redevance'] ?? 0) + (float) ($donnees['montant_feicom'] ?? 0) + (float) ($donnees['autres_retenues'] ?? 0);
+            $resultat['montant_redevance'] = 0;
+            $resultat['montant_feicom'] = 0;
+            $resultat['autres_retenues'] = round($autresTotal - (float) $imp->sum('montant_autres_taxes'), 2);
+        }
+
+        $totalTaxes = array_sum(array_map(fn($t) => (float) ($resultat[$t] ?? 0), $taxes));
+        $resultat['montant_net'] = round($resultat['montant_ttc'] - $totalTaxes, 2);
+
+        \Log::info('Répartition des montants pour liquidation partielle', [
+            'engagement' => $this->numero,
+            'liquidation' => $liquidation->numero,
+            'ratio' => round($ratio, 6),
+            'derniere_tranche' => $derniere,
+            'brut' => $resultat['montant_ttc'],
+            'retenues' => $totalTaxes,
+            'net' => $resultat['montant_net'],
+        ]);
+
+        return $resultat;
     }
 
     // =========================================================

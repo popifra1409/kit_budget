@@ -311,6 +311,16 @@ class Avenant extends Model
 
     protected function mettreAJourOrdonnances(): void
     {
+        // ✅ Liquidations partielles : plusieurs OP standard (une par tranche). Les recalculer avec les
+        //    montants TOTAUX corrigés fausserait chaque tranche → pas de mise à jour automatique.
+        $nbOpStandard = OrdonnancePaiement::where('engagement_id', $this->engagement_original_id)
+            ->where('type_ordonnance', 'standard')->where('statut', '!=', 'annulee')->count();
+        if ($nbOpStandard > 1) {
+            \Log::warning("Avenant {$this->numero_avenant} : {$nbOpStandard} OP (liquidations partielles), non recalculées automatiquement — "
+                . "l'écart se régularise sur la prochaine liquidation (le reliquat de la dernière tranche tient compte des montants corrigés).");
+            return;
+        }
+
         // ✅ Option « corriger les ordonnances » de l'avenant
         if ($this->corriger_ordonnances === false) {
             \Log::info("Avenant {$this->numero_avenant} : ordonnances non corrigées (option désactivée)");

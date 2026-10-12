@@ -112,10 +112,15 @@ class LiquidationResource extends Resource
 
                 Forms\Components\DatePicker::make('date_service_fait')->label('Date du service fait')->default(now())->required(),
 
+                // ✅ Liquidation partielle : montant modifiable, plafonné au reste à liquider
                 Forms\Components\TextInput::make('montant_liquide')
-                    ->label('Montant à liquider')->numeric()->required()->suffix('FCFA')
-                    ->helperText('Cette version liquide la totalité du reste de l\'engagement.')
-                    ->disabled()->dehydrated(),
+                    ->label('Montant à liquider')->numeric()->required()->suffix('FCFA')->minValue(1)
+                    ->maxValue(fn(Forms\Get $get) => ($e = Engagement::find($get('engagement_id'))) ? $service->resteALiquider($e) : null)
+                    ->helperText(fn(Forms\Get $get) => ($e = Engagement::find($get('engagement_id')))
+                        ? 'Reste à liquider : ' . number_format($service->resteALiquider($e), 0, ',', ' ')
+                        . ' FCFA. Un montant inférieur constitue une liquidation partielle (état d\'avancement, livraison fractionnée) : '
+                        . 'chaque tranche aura ses propres OP, retenues au prorata.'
+                        : null),
 
                 Forms\Components\Textarea::make('observations')->rows(2)->columnSpanFull(),
             ])->columns(2),

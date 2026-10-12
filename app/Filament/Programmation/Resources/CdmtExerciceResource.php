@@ -105,6 +105,7 @@ class CdmtExerciceResource extends Resource
                         ->action(fn(CdmtExercice $record, array $data) => $record->retournerPourCorrection($data['motif'])),
                 ])->label('Actions')->icon('heroicon-m-ellipsis-vertical')->color('gray')->button()->size('sm'),
             ], position: ActionsPosition::BeforeColumns)
+            ->recordUrl(fn(CdmtExercice $record) => static::getUrl('view', ['record' => $record]))
             ->bulkActions([Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()])]);
     }
 
@@ -119,6 +120,7 @@ class CdmtExerciceResource extends Resource
             'index' => Pages\ListCdmtExercices::route('/'),
             'create' => Pages\CreateCdmtExercice::route('/create'),
             'edit' => Pages\EditCdmtExercice::route('/{record}/edit'),
+            'view' => Pages\ViewCdmtExercice::route('/{record}'), 
         ];
     }
 }

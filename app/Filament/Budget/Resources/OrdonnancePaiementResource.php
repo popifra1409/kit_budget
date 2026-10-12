@@ -108,11 +108,11 @@ class OrdonnancePaiementResource extends Resource
                         ->options(
                             Engagement::with('engageable', 'beneficiaire')
                                 ->where('statut', 'definitif')
-                                ->whereDoesntHave('ordonnancesPaiement')
                                 ->orderBy('date_engagement', 'desc')
                                 ->get()
-                                // ✅ Liquidation obligatoire (selon l'exercice) : engagement prêt seulement
-                                ->filter(fn($eng) => !$eng->liquidationRequise() || $eng->liquidationPourOrdonnancement() !== null)
+                                // ✅ Engagement ordonnançable : liquidation prête sans OP (tranches successives),
+                                //    ou circuit direct sans OP lorsque la liquidation n'est pas exigée
+                                ->filter(fn($eng) => $eng->peutCreerOrdonnances())
                                 ->mapWithKeys(fn($eng) => [
                                     $eng->id => sprintf(
                                         '%s - %s (%s FCFA)',
@@ -126,7 +126,7 @@ class OrdonnancePaiementResource extends Resource
                         ->searchable()
                         ->preload()
                         ->live()
-                        ->helperText('💡 Engagements définitifs sans ordonnances. Lorsque la liquidation est obligatoire (selon l\'exercice), seuls les engagements dont la liquidation est prête sont listés.')
+                        ->helperText('💡 Engagements ayant une liquidation prête non encore ordonnancée (y compris les tranches suivantes d\'une liquidation partielle), ou, si la liquidation n\'est pas exigée pour l\'exercice, sans ordonnances.')
                         ->columnSpanFull(),
 
                     Forms\Components\Placeholder::make('apercu')
