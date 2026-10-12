@@ -445,8 +445,56 @@ class RecetteReelleResource extends Resource
 
             ], position: ActionsPosition::BeforeColumns)
 
+            // ✅ Impression des recettes saisies, pour le contrôle de la saisie
+            ->headerActions([
+                Tables\Actions\Action::make('imprimerRecettes')
+                    ->label('Imprimer les recettes (PDF)')
+                    ->icon('heroicon-o-printer')
+                    ->color('gray')
+                    ->modalHeading('État des recettes réelles saisies')
+                    ->modalSubmitActionLabel('Générer le PDF')
+                    ->form([
+                        Forms\Components\Select::make('exercice_id')
+                            ->label('Exercice')
+                            ->options(fn() => Exercice::orderByDesc('annee')->pluck('annee', 'id'))
+                            ->default(fn() => Exercice::getActif()?->id)
+                            ->required(),
+                        Forms\Components\Select::make('mois')
+                            ->label('Mois')
+                            ->options(\App\Services\Budget\EtatRecettesSaisiesService::MOIS)
+                            ->multiple()
+                            ->default([now()->month])
+                            ->helperText('Un ou plusieurs mois ; vide = tous les mois de l\'exercice.'),
+                        Forms\Components\Grid::make(2)->schema([
+                            Forms\Components\DatePicker::make('du')->label('Du (facultatif)'),
+                            Forms\Components\DatePicker::make('au')->label('Au (facultatif)'),
+                        ]),
+                        Forms\Components\Radio::make('regroupement')
+                            ->label('Regroupement')
+                            ->options(\App\Services\Budget\EtatRecettesSaisiesService::REGROUPEMENTS)
+                            ->default('ligne')->inline()->required(),
+                        Forms\Components\Select::make('tiers_recette_id')
+                            ->label('Débiteur / payeur (facultatif)')
+                            ->options(fn() => \App\Models\TiersRecette::orderBy('nom')->pluck('nom', 'id'))
+                            ->searchable(),
+                    ])
+                    ->action(fn(array $data) => static::telechargerEtat(
+                        (int) $data['exercice_id'],
+                        array_map('intval', $data['mois'] ?? []) ?: null,
+                        $data['du'] ?? null,
+                        $data['au'] ?? null,
+                        $data['regroupement'] ?? 'ligne',
+                        isset($data['tiers_recette_id']) ? (int) $data['tiers_recette_id'] : null,
+                    )),
+            ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    // ✅ Impression des recettes sélectionnées
+                    Tables\Actions\BulkAction::make('imprimerSelection')
+                        ->label('Imprimer la sélection (PDF)')
+                        ->icon('heroicon-o-printer')
+                        ->action(fn($records) => static::telechargerEtat(null, null, null, null, 'ligne', null, $records->pluck('id')->all())),
+
                     Tables\Actions\DeleteBulkAction::make(),
 
                     Tables\Actions\BulkAction::make('comptabiliser')
@@ -665,6 +713,21 @@ class RecetteReelleResource extends Resource
                         }),
                 ]),
         ];
+    }
+
+    /** ✅ PDF de l'état des recettes saisies (contrôle de la saisie). */
+    public static function telechargerEtat(?int $exerciceId, ?array $mois, ?string $du, ?string $au, string $regroupement, ?int $tiersId, ?array $ids = null)
+    {
+        $etat = app(\App\Services\Budget\EtatRecettesSaisiesService::class)
+            ->construire($exerciceId, $mois, $du, $au, $regroupement, $tiersId, $ids);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.etat-recettes-saisies', $etat + [
+            'structure' => \App\Models\ParametresStructure::where('actif', true)->first() ?? \App\Models\ParametresStructure::first(),
+        ])->setPaper('a4', 'landscape');
+
+        $suffixe = $mois ? implode('-', array_map(fn($m) => str_pad($m, 2, '0', STR_PAD_LEFT), $mois)) : 'periode';
+
+        return response()->streamDownload(fn() => print($pdf->output()), "recettes_saisies_{$suffixe}_" . now()->format('Ymd_His') . '.pdf');
     }
 
     public static function getPages(): array
