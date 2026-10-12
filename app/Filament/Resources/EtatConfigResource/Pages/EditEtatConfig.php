@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources\EtatConfigResource\Pages;
+namespace App\Filament\Resources\EtatConfigResource\Pages;
 
-use App\Filament\Budget\Resources\EtatConfigResource;
+use App\Filament\Resources\EtatConfigResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 

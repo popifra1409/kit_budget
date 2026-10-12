@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources\ParametresStructureResource\Pages;
+namespace App\Filament\Resources\ParametresStructureResource\Pages;
 
-use App\Filament\Budget\Resources\ParametresStructureResource;
+use App\Filament\Resources\ParametresStructureResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 

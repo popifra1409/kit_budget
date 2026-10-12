@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources;
+namespace App\Filament\Resources;
 
-use App\Filament\Budget\Resources\EtatConfigResource\Pages;
+use App\Filament\Resources\EtatConfigResource\Pages;
 use App\Models\EtatConfig;
 use Filament\Forms;
 use Filament\Forms\Form;

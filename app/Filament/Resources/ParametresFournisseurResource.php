@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources;
+namespace App\Filament\Resources;
 
-use App\Filament\Budget\Resources\ParametresFournisseurResource\Pages;
+use App\Filament\Resources\ParametresFournisseurResource\Pages;
 use App\Models\ParametresFournisseur;
 use Filament\Forms;
 use Filament\Forms\Form;

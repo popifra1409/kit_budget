@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources\ParametresFournisseurResource\Pages;
+namespace App\Filament\Resources\ParametresFournisseurResource\Pages;
 
-use App\Filament\Budget\Resources\ParametresFournisseurResource;
+use App\Filament\Resources\ParametresFournisseurResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;

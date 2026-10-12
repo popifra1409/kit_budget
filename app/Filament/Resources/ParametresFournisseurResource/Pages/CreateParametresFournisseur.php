@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources\ParametresFournisseurResource\Pages;
+namespace App\Filament\Resources\ParametresFournisseurResource\Pages;
 
-use App\Filament\Budget\Resources\ParametresFournisseurResource;
+use App\Filament\Resources\ParametresFournisseurResource;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
 

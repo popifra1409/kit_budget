@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Budget\Resources;
+namespace App\Filament\Resources;
 
-use App\Filament\Budget\Resources\ParametresStructureResource\Pages;
+use App\Filament\Resources\ParametresStructureResource\Pages;
 use App\Models\ParametresStructure;
 use Filament\Forms;
 use Filament\Forms\Form;
