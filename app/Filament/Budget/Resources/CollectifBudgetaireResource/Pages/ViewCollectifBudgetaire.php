@@ -70,6 +70,77 @@ class ViewCollectifBudgetaire extends ViewRecord
                     }
                 }),
 
+            // ✅ Intégration de mouvements de crédits de gestion (hors collectif) dans ce collectif
+            Actions\Action::make('integrerMouvements')
+                ->label('Intégrer des mouvements de crédits')
+                ->icon('heroicon-o-arrow-down-on-square-stack')
+                ->color('warning')
+                ->visible(fn($record) => in_array($record->statut, ['projet', 'adopte'], true)
+                    && auth()->user()?->can('update_collectif_budgetaire'))
+                ->modalHeading(fn($record) => "Intégrer des mouvements de crédits dans {$record->numero}")
+                ->modalDescription(fn($record) => $record->statut === 'adopte'
+                    ? 'Collectif adopté : seuls les mouvements EXÉCUTÉS peuvent être intégrés. Ils sont rattachés sans aucun effet sur les dotations.'
+                    : 'Collectif en projet : un mouvement approuvé sera exécuté à l\'adoption ; un mouvement déjà exécuté ne sera pas réexécuté. '
+                    . 'Les mouvements intégrés sortent du plafond des virements de gestion (ratifiés par le conseil).')
+                ->form(function ($record) {
+                    $service = app(\App\Services\Budget\IntegrationVirementCollectifService::class);
+                    $virements = $service->virementsIntegrables($record);
+
+                    if ($virements->isEmpty()) {
+                        return [Forms\Components\Placeholder::make('vide')->label('')
+                            ->content('Aucun mouvement de crédits de gestion intégrable pour cet exercice.')];
+                    }
+
+                    return [
+                        Forms\Components\CheckboxList::make('virements')
+                            ->label('Mouvements de crédits de gestion')
+                            ->options($virements->mapWithKeys(fn($v) => [$v->id => $service->libelle($v)])->all())
+                            ->bulkToggleable()
+                            ->searchable()
+                            ->required(),
+                    ];
+                })
+                ->action(function ($record, array $data) {
+                    if (empty($data['virements'])) {
+                        return;
+                    }
+                    try {
+                        $n = app(\App\Services\Budget\IntegrationVirementCollectifService::class)->integrer($record, array_map('intval', $data['virements']));
+                        Notification::make()->success()->title("{$n} mouvement(s) intégré(s) au collectif {$record->numero}")
+                            ->body('Ils apparaissent dans les mouvements du collectif et dans son état (virements regroupés).')->send();
+                    } catch (\DomainException $e) {
+                        Notification::make()->warning()->title('Intégration impossible')->body($e->getMessage())->persistent()->send();
+                    }
+                }),
+
+            // ✅ Retrait d'un mouvement intégré : il redevient un mouvement de gestion, inchangé
+            Actions\Action::make('retirerMouvementIntegre')
+                ->label('Retirer un mouvement intégré')
+                ->icon('heroicon-o-arrow-up-on-square')
+                ->color('gray')
+                ->visible(fn($record) => in_array($record->statut, ['projet', 'adopte'], true)
+                    && auth()->user()?->can('update_collectif_budgetaire')
+                    && app(\App\Services\Budget\IntegrationVirementCollectifService::class)->mouvementsIntegres($record)->isNotEmpty())
+                ->form(fn($record) => [
+                    Forms\Components\Select::make('mouvement_id')
+                        ->label('Mouvement intégré à retirer')
+                        ->options(app(\App\Services\Budget\IntegrationVirementCollectifService::class)->mouvementsIntegres($record)
+                            ->mapWithKeys(fn($m) => [$m->id => $m->virementBudgetaire
+                                ? app(\App\Services\Budget\IntegrationVirementCollectifService::class)->libelle($m->virementBudgetaire)
+                                : "Mouvement n° {$m->id}"])->all())
+                        ->required(),
+                ])
+                ->modalDescription('Le mouvement redevient un mouvement de crédits de gestion : ses effets sur les lignes restent inchangés.')
+                ->action(function (array $data) {
+                    try {
+                        app(\App\Services\Budget\IntegrationVirementCollectifService::class)
+                            ->retirer(\App\Models\MouvementCollectif::findOrFail($data['mouvement_id']));
+                        Notification::make()->success()->title('Mouvement retiré du collectif')->send();
+                    } catch (\DomainException $e) {
+                        Notification::make()->warning()->title('Retrait impossible')->body($e->getMessage())->send();
+                    }
+                }),
+
             // ✅ Impression de l'état du collectif (recettes en face de leurs dépenses, virements regroupés)
             Actions\Action::make('imprimerEtat')
                 ->label('Imprimer l\'état (PDF)')
