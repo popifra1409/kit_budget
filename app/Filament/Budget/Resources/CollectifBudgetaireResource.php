@@ -261,6 +261,56 @@ class CollectifBudgetaireResource extends Resource
                             }
                         }),
 
+                    // ✅ Association facultative recette → dépenses (lecture de l'équilibre par financement)
+                    Tables\Actions\Action::make('associerFinancements')
+                        ->label('Associer recettes et dépenses')
+                        ->icon('heroicon-o-link')
+                        ->color('info')
+                        ->visible(fn($record) => in_array($record->statut, ['projet', 'adopte'], true)
+                            && auth()->user()?->can('update_collectif_budgetaire'))
+                        ->modalHeading(fn($record) => "Financements du collectif {$record->numero}")
+                        ->modalDescription('Pour chaque recette, cochez les dépenses qu\'elle finance. Facultatif, et sans effet sur les montants : '
+                            . 'l\'association sert à lire l\'équilibre par financement dans l\'état du collectif. Une dépense ne peut être rattachée qu\'à une recette.')
+                        ->form(function ($record) {
+                            $service = app(\App\Services\Budget\FinancementCollectifService::class);
+                            $recettes = $service->mouvements($record, 'recette');
+                            $depenses = $service->mouvements($record, 'depense');
+
+                            if ($recettes->isEmpty() || $depenses->isEmpty()) {
+                                return [Forms\Components\Placeholder::make('vide')->label('')
+                                    ->content('Ce collectif doit comporter au moins une recette et une dépense.')];
+                            }
+
+                            $options = $depenses->mapWithKeys(fn($d) => [$d->id => $service->libelle($d)])->all();
+
+                            return $recettes->map(
+                                fn($r) => Forms\Components\CheckboxList::make("r_{$r->id}")
+                                    ->label('Recette : ' . $service->libelle($r))
+                                    ->options($options)
+                                    ->default($depenses->where('mouvement_recette_id', $r->id)->pluck('id')->map(fn($id) => (string) $id)->all())
+                                    ->columns(2)
+                                    ->bulkToggleable()
+                            )->all();
+                        })
+                        ->action(function ($record, array $data) {
+                            $associations = collect($data)
+                                ->filter(fn($v, $k) => str_starts_with((string) $k, 'r_'))
+                                ->mapWithKeys(fn($ids, $k) => [(int) substr($k, 2) => array_map('intval', (array) $ids)])
+                                ->all();
+                            try {
+                                app(\App\Services\Budget\FinancementCollectifService::class)->associer($record, $associations);
+                                $s = app(\App\Services\Budget\FinancementCollectifService::class)->synthese($record);
+                                $desequilibres = $s['financements']->filter(fn($fi) => abs($fi['ecart']) >= 1)->count();
+                                Notification::make()->success()->title('Associations enregistrées')
+                                    ->body($s['financements']->count() . ' recette(s) associée(s)'
+                                        . ($desequilibres ? " — ⚠️ {$desequilibres} financement(s) dont recette et dépenses ne s'équilibrent pas" : ' — financements équilibrés')
+                                        . ($s['depenses_non_associees']->count() ? ' ; ' . $s['depenses_non_associees']->count() . ' dépense(s) non associée(s).' : '.'))
+                                    ->send();
+                            } catch (\DomainException $e) {
+                                Notification::make()->warning()->title('Association impossible')->body($e->getMessage())->persistent()->send();
+                            }
+                        }),
+
                     // ✅ Impression de l'état du collectif (A-RECETTES / B-DÉPENSES), même en projet
                     Tables\Actions\Action::make('imprimerEtat')
                         ->label('Imprimer l\'état (PDF)')

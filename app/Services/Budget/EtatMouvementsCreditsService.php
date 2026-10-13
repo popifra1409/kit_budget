@@ -1,5 +1,4 @@
 <?php
-// app/Services/Budget/EtatMouvementsCreditsService.php
 
 namespace App\Services\Budget;
 
@@ -62,6 +61,7 @@ class EtatMouvementsCreditsService
                 'libelle'    => $def['libelle'],
                 'aide'       => $def['aide'] ?? '',
                 'mouvements' => $gestion->where('type', $type)->values(),
+                'groupes'    => static::grouperVirements($gestion->where('type', $type)->values()),
                 'total'      => (float) $gestion->where('type', $type)->sum('montant'),
             ])
             ->filter(fn($g) => $g['mouvements']->isNotEmpty())
@@ -104,6 +104,46 @@ class EtatMouvementsCreditsService
                 ],
             ],
         ];
+    }
+
+    /**
+     * ✅ Regroupe des virements par lignes communes (composantes connexes débit ↔ crédit), comme dans les
+     * résolutions du CA :
+     *  - n1 : plusieurs débits (ou un seul) vers UN crédit → cellule du crédit fusionnée, avec le total ;
+     *  - 1n : UN débit vers plusieurs crédits → cellule du débit fusionnée, montants en face de chaque crédit ;
+     *  - nn : configuration croisée → une ligne par mouvement.
+     */
+    public static function grouperVirements(Collection $mouvements): Collection
+    {
+        $parent = [];
+        $trouver = function (string $x) use (&$parent, &$trouver) {
+            $parent[$x] ??= $x;
+            return $parent[$x] === $x ? $x : ($parent[$x] = $trouver($parent[$x]));
+        };
+
+        foreach ($mouvements as $m) {
+            $a = $trouver('L:' . $m['debit_code']);
+            $b = $trouver('L:' . $m['credit_code']);
+            if ($a !== $b) {
+                $parent[$a] = $b;
+            }
+        }
+
+        return $mouvements
+            ->groupBy(fn($m) => $trouver('L:' . $m['debit_code']))
+            ->map(function (Collection $g) {
+                $sources = $g->pluck('debit_code')->unique()->count();
+                $destinations = $g->pluck('credit_code')->unique()->count();
+                $mode = $destinations === 1 ? 'n1' : ($sources === 1 ? '1n' : 'nn');
+
+                return [
+                    'mode'       => $mode,
+                    'mouvements' => ($mode === '1n' ? $g->sortBy('credit_code') : $g->sortBy('debit_code'))->values(),
+                    'total'      => (float) $g->sum('montant'),
+                ];
+            })
+            ->sortBy(fn($g) => $g['mouvements']->first()['credit_code'] ?? '')
+            ->values();
     }
 
     /** LR (ligne de référence, existante) ou MN (mesure nouvelle : ligne créée par un collectif). */
@@ -228,6 +268,7 @@ class EtatMouvementsCreditsService
                     ->whereNull('date_annulation')
                     ->where(fn($q) => $q->whereNull('statut')->orWhereNotIn('statut', ['annule', 'annulee']))
                     ->with(['ligneDepense.nomenclature', 'nouvelleLigneDepense.nomenclature', 'ligneRecette', 'nouvelleLigneRecette', 'virementBudgetaire.ligneSource.nomenclature', 'virementBudgetaire.ligneDestination.nomenclature'])
+                    ->orderBy('id')   // même ordre que l'équilibre par financement (repères R1, R2…)
                     ->get();
 
                 $recettes = $mouvements->where('type', 'recette')->map(function ($m) {
@@ -238,6 +279,7 @@ class EtatMouvementsCreditsService
                         'titre' => $this->titres->titrePropose($l?->code_nomenclature, 'recette'),
                         'montant' => (float) $m->montant_modification,
                         'lrmn' => $m->nouvelle_ligne_recette_id ? 'MN' : 'LR',
+                        'id' => $m->id,
                     ];
                 })->values();
 
@@ -250,14 +292,48 @@ class EtatMouvementsCreditsService
                         'montant' => (float) $m->montant_modification,
                         'nouvelle' => (bool) $m->nouvelle_ligne_depense_id,
                         'lrmn' => $m->nouvelle_ligne_depense_id ? 'MN' : 'LR',
+                        'id' => $m->id,
+                        'recette_id' => $m->mouvement_recette_id ?? null,
                     ];
                 })->values();
 
                 $virements = $mouvements->where('type', 'virement')->filter(fn($m) => $m->virementBudgetaire)
                     ->map(fn($m) => $this->ligneMouvement($m->virementBudgetaire))->values();
 
+                // ✅ Repères de financement : R1, R2… pour les recettes associées, → Rn pour leurs dépenses
+                $reperes = [];
+                $n = 0;
+                foreach ($recettes as $r) {
+                    if ($depenses->where('recette_id', $r['id'])->isNotEmpty()) {
+                        $reperes[$r['id']] = 'R' . (++$n);
+                    }
+                }
+                $recettes = $recettes->map(fn($r) => $r + ['lien' => $reperes[$r['id']] ?? ''])->values();
+                $depenses = $depenses->map(fn($d) => $d + ['lien' => isset($reperes[$d['recette_id']]) ? '→ ' . $reperes[$d['recette_id']] : ''])->values();
+
+                $financement = app(FinancementCollectifService::class)->synthese($c);
+
+                // ✅ Blocs A/B : chaque recette en face des dépenses qu'elle finance ; le reste en parallèle
+                $blocs = [];
+                foreach ($recettes as $r) {
+                    $liees = $depenses->where('recette_id', $r['id'])->values();
+                    if ($liees->isNotEmpty()) {
+                        $blocs[] = ['libre' => false, 'recettes' => [$r], 'depenses' => $liees->all()];
+                    }
+                }
+                $idsRecettes = $recettes->pluck('id')->all();
+                $recettesLibres = $recettes->filter(fn($r) => $depenses->where('recette_id', $r['id'])->isEmpty())->values()->all();
+                $depensesLibres = $depenses->filter(fn($d) => !$d['recette_id'] || !in_array($d['recette_id'], $idsRecettes))->values()->all();
+                if ($recettesLibres || $depensesLibres) {
+                    $blocs[] = ['libre' => true, 'recettes' => $recettesLibres, 'depenses' => $depensesLibres];
+                }
+
                 return [
                     'collectif'  => $c,
+                    'financement' => $financement,
+                    'blocs'      => $blocs,
+                    'groupes_virements' => static::grouperVirements($virements),
+                    'reperes'    => $reperes,
                     'recettes'   => $recettes,
                     'depenses'   => $depenses,
                     'virements'  => $virements,

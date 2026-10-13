@@ -99,50 +99,7 @@
 <p class="gris">LR : ligne de référence (existante) ; MN : mesure nouvelle (ligne créée par un collectif). AE = CP : un mouvement déplace à la fois les autorisations d'engagement et les crédits de paiement.</p>
 @forelse ($parType as $g)
     <h3>{{ $g['libelle'] }} — {{ $g['aide'] }} ({{ $g['mouvements']->count() }} mouvement(s), {{ $f($g['total']) }} FCFA)</h3>
-    <table>
-        <thead>
-            <tr>
-                <th rowspan="2" style="{{ $b }}width:3%;">N°</th>
-                <th colspan="5" style="{{ $b }}">DÉBIT (ligne réduite)</th>
-                <th colspan="5" style="{{ $b }}">CRÉDIT (ligne augmentée)</th>
-                <th rowspan="2" style="{{ $b }}width:11%;">Acte / sous-programmes</th>
-            </tr>
-            <tr>
-                <th style="{{ $b }}">Imputation</th><th style="{{ $b }}">LR/MN</th><th style="{{ $b }}">Libellé</th><th style="{{ $b }}">AE</th><th style="{{ $b }}">CP</th>
-                <th style="{{ $b }}">Imputation</th><th style="{{ $b }}">LR/MN</th><th style="{{ $b }}">Libellé</th><th style="{{ $b }}">AE</th><th style="{{ $b }}">CP</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach ($g['mouvements'] as $i => $m)
-                <tr>
-                    <td style="{{ $b }}" class="centre">{{ str_pad($i + 1, 2, '0', STR_PAD_LEFT) }}</td>
-                    <td style="{{ $b }}" class="centre">{{ $m['debit_code'] }}</td>
-                    <td style="{{ $b }}" class="centre">{{ $m['debit_lrmn'] }}</td>
-                    <td style="{{ $b }}">{{ $m['debit_libelle'] }}</td>
-                    <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                    <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                    <td style="{{ $b }}" class="centre">{{ $m['credit_code'] }}</td>
-                    <td style="{{ $b }}" class="centre">{{ $m['credit_lrmn'] }}</td>
-                    <td style="{{ $b }}">{{ $m['credit_libelle'] }}</td>
-                    <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                    <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                    <td style="{{ $b }}font-size:6.5pt;">
-                        {{ $m['numero'] }}{{ $m['reference'] ? ' — ' . $m['reference'] : '' }}<br>
-                        {{ $m['sp_source']?->code ?? '?' }} → {{ $m['sp_destination']?->code ?? '?' }}
-                    </td>
-                </tr>
-            @endforeach
-            <tr class="total">
-                <td colspan="4" style="{{ $b }}">TOTAL {{ mb_strtoupper($g['libelle']) }}</td>
-                <td style="{{ $b }}" class="num">{{ $f($g['total']) }}</td>
-                <td style="{{ $b }}" class="num">{{ $f($g['total']) }}</td>
-                <td colspan="3" style="{{ $b }}">TOTAL</td>
-                <td style="{{ $b }}" class="num">{{ $f($g['total']) }}</td>
-                <td style="{{ $b }}" class="num">{{ $f($g['total']) }}</td>
-                <td style="{{ $b }}"></td>
-            </tr>
-        </tbody>
-    </table>
+    @include('pdf.partials.groupes-virements', ['groupes' => $g['groupes'], 'f' => $f, 'b' => $b, 'avecActe' => true, 'titre' => mb_strtoupper($g['libelle'])])
 @empty
     <p class="gris">Aucun mouvement de gestion sur la période retenue.</p>
 @endforelse
@@ -245,21 +202,28 @@
                 </tr>
             </thead>
             <tbody>
-                @for ($i = 0; $i < $n; $i++)
-                    @php $r = $c['recettes'][$i] ?? null; $d = $c['depenses'][$i] ?? null; @endphp
-                    <tr>
-                        <td style="{{ $b }}" class="centre">{{ $r['code'] ?? '' }}</td>
-                        <td style="{{ $b }}" class="centre">{{ $r['lrmn'] ?? '' }}</td>
-                        <td style="{{ $b }}">{{ $r['libelle'] ?? '' }}</td>
-                        <td style="{{ $b }}" class="num">{{ $r ? $f($r['montant']) : '' }}</td>
-                        <td style="{{ $b }}" class="num">{{ $r ? $f($r['montant']) : '' }}</td>
-                        <td style="{{ $b }}" class="centre">{{ $d['code'] ?? '' }}</td>
-                        <td style="{{ $b }}" class="centre">{{ $d['lrmn'] ?? '' }}</td>
-                        <td style="{{ $b }}">{{ $d['libelle'] ?? '' }}</td>
-                        <td style="{{ $b }}" class="num">{{ $d ? $f($d['montant']) : '' }}</td>
-                        <td style="{{ $b }}" class="num">{{ $d ? $f($d['montant']) : '' }}</td>
-                    </tr>
-                @endfor
+                {{-- Chaque recette en face des dépenses qu'elle finance (cellule fusionnée) ; le reste en parallèle --}}
+                @foreach ($c['blocs'] as $bloc)
+                    @php $n = max(count($bloc['recettes']), count($bloc['depenses']), 1); $fusion = !$bloc['libre']; @endphp
+                    @for ($i = 0; $i < $n; $i++)
+                        @php $r = $fusion ? ($i === 0 ? $bloc['recettes'][0] : null) : ($bloc['recettes'][$i] ?? null); $d = $bloc['depenses'][$i] ?? null; @endphp
+                        <tr>
+                            @if (!$fusion || $i === 0)
+                                @php $rs = $fusion ? $n : 1; @endphp
+                                <td rowspan="{{ $rs }}" style="{{ $b }}" class="centre">{{ $r['code'] ?? '' }}</td>
+                                <td rowspan="{{ $rs }}" style="{{ $b }}" class="centre">{{ $r['lrmn'] ?? '' }}</td>
+                                <td rowspan="{{ $rs }}" style="{{ $b }}">{{ $r['libelle'] ?? '' }}</td>
+                                <td rowspan="{{ $rs }}" style="{{ $b }}" class="num">{{ $r ? $f($r['montant']) : '' }}</td>
+                                <td rowspan="{{ $rs }}" style="{{ $b }}" class="num">{{ $r ? $f($r['montant']) : '' }}</td>
+                            @endif
+                            <td style="{{ $b }}" class="centre">{{ $d['code'] ?? '' }}</td>
+                            <td style="{{ $b }}" class="centre">{{ $d['lrmn'] ?? '' }}</td>
+                            <td style="{{ $b }}">{{ $d['libelle'] ?? '' }}</td>
+                            <td style="{{ $b }}" class="num">{{ $d ? $f($d['montant']) : '' }}</td>
+                            <td style="{{ $b }}" class="num">{{ $d ? $f($d['montant']) : '' }}</td>
+                        </tr>
+                    @endfor
+                @endforeach
                 <tr class="total">
                     <td colspan="3" style="{{ $b }}">TOTAL</td>
                     <td style="{{ $b }}" class="num">{{ $f($c['total_recettes']) }}</td>
@@ -273,28 +237,46 @@
         <p class="gris">
             Équilibre : {!! abs($c['equilibre']) < 1 ? '<span class="ok">recettes = dépenses</span>' : '<span class="alerte">écart de ' . $f($c['equilibre']) . ' FCFA</span>' !!}
             · Montants négatifs : réductions. LR : ligne de référence (existante) ; MN : mesure nouvelle (ligne créée).
+            Une recette associée à des dépenses figure en face de celles-ci.
         </p>
 
-        @if ($c['virements']->isNotEmpty())
-            <table>
+        @php $fi = $c['financement']; @endphp
+        @if ($fi['a_des_associations'])
+            <table style="margin-bottom:6px;">
                 <thead>
-                    <tr><th colspan="5" style="{{ $b }}">Virements votés par le collectif — DÉBIT</th><th colspan="5" style="{{ $b }}">CRÉDIT</th></tr>
+                    <tr><th colspan="6" style="{{ $b }}">Équilibre par financement</th></tr>
                     <tr>
-                        <th style="{{ $b }}">Imputation</th><th style="{{ $b }}">LR/MN</th><th style="{{ $b }}">Libellé</th><th style="{{ $b }}">AE</th><th style="{{ $b }}">CP</th>
-                        <th style="{{ $b }}">Imputation</th><th style="{{ $b }}">LR/MN</th><th style="{{ $b }}">Libellé</th><th style="{{ $b }}">AE</th><th style="{{ $b }}">CP</th>
+                        <th style="{{ $b }}">Lien</th><th style="{{ $b }}">Recette (financement)</th><th style="{{ $b }}">Montant</th>
+                        <th style="{{ $b }}">Dépenses financées</th><th style="{{ $b }}">Total des dépenses</th><th style="{{ $b }}">Écart</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($c['virements'] as $v)
+                    @foreach ($fi['financements'] as $i => $fin)
                         <tr>
-                            <td style="{{ $b }}" class="centre">{{ $v['debit_code'] }}</td><td style="{{ $b }}" class="centre">{{ $v['debit_lrmn'] }}</td><td style="{{ $b }}">{{ $v['debit_libelle'] }}</td>
-                            <td style="{{ $b }}" class="num">{{ $f($v['montant']) }}</td><td style="{{ $b }}" class="num">{{ $f($v['montant']) }}</td>
-                            <td style="{{ $b }}" class="centre">{{ $v['credit_code'] }}</td><td style="{{ $b }}" class="centre">{{ $v['credit_lrmn'] }}</td><td style="{{ $b }}">{{ $v['credit_libelle'] }}</td>
-                            <td style="{{ $b }}" class="num">{{ $f($v['montant']) }}</td><td style="{{ $b }}" class="num">{{ $f($v['montant']) }}</td>
+                            <td style="{{ $b }}" class="centre"><strong>R{{ $i + 1 }}</strong></td>
+                            <td style="{{ $b }}">{{ $fin['recette'] }}</td>
+                            <td style="{{ $b }}" class="num">{{ $f($fin['montant']) }}</td>
+                            <td style="{{ $b }}font-size:6.5pt;">{!! collect($fin['depenses'])->map(fn ($x) => e($x))->implode('<br>') !!}</td>
+                            <td style="{{ $b }}" class="num">{{ $f($fin['total']) }}</td>
+                            <td style="{{ $b }}" class="num {{ abs($fin['ecart']) < 1 ? 'ok' : 'alerte' }}">{{ abs($fin['ecart']) < 1 ? 'Équilibré' : $f($fin['ecart']) }}</td>
                         </tr>
                     @endforeach
+                    @foreach ($fi['recettes_non_affectees'] as $r)
+                        <tr><td style="{{ $b }}"></td><td style="{{ $b }}">{{ $r['recette'] }}</td><td style="{{ $b }}" class="num">{{ $f($r['montant']) }}</td>
+                            <td colspan="3" style="{{ $b }}" class="gris">Recette non affectée à des dépenses précises</td></tr>
+                    @endforeach
+                    @if ($fi['depenses_non_associees']->isNotEmpty())
+                        <tr><td style="{{ $b }}"></td><td style="{{ $b }}" class="gris">Dépenses non associées à une recette</td><td style="{{ $b }}"></td>
+                            <td style="{{ $b }}font-size:6.5pt;">{!! $fi['depenses_non_associees']->map(fn ($x) => e($x['libelle']))->implode('<br>') !!}</td>
+                            <td style="{{ $b }}" class="num">{{ $f($fi['depenses_non_associees']->sum('montant')) }}</td><td style="{{ $b }}"></td></tr>
+                    @endif
                 </tbody>
             </table>
+        @endif
+
+        @if ($c['virements']->isNotEmpty())
+            <h3>Virement de lignes à lignes voté par le collectif ({{ $f($c['total_virements']) }} FCFA en AE et en CP)</h3>
+            @include('pdf.partials.groupes-virements', ['groupes' => $c['groupes_virements'], 'f' => $f, 'b' => $b, 'avecActe' => false, 'titre' => ''])
         @endif
     @endforeach
 

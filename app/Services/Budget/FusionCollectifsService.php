@@ -141,6 +141,11 @@ class FusionCollectifsService
                             'motif'                => mb_substr("[Regroupement] {$motifs}", 0, 1000),
                             'updated_at'           => now(),
                         ]);
+                        // Les dépenses financées par une recette regroupée suivent la recette conservée
+                        if ($garde->type === 'recette') {
+                            DB::table('mouvements_collectifs')->whereIn('mouvement_recette_id', $groupe->slice(1)->pluck('id'))
+                                ->update(['mouvement_recette_id' => $garde->id]);
+                        }
                         $groupe->slice(1)->each->delete();
 
                         $regroupements[] = ['ligne' => $cle, 'mouvements' => $groupe->count(), 'montant' => $total];
