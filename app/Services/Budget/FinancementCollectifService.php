@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/FinancementCollectifService.php
 
 namespace App\Services\Budget;
 
@@ -24,7 +25,10 @@ class FinancementCollectifService
             ->where(fn($q) => $q->whereNull('statut')->orWhereNotIn('statut', ['annule', 'annulee']))
             ->with($type === 'recette' ? ['ligneRecette', 'nouvelleLigneRecette'] : ['ligneDepense.nomenclature', 'nouvelleLigneDepense.nomenclature'])
             ->orderBy('id')
-            ->get();
+            ->get()
+            // Mouvements de création de ligne à 0 : sans montant, ils ne financent ni ne sont financés
+            ->filter(fn($m) => abs((float) $m->montant_modification) >= 1)
+            ->values();
     }
 
     public function libelle(MouvementCollectif $m): string
@@ -37,7 +41,8 @@ class FinancementCollectifService
         }
 
         $l = $m->ligneDepense ?? $m->nouvelleLigneDepense;
-        return "{$l?->nomenclature?->code} — {$l?->nomenclature?->libelle} ({$f})" . ($m->nouvelle_ligne_depense_id ? ' — MN' : '');
+        return "{$l?->nomenclature?->code} — {$l?->nomenclature?->libelle} ({$f})"
+            . (($m->nouvelle_ligne_depense_id || EtatMouvementsCreditsService::lrMn($l) === 'MN') ? ' — MN' : '');
     }
 
     /**

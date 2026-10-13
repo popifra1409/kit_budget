@@ -1,3 +1,4 @@
+{{-- resources/views/pdf/etat-mouvements-credits.blade.php --}}
 @php
     $f = fn ($v) => number_format((float) $v, 0, ',', ' ');
     $b = 'border:1px solid #555;padding:2px 4px;';
@@ -25,6 +26,10 @@
         .ok { color: #166534; font-weight: bold; }
         .saut { page-break-before: always; }
         tr { page-break-inside: avoid; }
+        /* Libellés : coupure entre les mots, police un peu réduite pour tenir dans les colonnes fixes */
+        td { word-wrap: break-word; overflow-wrap: break-word; vertical-align: top; }
+        td.lib { font-size: 6.8pt; line-height: 1.15; }
+        td.num { font-size: 7.1pt; }
         .pied { position: fixed; bottom: -8mm; left: 0; right: 0; font-size: 6.5pt; color: #777; text-align: center; }
     </style>
 </head>
@@ -190,8 +195,12 @@
         @if (!empty($col->fusion_meta['origines']))
             <p class="gris">Issu de la fusion des collectifs {{ collect($col->fusion_meta['origines'])->map(fn ($o) => $o['numero'] . ' (' . $o['libelle'] . ')')->implode(', ') }}.</p>
         @endif
-        <table>
+        <table style="table-layout:fixed;width:100%;">
             <thead>
+                {{-- Largeurs fixes : imputation | LR/MN | libellé | AE | CP, de chaque côté --}}
+                <tr style="height:0;">
+                    @foreach ([6, 4, 24, 8, 8, 6, 4, 24, 8, 8] as $l)<td style="width:{{ $l }}%;padding:0;border:none;height:0;"></td>@endforeach
+                </tr>
                 <tr>
                     <th colspan="5" style="{{ $b }}">A — RECETTES</th>
                     <th colspan="5" style="{{ $b }}">B — DÉPENSES</th>
@@ -212,13 +221,13 @@
                                 @php $rs = $fusion ? $n : 1; @endphp
                                 <td rowspan="{{ $rs }}" style="{{ $b }}" class="centre">{{ $r['code'] ?? '' }}</td>
                                 <td rowspan="{{ $rs }}" style="{{ $b }}" class="centre">{{ $r['lrmn'] ?? '' }}</td>
-                                <td rowspan="{{ $rs }}" style="{{ $b }}">{{ $r['libelle'] ?? '' }}</td>
+                                <td rowspan="{{ $rs }}" style="{{ $b }}" class="lib">{{ $r['libelle'] ?? '' }}</td>
                                 <td rowspan="{{ $rs }}" style="{{ $b }}" class="num">{{ $r ? $f($r['montant']) : '' }}</td>
                                 <td rowspan="{{ $rs }}" style="{{ $b }}" class="num">{{ $r ? $f($r['montant']) : '' }}</td>
                             @endif
                             <td style="{{ $b }}" class="centre">{{ $d['code'] ?? '' }}</td>
                             <td style="{{ $b }}" class="centre">{{ $d['lrmn'] ?? '' }}</td>
-                            <td style="{{ $b }}">{{ $d['libelle'] ?? '' }}</td>
+                            <td style="{{ $b }}" class="lib">{{ $d['libelle'] ?? '' }}</td>
                             <td style="{{ $b }}" class="num">{{ $d ? $f($d['montant']) : '' }}</td>
                             <td style="{{ $b }}" class="num">{{ $d ? $f($d['montant']) : '' }}</td>
                         </tr>

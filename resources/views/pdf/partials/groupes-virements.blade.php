@@ -1,19 +1,23 @@
 {{-- resources/views/pdf/partials/groupes-virements.blade.php --}}
 {{--
-    Virements regroupés par lignes communes, au format des résolutions du CA (cellules fusionnées) :
-      n1 : plusieurs débits → un crédit (crédit fusionné, avec le total) ;
-      1n : un débit → plusieurs crédits (débit fusionné, montants en face de chaque crédit) ;
-      nn : une ligne par mouvement.
-    Paramètres : $groupes, $f (formatage), $b (style de cellule), $avecActe (bool), $titre (string).
+    Virements en un tableau à cellules fusionnées (format des résolutions du CA) : de chaque côté,
+    les lignes consécutives d'un même compte sont fusionnées, avec le total de leurs montants.
+    Paramètres : $groupes (['lignes' => …, 'total' => …]), $f, $b, $avecActe (bool), $titre (string).
 --}}
-@php $num = 0; @endphp
-<table>
+@php
+    $lib = $avecActe ? 16 : 23.5;
+    $largeurs = array_merge([3], [5.5, 3.5, $lib, 8, 8], [5.5, 3.5, $lib, 8, 8], $avecActe ? [15] : []);
+@endphp
+<table style="table-layout:fixed;width:100%;">
     <thead>
+        <tr style="height:0;">
+            @foreach ($largeurs as $l)<td style="width:{{ $l }}%;padding:0;border:none;height:0;"></td>@endforeach
+        </tr>
         <tr>
-            <th rowspan="2" style="{{ $b }}width:3%;">N°</th>
+            <th rowspan="2" style="{{ $b }}">N°</th>
             <th colspan="5" style="{{ $b }}">DÉBIT</th>
             <th colspan="5" style="{{ $b }}">CRÉDIT</th>
-            @if ($avecActe)<th rowspan="2" style="{{ $b }}width:10%;">Acte / sous-programmes</th>@endif
+            @if ($avecActe)<th rowspan="2" style="{{ $b }}">Acte / sous-programmes</th>@endif
         </tr>
         <tr>
             <th style="{{ $b }}">Imputation</th><th style="{{ $b }}">LR/MN</th><th style="{{ $b }}">Libellé</th><th style="{{ $b }}">AE</th><th style="{{ $b }}">CP</th>
@@ -21,58 +25,35 @@
         </tr>
     </thead>
     <tbody>
-        @foreach ($groupes as $g)
-            @php $k = $g['mouvements']->count(); $num++; @endphp
-            @foreach ($g['mouvements'] as $i => $m)
-                <tr>
-                    @if ($i === 0)<td rowspan="{{ $k }}" style="{{ $b }}" class="centre">{{ str_pad($num, 2, '0', STR_PAD_LEFT) }}</td>@endif
+        @foreach ($groupes['lignes'] as $m)
+            <tr>
+                @if ($m['num_rs'] > 0)
+                    <td rowspan="{{ $m['num_rs'] }}" style="{{ $b }}" class="centre">{{ str_pad($m['num'], 2, '0', STR_PAD_LEFT) }}</td>
+                @endif
 
-                    {{-- DÉBIT --}}
-                    @if ($g['mode'] === '1n')
-                        @if ($i === 0)
-                            <td rowspan="{{ $k }}" style="{{ $b }}" class="centre">{{ $m['debit_code'] }}</td>
-                            <td rowspan="{{ $k }}" style="{{ $b }}" class="centre">{{ $m['debit_lrmn'] }}</td>
-                            <td rowspan="{{ $k }}" style="{{ $b }}"><strong>{{ $m['debit_libelle'] }}</strong></td>
-                        @endif
-                    @else
-                        <td style="{{ $b }}" class="centre">{{ $m['debit_code'] }}</td>
-                        <td style="{{ $b }}" class="centre">{{ $m['debit_lrmn'] }}</td>
-                        <td style="{{ $b }}">{{ $m['debit_libelle'] }}</td>
+                @foreach (['debit', 'credit'] as $cote)
+                    @if ($m["{$cote}_rs"] > 0)
+                        @php $rs = $m["{$cote}_rs"]; @endphp
+                        <td rowspan="{{ $rs }}" style="{{ $b }}" class="centre">{{ $m["{$cote}_code"] }}</td>
+                        <td rowspan="{{ $rs }}" style="{{ $b }}" class="centre">{{ $m["{$cote}_lrmn"] }}</td>
+                        <td rowspan="{{ $rs }}" style="{{ $b }}" class="lib">{!! $rs > 1 ? '<strong>' . e($m["{$cote}_libelle"]) . '</strong>' : e($m["{$cote}_libelle"]) !!}</td>
+                        <td rowspan="{{ $rs }}" style="{{ $b }}" class="num">{{ $f($m["{$cote}_total"]) }}</td>
+                        <td rowspan="{{ $rs }}" style="{{ $b }}" class="num">{{ $f($m["{$cote}_total"]) }}</td>
                     @endif
-                    <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                    <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
+                @endforeach
 
-                    {{-- CRÉDIT --}}
-                    @if ($g['mode'] === 'n1')
-                        @if ($i === 0)
-                            <td rowspan="{{ $k }}" style="{{ $b }}" class="centre">{{ $m['credit_code'] }}</td>
-                            <td rowspan="{{ $k }}" style="{{ $b }}" class="centre">{{ $m['credit_lrmn'] }}</td>
-                            <td rowspan="{{ $k }}" style="{{ $b }}">{{ $m['credit_libelle'] }}</td>
-                            <td rowspan="{{ $k }}" style="{{ $b }}" class="num">{{ $f($g['total']) }}</td>
-                            <td rowspan="{{ $k }}" style="{{ $b }}" class="num">{{ $f($g['total']) }}</td>
-                        @endif
-                    @else
-                        <td style="{{ $b }}" class="centre">{{ $m['credit_code'] }}</td>
-                        <td style="{{ $b }}" class="centre">{{ $m['credit_lrmn'] }}</td>
-                        <td style="{{ $b }}">{{ $m['credit_libelle'] }}</td>
-                        <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                        <td style="{{ $b }}" class="num">{{ $f($m['montant']) }}</td>
-                    @endif
-
-                    @if ($avecActe)
-                        <td style="{{ $b }}font-size:6.3pt;">{{ $m['numero'] ?? '' }}{{ !empty($m['reference']) ? ' — ' . $m['reference'] : '' }}<br>{{ $m['sp_source']?->code ?? '?' }} → {{ $m['sp_destination']?->code ?? '?' }}</td>
-                    @endif
-                </tr>
-            @endforeach
+                @if ($avecActe)
+                    <td style="{{ $b }}font-size:6.3pt;">{{ $m['numero'] ?? '' }}{{ !empty($m['reference']) ? ' — ' . $m['reference'] : '' }}<br>{{ $m['sp_source']?->code ?? '?' }} → {{ $m['sp_destination']?->code ?? '?' }}</td>
+                @endif
+            </tr>
         @endforeach
-        @php $total = $groupes->sum('total'); @endphp
         <tr class="total">
             <td colspan="4" style="{{ $b }}">TOTAL {{ $titre }}</td>
-            <td style="{{ $b }}" class="num">{{ $f($total) }}</td>
-            <td style="{{ $b }}" class="num">{{ $f($total) }}</td>
+            <td style="{{ $b }}" class="num">{{ $f($groupes['total']) }}</td>
+            <td style="{{ $b }}" class="num">{{ $f($groupes['total']) }}</td>
             <td colspan="3" style="{{ $b }}">TOTAL</td>
-            <td style="{{ $b }}" class="num">{{ $f($total) }}</td>
-            <td style="{{ $b }}" class="num">{{ $f($total) }}</td>
+            <td style="{{ $b }}" class="num">{{ $f($groupes['total']) }}</td>
+            <td style="{{ $b }}" class="num">{{ $f($groupes['total']) }}</td>
             @if ($avecActe)<td style="{{ $b }}"></td>@endif
         </tr>
     </tbody>

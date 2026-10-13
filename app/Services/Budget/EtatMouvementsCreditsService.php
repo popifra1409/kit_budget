@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/EtatMouvementsCreditsService.php
 
 namespace App\Services\Budget;
 
@@ -113,37 +114,75 @@ class EtatMouvementsCreditsService
      *  - 1n : UN débit vers plusieurs crédits → cellule du débit fusionnée, montants en face de chaque crédit ;
      *  - nn : configuration croisée → une ligne par mouvement.
      */
-    public static function grouperVirements(Collection $mouvements): Collection
+    /**
+     * ✅ Présentation des virements en UN tableau avec cellules fusionnées, comme dans les résolutions du CA :
+     *  1. ordre des lignes : blocs « plusieurs débits → un crédit », « un débit → plusieurs crédits »
+     *     et virements isolés, rangés pour rapprocher les lignes d'un même compte ;
+     *  2. de chaque côté, les lignes CONSÉCUTIVES d'un même compte sont fusionnées (imputation, LR/MN,
+     *     libellé, et AE/CP avec le total) ;
+     *  3. un N° par ensemble de lignes reliées par une fusion.
+     * @return array{lignes: array, total: float}
+     */
+    public static function grouperVirements(Collection $mouvements): array
     {
-        $parent = [];
-        $trouver = function (string $x) use (&$parent, &$trouver) {
-            $parent[$x] ??= $x;
-            return $parent[$x] === $x ? $x : ($parent[$x] = $trouver($parent[$x]));
-        };
+        if ($mouvements->isEmpty()) {
+            return ['lignes' => [], 'total' => 0.0];
+        }
 
-        foreach ($mouvements as $m) {
-            $a = $trouver('L:' . $m['debit_code']);
-            $b = $trouver('L:' . $m['credit_code']);
-            if ($a !== $b) {
-                $parent[$a] = $b;
+        $degDebit = $mouvements->countBy('debit_code');
+        $degCredit = $mouvements->countBy('credit_code');
+
+        // Clé de rangement : compte commun du bloc (crédit pour n1, débit pour 1n et les isolés)
+        $lignes = $mouvements->map(function ($m) use ($degDebit, $degCredit) {
+            $d = $degDebit[$m['debit_code']] ?? 1;
+            $c = $degCredit[$m['credit_code']] ?? 1;
+            $m['_cle'] = match (true) {
+                $c > 1 && $d === 1 => $m['credit_code'] . '|n1|' . $m['debit_code'],
+                default            => $m['debit_code'] . '|1n|' . $m['credit_code'],
+            };
+            return $m;
+        })->sortBy('_cle')->values()->all();
+
+        // Fusions : runs de lignes consécutives d'un même compte, de chaque côté
+        $n = count($lignes);
+        foreach (['debit', 'credit'] as $cote) {
+            $i = 0;
+            while ($i < $n) {
+                $j = $i;
+                while ($j + 1 < $n && $lignes[$j + 1]["{$cote}_code"] === $lignes[$i]["{$cote}_code"]) {
+                    $j++;
+                }
+                $total = 0.0;
+                for ($k = $i; $k <= $j; $k++) {
+                    $total += $lignes[$k]['montant'];
+                    $lignes[$k]["{$cote}_rs"] = 0;     // cellule masquée (couverte par la fusion)
+                }
+                $lignes[$i]["{$cote}_rs"] = $j - $i + 1;
+                $lignes[$i]["{$cote}_total"] = $total;
+                $i = $j + 1;
             }
         }
 
-        return $mouvements
-            ->groupBy(fn($m) => $trouver('L:' . $m['debit_code']))
-            ->map(function (Collection $g) {
-                $sources = $g->pluck('debit_code')->unique()->count();
-                $destinations = $g->pluck('credit_code')->unique()->count();
-                $mode = $destinations === 1 ? 'n1' : ($sources === 1 ? '1n' : 'nn');
+        // Numérotation : ensembles de lignes reliées par au moins une fusion
+        $num = 0;
+        $i = 0;
+        while ($i < $n) {
+            $fin = $i;
+            $limite = max($i + $lignes[$i]['debit_rs'] - 1, $i + $lignes[$i]['credit_rs'] - 1);
+            for ($k = $i; $k <= $limite && $k < $n; $k++) {
+                $limite = max($limite, $k + ($lignes[$k]['debit_rs'] ?: 1) - 1, $k + ($lignes[$k]['credit_rs'] ?: 1) - 1);
+                $fin = $k;
+            }
+            $num++;
+            for ($k = $i; $k <= $fin; $k++) {
+                $lignes[$k]['num_rs'] = 0;
+            }
+            $lignes[$i]['num_rs'] = $fin - $i + 1;
+            $lignes[$i]['num'] = $num;
+            $i = $fin + 1;
+        }
 
-                return [
-                    'mode'       => $mode,
-                    'mouvements' => ($mode === '1n' ? $g->sortBy('credit_code') : $g->sortBy('debit_code'))->values(),
-                    'total'      => (float) $g->sum('montant'),
-                ];
-            })
-            ->sortBy(fn($g) => $g['mouvements']->first()['credit_code'] ?? '')
-            ->values();
+        return ['lignes' => $lignes, 'total' => (float) $mouvements->sum('montant')];
     }
 
     /** LR (ligne de référence, existante) ou MN (mesure nouvelle : ligne créée par un collectif). */
@@ -153,7 +192,12 @@ class EtatMouvementsCreditsService
             return '';
         }
 
-        return ($ligne->est_issue_collectif ?? false) ? 'MN' : 'LR';
+        // MN : ligne créée par un collectif (indicateur de la ligne, ou mouvement de création qui la référence)
+        static $creees = null;
+        $creees ??= \App\Models\MouvementCollectif::whereNotNull('nouvelle_ligne_depense_id')
+            ->pluck('nouvelle_ligne_depense_id')->flip()->all();
+
+        return (($ligne->est_issue_collectif ?? false) || isset($creees[$ligne->id])) ? 'MN' : 'LR';
     }
 
     /** Une ligne de mouvement : débit (ligne réduite) / crédit (ligne augmentée). */
@@ -271,19 +315,21 @@ class EtatMouvementsCreditsService
                     ->orderBy('id')   // même ordre que l'équilibre par financement (repères R1, R2…)
                     ->get();
 
-                $recettes = $mouvements->where('type', 'recette')->map(function ($m) {
+                // Les mouvements de CRÉATION de ligne à 0 (le montant arrive par un autre mouvement) sont masqués
+                $recettes = $mouvements->where('type', 'recette')->filter(fn($m) => abs((float) $m->montant_modification) >= 1)->map(function ($m) {
                     $l = $m->ligneRecette ?? $m->nouvelleLigneRecette;
                     return [
                         'code' => $l?->code_nomenclature,
                         'libelle' => $l?->libelle_nomenclature,
                         'titre' => $this->titres->titrePropose($l?->code_nomenclature, 'recette'),
                         'montant' => (float) $m->montant_modification,
-                        'lrmn' => $m->nouvelle_ligne_recette_id ? 'MN' : 'LR',
+                        'lrmn' => ($m->nouvelle_ligne_recette_id || ($l?->est_issue_collectif ?? false)
+                            || \App\Models\MouvementCollectif::where('nouvelle_ligne_recette_id', $l?->id)->exists()) ? 'MN' : 'LR',
                         'id' => $m->id,
                     ];
                 })->values();
 
-                $depenses = $mouvements->where('type', 'depense')->map(function ($m) {
+                $depenses = $mouvements->where('type', 'depense')->filter(fn($m) => abs((float) $m->montant_modification) >= 1)->map(function ($m) {
                     $l = $m->ligneDepense ?? $m->nouvelleLigneDepense;
                     return [
                         'code' => $l?->nomenclature?->code,
@@ -291,7 +337,8 @@ class EtatMouvementsCreditsService
                         'titre' => $this->titres->titreDe($l?->nomenclature),
                         'montant' => (float) $m->montant_modification,
                         'nouvelle' => (bool) $m->nouvelle_ligne_depense_id,
-                        'lrmn' => $m->nouvelle_ligne_depense_id ? 'MN' : 'LR',
+                        // MN si la LIGNE a été créée par un collectif (même dotée ensuite par un autre mouvement)
+                        'lrmn' => $m->nouvelle_ligne_depense_id ? 'MN' : static::lrMn($l),
                         'id' => $m->id,
                         'recette_id' => $m->mouvement_recette_id ?? null,
                     ];
