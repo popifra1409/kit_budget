@@ -224,7 +224,7 @@ class MouvementsRelationManager extends RelationManager
 
         throw new \Filament\Support\Exceptions\Halt();
     }
-    
+
     /**
      * ✅ Par défaut, Filament passe cette RelationManager en lecture seule
      *    dès que CollectifBudgetaireResource::canEdit() renvoie false pour
@@ -497,6 +497,29 @@ class MouvementsRelationManager extends RelationManager
     {
         return $table
             ->columns([
+                // ✅ Recherche : compte et libellé (dépense, recette ou virement), motif, type
+                Tables\Columns\TextColumn::make('recherche')
+                    ->label('')
+                    ->getStateUsing(fn() => null)
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->searchable(query: function (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder {
+                        $terme = '%' . trim($search) . '%';
+
+                        return $query->where(function ($q) use ($terme) {
+                            $q->where('motif', 'ilike', $terme)
+                                ->orWhere('type', 'ilike', $terme)
+                                // Dépenses : ligne existante ou créée
+                                ->orWhereHas('ligneDepense.nomenclature', fn($n) => $n->where('code', 'ilike', $terme)->orWhere('libelle', 'ilike', $terme))
+                                ->orWhereHas('nouvelleLigneDepense.nomenclature', fn($n) => $n->where('code', 'ilike', $terme)->orWhere('libelle', 'ilike', $terme))
+                                // Recettes : ligne existante ou créée
+                                ->orWhereHas('ligneRecette', fn($l) => $l->where('code_nomenclature', 'ilike', $terme)->orWhere('libelle_nomenclature', 'ilike', $terme))
+                                ->orWhereHas('nouvelleLigneRecette', fn($l) => $l->where('code_nomenclature', 'ilike', $terme)->orWhere('libelle_nomenclature', 'ilike', $terme))
+                                // Virements : ligne source ou destination
+                                ->orWhereHas('virementBudgetaire.ligneSource.nomenclature', fn($n) => $n->where('code', 'ilike', $terme)->orWhere('libelle', 'ilike', $terme))
+                                ->orWhereHas('virementBudgetaire.ligneDestination.nomenclature', fn($n) => $n->where('code', 'ilike', $terme)->orWhere('libelle', 'ilike', $terme));
+                        });
+                    }),
+
                 Tables\Columns\BadgeColumn::make('statut')
                     ->label('Statut mvt.')
                     ->colors([
