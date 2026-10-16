@@ -334,6 +334,17 @@ class LignesRelationManager extends RelationManager
     public function table(Tables\Table $table): Tables\Table
     {
         return $table
+            // ✅ Rabais ou TVA partielle : les totaux des lignes (HT brut) diffèrent des totaux du BC
+            ->description(function () {
+                $bc = $this->getOwnerRecord();
+                if (!method_exists($bc, 'estCasParticulier') || !$bc->estCasParticulier()) {
+                    return null;
+                }
+                return 'Décompte du BC — ' . collect($bc->lignesDecompte())
+                    ->map(fn($l) => $l[0] . ' : ' . number_format((float) $l[1], 0, ',', ' '))
+                    ->implode(' · ')
+                    . '. Les totaux des colonnes ci-dessous sont avant rabais.';
+            })
             // ✅ Charger la relation referenceMercuriale
             // ->modifyQueryUsing(fn($query) => $query->with(['nomenclature', 'referenceMercuriale']))
 

@@ -325,6 +325,24 @@ if (isset($pdf)) {
         <div class="bloc-recapitulatif">
 
             <div class="totaux">
+                @php $casParticulier = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier(); @endphp
+                @if ($casParticulier)
+                    {{-- ✅ Rabais ou TVA partielle : décompte au format des marchés --}}
+                    {{-- Colonne libellé bornée et césure autorisée : sans nowrap, un libellé long --}}
+                    {{-- (« Rabais sur le THT exonéré après négociation ») ne passe plus sur les montants --}}
+                    <table style="width:80%;margin-left:auto;border-collapse:collapse;table-layout:fixed;">
+                        <tr style="height:0;">
+                            <td style="width:68%;padding:0;border:none;height:0;"></td>
+                            <td style="width:32%;padding:0;border:none;height:0;"></td>
+                        </tr>
+                        @foreach ($bonCommande->lignesDecompte() as [$libDecompte, $mtDecompte, $grasDecompte])
+                            <tr @if($grasDecompte) style="border-top:1px solid #000;{{ $libDecompte === 'TTC' ? 'background:#f0f0f0;' : '' }}" @endif>
+                                <td style="padding:3px 8px;font-size:8.5pt;white-space:normal;word-wrap:break-word;line-height:1.2;vertical-align:top;{{ $grasDecompte ? 'font-weight:bold;' : '' }}">{{ mb_strtoupper($libDecompte) }}</td>
+                                <td style="padding:3px 8px;font-size:8.5pt;text-align:right;font-weight:bold;white-space:nowrap;vertical-align:top;">{{ number_format($mtDecompte,$decimales,',',' ') }}</td>
+                            </tr>
+                        @endforeach
+                    </table>
+                @else
                 <table style="width:auto;min-width:300px;margin-left:auto;border-collapse:collapse;">
                     <tr>
                         <td style="padding:3px 8px;font-size:8.5pt;">MONTANT HT</td>
@@ -349,6 +367,7 @@ if (isset($pdf)) {
                         <td style="padding:4px 8px;font-size:9pt;text-align:right;font-weight:bold;">{{ number_format($montantTtc,$decimales,',',' ') }} F</td>
                     </tr>
                 </table>
+                @endif
             </div>
 
             <div class="montant-lettres-box">

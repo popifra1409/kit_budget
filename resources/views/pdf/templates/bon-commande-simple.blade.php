@@ -360,7 +360,19 @@ body { font-size: 8.5pt; }
         @endif
         
         <div class="bloc-totaux">
-            <table style="width:auto;min-width:280px;margin-left:auto;border-collapse:collapse;">
+            @php $casParticulier = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier(); @endphp
+                @if ($casParticulier)
+                    {{-- ✅ Rabais ou TVA partielle : décompte au format des marchés --}}
+                    <table style="width:auto;min-width:340px;margin-left:auto;border-collapse:collapse;">
+                        @foreach ($bonCommande->lignesDecompte() as [$libDecompte, $mtDecompte, $grasDecompte])
+                            <tr @if($grasDecompte) style="border-top:1px solid #000;{{ $libDecompte === 'TTC' ? 'background:#f0f0f0;' : '' }}" @endif>
+                                <td style="padding:2px 8px;font-size:8.5pt;{{ $grasDecompte ? 'font-weight:bold;' : '' }}">{{ mb_strtoupper($libDecompte) }}</td>
+                                <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($mtDecompte,$decimales,',',' ') }}</td>
+                            </tr>
+                        @endforeach
+                    </table>
+                @else
+                <table style="width:auto;min-width:280px;margin-left:auto;border-collapse:collapse;">
                 <tr>
                     <td style="padding:2px 8px;font-size:8.5pt;">MONTANT HT</td>
                     <td style="padding:2px 8px;font-size:8.5pt;text-align:right;font-weight:bold;">{{ number_format($montantHt,$decimales,',',' ') }}</td>
@@ -382,6 +394,7 @@ body { font-size: 8.5pt; }
                     <td style="padding:3px 8px;font-size:9pt;text-align:right;font-weight:bold;">{{ number_format($montantTtc,$decimales,',',' ') }}</td>
                 </tr>
             </table>
+                @endif
         </div>
         </div>
 

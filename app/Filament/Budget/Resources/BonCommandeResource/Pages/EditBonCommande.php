@@ -237,6 +237,12 @@ class EditBonCommande extends EditRecord
     {
         $this->record->refresh();
         $this->record->load('lignes');
+
+        // ✅ Les lignes sont enregistrées APRÈS le BC : recalcul final avec les lignes à jour
+        //    (part exonérée / taxable, rabais, AIR après rabais), puis rechargement du formulaire
+        $this->record->calculerMontants();
+        $this->record->saveQuietly();
+
         $this->fillForm();
 
         \Log::info("BC rechargé", [

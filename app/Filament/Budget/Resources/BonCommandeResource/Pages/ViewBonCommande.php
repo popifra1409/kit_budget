@@ -750,6 +750,27 @@ class ViewBonCommande extends ViewRecord
             // ── Détails Financiers ────────────────────────────
             // ✅ Section unifiée — mode_arrondi intégré directement
             //    Suppression des doublons qui existaient (montant_ht etc. × 2)
+            // ✅ Décompte du marché : affiché seulement en cas de rabais ou de TVA partielle
+            Infolists\Components\Section::make('Décompte du marché')
+                ->description('Part HT exonérée / taxable, rabais négocié, AIR sur le THT après rabais.')
+                ->visible(fn($record) => method_exists($record, 'estCasParticulier') && $record->estCasParticulier())
+                ->schema([
+                    Infolists\Components\TextEntry::make('decompte')
+                        ->label('')
+                        ->getStateUsing(function ($record) {
+                            $html = '<table style="width:100%;max-width:620px;border-collapse:collapse;font-size:13px;">';
+                            foreach ($record->lignesDecompte() as [$libelle, $montant, $gras]) {
+                                $st = $gras ? 'font-weight:700;' : '';
+                                $html .= '<tr><td style="border:1px solid #d1d5db;padding:4px 8px;' . $st . '">' . e($libelle) . '</td>'
+                                    . '<td style="border:1px solid #d1d5db;padding:4px 8px;text-align:right;' . $st . '">'
+                                    . number_format((float) $montant, 0, ',', ' ') . ' FCFA</td></tr>';
+                            }
+                            return new \Illuminate\Support\HtmlString($html . '</table>');
+                        })
+                        ->html()
+                        ->columnSpanFull(),
+                ]),
+
             Infolists\Components\Section::make('Détails Financiers')
                 ->schema([
 
@@ -772,7 +793,7 @@ class ViewBonCommande extends ViewRecord
 
                     // ── Montants (formatage adapté au mode) ───
                     Infolists\Components\TextEntry::make('montant_ht')
-                        ->label('Montant HT')
+                        ->label(fn($record) => (float) ($record->montant_rabais ?? 0) > 0 ? 'Montant HT après rabais' : 'Montant HT')
                         ->formatStateUsing(
                             fn($state, $record) =>
                             number_format($state, ($record->mode_arrondi ?? true) ? 0 : 2, ',', ' ') . ' FCFA'
@@ -782,8 +803,9 @@ class ViewBonCommande extends ViewRecord
 
                     Infolists\Components\TextEntry::make('montant_tva')
                         ->label(
-                            fn($record) =>
-                            'TVA (' . ($record->lignes->first()?->taux_tva ?? 19.25) . '%)'
+                            fn($record) => ((float) ($record->montant_ht_exonere ?? 0) > 0 && (float) ($record->montant_ht_taxable ?? 0) > 0)
+                                ? 'TVA (sur la part taxable)'
+                                : 'TVA (' . ($record->lignes->first()?->taux_tva ?? 19.25) . '%)'
                         )
                         ->formatStateUsing(
                             fn($state, $record) =>

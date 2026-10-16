@@ -594,7 +594,7 @@ class BonCommandeResource extends Resource
                                                 }
                                             );
                                         }
-                                        static::recalculerTotaux($lignes, $set);
+                                        static::recalculerTotaux($lignes, $set, $get);
                                     })
                                     ->helperText('0 = Aucune TVA | 19,25 = Standard'),
 
@@ -647,7 +647,7 @@ class BonCommandeResource extends Resource
                                                 }
                                             );
                                         }
-                                        static::recalculerTotaux($lignes, $set);
+                                        static::recalculerTotaux($lignes, $set, $get);
                                     }),
 
                                 // ===== IR COMMUN =====
@@ -686,7 +686,7 @@ class BonCommandeResource extends Resource
                                                 }
                                             );
                                         }
-                                        static::recalculerTotaux($lignes, $set);
+                                        static::recalculerTotaux($lignes, $set, $get);
                                     })
                                     ->helperText('0 = Aucun IR | 5,5 = Standard')
                                     ->disabled(fn(callable $get) => $get('exonere_ir'))
@@ -753,7 +753,7 @@ class BonCommandeResource extends Resource
                                                 }
                                             );
                                         }
-                                        static::recalculerTotaux($lignes, $set);
+                                        static::recalculerTotaux($lignes, $set, $get);
                                     }),
                             ]),
                     ])
@@ -982,6 +982,7 @@ class BonCommandeResource extends Resource
                                             ->default(fn(callable $get) => (float) ($get('../../tva_commune') ?? 19.25))
                                             ->suffix('%')
                                             ->disabled(fn(callable $get) => (bool) $get('../../exonere_tva'))
+                                            ->helperText('0 = ligne exonérée (part HT exonérée)')
                                             ->dehydrated(true)
                                             ->minValue(0)
                                             ->maxValue(100)
@@ -1120,8 +1121,8 @@ class BonCommandeResource extends Resource
                             ->collapsible()
                             ->itemLabel(fn(array $state): ?string => $state['designation'] ?? 'Nouvelle ligne')
                             ->live()
-                            ->afterStateUpdated(function ($state, callable $set) {
-                                static::recalculerTotaux($state, $set);
+                            ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                static::recalculerTotaux($state, $set, $get);
                             })
                             ->mutateRelationshipDataBeforeCreateUsing(function (array $data, callable $get): array {
                                 // 1. Nomenclature
@@ -1155,6 +1156,30 @@ class BonCommandeResource extends Resource
                     ])
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null && $record->lignes()->count() > 0),
+
+                // ✅ Rabais négocié et décompte (THT exonéré / taxable, rabais, TVA, AIR, TTC, net à mandater)
+                Forms\Components\Section::make('Rabais et décompte')
+                    ->description('Une ligne à TVA 0 % forme la part HT exonérée ; une ligne à TVA positive, la part taxable. '
+                        . 'Le rabais négocié s\'applique sur la base choisie ; l\'AIR est calculé sur le THT après rabais.')
+                    ->schema([
+                        Forms\Components\Grid::make(2)->schema([
+                            Forms\Components\TextInput::make('montant_rabais')
+                                ->label('Rabais négocié (FCFA)')
+                                ->numeric()->minValue(0)->default(0)->suffix('FCFA')
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn(callable $set, callable $get) => static::recalculerTotaux($get('lignes'), $set, $get)),
+                            Forms\Components\Select::make('rabais_sur')
+                                ->label('Le rabais porte sur')
+                                ->options(BonCommande::RABAIS_SUR)
+                                ->default('exonere')->native(false)
+                                ->live()
+                                ->afterStateUpdated(fn(callable $set, callable $get) => static::recalculerTotaux($get('lignes'), $set, $get)),
+                        ]),
+                        Forms\Components\Placeholder::make('decompte')
+                            ->label('Décompte')
+                            ->content(fn(callable $get) => static::tableauDecompte($get)),
+                    ])
+                    ->collapsible(),
             ])
             ->statePath('data')
             ->model(BonCommande::class);
@@ -1221,38 +1246,69 @@ class BonCommandeResource extends Resource
         $lignes = $get('../../lignes') ?? [];
         static::recalculerTotaux($lignes, function ($key, $value) use ($set) {
             $set("../../{$key}", $value);
-        });
+        }, $get, '../../');
     }
 
     /**
      * Recalculer une ligne (IR, montants, etc.)
      */
-    protected static function recalculerTotaux(?array $lignes, callable $set): void
+    protected static function recalculerTotaux(?array $lignes, callable $set, ?callable $get = null, string $prefixe = ''): void
     {
         if (!$lignes) return;
 
-        $totalHT        = 0;
-        $totalTVA       = 0;
-        $totalIR        = 0;
-        $totalTTC       = 0;
-        $totalNetAPayer = 0;
+        // ✅ Même décompte qu'à l'enregistrement (BonCommande::decompte) : part exonérée / taxable,
+        //    rabais, AIR sur le THT après rabais
+        $d = BonCommande::decompte(
+            $lignes,
+            (float) ($get ? $get($prefixe . 'montant_rabais') : 0),
+            $get ? ($get($prefixe . 'rabais_sur') ?: 'exonere') : 'exonere',
+            (bool) ($get ? $get($prefixe . 'exonere_tva') : false),
+            (bool) ($get ? $get($prefixe . 'exonere_ir') : false),
+        );
 
-        // ✅ Sommer les valeurs déjà arrondies (comme affichées dans chaque ligne)
-        foreach ($lignes as $ligne) {
-            $totalHT  += (int) number_format((float)($ligne['montant_ht']  ?? 0), 0, '.', '');
-            $totalTVA += (int) number_format((float)($ligne['montant_tva'] ?? 0), 0, '.', '');
-            $totalIR  += (int) number_format((float)($ligne['montant_ir']  ?? 0), 0, '.', '');
-            $totalTTC += (int) number_format((float)($ligne['montant_ttc'] ?? 0), 0, '.', '');
+        $set('montant_ht',  $d['ht_net']);
+        $set('montant_tva', $d['tva']);
+        $set('montant_ir',  $d['ir']);
+        $set('montant_ttc', $d['ttc']);
+        $set('net_a_payer', $d['net']);
+    }
+
+    /** ✅ Tableau du décompte, au format des marchés (THT exonéré, taxable, rabais, TVA, AIR, TTC, net). */
+    protected static function tableauDecompte(callable $get): \Illuminate\Support\HtmlString
+    {
+        $d = BonCommande::decompte(
+            $get('lignes') ?? [],
+            (float) $get('montant_rabais'),
+            $get('rabais_sur') ?: 'exonere',
+            (bool) $get('exonere_tva'),
+            (bool) $get('exonere_ir'),
+        );
+        $f = fn($v) => number_format((float) $v, 0, ',', ' ');
+        $libelleRabais = match ($d['rabais_sur']) {
+            'taxable' => 'Rabais sur le THT taxable après négociation',
+            'global'  => 'Rabais sur le THT total après négociation',
+            default   => 'Rabais sur le THT exonéré après négociation',
+        };
+
+        $lignes = [
+            ['THT exonéré', $d['ht_exonere'], false],
+            ['THT taxable (soumis à TVA)', $d['ht_taxable'], false],
+            [$libelleRabais, $d['rabais'], false],
+            ['TVA', $d['tva'], false],
+            ['THT après rabais', $d['ht_net'], false],
+            ['AIR ' . str_replace('.', ',', (string) $d['taux_ir_effectif']) . ' %', $d['ir'], false],
+            ['TTC', $d['ttc'], true],
+            ['Net à mandater', $d['net'], true],
+        ];
+
+        $html = '<table style="width:100%;max-width:560px;border-collapse:collapse;font-size:13px;">';
+        foreach ($lignes as [$libelle, $montant, $gras]) {
+            $style = $gras ? 'font-weight:700;' : '';
+            $html .= '<tr><td style="border:1px solid #d1d5db;padding:4px 8px;' . $style . '">' . e($libelle) . '</td>'
+                . '<td style="border:1px solid #d1d5db;padding:4px 8px;text-align:right;' . $style . '">' . $f($montant) . '</td></tr>';
         }
 
-        // ✅ NET A PAYER = Total HT arrondi - Total IR arrondi
-        $totalNetAPayer = $totalHT - $totalIR;
-
-        $set('montant_ht',  $totalHT);
-        $set('montant_tva', $totalTVA);
-        $set('montant_ir',  $totalIR);
-        $set('montant_ttc', $totalTTC);
-        $set('net_a_payer', $totalNetAPayer);
+        return new \Illuminate\Support\HtmlString($html . '</table>');
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder

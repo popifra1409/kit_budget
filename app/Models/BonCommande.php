@@ -62,6 +62,12 @@ class BonCommande extends Model
         'nomenclature_commune_id',
         'expression_besoin_id',
         'mode_arrondi',
+        // ✅ Assiette de TVA partielle et rabais
+        'montant_ht_brut',
+        'montant_ht_exonere',
+        'montant_ht_taxable',
+        'montant_rabais',
+        'rabais_sur',
     ];
 
     protected $casts = [
@@ -88,6 +94,10 @@ class BonCommande extends Model
         'exonere_tva' => 'boolean',
         'exonere_ir' => 'boolean',
         'mode_arrondi' => 'boolean',
+        'montant_ht_brut' => 'decimal:2',
+        'montant_ht_exonere' => 'decimal:2',
+        'montant_ht_taxable' => 'decimal:2',
+        'montant_rabais' => 'decimal:2',
     ];
 
     /**
@@ -875,49 +885,182 @@ class BonCommande extends Model
         return 'BE-' . $this->numero;
     }
 
+    public const RABAIS_SUR = [
+        'exonere' => 'Sur le HT exonéré',
+        'taxable' => 'Sur le HT taxable (TVA recalculée)',
+        'global'  => 'Sur le HT total (au prorata)',
+    ];
+
     /**
-     * Calculer les montants
+     * ✅ Décompte d'un bon de commande / marché (utilisé à l'écran ET à l'enregistrement) :
+     *  - part HT exonérée (lignes à TVA 0 %) et part HT taxable (lignes à TVA > 0) ;
+     *  - rabais sur le HT exonéré, sur le HT taxable (TVA recalculée) ou sur le HT total (prorata) ;
+     *  - AIR / IR sur le THT après rabais ; TTC = THT après rabais + TVA ; net = THT après rabais − AIR.
+     *
+     * @param iterable $lignes  éléments (tableaux ou modèles) portant montant_ht, taux_tva, taux_ir, montant_ir
+     */
+    public static function decompte(
+        iterable $lignes,
+        float $rabais = 0,
+        ?string $rabaisSur = 'exonere',
+        bool $exonereTva = false,
+        bool $exonereIr = false,
+        bool $arrondi = true
+    ): array {
+        $htExo = 0.0;
+        $htTax = 0.0;
+        $tva = 0.0;
+        $ir = 0.0;
+
+        foreach ($lignes as $l) {
+            $ht = (float) data_get($l, 'montant_ht', 0);
+            if ($ht == 0.0) {
+                $ht = (float) data_get($l, 'quantite', 0) * (float) data_get($l, 'prix_unitaire_ht', 0);
+            }
+            $tauxTva = $exonereTva ? 0.0 : (float) data_get($l, 'taux_tva', 0);
+            $tauxIr = (float) data_get($l, 'taux_ir', 0);
+
+            if ($tauxTva > 0) {
+                $htTax += $ht;
+                $tva += $ht * $tauxTva / 100;
+            } else {
+                $htExo += $ht;
+            }
+
+            if (!$exonereIr) {
+                $ir += $tauxIr > 0 ? $ht * $tauxIr / 100 : (float) data_get($l, 'montant_ir', 0);
+            }
+        }
+
+        $htBrut = $htExo + $htTax;
+        $base = match ($rabaisSur) {
+            'taxable' => $htTax,
+            'global' => $htBrut,
+            default => $htExo
+        };
+        $r = max(0.0, min($rabais, $base));
+
+        // TVA : réduite si le rabais porte sur la part taxable (entièrement ou au prorata)
+        if ($r > 0 && $htTax > 0) {
+            $tva *= match ($rabaisSur) {
+                'taxable' => ($htTax - $r) / $htTax,
+                'global'  => $htBrut > 0 ? 1 - $r / $htBrut : 1,
+                default   => 1,
+            };
+        }
+
+        $htNet = $htBrut - $r;
+        $ir = $htBrut > 0 ? $ir * $htNet / $htBrut : 0.0;     // AIR sur le THT après rabais
+        $ttc = $htNet + $tva;
+        $net = $htNet - $ir;
+
+        $rond = fn($v) => $arrondi ? (float) round($v) : round($v, 4);
+
+        return [
+            'ht_exonere' => $rond($htExo),
+            'ht_taxable' => $rond($htTax),
+            'ht_brut' => $rond($htBrut),
+            'rabais' => $rond($r),
+            'rabais_sur' => $rabaisSur ?: 'exonere',
+            'ht_net' => $rond($htNet),
+            'tva' => $rond($tva),
+            'ir' => $rond($ir),
+            'ttc' => $rond($ttc),
+            'net' => $rond($net),
+            'taux_ir_effectif' => $htNet > 0 ? round($ir / $htNet * 100, 2) : 0,
+        ];
+    }
+
+    /**
+     * ✅ Cas particulier : rabais négocié, ou TVA partielle (une part HT exonérée ET une part taxable).
+     *    Hors de ce cas, écrans et états restent présentés comme auparavant.
+     */
+    public function estCasParticulier(): bool
+    {
+        return (float) ($this->montant_rabais ?? 0) > 0
+            || ((float) ($this->montant_ht_exonere ?? 0) > 0 && (float) ($this->montant_ht_taxable ?? 0) > 0);
+    }
+
+    /** Décompte tel qu'enregistré (pour les écrans et les états). */
+    public function decompteEnregistre(): array
+    {
+        $htNet = (float) $this->montant_ht;
+        $ir = (float) $this->montant_ir;
+
+        return [
+            'ht_exonere' => (float) $this->montant_ht_exonere,
+            'ht_taxable' => (float) $this->montant_ht_taxable,
+            'ht_brut'    => (float) ($this->montant_ht_brut ?? $htNet),
+            'rabais'     => (float) $this->montant_rabais,
+            'rabais_sur' => $this->rabais_sur ?: 'exonere',
+            'ht_net'     => $htNet,
+            'tva'        => (float) $this->montant_tva,
+            'ir'         => $ir,
+            'ttc'        => (float) $this->montant_ttc,
+            'net'        => (float) $this->net_a_payer,
+            'taux_ir_effectif' => $htNet > 0 ? round($ir / $htNet * 100, 2) : 0,
+        ];
+    }
+
+    /** Lignes du décompte, au format des marchés (libellé, montant, en gras). */
+    public function lignesDecompte(): array
+    {
+        $d = $this->decompteEnregistre();
+        $lignes = [];
+
+        if ($d['ht_exonere'] > 0) $lignes[] = ['THT exonéré', $d['ht_exonere'], false];
+        if ($d['ht_taxable'] > 0) $lignes[] = ['THT taxable (soumis à TVA)', $d['ht_taxable'], false];
+        if ($d['rabais'] > 0) {
+            $lignes[] = [match ($d['rabais_sur']) {
+                'taxable' => 'Rabais sur le THT taxable après négociation',
+                'global'  => 'Rabais sur le THT total après négociation',
+                default   => 'Rabais sur le THT exonéré après négociation',
+            }, $d['rabais'], false];
+        }
+        $lignes[] = ['TVA', $d['tva'], false];
+        $lignes[] = [$d['rabais'] > 0 ? 'THT après rabais' : 'THT', $d['ht_net'], false];
+        $lignes[] = ['AIR ' . str_replace('.', ',', (string) $d['taux_ir_effectif']) . ' %', $d['ir'], false];
+        $lignes[] = ['TTC', $d['ttc'], true];
+        $lignes[] = ['Net à mandater', $d['net'], true];
+
+        return $lignes;
+    }
+
+    /** Applique un décompte aux colonnes du bon de commande. */
+    protected function appliquerDecompte(array $d): void
+    {
+        $this->montant_ht_brut    = $d['ht_brut'];
+        $this->montant_ht_exonere = $d['ht_exonere'];
+        $this->montant_ht_taxable = $d['ht_taxable'];
+        $this->montant_rabais     = $d['rabais'];
+        $this->montant_ht         = $d['ht_net'];      // THT après rabais
+        $this->montant_tva        = $d['tva'];
+        $this->montant_ir         = $d['ir'];
+        $this->montant_ttc        = $d['ttc'];
+        $this->net_a_payer        = $d['net'];
+        $this->net_a_percevoir    = $d['net'];
+    }
+
+    /**
+     * ✅ Calculer les montants : chaque ligne garde son taux de TVA (part exonérée / taxable),
+     *    rabais appliqué, AIR sur le THT après rabais.
      */
     public function calculerMontants(): void
     {
         if (!$this->relationLoaded('lignes')) $this->load('lignes');
 
-        // ✅ Mode arrondi = true  → entiers FCFA (norme comptable camerounaise)
-        // ✅ Mode arrondi = false → décimales conservées (valeurs saisies exactes)
-        $modeArrondi = $this->mode_arrondi ?? true;
-
-        // Somme du HT (toujours additionnée sans pré-arrondi)
-        $totalHT = 0;
-        foreach ($this->lignes as $ligne) {
-            $totalHT += (float)($ligne->montant_ht ?? 0);
+        if ($this->lignes->isEmpty()) {
+            return;   // lignes pas encore enregistrées (création) : le recalcul se fera ensuite
         }
 
-        $premiereLigne = $this->lignes->first();
-        $tauxTva = (float)($premiereLigne?->taux_tva ?? ($this->exonere_tva ? 0 : 19.25));
-        $tauxIr  = (float)($premiereLigne?->taux_ir  ?? ($this->exonere_ir  ? 0 : 5.5));
-
-        $tva = $this->exonere_tva ? 0 : ($totalHT * $tauxTva / 100);
-        $ir  = $this->exonere_ir  ? 0 : ($totalHT * $tauxIr  / 100);
-        $ttc = $totalHT + $tva;
-        $nap = $totalHT - $ir;
-
-        if ($modeArrondi) {
-            // ✅ FCFA entiers — round() sans décimale
-            $this->montant_ht      = round($totalHT, 2); // HT garde 2 déc. (PU × Qté)
-            $this->montant_tva     = (int) round($tva);
-            $this->montant_ir      = (int) round($ir);
-            $this->montant_ttc     = (int) round($ttc);
-            $this->net_a_payer     = (int) round($nap);
-            $this->net_a_percevoir = (int) round($nap);
-        } else {
-            // ✅ Décimales conservées — round(..., 4) pour éviter les flottants
-            $this->montant_ht      = round($totalHT, 4);
-            $this->montant_tva     = round($tva, 4);
-            $this->montant_ir      = round($ir,  4);
-            $this->montant_ttc     = round($ttc, 4);
-            $this->net_a_payer     = round($nap, 4);
-            $this->net_a_percevoir = round($nap, 4);
-        }
+        $this->appliquerDecompte(static::decompte(
+            $this->lignes,
+            (float) ($this->montant_rabais ?? 0),
+            $this->rabais_sur ?? 'exonere',
+            (bool) $this->exonere_tva,
+            (bool) $this->exonere_ir,
+            (bool) ($this->mode_arrondi ?? true),
+        ));
     }
 
     /**
@@ -939,7 +1082,9 @@ class BonCommande extends Model
             if ($this->exonere_tva && $ligne->taux_tva != 0) {
                 $ligne->appliquerExonerationTVA();
                 $ligne->saveQuietly();
-            } else if (!$this->exonere_tva && $ligne->taux_tva == 0 && !$this->isDirty('exonere_tva')) {
+            } else if (!$this->exonere_tva && $ligne->taux_tva == 0 && $this->isDirty('exonere_tva')) {
+                // ✅ Restauration seulement quand l'exonération TOTALE vient d'être retirée :
+                //    une ligne à 0 % hors exonération totale est une part HT exonérée voulue.
                 $ligne->restaurerTVA(19.25);
                 $ligne->saveQuietly();
             } else {
@@ -954,12 +1099,15 @@ class BonCommande extends Model
             $totalNetAPayer += $ligne->net_a_payer;
         }
 
-        $this->montant_ht = round($totalHT, 2);
-        $this->montant_tva = round($totalTVA, 2);
-        $this->montant_ir = round($totalIR, 2);
-        $this->montant_ttc = round($totalTTC, 2);
-        $this->net_a_payer = round($totalNetAPayer, 2);
-        $this->net_a_percevoir = round($totalNetAPayer, 2);
+        // ✅ Totaux par le décompte commun (part exonérée / taxable, rabais, AIR après rabais)
+        $this->appliquerDecompte(static::decompte(
+            $this->lignes,
+            (float) ($this->montant_rabais ?? 0),
+            $this->rabais_sur ?? 'exonere',
+            (bool) $this->exonere_tva,
+            (bool) $this->exonere_ir,
+            (bool) ($this->mode_arrondi ?? true),
+        ));
 
         $this->saveQuietly();
     }
