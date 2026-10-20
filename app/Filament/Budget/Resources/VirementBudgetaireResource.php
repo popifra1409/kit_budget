@@ -432,7 +432,9 @@ class VirementBudgetaireResource extends Resource
                             return MouvementCreditService::libelleType($type) . ' de ' . number_format($record->montant, 0, ',', ' ') . " FCFA.\n"
                                 . $service->resumePlafond($service->controlerPlafond((int) $record->budget_id, $type, (float) $record->montant, $record->id, $record->origine ?? 'gestion'));
                         })
-                        ->action(fn($record) => static::transition(fn() => $record->approuver(auth()->user()), 'Mouvement approuvé')),
+                        // ✅ Acte formel saisi dans la fenêtre d'approbation (pré-rempli s'il existe déjà)
+                        ->form(fn($record) => static::champsActeFormel($record))
+                        ->action(fn($record, array $data) => static::approuverAvecActe($record, $data)),
 
                     Tables\Actions\Action::make('executer')
                         ->label('Exécuter')
@@ -605,7 +607,50 @@ class VirementBudgetaireResource extends Resource
     }
 
     /** Exécute une transition du workflow avec un message clair en cas de règle non respectée. */
-    protected static function transition(callable $etape, string $succes): void
+    /**
+     * ✅ Champs de l'acte formel (référence et date de la décision), exigés pour approuver un mouvement
+     *    de gestion. Réutilisable depuis la page du mouvement : VirementBudgetaireResource::champsActeFormel($record).
+     */
+    public static function champsActeFormel($record): array
+    {
+        if (($record->origine ?? 'gestion') === 'collectif') {
+            return [];
+        }
+
+        return [
+            Forms\Components\Placeholder::make('info_acte')
+                ->label('')
+                ->content('Un mouvement de crédits de gestion est approuvé sur la base d\'un acte formel (décision, note de service…).'),
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\TextInput::make('reference_decision')
+                    ->label('Référence de la décision')
+                    ->default($record->reference_decision)
+                    ->required()->maxLength(255)
+                    ->placeholder('Ex. : Décision n° 045/DG/HGY'),
+                Forms\Components\DatePicker::make('date_acte')
+                    ->label('Date de la décision')
+                    ->default($record->date_acte)
+                    ->required()
+                    ->maxDate(now()),
+            ]),
+        ];
+    }
+
+    /** ✅ Enregistre l'acte formel puis approuve, avec un message clair en cas de refus (jamais d'erreur 500). */
+    public static function approuverAvecActe($record, array $data): void
+    {
+        static::transition(function () use ($record, $data) {
+            if (!empty($data['reference_decision']) || !empty($data['date_acte'])) {
+                $record->forceFill(array_filter([
+                    'reference_decision' => $data['reference_decision'] ?? null,
+                    'date_acte'          => $data['date_acte'] ?? null,
+                ]))->saveQuietly();
+            }
+            $record->approuver(auth()->user());
+        }, 'Mouvement approuvé');
+    }
+
+    public static function transition(callable $etape, string $succes): void
     {
         try {
             $etape();
