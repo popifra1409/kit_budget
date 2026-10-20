@@ -24,6 +24,11 @@ class ArticleResource extends Resource
     protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 10;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'designation'];
+    }
 
     public static function canViewAny(): bool
     {

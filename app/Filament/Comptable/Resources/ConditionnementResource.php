@@ -20,6 +20,12 @@ class ConditionnementResource extends Resource
     protected static ?string $navigationGroup = 'Paramétrage';
     protected static ?int    $navigationSort  = 11;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['libelle'];
+    }
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view_any_conditionnement') ?? false;

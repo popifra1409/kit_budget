@@ -20,6 +20,12 @@ class CategorieArticleResource extends Resource
     protected static ?string $navigationGroup = 'Paramétrage';
     protected static ?int    $navigationSort  = 9;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'libelle'];
+    }
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view_any_categorie_article') ?? false;

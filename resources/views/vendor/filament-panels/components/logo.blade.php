@@ -27,15 +27,28 @@
             {{ $logo }}
         </div>
     @elseif (filled($logo))
-        <img
-            alt="{{ __('filament-panels::layout.logo.alt', ['name' => $brandName]) }}"
-            src="{{ $logo }}"
+        {{-- Fil d'Ariane au-dessus du logo : le texte du brand n'est plus remplacé par l'image --}}
+        <div
             {{
-                $attributes
-                    ->class([$getLogoClasses($isDarkMode)])
-                    ->style([$logoStyles])
+                $attributes->class([
+                    'fi-logo',
+                    'flex flex-col items-start gap-0.5 leading-none' => ! $hasDarkModeBrandLogo,
+                    'flex dark:hidden' => $hasDarkModeBrandLogo && (! $isDarkMode),
+                    'hidden dark:flex' => $hasDarkModeBrandLogo && $isDarkMode,
+                ])
             }}
-        />
+        >
+            <span
+                title="{{ $brandName }}"
+                class="max-w-full truncate text-[13px] font-bold tracking-tight text-gray-950 dark:text-white"
+            >{{ $brandName }}</span>
+            <img
+                alt="{{ __('filament-panels::layout.logo.alt', ['name' => $brandName]) }}"
+                src="{{ $logo }}"
+                style="{{ $logoStyles }}"
+                class="max-w-[9rem] object-contain"
+            />
+        </div>
     @else
         <div
             {{

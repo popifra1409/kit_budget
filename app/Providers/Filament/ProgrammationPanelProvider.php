@@ -29,7 +29,7 @@ class ProgrammationPanelProvider extends PanelProvider
 
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('programmation')
             ->path('programmation')
             ->login(Login::class)
@@ -41,7 +41,6 @@ class ProgrammationPanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('SIGB — Programmation')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
@@ -73,10 +72,6 @@ class ProgrammationPanelProvider extends PanelProvider
             ])
 
             ->renderHook(
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderSwitcher('programmation')
-            )
-            ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn(): HtmlString => new HtmlString('
                     <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 me-3 rounded-lg border"
@@ -90,5 +85,7 @@ class ProgrammationPanelProvider extends PanelProvider
 
             ->middleware($this->commonMiddleware())
             ->authMiddleware($this->commonAuthMiddleware('programmation'));
+
+        return $this->navbarUniforme($panel, 'programmation', 'Programmation');
     }
 }

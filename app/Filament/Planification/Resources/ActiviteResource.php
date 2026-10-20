@@ -28,6 +28,12 @@ class ActiviteResource extends Resource
     // PERMISSIONS
     // ========================================
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'libelle'];
+    }
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view_any_activite') ?? false;
@@ -110,8 +116,12 @@ class ActiviteResource extends Resource
                             ->required()->searchable()->preload()
                             ->getOptionLabelFromRecordUsing(fn($record) => "{$record->programme->code} > {$record->code} - {$record->libelle}"),
 
+                        // ✅ Code généré automatiquement à l'enregistrement
                         Forms\Components\TextInput::make('code')
-                            ->label('Code')->required()->maxLength(50)->placeholder('Ex: ACT1'),
+                            ->label('Code')
+                            ->disabled()->dehydrated(false)
+                            ->placeholder('Généré automatiquement à l\'enregistrement')
+                            ->helperText(fn($record) => $record ? null : 'ACT + numéro suivant de l\'exercice (ACT1, ACT2…).'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')->required()->maxLength(255)->columnSpanFull()
@@ -182,7 +192,7 @@ class ActiviteResource extends Resource
                 Tables\Columns\TextColumn::make('budget_ae')
                     ->label('Budget (AE)')
                     ->state(fn($record) => $record->taches->where('niveau', 'tache')
-                        ->sum(fn($tache) => $tache->sousTaches->sum('ae')))
+                        ->sum(fn($tache) => $tache->sousTaches->isNotEmpty() ? $tache->sousTaches->sum('ae') : (float) $tache->ae))
                     ->formatStateUsing(fn($state) => $state > 0
                         ? number_format($state, 0, ',', ' ') . ' FCFA' : '—')
                     ->color(fn($state) => $state > 0 ? 'success' : 'gray')
@@ -191,7 +201,7 @@ class ActiviteResource extends Resource
                 Tables\Columns\TextColumn::make('budget_cp')
                     ->label('Budget (CP)')
                     ->state(fn($record) => $record->taches->where('niveau', 'tache')
-                        ->sum(fn($tache) => $tache->sousTaches->sum('cp')))
+                        ->sum(fn($tache) => $tache->sousTaches->isNotEmpty() ? $tache->sousTaches->sum('cp') : (float) $tache->cp))
                     ->formatStateUsing(fn($state) => $state > 0
                         ? number_format($state, 0, ',', ' ') . ' FCFA' : '—')
                     ->color(fn($state) => $state > 0 ? 'warning' : 'gray')

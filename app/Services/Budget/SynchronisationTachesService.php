@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/SynchronisationTachesService.php
 
 namespace App\Services\Budget;
 
@@ -34,7 +35,7 @@ class SynchronisationTachesService
 
         return Tache::withoutGlobalScope('exercice')
             ->where('exercice_id', $exerciceId)
-            ->where('niveau', 'sous_tache')
+            ->porteusesBudget()   // ✅ sous-tâches + tâches liées directement
             ->whereHas('nomenclature', fn($q) => $q->where('code', $code))
             ->orderBy('id')
             ->get();

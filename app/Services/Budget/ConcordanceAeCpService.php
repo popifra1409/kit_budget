@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/ConcordanceAeCpService.php
 
 namespace App\Services\Budget;
 
@@ -30,7 +31,7 @@ class ConcordanceAeCpService
 
         $sousTaches = Tache::withoutGlobalScope('exercice')
             ->where('exercice_id', $budget->exercice_id)
-            ->where('niveau', 'sous_tache')
+            ->porteusesBudget()   // ✅ sous-tâches + tâches liées directement
             ->whereNotNull('nomenclature_id')
             ->with('nomenclature')
             ->get()

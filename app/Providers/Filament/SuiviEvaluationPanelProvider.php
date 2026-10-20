@@ -31,7 +31,7 @@ class SuiviEvaluationPanelProvider extends PanelProvider
 
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('suivi-evaluation')
             ->path('suivi-evaluation')
             ->login(Login::class)
@@ -43,7 +43,6 @@ class SuiviEvaluationPanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('SIGB — Suivi et Évaluation')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
@@ -75,10 +74,6 @@ class SuiviEvaluationPanelProvider extends PanelProvider
             ])
 
             ->renderHook(
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderSwitcher('suivi-evaluation')
-            )
-            ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn(): HtmlString => new HtmlString('
                     <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 me-3 rounded-lg border"
@@ -92,5 +87,7 @@ class SuiviEvaluationPanelProvider extends PanelProvider
 
             ->middleware($this->commonMiddleware())
             ->authMiddleware($this->commonAuthMiddleware('suivi-evaluation'));
+
+        return $this->navbarUniforme($panel, 'suivi-evaluation', 'Suivi et Évaluation');
     }
 }

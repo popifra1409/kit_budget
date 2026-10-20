@@ -1,4 +1,5 @@
 <?php
+// app/Services/Budget/SuppressionLigneBudgetaireService.php
 
 namespace App\Services\Budget;
 
@@ -35,7 +36,7 @@ class SuppressionLigneBudgetaireService
         $exerciceId = $ligne->budget?->exercice_id;
 
         return $code && $exerciceId
-            ? Tache::withoutGlobalScope('exercice')->where('exercice_id', $exerciceId)->where('niveau', 'sous_tache')
+            ? Tache::withoutGlobalScope('exercice')->where('exercice_id', $exerciceId)->porteusesBudget()   // ✅ sous-tâches + tâches liées directement
             ->whereHas('nomenclature', fn($q) => $q->where('code', $code))->get()
             : collect();
     }

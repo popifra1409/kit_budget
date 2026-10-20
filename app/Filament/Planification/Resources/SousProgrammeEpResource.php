@@ -29,6 +29,13 @@ class SousProgrammeEpResource extends Resource
      * Programmes budgetaires de l'exercice actif, sans le scope global 'exercice'
      * (evite une liste vide si l'exercice de session differe).
      */
+
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'libelle'];
+    }
+
     protected static function programmesExerciceActif()
     {
         return Programme::withoutGlobalScope('exercice')

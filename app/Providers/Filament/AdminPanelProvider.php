@@ -41,7 +41,7 @@ use App\Filament\Pages\Auth\Login;
  */
 class AdminPanelProvider extends PanelProvider
 {
-    use Concerns\AvecRetourPortail;
+    use Concerns\HasCommonPanelBootstrap;
 
     public function panel(Panel $panel): Panel
     {
@@ -51,7 +51,7 @@ class AdminPanelProvider extends PanelProvider
         $structure = $this->getParametresSecurise();
         $fournisseur = $this->getFournisseurSecurise();
 
-        return $panel
+        $panel = $panel
             // ✅ PAS de ->default()
             ->id('admin')
             ->path('admin')
@@ -67,19 +67,8 @@ class AdminPanelProvider extends PanelProvider
                 'info' => Color::hex('#64748b'),
             ])
 
-            // ===================================
-            // BRANDING PERSONNALISÉ
-            // ===================================
-            ->brandName(($fournisseur->nom_logiciel ?? 'Budget Manager') . ' — Administration')
-            ->brandLogo(function () use ($fournisseur) {
-                $logo = $fournisseur->logo_url ?? null;
-                if (!$logo) {
-                    return asset('images/logo-editeur.png');
-                }
-                return str_starts_with($logo, 'http') ? $logo : asset($logo);
-            })
-            ->brandLogoHeight('2.5rem')
-            ->favicon(fn() => $fournisseur->logo_url ?? asset('images/favicon.png'))
+            // Branding, switcher et raccourcis : navbarUniforme() (trait commun)
+            ->favicon($fournisseur->logo_url ?? asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
             // 📂 NAVIGATION : uniquement l'administration
@@ -136,11 +125,8 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class, // + User::canAccessPanel() pour le panel 'admin'
             ])
 
-            // « Retour au portail » en tête du menu latéral (hors navigation : voir AvecRetourPortail)
-            ->renderHook(
-                PanelsRenderHook::SIDEBAR_NAV_START,
-                fn(): HtmlString => $this->lienRetourPortail()
-            )
+            // Les hooks de navbar (retour portail, switcher, raccourcis) sont
+            // appliqués par navbarUniforme() en fin de chaîne.
 
             // ===================================
             // 🎯 BADGE LICENCE (Header)
@@ -157,6 +143,8 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::FOOTER,
                 fn(): HtmlString => $this->renderFooter($structure, $fournisseur)
             );
+
+        return $this->navbarUniforme($panel, 'admin', 'Administration');
     }
 
     /**

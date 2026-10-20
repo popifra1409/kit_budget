@@ -25,6 +25,11 @@ class ExpressionBesoinResource extends Resource
     protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 20;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero', 'objet'];
+    }
 
     public static function canViewAny(): bool
     {

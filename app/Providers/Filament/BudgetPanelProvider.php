@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\Blade;
 
 class BudgetPanelProvider extends PanelProvider
 {
+    use Concerns\HasCommonPanelBootstrap;
+
     public function register(): void
     {
         parent::register();
@@ -49,7 +51,7 @@ class BudgetPanelProvider extends PanelProvider
         $structure = $this->getParametresSecurise();
         $fournisseur = $this->getFournisseurSecurise();
 
-        return $panel
+        $panel = $panel
             ->id('budget')
             ->path('budget')
             ->login(Login::class)
@@ -63,20 +65,8 @@ class BudgetPanelProvider extends PanelProvider
                 'info' => Color::hex('#64748b'),
             ])
 
-            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
-            ->brandName(($fournisseur->nom_logiciel ?? 'SIGB') . ' — Budget')
-            ->brandLogo(function () use ($fournisseur) {
-                $logo = $fournisseur->logo_url;
-                if (!$logo)
-                    return asset('images/logo.png');
-                // Si déjà une URL complète → retourner tel quel
-                if (str_starts_with($logo, 'http'))
-                    return $logo;
-                // Sinon forcer l'URL absolue depuis la racine
-                return asset($logo);
-            })
-            ->brandLogoHeight('2.5rem')
-            ->favicon(fn() => $fournisseur->logo ?? asset('images/favicon.png'))
+            // Branding, recherche globale et switcher : navbarUniforme() (trait commun)
+            ->favicon($fournisseur->logo_url ?? asset('images/favicon.png'))
 
             ->sidebarCollapsibleOnDesktop()
 
@@ -168,14 +158,6 @@ class BudgetPanelProvider extends PanelProvider
                     : ''
             )
             ->renderHook(
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderModuleSwitcher('budget')
-            )
-            ->renderHook(
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderActionsRapides()
-            )
-            ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn(): HtmlString => $this->renderBadgeLicence($structure, $fournisseur)
             )
@@ -212,40 +194,14 @@ class BudgetPanelProvider extends PanelProvider
                 // ✅ Après Authenticate — auth()->user() disponible
                 \App\Http\Middleware\SetLocale::class,
             ]);
-    }
 
-    // =========================================================================
-    // SWITCHER DE MODULE — pill-tabs dans le header
-    // =========================================================================
-    private function renderModuleSwitcher(string $active = 'budget'): HtmlString
-    {
-        $modules = [
-            'budget' => ['label' => 'Budget', 'icon' => '💰', 'url' => '/budget'],
-            'comptable' => ['label' => 'Comptable', 'icon' => '📒', 'url' => '/comptable'],
-            'marches' => ['label' => 'Marchés', 'icon' => '📋', 'url' => '/marches'],
-            'planification' => ['label' => 'Planification', 'icon' => '🎯', 'url' => '/planification'],
-            'programmation' => ['label' => 'Programmation', 'icon' => '📈',  'url' => '/programmation'],
-            'suivi-evaluation' => ['label' => 'Suivi & Évaluation', 'icon' => '📊', 'url' => '/suivi-evaluation'],
-        ];
+        $panel = $this->navbarUniforme($panel, 'budget', 'Budget');
 
-        $html = '<div class="flex items-center gap-1 me-3 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">';
-
-        foreach ($modules as $key => $module) {
-            $isActive = $key === $active;
-            $activeClass = $isActive
-                ? 'bg-white dark:bg-gray-700 shadow-sm font-semibold text-gray-900 dark:text-white'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60';
-
-            $html .= '
-            <a href="' . ($isActive ? '#' : e($module['url'])) . '"
-               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all ' . $activeClass . '">
-                <span>' . $module['icon'] . '</span>
-                <span class="hidden md:inline">' . e($module['label']) . '</span>
-            </a>';
-        }
-
-        $html .= '</div>';
-        return new HtmlString($html);
+        // Actions rapides après le sélecteur de modules dans le bandeau
+        return $panel->renderHook(
+            PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
+            fn(): HtmlString => $this->renderActionsRapides()
+        );
     }
 
     // =========================================================================
@@ -258,25 +214,6 @@ class BudgetPanelProvider extends PanelProvider
         $urlMemoire = $this->getResourceUrl('App\Filament\Budget\Resources\MemoireDepenseResource', 'create');
 
         return new HtmlString('
-        <div class="flex items-center gap-2 me-4">
-        <a href="/portal"
-           class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium
-                  text-gray-500 dark:text-gray-400
-                  hover:text-gray-700 dark:hover:text-gray-200
-                  bg-gray-100 dark:bg-gray-800
-                  hover:bg-gray-200 dark:hover:bg-gray-700
-                  rounded-lg transition border border-gray-200 dark:border-gray-700
-                  group"
-           title="Retour au portail">
-            <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5"
-                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-            </svg>
-            <span class="hidden lg:inline">Portail</span>
-        </a>
-
-        <div class="border-l border-gray-300 dark:border-gray-600 h-8 mx-1"></div>
         <div class="flex items-center gap-2 me-4">
 
             ' . ($urlBC ? '

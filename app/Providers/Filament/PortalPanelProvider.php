@@ -21,6 +21,8 @@ use Filament\Http\Responses\Auth\Contracts\LoginResponse as LoginResponseContrac
 
 class PortalPanelProvider extends PanelProvider
 {
+    use Concerns\HasCommonPanelBootstrap;
+
     /**
      * Surcharge la LoginResponse pour rediriger vers le portail
      * au lieu de chercher filament.admin.pages.dashboard
@@ -52,8 +54,11 @@ class PortalPanelProvider extends PanelProvider
             ->path('portal')
             ->default()
             ->login(Login::class)
-            ->brandName('SIGB')
-            ->favicon(asset('images/favicon.png'))
+            // Marque commune : nom du logiciel (ParametresFournisseur) + logo dessous
+            ->brandName($this->brandNom())
+            ->brandLogo($this->brandLogoUrl())
+            ->brandLogoHeight('1.75rem')
+            ->favicon($this->fournisseur()->logo_url ?? asset('images/favicon.png'))
             ->colors(['primary' => \Filament\Support\Colors\Color::hex('#0ea5e9')])
             ->maxContentWidth(MaxWidth::Full)
 

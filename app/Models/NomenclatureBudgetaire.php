@@ -200,22 +200,31 @@ class NomenclatureBudgetaire extends Model
             // ✅ Le code est la clé métier d'un exercice : deux nomenclatures « 731207 »
             //    engendrent deux lignes budgétaires au même code, donc des doublons
             //    que l'unicité par nomenclature_id ne peut pas voir.
-            if (!$nomenclature->exists
+            if (
+                !$nomenclature->exists
                 || $nomenclature->isDirty('code')
-                || $nomenclature->isDirty('exercice_id')) {
+                || $nomenclature->isDirty('exercice_id')
+            ) {
                 self::interdireDoublonDeCode($nomenclature);
             }
 
             // Valider la cohérence parent/niveau
-            if ($nomenclature->parent_id) {
-                $parent = NomenclatureBudgetaire::find($nomenclature->parent_id);
+            // ✅ Parent recherché sans le filtre d'exercice et y compris supprimé : un parent introuvable
+            //    ne doit pas bloquer l'enregistrement (lecture de « niveau » sur null).
+            //    La hiérarchie n'est vérifiée que si le parent ou le niveau change.
+            if ($nomenclature->parent_id && ($nomenclature->isDirty('parent_id') || $nomenclature->isDirty('niveau') || !$nomenclature->exists)) {
+                $parent = NomenclatureBudgetaire::withoutGlobalScopes()->withTrashed()->find($nomenclature->parent_id);
+
+                if (!$parent) {
+                    throw new \DomainException("La nomenclature parente (n° {$nomenclature->parent_id}) est introuvable : choisissez un parent existant.");
+                }
 
                 if ($nomenclature->niveau === 'article' && $parent->niveau !== 'chapitre') {
-                    throw new \Exception("Un Article doit avoir un Chapitre comme parent");
+                    throw new \DomainException("Un Article doit avoir un Chapitre comme parent");
                 }
 
                 if ($nomenclature->niveau === 'paragraphe' && !in_array($parent->niveau, ['article', 'chapitre'])) {
-                    throw new \Exception("Un Paragraphe doit avoir un Article ou un Chapitre comme parent");
+                    throw new \DomainException("Un Paragraphe doit avoir un Article ou un Chapitre comme parent");
                 }
             }
 

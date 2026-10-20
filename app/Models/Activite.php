@@ -48,8 +48,29 @@ class Activite extends Model
         static::creating(function (self $model) {
             $model->created_by ??= auth()->id();
             $model->numero ??= static::genererNumero();
+
+            // ✅ Code généré automatiquement à la création (ACT1, ACT2…)
+            if (blank($model->code)) {
+                $model->code = static::genererCode($model->exercice_id);
+            }
         });
     }
+
+    /**
+     * ✅ Code automatique : « ACT » suivi du numéro suivant parmi les éléments de l'exercice
+     *    (suppressions comprises : un numéro n'est jamais réutilisé). Les codes existants ne changent pas.
+     */
+    public static function genererCode(?int $exerciceId): string
+    {
+        $max = static::withoutGlobalScope('exercice')->withTrashed()
+            ->when($exerciceId, fn($q) => $q->where('exercice_id', $exerciceId))
+            ->pluck('code')
+            ->map(fn($c) => preg_match('/^ACT(\d+)$/i', trim((string) $c), $m) ? (int) $m[1] : 0)
+            ->max() ?? 0;
+
+        return 'ACT' . ($max + 1);
+    }
+
 
     public static function genererNumero(): string
     {
@@ -110,7 +131,7 @@ class Activite extends Model
     public function getExecutionBudgetaire(): array
     {
         $lignes = $this->taches()
-            ->where('niveau', 'sous_tache')
+            ->porteusesBudget()   // ✅ sous-tâches + tâches liées directement à une nomenclature
             ->get()
             ->map(fn($t) => $t->ligneBudgetaire())
             ->filter();

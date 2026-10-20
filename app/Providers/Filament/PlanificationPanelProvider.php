@@ -28,7 +28,7 @@ class PlanificationPanelProvider extends PanelProvider
 
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('planification')
             ->path('planification')
             ->login(Login::class)
@@ -40,7 +40,6 @@ class PlanificationPanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('SIGB — Planification')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
@@ -74,10 +73,6 @@ class PlanificationPanelProvider extends PanelProvider
             ->plugins($this->commonPlugins())
 
             ->renderHook(
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                fn(): HtmlString => $this->renderSwitcher('planification')
-            )
-            ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn(): HtmlString => new HtmlString('
                     <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 me-3 rounded-lg border"
@@ -91,5 +86,7 @@ class PlanificationPanelProvider extends PanelProvider
 
             ->middleware($this->commonMiddleware())
             ->authMiddleware($this->commonAuthMiddleware('planification'));
+
+        return $this->navbarUniforme($panel, 'planification', 'Planification');
     }
 }

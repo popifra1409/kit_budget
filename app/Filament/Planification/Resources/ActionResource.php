@@ -28,6 +28,12 @@ class ActionResource extends Resource
     // PERMISSIONS
     // ========================================
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'libelle'];
+    }
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view_any_action') ?? false;
@@ -100,8 +106,12 @@ class ActionResource extends Resource
                             ->required()->searchable()->preload()
                             ->getOptionLabelFromRecordUsing(fn($record) => "{$record->code} - {$record->libelle}"),
 
+                        // ✅ Code généré automatiquement à l'enregistrement
                         Forms\Components\TextInput::make('code')
-                            ->label('Code')->required()->maxLength(50)->placeholder('Ex: A4'),
+                            ->label('Code')
+                            ->disabled()->dehydrated(false)
+                            ->placeholder('Généré automatiquement à l\'enregistrement')
+                            ->helperText(fn($record) => $record ? null : 'A + numéro suivant de l\'exercice (A1, A2…).'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')->required()->maxLength(255)->columnSpanFull()

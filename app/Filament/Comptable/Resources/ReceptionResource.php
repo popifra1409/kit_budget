@@ -23,6 +23,12 @@ class ReceptionResource extends Resource
     protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 30;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero'];
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([

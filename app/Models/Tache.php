@@ -78,7 +78,7 @@ class Tache extends Model
 
     /**
      * Relation : Nomenclature budgétaire liée
-     * NOTE: Uniquement pour les sous-tâches
+     * Portée par une sous-tâche, ou par une tâche principale SANS sous-tâche (liaison directe).
      */
     public function nomenclature(): BelongsTo
     {
@@ -93,7 +93,7 @@ class Tache extends Model
      */
     public function ligneBudgetaire(): ?\App\Models\LigneBudgetaire
     {
-        if ($this->niveau !== 'sous_tache' || !$this->nomenclature_id) {
+        if (!$this->estPorteuseBudget()) {
             return null;
         }
 
@@ -116,6 +116,39 @@ class Tache extends Model
     public function scopeTachesPrincipales($query)
     {
         return $query->whereNull('parent_id')->where('niveau', 'tache');
+    }
+
+    /**
+     * ✅ Scope : tâches PORTEUSES du budget (le niveau le plus fin, celui qui porte compte et AE/CP) :
+     *    les sous-tâches, et les tâches principales liées directement à une nomenclature, sans sous-tâche.
+     *    À utiliser partout où l'on additionnait les sous-tâches (concordance, CDMT…).
+     */
+    public function scopePorteusesBudget($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('niveau', 'sous_tache')
+                ->orWhere(function ($t) {
+                    $t->where('niveau', 'tache')
+                        ->whereNotNull('nomenclature_id')
+                        ->whereNotExists(function ($e) {
+                            $e->selectRaw('1')->from('taches as st')
+                                ->whereColumn('st.parent_id', 'taches.id')
+                                ->where('st.niveau', 'sous_tache')
+                                ->whereNull('st.deleted_at');
+                        });
+                });
+        });
+    }
+
+    /** ✅ Porte-t-elle directement compte et AE/CP ? (sous-tâche, ou tâche liée directement sans sous-tâche) */
+    public function estPorteuseBudget(): bool
+    {
+        if (!$this->nomenclature_id) {
+            return false;
+        }
+
+        return $this->estSousTache()
+            || ($this->niveau === 'tache' && (!$this->exists || !$this->sousTaches()->exists()));
     }
 
     /**
@@ -195,8 +228,8 @@ class Tache extends Model
      */
     public function getNomenclatureEffective(): ?NomenclatureBudgetaire
     {
-        if ($this->estSousTache()) {
-            return $this->nomenclature;
+        if ($this->estSousTache() || $this->nomenclature_id) {
+            return $this->nomenclature;   // sous-tâche, ou tâche liée directement
         }
 
         // Si c'est une tâche parent, prendre la nomenclature de la première sous-tâche
@@ -210,11 +243,41 @@ class Tache extends Model
     {
         parent::boot();
 
+        // ✅ Code généré automatiquement : T<n> pour une tâche (par exercice), <code parent>-<nn> pour une sous-tâche
+        static::creating(function ($tache) {
+            if (blank($tache->code)) {
+                $tache->code = static::genererCode($tache);
+            }
+
+            // Une tâche liée DIRECTEMENT à une nomenclature ne reçoit pas de sous-tâche (double compte)
+            if ($tache->niveau === 'sous_tache' && $tache->parent_id) {
+                $parent = static::withoutGlobalScope('exercice')->find($tache->parent_id);
+                if ($parent && $parent->nomenclature_id && !$parent->sousTaches()->exists()) {
+                    throw new \DomainException(
+                        "La tâche {$parent->code} est liée directement à une nomenclature budgétaire : elle ne peut pas recevoir de sous-tâche. "
+                            . "Retirez d'abord la nomenclature (et ses AE/CP) de la tâche, puis créez ses sous-tâches."
+                    );
+                }
+            }
+        });
+
+        // Une tâche qui a des sous-tâches ne porte pas de nomenclature propre
+        static::saving(function ($tache) {
+            if (
+                $tache->exists && $tache->niveau === 'tache' && $tache->isDirty('nomenclature_id')
+                && $tache->nomenclature_id && $tache->sousTaches()->exists()
+            ) {
+                throw new \DomainException(
+                    "La tâche {$tache->code} a des sous-tâches : la nomenclature se renseigne sur chaque sous-tâche, pas sur la tâche."
+                );
+            }
+        });
+
         // ✅ AJOUT — Concordance programmation / budget : une fois le budget de l'exercice ADOPTÉ,
         //    les AE/CP d'une sous-tâche ne se modifient plus à la main (paramètre d'exécution) :
         //    on passe par un collectif ou un virement, et la synchronisation ajuste les sous-tâches.
         static::saving(function ($tache) {
-            if (!$tache->exists || !$tache->estSousTache() || !$tache->isDirty(['ae', 'cp'])) {
+            if (!$tache->exists || !$tache->estPorteuseBudget() || !$tache->isDirty(['ae', 'cp'])) {
                 return;
             }
             if (\App\Services\Budget\SynchronisationTachesService::$enCours) {
@@ -231,7 +294,7 @@ class Tache extends Model
 
             if ($budgetAdopte) {
                 throw new \DomainException(
-                    "Le budget de l'exercice est adopté : les AE/CP de la sous-tâche {$tache->code} ne se modifient plus directement. "
+                    "Le budget de l'exercice est adopté : les AE/CP de la tâche {$tache->code} ne se modifient plus directement. "
                         . "Passez par un collectif budgétaire ou un mouvement de crédits : la sous-tâche sera ajustée automatiquement."
                 );
             }
@@ -253,11 +316,37 @@ class Tache extends Model
     }
 
     /**
+     * ✅ Code automatique :
+     *  - tâche principale : « T » + numéro suivant parmi les tâches de l'exercice (T1, T2…) ;
+     *  - sous-tâche : code de la tâche parent + « - » + numéro sur deux chiffres (T2-01, T2-02…).
+     */
+    public static function genererCode(self $tache): string
+    {
+        $base = static::withoutGlobalScope('exercice')->withTrashed()->where('exercice_id', $tache->exercice_id);
+
+        if ($tache->niveau === 'sous_tache' && $tache->parent_id) {
+            $parent = static::withoutGlobalScope('exercice')->withTrashed()->find($tache->parent_id);
+            $prefixe = ($parent?->code ?: 'T') . '-';
+            $max = (clone $base)->where('parent_id', $tache->parent_id)->pluck('code')
+                ->map(fn($c) => str_starts_with((string) $c, $prefixe) ? (int) substr($c, strlen($prefixe)) : 0)
+                ->max() ?? 0;
+
+            return $prefixe . str_pad($max + 1, 2, '0', STR_PAD_LEFT);
+        }
+
+        $max = (clone $base)->where('niveau', 'tache')->pluck('code')
+            ->map(fn($c) => preg_match('/^T(\d+)$/', (string) $c, $m) ? (int) $m[1] : 0)
+            ->max() ?? 0;
+
+        return 'T' . ($max + 1);
+    }
+
+    /**
      * Recalculer les montants AE et CP (pour tâches principales)
      */
     public function recalculerBudget(): void
     {
-        if ($this->estTachePrincipale()) {
+        if ($this->estTachePrincipale() && $this->sousTaches()->exists()) {
             $this->ae = $this->sousTaches()->sum('ae');
             $this->cp = $this->sousTaches()->sum('cp');
 
@@ -271,7 +360,7 @@ class Tache extends Model
      */
     public function getTotalAe(): float
     {
-        if ($this->estTachePrincipale()) {
+        if ($this->estTachePrincipale() && $this->sousTaches()->exists()) {
             return $this->sousTaches()->sum('ae');
         }
 
@@ -283,7 +372,7 @@ class Tache extends Model
      */
     public function getTotalCp(): float
     {
-        if ($this->estTachePrincipale()) {
+        if ($this->estTachePrincipale() && $this->sousTaches()->exists()) {
             return $this->sousTaches()->sum('cp');
         }
 

@@ -22,6 +22,12 @@ class FicheConsolidationBesoinResource extends Resource
     protected static ?string $navigationGroup = 'Acquisition des biens';
     protected static ?int    $navigationSort  = 21;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero'];
+    }
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view_any_fiche_consolidation_besoin') ?? false;

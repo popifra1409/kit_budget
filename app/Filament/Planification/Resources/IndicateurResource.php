@@ -17,6 +17,12 @@ class IndicateurResource extends Resource
 
     protected static bool $shouldRegisterNavigation = false;
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'libelle'];
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([

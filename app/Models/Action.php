@@ -32,6 +32,31 @@ class Action extends Model
         'actif' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        // ✅ Code généré automatiquement à la création (A1, A2…)
+        static::creating(function (self $action) {
+            if (blank($action->code)) {
+                $action->code = static::genererCode($action->exercice_id);
+            }
+        });
+    }
+
+    /**
+     * ✅ Code automatique : « A » suivi du numéro suivant parmi les éléments de l'exercice
+     *    (suppressions comprises : un numéro n'est jamais réutilisé). Les codes existants ne changent pas.
+     */
+    public static function genererCode(?int $exerciceId): string
+    {
+        $max = static::withoutGlobalScope('exercice')->withTrashed()
+            ->when($exerciceId, fn($q) => $q->where('exercice_id', $exerciceId))
+            ->pluck('code')
+            ->map(fn($c) => preg_match('/^A(\d+)$/i', trim((string) $c), $m) ? (int) $m[1] : 0)
+            ->max() ?? 0;
+
+        return 'A' . ($max + 1);
+    }
+
     /**
      * Relation : Programme parent
      */

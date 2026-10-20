@@ -1,4 +1,5 @@
 <?php
+// app/Services/Programmation/GenerationCdmtService.php
 
 namespace App\Services\Programmation;
 
@@ -42,7 +43,7 @@ class GenerationCdmtService
         $exerciceId = $cdmt->cbmtExercice?->exerciceReference?->id;
 
         return $exerciceId
-            ? Tache::withoutGlobalScope('exercice')->where('exercice_id', $exerciceId)->where('niveau', 'sous_tache')
+            ? Tache::withoutGlobalScope('exercice')->where('exercice_id', $exerciceId)->porteusesBudget()   // ✅ sous-tâches + tâches liées directement
             ->whereNotNull('nomenclature_id')
             ->where(fn($q) => $q->whereNull('ae')->orWhere('ae', '<=', 0))
             ->where(fn($q) => $q->whereNull('cp')->orWhere('cp', '<=', 0))
@@ -67,7 +68,7 @@ class GenerationCdmtService
 
         $sousTaches = Tache::withoutGlobalScope('exercice')
             ->where('exercice_id', $exercice->id)
-            ->where('niveau', 'sous_tache')
+            ->porteusesBudget()   // ✅ sous-tâches + tâches liées directement
             ->whereNotNull('nomenclature_id')
             ->with(['nomenclature', 'parent', 'activite' => fn($q) => $q->withoutGlobalScope('exercice')->with(['action' => fn($a) => $a->withoutGlobalScope('exercice')])])
             ->orderBy('code')

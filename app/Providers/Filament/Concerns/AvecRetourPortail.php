@@ -28,7 +28,8 @@ trait AvecRetourPortail
         return new HtmlString(<<<HTML
             <div class="px-2 pb-2 mb-2 border-b border-gray-200 dark:border-white/10">
                 <a href="{$url}"
-                   title="Retour au portail"
+                   title="Retour au portail (Alt+P)"
+                   aria-label="Retour au portail (Alt+P)"
                    class="flex items-center gap-x-3 rounded-lg px-2 py-2 text-sm font-medium
                           text-gray-700 dark:text-gray-200
                           hover:bg-gray-100 dark:hover:bg-white/5 transition">
@@ -36,7 +37,10 @@ trait AvecRetourPortail
                          fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
                     </svg>
-                    <span x-show="\$store.sidebar.isOpen" x-transition:enter.delay.100ms>Retour au portail</span>
+                    <span x-show="\$store.sidebar.isOpen" x-transition:enter.delay.100ms class="flex-1">Retour au portail</span>
+                    <kbd x-show="\$store.sidebar.isOpen"
+                         class="ms-auto hidden xl:inline rounded border border-gray-300 dark:border-white/20
+                                px-1.5 py-0.5 text-[10px] font-mono text-gray-500 dark:text-gray-400">Alt P</kbd>
                 </a>
             </div>
         HTML);

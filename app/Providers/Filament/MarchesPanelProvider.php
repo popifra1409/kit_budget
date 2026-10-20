@@ -28,7 +28,7 @@ use Filament\Navigation\NavigationItem;
  */
 class MarchesPanelProvider extends PanelProvider
 {
-    use Concerns\AvecRetourPortail;
+    use Concerns\HasCommonPanelBootstrap;
 
     public function register(): void
     {
@@ -49,7 +49,7 @@ class MarchesPanelProvider extends PanelProvider
 
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('marches')
             ->path('marches')
             ->login(Login::class)
@@ -61,7 +61,6 @@ class MarchesPanelProvider extends PanelProvider
                 'warning' => Color::hex('#f59e0b'),
                 'info'    => Color::hex('#64748b'),
             ])
-            ->brandName('SIGB — Marchés')
             ->favicon(asset('images/favicon.png'))
             ->sidebarCollapsibleOnDesktop()
 
@@ -103,17 +102,8 @@ class MarchesPanelProvider extends PanelProvider
                     ),
             ])
 
-            // « Retour au portail » en tête du menu latéral (hors navigation : voir AvecRetourPortail)
-            ->renderHook(
-                PanelsRenderHook::SIDEBAR_NAV_START,
-                fn(): HtmlString => $this->lienRetourPortail()
-            )
-
-            // Sélecteur de modules + lien portail, avant le menu utilisateur
-            ->renderHook(
-                PanelsRenderHook::USER_MENU_BEFORE,
-                fn(): HtmlString => $this->renderSwitcher('marches')
-            )
+            // Badge et switcher : le retour au portail et le sélecteur de
+            // modules viennent de navbarUniforme() (trait commun)
 
             ->middleware([
                 EncryptCookies::class,
@@ -131,73 +121,7 @@ class MarchesPanelProvider extends PanelProvider
                 Authenticate::class,
                 'module.access:marches',
             ]);
-    }
 
-    // ── Sélecteur de module (en-tête) ────────────────────────────────
-    private function renderSwitcher(string $active): HtmlString
-    {
-        // clé => [icône, libellé, adresse, permission d'accès]
-        $modules = [
-            'budget'           => ['💰', 'Budget',             '/budget',           'access_module_budget'],
-            'comptable'        => ['📦', 'Matières',           '/comptable',        'access_module_comptable'],
-            'marches'          => ['📋', 'Marchés',            '/marches',          'access_module_marches'],
-            'planification'    => ['🎯', 'Planification',      '/planification',    'access_module_planification'],
-            'programmation'    => ['📈', 'Programmation',      '/programmation',    'access_module_programmation'],
-            'suivi-evaluation' => ['📊', 'Suivi & Évaluation', '/suivi-evaluation', 'access_module_suivi_evaluation'],
-        ];
-
-        $user = auth()->user();
-        $superAdmin = $user?->hasRole('super_admin') ?? false;
-
-        // Conteneur global : lien portail | séparateur | modules
-        $html = '<div class="flex items-center gap-2 me-2">';
-
-        // ✅ CORRIGÉ — le lien portail était écrasé par une affectation "=" au lieu de ".="
-        $html .= '<a href="/portal"
-                     class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium
-                            text-gray-500 dark:text-gray-400
-                            hover:text-gray-700 dark:hover:text-gray-200
-                            bg-gray-100 dark:bg-gray-800
-                            hover:bg-gray-200 dark:hover:bg-gray-700
-                            rounded-lg transition border border-gray-200 dark:border-gray-700 group"
-                     title="Retour au portail">
-                      <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5"
-                           fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                      </svg>
-                      <span class="hidden lg:inline">Portail</span>
-                  </a>';
-
-        $html .= '<div class="border-l border-gray-300 dark:border-gray-600 h-8 mx-1"></div>';
-
-        // Groupe des modules
-        $html .= '<div class="flex items-center gap-1 me-1 p-1 rounded-xl
-                              bg-gray-100 dark:bg-gray-800
-                              border border-gray-200 dark:border-gray-700">';
-
-        foreach ($modules as $key => [$icon, $label, $url, $permission]) {
-            $isActive = $key === $active;
-
-            // ✅ Seuls les modules accessibles à l'utilisateur (même règle que le portail)
-            if (!$isActive && !$superAdmin && !($user?->can($permission) ?? false)) {
-                continue;
-            }
-
-            $class = $isActive
-                ? 'bg-white dark:bg-gray-700 shadow-sm font-semibold text-gray-900 dark:text-white'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-white/60 dark:hover:bg-gray-700/60';
-
-            $html .= '<a href="' . ($isActive ? '#' : $url) . '"
-                         class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all ' . $class . '">
-                          <span>' . $icon . '</span>
-                          <span class="hidden md:inline">' . e($label) . '</span>
-                      </a>';
-        }
-
-        $html .= '</div>'; // groupe des modules
-        $html .= '</div>'; // conteneur global
-
-        return new HtmlString($html);
+        return $this->navbarUniforme($panel, 'marches', 'Marchés');
     }
 }

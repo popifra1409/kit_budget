@@ -21,6 +21,12 @@ class RapportAnnuelPerformanceResource extends Resource
 
     protected static ?string $navigationGroup = 'Rapport Annuel de Performance (RAP)';
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['numero'];
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([

@@ -27,6 +27,12 @@ class ProgrammeResource extends Resource
     // PERMISSIONS
     // ========================================
 
+    // Recherche globale (champ du bandeau), comme dans le panel Budget
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'libelle'];
+    }
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view_any_programme') ?? false;
