@@ -24,7 +24,13 @@ class ValeursRelationManager extends RelationManager
                 ->required()->maxLength(20)
                 ->helperText("Ex: 2026, 2026-T1, 2026-S1"),
             Forms\Components\TextInput::make('valeur_realisee')
-                ->numeric()->required(),
+                ->numeric()
+                ->label('Valeur réalisée / estimée')
+                ->helperText('Réalisation (année close) ou estimation (année en cours) du cadre logique.'),
+            Forms\Components\TextInput::make('valeur_cible')
+                ->numeric()
+                ->label('Valeur cible')
+                ->helperText('Cible de l\'année pour le cadrage triennal (N+1 à N+3).'),
             Forms\Components\Textarea::make('commentaire')->columnSpanFull(),
         ])->columns(2);
     }
@@ -34,7 +40,8 @@ class ValeursRelationManager extends RelationManager
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('periode'),
-                Tables\Columns\TextColumn::make('valeur_realisee'),
+                Tables\Columns\TextColumn::make('valeur_realisee')->label('Réalisé / estimé'),
+                Tables\Columns\TextColumn::make('valeur_cible')->label('Cible'),
                 Tables\Columns\TextColumn::make('saisiPar.name')->label('Saisi par'),
                 Tables\Columns\TextColumn::make('validePar.name')->label('Validé par'),
                 Tables\Columns\BadgeColumn::make('statut')->colors([

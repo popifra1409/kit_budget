@@ -29,6 +29,10 @@ class IndicateursRelationManager extends RelationManager
                 ->maxLength(255)->columnSpanFull(),
             Forms\Components\TextInput::make('unite_mesure')
                 ->label('Unité de mesure'),
+            Forms\Components\TextInput::make('source_verification')
+                ->label('Source de vérification')
+                ->placeholder('Ex: Registres, rapports d\'activités, RAP…')
+                ->columnSpanFull(),
             Forms\Components\Select::make('periodicite_mesure')
                 ->options([
                     'annuelle' => 'Annuelle',
@@ -65,6 +69,7 @@ class IndicateursRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('code'),
                 Tables\Columns\TextColumn::make('libelle')->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('unite_mesure')->label('Unité'),
+                Tables\Columns\TextColumn::make('source_verification')->label('Source de vérification')->wrap(),
                 Tables\Columns\TextColumn::make('valeur_reference')->label('Référence')
                     ->formatStateUsing(fn($record) => $record->valeur_reference !== null
                         ? "{$record->valeur_reference} ({$record->annee_reference})" : '—'),

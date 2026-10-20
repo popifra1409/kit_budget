@@ -120,6 +120,11 @@ class ActionResource extends Resource
                         Forms\Components\Textarea::make('description')
                             ->label('Description')->rows(3)->columnSpanFull(),
 
+                        Forms\Components\Select::make('responsable_id')
+                            ->label('Responsable de mise en œuvre')
+                            ->options(\App\Models\User::pluck('name', 'id'))
+                            ->searchable(),
+
                         Forms\Components\TextInput::make('ordre')
                             ->label('Ordre d\'affichage')->numeric()->default(0),
 
@@ -154,6 +159,7 @@ class ActionResource extends Resource
         return parent::getEloquentQuery()
             ->with([
                 'exercice',
+                'responsable',
                 'activites.taches' => function ($query) {
                     $query->where('niveau', 'tache')->with('sousTaches');
                 }
@@ -187,6 +193,9 @@ class ActionResource extends Resource
 
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')->searchable()->sortable()->wrap()->limit(50),
+
+                Tables\Columns\TextColumn::make('responsable.name')
+                    ->label('Responsable de mise en œuvre')->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('activites_count')
                     ->label('Activités')->counts('activites')->badge()->color('success'),
@@ -257,7 +266,9 @@ class ActionResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            \App\Filament\Planification\Resources\Concerns\IndicateursRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

@@ -208,6 +208,12 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('activites-sous-programme.pdf');
             Route::get('/activites-sous-programme/{sousProgramme}/excel', [RapportController::class, 'activitesSousProgrammeExcel'])
                 ->name('activites-sous-programme.excel');
+
+            // Cadre logique de la programmation triennale (CDMT)
+            Route::get('/cadre-logique/{psp}/{exercice}/pdf', [RapportController::class, 'cadreLogiquePdf'])
+                ->name('cadre-logique.pdf');
+            Route::get('/cadre-logique/{psp}/{exercice}/excel', [RapportController::class, 'cadreLogiqueExcel'])
+                ->name('cadre-logique.excel');
         });
 
     // ── Rapport PPA ──

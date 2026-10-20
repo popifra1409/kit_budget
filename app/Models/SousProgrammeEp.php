@@ -120,6 +120,12 @@ class SousProgrammeEp extends Model
         return $this->morphMany(Indicateur::class, 'indicateurable');
     }
 
+    /** Objectif affiché dans le cadre logique (Tableau 1 et matrices). */
+    public function objectifPourCadreLogique(): ?string
+    {
+        return $this->objectif;
+    }
+
     /**
      * Programme MINISTERIEL de rattachement (ex: P-410 Prevention de la maladie).
      * Sans scope d'exercice : le rattachement reste lisible quel que soit l'exercice actif.

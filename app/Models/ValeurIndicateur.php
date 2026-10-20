@@ -13,6 +13,7 @@ class ValeurIndicateur extends Model
         'indicateur_id',
         'periode',
         'valeur_realisee',
+        'valeur_cible',
         'commentaire',
         'statut',
         'saisi_par_id',
@@ -23,6 +24,7 @@ class ValeurIndicateur extends Model
 
     protected $casts = [
         'valeur_realisee' => 'decimal:2',
+        'valeur_cible' => 'decimal:2',
         'date_validation' => 'datetime',
     ];
 

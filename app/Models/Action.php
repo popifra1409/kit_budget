@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
@@ -25,6 +26,7 @@ class Action extends Model
         'description',
         'ordre',
         'actif',
+        'responsable_id',
     ];
 
     protected $casts = [
@@ -79,6 +81,24 @@ class Action extends Model
     public function activites(): HasMany
     {
         return $this->hasMany(Activite::class);
+    }
+
+    /** Responsable de mise en œuvre, comme pour les activités. */
+    public function responsable(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'responsable_id');
+    }
+
+    /** Indicateurs de l'action (matrice du cadre logique par sous-programme). */
+    public function indicateurs(): MorphMany
+    {
+        return $this->morphMany(Indicateur::class, 'indicateurable');
+    }
+
+    /** Objectif spécifique affiché dans le cadre logique (le premier par ordre). */
+    public function objectifPourCadreLogique(): ?string
+    {
+        return $this->objectifsSpecifiques->sortBy('ordre')->first()?->libelle;
     }
 
     /**

@@ -14,7 +14,7 @@ class Indicateur extends Model
     protected $table = 'indicateurs';
 
     /** Niveaux autorises pour le rattachement (alias du morph map) */
-    public const NIVEAUX_AUTORISES = ['sous_programme_ep', 'activite'];
+    public const NIVEAUX_AUTORISES = ['sous_programme_ep', 'action', 'activite'];
 
     protected $fillable = [
         'indicateurable_type',
@@ -24,6 +24,7 @@ class Indicateur extends Model
         'sens',
         'objectif_associe',
         'unite_mesure',
+        'source_verification',
         'mode_calcul',
         'periodicite_mesure',
         'valeur_reference',
@@ -118,5 +119,31 @@ class Indicateur extends Model
     public function derniereValeur(): ?ValeurIndicateur
     {
         return $this->valeurs()->orderByDesc('periode')->first();
+    }
+
+    /**
+     * Valeur de l'indicateur pour une année du cadrage triennal (cadre logique CDMT).
+     *
+     *  - année <= année de référence : la valeur saisie pour cette période (réalisé / estimé),
+     *  - année > année de référence : la cible enregistrée pour cette période, à défaut
+     *    la cible de l'indicateur quand son année cible est cette année.
+     */
+    public function valeurPourAnnee(int $annee, int $anneeReference): ?float
+    {
+        $valeur = $this->valeurs->firstWhere('periode', (string) $annee);
+
+        if ($annee <= $anneeReference) {
+            return $valeur?->valeur_realisee === null ? null : (float) $valeur->valeur_realisee;
+        }
+
+        if ($valeur?->valeur_cible !== null) {
+            return (float) $valeur->valeur_cible;
+        }
+
+        if ($this->annee_cible === $annee && $this->valeur_cible !== null) {
+            return (float) $this->valeur_cible;
+        }
+
+        return null;
     }
 }
