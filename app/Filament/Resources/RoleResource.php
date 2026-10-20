@@ -65,37 +65,57 @@ class RoleResource extends Resource
     }
 
     // =========================================================
-    // HELPER — Requête permissions par mot-clé(s)
+    // CATALOGUE (config/permission.php (clé « catalogue »))
     // =========================================================
-    private static function permsByKeywords(array $keywords): \Illuminate\Support\Collection
+
+    /** Permissions d'une rubrique (crud × actions + spéciales), existantes en base. */
+    protected static function permissionsRubrique(array $rubrique): \Illuminate\Support\Collection
     {
-        $q = Permission::query();
-        $q->where(function ($sub) use ($keywords) {
-            foreach ($keywords as $kw) {
-                $sub->orWhere('name', 'like', "%{$kw}%");
+        $actions = config('permission.catalogue.actions_crud', ['view_any', 'view', 'create', 'update', 'delete']);
+        $noms = [];
+        foreach ($rubrique['crud'] ?? [] as $ressource) {
+            foreach ($actions as $action) {
+                $noms[] = "{$action}_{$ressource}";
             }
-        });
-        return $q->orderBy('name')->get();
+        }
+        $noms = array_merge($noms, $rubrique['speciales'] ?? []);
+
+        return Permission::whereIn('name', $noms)->get()
+            ->sortBy(fn($p) => array_search($p->name, $noms))
+            ->values();
     }
 
-    private static function makeTab(string $label, string $icon, array $keywords): Forms\Components\Tabs\Tab
+    /** Toutes les permissions rangées dans le catalogue (accès compris). */
+    protected static function nomsCatalogue(): array
     {
-        $perms = static::permsByKeywords($keywords);
+        $actions = config('permission.catalogue.actions_crud', ['view_any', 'view', 'create', 'update', 'delete']);
+        $noms = [];
+        foreach (config('permission.catalogue.modules', []) as $module) {
+            $noms[] = $module['acces'];
+            foreach ($module['rubriques'] as $rubrique) {
+                foreach ($rubrique['crud'] ?? [] as $ressource) {
+                    foreach ($actions as $action) {
+                        $noms[] = "{$action}_{$ressource}";
+                    }
+                }
+                array_push($noms, ...($rubrique['speciales'] ?? []));
+            }
+        }
 
-        return Forms\Components\Tabs\Tab::make($label)
-            ->icon($icon)
-            ->badge($perms->count() ?: null)
-            ->schema([
-                Forms\Components\CheckboxList::make('permissions')
-                    ->label('')
-                    ->relationship('permissions', 'name')
-                    ->options($perms->pluck('name', 'id'))
-                    ->descriptions($perms->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                    ->columns(2)
-                    ->searchable()
-                    ->bulkToggleable()
-                    ->gridDirection('row'),
-            ]);
+        return array_values(array_unique($noms));
+    }
+
+    /** Liste de cases d'une rubrique (même état « permissions » pour toutes les listes). */
+    protected static function casesPermissions(\Illuminate\Support\Collection $permissions, int $colonnes = 2): Forms\Components\CheckboxList
+    {
+        return Forms\Components\CheckboxList::make('permissions')
+            ->label('')
+            ->relationship('permissions', 'name')
+            ->options($permissions->pluck('name', 'id'))
+            ->descriptions($permissions->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
+            ->columns($colonnes)
+            ->gridDirection('row')
+            ->bulkToggleable();
     }
 
     // =========================================================
@@ -103,6 +123,57 @@ class RoleResource extends Resource
     // =========================================================
     public static function form(Form $form): Form
     {
+        $modules = config('permission.catalogue.modules', []);
+
+        // ── Accès aux modules (panneaux) ──
+        $acces = Permission::whereIn('name', collect($modules)->pluck('acces'))->get()
+            ->sortBy(fn($p) => array_search($p->name, collect($modules)->pluck('acces')->all()))->values();
+
+        // ── Un onglet par module, une section par rubrique ──
+        $onglets = [];
+        foreach ($modules as $cle => $module) {
+            $sections = [];
+            foreach ($module['rubriques'] as $titre => $rubrique) {
+                $perms = static::permissionsRubrique($rubrique);
+                if ($perms->isEmpty()) {
+                    continue;
+                }
+                $sections[] = Forms\Components\Section::make($titre)
+                    ->description($perms->count() . ' permission(s)')
+                    ->schema([static::casesPermissions($perms)])
+                    ->collapsible()
+                    ->compact();
+            }
+            if (empty($sections)) {
+                continue;
+            }
+            $onglets[] = Forms\Components\Tabs\Tab::make($module['libelle'])
+                ->icon($module['icone'] ?? null)
+                ->schema([
+                    Forms\Components\Placeholder::make("rappel_acces_{$cle}")
+                        ->label('')
+                        ->content(new \Illuminate\Support\HtmlString(
+                            '<span style="font-size:.85rem;color:#6b7280;">Ces droits ne servent que si le rôle a aussi '
+                                . '<strong>l\'accès au module « ' . e($module['libelle']) . ' »</strong> (bloc « Accès aux modules » ci-dessus).</span>'
+                        )),
+                    ...$sections,
+                ]);
+        }
+
+        // ── Permissions hors catalogue ──
+        $autres = Permission::whereNotIn('name', static::nomsCatalogue())->orderBy('name')->get();
+        if ($autres->isNotEmpty()) {
+            $onglets[] = Forms\Components\Tabs\Tab::make('Autres')
+                ->icon('heroicon-o-question-mark-circle')
+                ->badge($autres->count())
+                ->schema([
+                    Forms\Components\Placeholder::make('info_autres')
+                        ->label('')
+                        ->content('Permissions existantes non rangées dans le catalogue (config/permission.php (clé « catalogue »)) : anciennes permissions, ou permissions détectées dans le code.'),
+                    static::casesPermissions($autres),
+                ]);
+        }
+
         return $form->schema([
 
             // ── Informations ──────────────────────────────────
@@ -139,203 +210,21 @@ class RoleResource extends Resource
                 ])
                 ->columns(1),
 
-            // ── Permissions par module ─────────────────────────
-            Forms\Components\Section::make('Permissions par module')
-                ->description('Organisées par module — utilisez "Tout" pour une vue globale')
+            // ── Accès aux modules ─────────────────────────────
+            Forms\Components\Section::make('Accès aux modules')
+                ->description('Un module non coché est invisible pour ce rôle : son panneau n\'apparaît pas et son adresse est refusée.')
+                ->icon('heroicon-o-squares-2x2')
+                ->schema([static::casesPermissions($acces, 4)]),
+
+            // ── Droits par module ─────────────────────────────
+            Forms\Components\Section::make('Droits par module')
+                ->description('Un onglet par module, une rubrique par domaine ; « Tout sélectionner » agit sur la rubrique.')
                 ->schema([
-                    Forms\Components\Tabs::make('permissions_tabs')
-                        ->tabs([
-
-                            // ── Tout ──────────────────────────
-                            Forms\Components\Tabs\Tab::make('Tout')
-                                ->icon('heroicon-o-list-bullet')
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('Rechercher et sélectionner')
-                                        ->relationship('permissions', 'name')
-                                        ->options(Permission::orderBy('name')->get()->pluck('name', 'id'))
-                                        ->descriptions(
-                                            Permission::orderBy('name')->get()
-                                                ->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)])
-                                        )
-                                        ->columns(3)->searchable()->bulkToggleable()->gridDirection('row'),
-                                ]),
-
-                            // ── Accès modules ─────────────────
-                            Forms\Components\Tabs\Tab::make('Accès Modules')
-                                ->icon('heroicon-o-squares-2x2')
-                                ->badge(fn() => Permission::where('name', 'like', 'access_module_%')->count())
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('Modules autorisés')
-                                        ->relationship('permissions', 'name')
-                                        ->options(Permission::where('name', 'like', 'access_module_%')->get()->pluck('name', 'id'))
-                                        ->descriptions(
-                                            Permission::where('name', 'like', 'access_module_%')->get()
-                                                ->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)])
-                                        )
-                                        ->columns(1)->bulkToggleable()
-                                        ->helperText('Cochez les modules accessibles pour ce rôle'),
-                                ]),
-
-                            // ════════════════════════════════════
-                            // MODULE BUDGET
-                            // ════════════════════════════════════
-                            static::makeTab('Budget', 'heroicon-o-currency-dollar', ['budget']),
-                            static::makeTab('Bon de Commande', 'heroicon-o-shopping-cart', ['bon_commande']),
-                            static::makeTab('Engagement', 'heroicon-o-document-check', ['engagement']),
-                            static::makeTab('Bordereau', 'heroicon-o-clipboard-document', ['bordereau_engagement']),
-                            static::makeTab('Décision Admin.', 'heroicon-o-document-text', ['decision_administrative', 'type_decision']),
-                            static::makeTab('Ordonnance', 'heroicon-o-banknotes', ['ordonnance_paiement']),
-                            static::makeTab('Mémoire Dépense', 'heroicon-o-document-duplicate', ['memoire_depense']),
-                            static::makeTab('Recettes', 'heroicon-o-arrow-trending-up', ['recette_reelle', 'prevision_recette']),
-                            static::makeTab('Virements', 'heroicon-o-arrows-right-left', ['virement_budgetaire']),
-                            static::makeTab('Fournisseurs', 'heroicon-o-building-storefront', ['fournisseur', 'dossier_fournisseur', 'piece_dossier']),
-                            static::makeTab('Transmissions', 'heroicon-o-paper-airplane', ['transmission']),
-
-                            // ════════════════════════════════════
-                            // MODULE COMPTABILITÉ MATIÈRES
-                            // ════════════════════════════════════
-                            Forms\Components\Tabs\Tab::make('🗃 Articles & Stock')
-                                ->badge(fn() => static::permsByKeywords(['article', 'stock', 'fiche_stock'])->count())
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(static::permsByKeywords(['article', 'stock', 'fiche_stock'])->pluck('name', 'id'))
-                                        ->descriptions(static::permsByKeywords(['article', 'stock', 'fiche_stock'])->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                                        ->columns(2)->searchable()->bulkToggleable(),
-                                ]),
-
-                            Forms\Components\Tabs\Tab::make('📋 Expression Besoins')
-                                ->badge(fn() => static::permsByKeywords(['expression_besoin'])->count())
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(static::permsByKeywords(['expression_besoin'])->pluck('name', 'id'))
-                                        ->descriptions(static::permsByKeywords(['expression_besoin'])->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                                        ->columns(2)->bulkToggleable(),
-                                ]),
-
-                            Forms\Components\Tabs\Tab::make('🚛 Réceptions & OE')
-                                ->badge(fn() => static::permsByKeywords(['reception', 'ordre_entree'])->count())
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(static::permsByKeywords(['reception', 'ordre_entree'])->pluck('name', 'id'))
-                                        ->descriptions(static::permsByKeywords(['reception', 'ordre_entree'])->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                                        ->columns(2)->bulkToggleable(),
-                                ]),
-
-                            Forms\Components\Tabs\Tab::make('📤 BSF / BSP / OS')
-                                ->badge(fn() => static::permsByKeywords(['bon_sortie', 'ordre_sortie'])->count())
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(static::permsByKeywords(['bon_sortie', 'ordre_sortie'])->pluck('name', 'id'))
-                                        ->descriptions(static::permsByKeywords(['bon_sortie', 'ordre_sortie'])->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                                        ->columns(2)->bulkToggleable(),
-                                ]),
-
-                            Forms\Components\Tabs\Tab::make('📁 Détenteurs & Conso.')
-                                ->badge(fn() => static::permsByKeywords(['fiche_detenteur', 'registre_consommation'])->count())
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(static::permsByKeywords(['fiche_detenteur', 'registre_consommation'])->pluck('name', 'id'))
-                                        ->descriptions(static::permsByKeywords(['fiche_detenteur', 'registre_consommation'])->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                                        ->columns(2)->bulkToggleable(),
-                                ]),
-
-                            // ════════════════════════════════════
-                            // MODULE MARCHÉS PUBLICS
-                            // ════════════════════════════════════
-                            Forms\Components\Tabs\Tab::make('🏗 Marchés Publics')
-                                ->badge(fn() => static::permsByKeywords(['marche', 'appel_offre', 'offre', 'caution', 'avenant'])->count() ?: null)
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(static::permsByKeywords(['marche', 'appel_offre', 'offre', 'caution', 'avenant'])->pluck('name', 'id'))
-                                        ->descriptions(static::permsByKeywords(['marche', 'appel_offre', 'offre', 'caution', 'avenant'])->mapWithKeys(fn($p) => [$p->id => static::getPermissionDescription($p->name)]))
-                                        ->columns(2)->bulkToggleable(),
-                                ]),
-
-                            // ════════════════════════════════════
-                            // ADMINISTRATION
-                            // ════════════════════════════════════
-                            static::makeTab('Utilisateurs', 'heroicon-o-users', ['user']),
-                            static::makeTab('Rôles', 'heroicon-o-shield-check', ['role']),
-                            static::makeTab('Personnel', 'heroicon-o-identification', ['personnel', 'service']),
-                            static::makeTab('Paramètres', 'heroicon-o-cog', ['parametres', 'exercice', 'etat_config', 'regime_fiscal']),
-
-                            // ── Autres ────────────────────────
-                            Forms\Components\Tabs\Tab::make('Autres')
-                                ->icon('heroicon-o-ellipsis-horizontal-circle')
-                                ->schema([
-                                    Forms\Components\CheckboxList::make('permissions')
-                                        ->label('')->relationship('permissions', 'name')
-                                        ->options(
-                                            Permission::where(function ($q) {
-                                                foreach (
-                                                    [
-                                                        'budget',
-                                                        'bon_commande',
-                                                        'engagement',
-                                                        'bordereau_engagement',
-                                                        'decision_administrative',
-                                                        'type_decision',
-                                                        'ordonnance_paiement',
-                                                        'memoire_depense',
-                                                        'recette_reelle',
-                                                        'prevision_recette',
-                                                        'virement_budgetaire',
-                                                        'fournisseur',
-                                                        'dossier_fournisseur',
-                                                        'piece_dossier',
-                                                        'transmission',
-                                                        'article',
-                                                        'stock',
-                                                        'fiche_stock',
-                                                        'expression_besoin',
-                                                        'reception',
-                                                        'ordre_entree',
-                                                        'bon_sortie',
-                                                        'ordre_sortie',
-                                                        'fiche_detenteur',
-                                                        'registre_consommation',
-                                                        'marche',
-                                                        'appel_offre',
-                                                        'offre',
-                                                        'caution',
-                                                        'avenant',
-                                                        'user',
-                                                        'role',
-                                                        'personnel',
-                                                        'service',
-                                                        'parametres',
-                                                        'exercice',
-                                                        'etat_config',
-                                                        'regime_fiscal',
-                                                    ] as $kw
-                                                ) {
-                                                    $q->where('name', 'not like', "%{$kw}%");
-                                                }
-                                                $q->where('name', 'not like', 'access_module_%');
-                                            })
-                                                ->orderBy('name')->get()->pluck('name', 'id')
-                                        )
-                                        ->columns(2)->searchable()->bulkToggleable(),
-                                ]),
-                        ])
-                        ->columnSpanFull()
-                        ->persistTabInQueryString(),
-                ])
-                ->collapsible(),
+                    Forms\Components\Tabs::make('modules')->tabs($onglets)->persistTabInQueryString(),
+                ]),
         ]);
     }
 
-    // =========================================================
-    // TABLE
-    // =========================================================
     public static function table(Table $table): Table
     {
         return $table
@@ -353,6 +242,13 @@ class RoleResource extends Resource
                     })
                     ->formatStateUsing(fn($state) => "Niv. {$state}"),
 
+                Tables\Columns\TextColumn::make('modules')
+                    ->label('Modules accessibles')
+                    ->getStateUsing(fn($record) => collect(config('permission.catalogue.modules', []))
+                        ->filter(fn($m) => $record->permissions->contains('name', $m['acces']))
+                        ->pluck('libelle')->all())
+                    ->badge()->color('primary')->wrap(),
+
                 Tables\Columns\TextColumn::make('permissions_count')
                     ->label('Permissions')->counts('permissions')->badge()->color('info'),
 
@@ -363,6 +259,7 @@ class RoleResource extends Resource
                     ->label('Créé le')->dateTime('d/m/Y H:i')->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->modifyQueryUsing(fn($query) => $query->with('permissions'))
             ->defaultSort('niveau_hierarchique', 'desc')
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -404,6 +301,14 @@ class RoleResource extends Resource
             'access_module_budget' => '💰 Accès module Budget',
             'access_module_comptable' => '🗃️ Accès module Comptabilité Matières',
             'access_module_marches' => '🏗️ Accès module Marchés Publics',
+            'access_module_planification' => '🗺️ Accès module Planification stratégique',
+            'access_module_programmation' => '📅 Accès module Programmation (PPA, CBMT, CDMT)',
+            'access_module_suivi_evaluation' => '📊 Accès module Suivi et évaluation',
+            'access_module_admin' => '⚙️ Accès panneau Administration',
+            'view_compte_administratif' => '📘 Consulter et éditer le compte administratif',
+            'supprimer_ligne_budgetaire_adoptee' => '⚠️ Supprimer une ligne budgétaire (budget adopté, exceptionnel)',
+            'supprimer_ligne_prevision_adoptee' => '⚠️ Supprimer une ligne de prévision de recettes (exceptionnel)',
+            'operer_hors_periode_execution' => '⏱️ Opérer hors période d\'exécution (dérogation)',
             // Budget
             'valider_bon_commande' => '✅ Valider bon de commande',
             'engager_bon_commande' => '📌 Engager bon de commande',

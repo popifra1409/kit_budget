@@ -566,9 +566,10 @@ class RegieAvanceResource extends Resource
                                 ->label('Statuts à inclure')
                                 ->options([
                                     'paye'   => 'Payé',
+                                    'livre'  => 'Livré',
                                     'valide' => 'Validé',
                                 ])
-                                ->default(['paye', 'valide'])
+                                ->default(['paye', 'livre', 'valide'])
                                 ->columns(2)
                                 ->required(),
 
@@ -600,44 +601,11 @@ class RegieAvanceResource extends Resource
 
                             $decaissement = \App\Models\DecaissementRegie::with('provisions')->find($data['decaissement_id']);
                             $provisionIds = $decaissement?->provisions->pluck('id') ?? collect();
-                            $statutsFiltre = $data['statuts'] ?? ['paye', 'valide'];
+                            $statutsFiltre = $data['statuts'] ?? ['paye', 'livre', 'valide'];
 
-                            // ✅ Basé sur provision_consommations (traçabilité réelle) —
-                            //    un BCR réparti sur plusieurs tranches n'apparaît ici que
-                            //    pour la part réellement prise sur CE décaissement.
-                            $depenses = \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
-                                ->with('bonCommandeRegie.fournisseur')
-                                ->get()
-                                ->map(function ($c) {
-                                    $bcr = $c->bonCommandeRegie;
-                                    if (!$bcr) return null;
-
-                                    $ratio = (float) $bcr->montant_ttc > 0
-                                        ? ((float) $c->montant / (float) $bcr->montant_ttc)
-                                        : 0;
-
-                                    return (object) [
-                                        'numero'         => $bcr->numero_facture_definitive
-                                            ? $bcr->numero_facture_definitive . ($ratio < 0.999 ? ' (part.)' : '')
-                                            : '⚠️ ' . $bcr->numero . ' (facture non renseignée)',
-                                        'statut'         => $bcr->statut,
-                                        'date_emission'  => $bcr->date_emission,
-                                        'fournisseur'    => $bcr->fournisseur,
-                                        'montant_ttc'    => round((float) $bcr->montant_ttc * $ratio, 2),
-                                        'montant_tva'    => round((float) $bcr->montant_tva * $ratio, 2),
-                                        'montant_ir'     => round((float) $bcr->montant_ir * $ratio, 2),
-                                        'net_a_payer'    => round((float) $bcr->net_a_payer * $ratio, 2),
-                                    ];
-                                })
-                                ->filter()
-                                ->filter(fn($d) => in_array($d->statut, $statutsFiltre))
-                                ->filter(function ($d) use ($data) {
-                                    if (!$d->date_emission) return true;
-                                    $de = \Carbon\Carbon::parse($d->date_emission);
-                                    return $de->between($data['date_debut'], $data['date_fin']);
-                                })
-                                ->sortBy('date_emission')
-                                ->values();
+                            // ✅ Une ligne par BCR : imputations de ce BCR sur CE décaissement additionnées ;
+                            //    montants exacts si le BCR y est entièrement imputé, prorata sinon.
+                            $depenses = static::depensesDuDecaissement($decaissement, $statutsFiltre, $data['date_debut'], $data['date_fin']);
 
                             $lignesApurement = collect(explode("\n", $data['texte_apurement'] ?? ''))
                                 ->map(fn($l) => trim($l))
@@ -719,9 +687,10 @@ class RegieAvanceResource extends Resource
                                 ->label('Statuts à inclure')
                                 ->options([
                                     'paye'   => 'Payé',
+                                    'livre'  => 'Livré',
                                     'valide' => 'Validé',
                                 ])
-                                ->default(['paye', 'valide'])
+                                ->default(['paye', 'livre', 'valide'])
                                 ->columns(2)
                                 ->required(),
 
@@ -737,44 +706,12 @@ class RegieAvanceResource extends Resource
 
                             $decaissement = \App\Models\DecaissementRegie::with('provisions')->find($data['decaissement_id']);
                             $provisionIds = $decaissement?->provisions->pluck('id') ?? collect();
-                            $statutsFiltre = $data['statuts'] ?? ['paye', 'valide'];
+                            $statutsFiltre = $data['statuts'] ?? ['paye', 'livre', 'valide'];
 
-                            // ✅ Basé sur provision_consommations (traçabilité réelle) —
-                            //    un BCR réparti sur plusieurs tranches n'apparaît ici que
-                            //    pour la part réellement prise sur CE décaissement.
-                            $depenses = \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
-                                ->with('bonCommandeRegie.fournisseur')
-                                ->get()
-                                ->map(function ($c) {
-                                    $bcr = $c->bonCommandeRegie;
-                                    if (!$bcr) return null;
-
-                                    $ratio = (float) $bcr->montant_ttc > 0
-                                        ? ((float) $c->montant / (float) $bcr->montant_ttc)
-                                        : 0;
-
-                                    return (object) [
-                                        'numero'         => $bcr->numero_facture_definitive
-                                            ? $bcr->numero_facture_definitive . ($ratio < 0.999 ? ' (part.)' : '')
-                                            : '⚠️ ' . $bcr->numero . ' (facture non renseignée)',
-                                        'statut'         => $bcr->statut,
-                                        'date_emission'  => $bcr->date_emission,
-                                        'fournisseur'    => $bcr->fournisseur,
-                                        'montant_ttc'    => round((float) $bcr->montant_ttc * $ratio, 2),
-                                        'montant_tva'    => round((float) $bcr->montant_tva * $ratio, 2),
-                                        'montant_ir'     => round((float) $bcr->montant_ir * $ratio, 2),
-                                        'net_a_payer'    => round((float) $bcr->net_a_payer * $ratio, 2),
-                                    ];
-                                })
-                                ->filter()
-                                ->filter(fn($d) => in_array($d->statut, $statutsFiltre))
+                            // ✅ Une ligne par BCR : imputations de ce BCR sur CE décaissement additionnées ;
+                            //    montants exacts si le BCR y est entièrement imputé, prorata sinon.
+                            $depenses = static::depensesDuDecaissement($decaissement, $statutsFiltre, $data['date_debut'], $data['date_fin'])
                                 ->filter(fn($d) => $d->montant_ir > 0)
-                                ->filter(function ($d) use ($data) {
-                                    if (!$d->date_emission) return true;
-                                    $de = \Carbon\Carbon::parse($d->date_emission);
-                                    return $de->between($data['date_debut'], $data['date_fin']);
-                                })
-                                ->sortBy('date_emission')
                                 ->values();
 
                             $totaux = [
@@ -830,6 +767,61 @@ class RegieAvanceResource extends Resource
             RelationManagers\DecaissementsRelationManager::class,
             RelationManagers\DepensesRelationManager::class,
         ];
+    }
+
+    /**
+     * ✅ Dépenses d'un décaissement (compte d'emploi, retenues IR) : UNE ligne par BCR.
+     *  - imputations du BCR sur les provisions de ce décaissement additionnées ;
+     *  - BCR entièrement imputé sur ce décaissement : montants exacts du BCR ;
+     *  - BCR réparti sur plusieurs décaissements : TTC = montant réellement imputé ici,
+     *    TVA / IR / net au prorata (mention « (part.) »).
+     */
+    public static function depensesDuDecaissement(?\App\Models\DecaissementRegie $decaissement, array $statuts, $debut, $fin): \Illuminate\Support\Collection
+    {
+        if (!$decaissement) {
+            return collect();
+        }
+
+        $provisionIds = $decaissement->provisions()->pluck('id');
+        $debut = \Carbon\Carbon::parse($debut)->startOfDay();
+        $fin = \Carbon\Carbon::parse($fin)->endOfDay();
+
+        return \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
+            ->with('bonCommandeRegie.fournisseur')
+            ->get()
+            ->groupBy('bon_commande_regie_id')
+            ->map(function ($consommations) {
+                $bcr = $consommations->first()->bonCommandeRegie;
+                if (!$bcr) {
+                    return null;
+                }
+
+                $ttc = (float) $bcr->montant_ttc;
+                $impute = (float) $consommations->sum('montant');
+                $complet = $ttc <= 0 || $impute >= $ttc - 0.5;
+                $ratio = $ttc > 0 ? min(1, $impute / $ttc) : 0;
+                $part = fn($v) => $complet ? (float) $v : round((float) $v * $ratio, 0);
+
+                return (object) [
+                    'numero'        => ($bcr->numero_facture_definitive
+                        ? $bcr->numero_facture_definitive
+                        : '⚠️ ' . $bcr->numero . ' (facture non renseignée)')
+                        . ($complet ? '' : ' (part.)'),
+                    'bcr'           => $bcr->numero,
+                    'statut'        => $bcr->statut,
+                    'date_emission' => $bcr->date_emission,
+                    'fournisseur'   => $bcr->fournisseur,
+                    'montant_ttc'   => $complet ? $ttc : round($impute, 0),
+                    'montant_tva'   => $part($bcr->montant_tva),
+                    'montant_ir'    => $part($bcr->montant_ir),
+                    'net_a_payer'   => $part($bcr->net_a_payer),
+                ];
+            })
+            ->filter()
+            ->filter(fn($d) => in_array($d->statut, $statuts, true))
+            ->filter(fn($d) => !$d->date_emission || \Carbon\Carbon::parse($d->date_emission)->between($debut, $fin))
+            ->sortBy('date_emission')
+            ->values();
     }
 
     public static function getPages(): array

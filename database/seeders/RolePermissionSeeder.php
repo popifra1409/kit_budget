@@ -9,350 +9,58 @@ use Spatie\Permission\PermissionRegistrar;
 
 class RolePermissionSeeder extends Seeder
 {
+    /** Permissions créées lors de CETTE exécution (seules à être attribuées aux rôles existants). */
+    protected array $nouvelles = [];
+
     public function run(): void
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         // ====================================================
-        // 1. MODULES CRUD — Budget
+        // 1. PERMISSIONS DU CATALOGUE (config/permission.php (clé « catalogue »))
         // ====================================================
-        $modulesBudget = [
-            'action',
-            'activite',
-            'activity',
-            'bon_commande',
-            'bordereau_engagement',
-            'budget',
-            'collectif_budgetaire',
-            'decision_administrative',
-            'dossier_fournisseur',
-            'engagement',
-            'etat_config',
-            'exercice',
-            'fournisseur',
-            'memoire_depense',
-            'nomenclature_budgetaire',
-            'groupe_nomenclature',
-            'facture_proforma',
-            'ordonnance_paiement',
-            'parametres_fournisseur',
-            'parametres_structure',
-            'permission',
-            'personnel',
-            'piece_dossier',
-            'prevision_recette',
-            'programme',
-            'recette_reelle',
-            'reference_mercuriale',
-            'regime_fiscal',
-            'role',
-            'service',
-            'tache',
-            'transmission',
-            'type_decision',
-            'type_engagement',
-            'user',
-            'virement_budgetaire',
-            'fiche_controle_engagements',
-            'avenant_engagement',
-            'regie_avance',
-            'menu_depense',
-            'decaissement_regie',
-            'depense_regie',
-            'bon_commande_regie',
-        ];
+        $this->command->info('📝 Création des permissions du catalogue...');
+        $catalogue = config('permission.catalogue.modules', []);
+        $actions = config('permission.catalogue.actions_crud', ['view_any', 'view', 'create', 'update', 'delete']);
 
-        // ====================================================
-        // 2. MODULES CRUD — Comptabilité Matières
-        // ====================================================
-        $modulesComptable = [
-            'article',
-            'stock',
-            'fiche_stock',
-            'expression_besoin',
-            'reception',
-            'ordre_entree',
-            'bon_sortie_fourniture',
-            'bon_sortie_provisoire',
-            'ordre_sortie',
-            'fiche_detenteur',
-            'registre_consommation',
-            'unite_mesure',
-            'conditionnement',
-            'categorie_article',
-            'fiche_consolidation_besoin',
-        ];
-
-        $modulesMarches = [];
-
-        // ====================================================
-        // 2bis. MODULES CRUD — Planification Stratégique
-        // ====================================================
-        // NOTE : 'action_sous_programme', 'projet_strategique' et
-        // 'activite_planification' ont ete retires suite a la
-        // reconciliation architecturale (guide MINEPAT 2026) : le
-        // Sous-Programme strategique se rattache desormais directement
-        // aux Programme/Action/Activite/Tache DEJA EXISTANTS du module
-        // Budget (deplaces dans Planification), sans duplication.
-        // Ces modules restent donc dans $modulesBudget ci-dessus.
-        $modulesPlanification = [
-            'csp_ministere_sante',
-            'plan_strategique_ep',
-            'sous_programme_ep',
-            'indicateur',
-            'extrant',
-        ];
-
-        // ====================================================
-        // 2ter. MODULES CRUD — Programmation
-        // ====================================================
-        $modulesProgrammation = [
-            'ppa_exercice',
-            'cbmt_exercice',
-            'cdmt_exercice',
-        ];
-
-        // ====================================================
-        // 2quater. MODULES CRUD — Suivi et Evaluation
-        // ====================================================
-        $modulesSuiviEvaluation = [
-            'rapport_activite_periodique',
-            'rapport_annuel_performance',
-        ];
-
-        // ── Créer permissions CRUD (firstOrCreate = non destructif) ──
-        $this->command->info('📝 Création permissions CRUD...');
-        $permsCrudCreees = 0;
-        foreach (
-            array_merge(
-                $modulesBudget,
-                $modulesComptable,
-                $modulesMarches,
-                $modulesPlanification,
-                $modulesProgrammation,
-                $modulesSuiviEvaluation
-            ) as $module
-        ) {
-            foreach (['view', 'view_any', 'create', 'update', 'delete'] as $action) {
-                $created = Permission::firstOrCreate([
-                    'name'       => "{$action}_{$module}",
-                    'guard_name' => 'web',
-                ]);
-                if ($created->wasRecentlyCreated) $permsCrudCreees++;
+        foreach ($catalogue as $module) {
+            $this->creer($module['acces']);
+            foreach ($module['rubriques'] as $rubrique) {
+                foreach ($rubrique['crud'] ?? [] as $ressource) {
+                    foreach ($actions as $action) {
+                        $this->creer("{$action}_{$ressource}");
+                    }
+                }
+                foreach ($rubrique['speciales'] ?? [] as $permission) {
+                    $this->creer($permission);
+                }
             }
         }
-        $this->command->line("  ✓ {$permsCrudCreees} nouvelle(s) permission(s) CRUD créée(s)");
 
         // ====================================================
-        // 3. PERMISSIONS SPÉCIALES
+        // 2. PERMISSIONS UTILISÉES DANS LE CODE MAIS ABSENTES
         // ====================================================
-        $special = [
-            'activer_parametres_fournisseur',
-            'blacklister_fournisseur',
-            'toggle_fournisseur',
-            'activer_budget',
-            'adopter_budget',
-            'cloturer_budget',
-            'activer_service',
-            'ouvrir_exercice',
-            'cloturer_exercice',
-            'reconduire_exercice',
-            'valider_bon_commande',
-            'annuler_bon_commande',
-            'force_update_bon_commande',
-            'engager_bon_commande',
-            'desengager_bon_commande',
-            'recuperer_bon_commande',
-            'valider_engagement',
-            'annuler_engagement',
-            'creer_avenant_engagement',
-            'valider_decision_administrative',
-            'annuler_decision_administrative',
-            'force_update_decision_administrative',
-            'engager_decision_administrative',
-            'desengager_decision_administrative',
-            'recuperer_decision_administrative',
-            'emettre_ordonnance_paiement',
-            'viser_ordonnance_paiement',
-            'valider_ordonnance_paiement',
-            'payer_ordonnance_paiement',
-            'annuler_ordonnance_paiement',
-            'creer_op_depuis_engagement',
-            'telecharger_ordonnance_paiement',
-            'override_ordonnance_paiement',
-            'transmettre_bordereau_engagement',
-            'receptionner_bordereau_engagement',
-            'valider_bordereau_engagement',
-            'rejeter_bordereau_engagement',
-            'retourner_bordereau_engagement',
-            'telecharger_bordereau_engagement',
-            'override_bordereau_engagement',
-            'gerer_engagements_bordereau',
-            'valider_memoire_depense',
-            'devalider_memoire_depense',
-            'transformer_memoire_depense_en_da',
-            'transmettre_document',
-            'retourner_document',
-            'cloturer_transmission',
-            'annuler_transmission',
-            'view_all_transmissions',
-            'view_my_transmissions',
-            'cloturer_dossier_fournisseur',
-            'annuler_dossier_fournisseur',
-            'ajouter_piece_dossier',
-            'supprimer_piece_dossier',
-            'valider_piece_dossier',
-            'invalider_piece_dossier',
-            'telecharger_piece_dossier',
-            'view_all_dossiers',
-            'view_my_dossiers',
-            'activer_reference_mercuriale',
-            'generer_pdf_fiche_controle_engagements',
-            'soumettre_expression_besoin',
-            'valider_expression_besoin',
-            'rejeter_expression_besoin',
-            'signer_expression_besoin',
-            'consolider_expression_besoin',
-            'signer_pv_reception',
-            'integrer_reception_stock',
-            'signer_ordre_entree',
-            'transmettre_ordre_entree',
-            'soumettre_bon_sortie_fourniture',
-            'signer_bsp_demandeur',
-            'signer_bsp_comptable',
-            'signer_bsp_ordonnateur',
-            'executer_bon_sortie_provisoire',
-            'signer_ordre_sortie',
-            'transmettre_ordre_sortie',
-            'retourner_fiche_detenteur',
-            'ajuster_stock',
-            'inventorier_stock',
-            'access_module_portal',
-            'access_module_budget',
-            'access_module_comptable',
-            'access_module_marches',
-            'valider_regie_avance',
-            'suspendre_regie_avance',
-            'cloturer_regie_avance',
-            'reapprovisionner_regie_avance',
-            'valider_menu_depense',
-            'suspendre_menu_depense',
-            'cloturer_menu_depense',
-            'reapprovisionner_menu_depense',
-            'valider_decaissement_regie',
-            'verser_decaissement_regie',
-            'apurer_decaissement_regie',
-            'valider_depense_regie',
-            'annuler_depense_regie',
-            'valider_bon_commande_regie',
-            'annuler_bon_commande_regie',
-            'imprimer_etat_retenues_regie',
-            'imprimer_compte_emploi_regie',
-            'generer_bon_commande_expression_besoin',
-            'generer_expression_besoin_bon_commande',
-
-            // ── Budget Programme Triennal ──────────────────
-            'view_budget_programme',
-            'saisir_previsions_budget_programme',
-            'exporter_budget_programme',
-            'gerer_collectif_budgetaire',
-            'valider_collectif_budgetaire',
-            'adopter_collectif_budgetaire',
-            'annuler_collectif_budgetaire',
-
-            // ── Marquer payée OP ──────────────────────────
-            'marquer_payee_ordonnance_paiement',
-
-            // ── Module Planification Stratégique ───────────
-            'access_module_planification',
-            'transmettre_plan_strategique_ep',
-            'valider_plan_strategique_ep',
-            'retourner_plan_strategique_ep',
-            'cloturer_plan_strategique_ep',
-            'transmettre_sous_programme_ep',
-            'valider_sous_programme_ep',
-            'retourner_sous_programme_ep',
-            'saisir_valeur_indicateur',
-            'valider_valeur_indicateur',
-            // Workflow sur Activite (existant, module Budget deplace dans
-            // Planification, enrichi de HasWorkflow lors de la reconciliation)
-            'transmettre_activite',
-            'valider_activite',
-            'retourner_activite',
-
-            // ✅ AJOUTE : Tableau de revue des libelles (arborescence)
-            'view_arborescence_libelles',      // voir le tableau (limite a ses propres sous-programmes)
-            'view_all_arborescence_libelles',  // voir tous les sous-programmes du PSP
-            'exporter_arborescence_libelles',  // export PDF / Excel
-
-            // ── Module Programmation ───────────────────────
-            'access_module_programmation',
-            'transmettre_ppa_exercice',
-            'valider_ppa_exercice',
-            'retourner_ppa_exercice',
-            'transmettre_cbmt_exercice',
-            'valider_cbmt_exercice',
-            'retourner_cbmt_exercice',
-            'transmettre_cdmt_exercice',
-            'valider_cdmt_exercice',
-            'retourner_cdmt_exercice',
-
-            // ── Module Suivi et Evaluation ───────────────────────
-            'access_module_suivi_evaluation',
-            'transmettre_rapport_activite_periodique',
-            'valider_rapport_activite_periodique',
-            'retourner_rapport_activite_periodique',
-            'transmettre_rapport_annuel_performance',
-            'valider_rapport_annuel_performance',
-            'retourner_rapport_annuel_performance',
-
-            // ✅ AJOUTE : Matrice d'arrimage strategique (Tableaux de Bord)
-            'view_matrice_arrimage',      // voir la matrice (limitee a ses propres sous-programmes)
-            'view_all_matrice_arrimage',  // voir tous les sous-programmes du PSP
-            'exporter_matrice_arrimage',  // export PDF / Excel
-            // ── Audit (journal d'activite, panel Administration) ──
-
-            // ✅ AJOUTE : acces au panel Administration (/admin), controle par User::canAccessPanel()
-            //    super_admin et admin la recoivent automatiquement.
-            'access_module_admin',
-            'gerer_parametres_execution',
-
-            //Service fait et liquidation
-            'view_any_liquidation',
-            'create_liquidation',
-            'certifier_service_fait',
-            'liquider_depense',
-            'viser_liquidation',
-            'gerer_natures_service_fait',
-
-            // ── Exécution budgétaire : liquidation, procédure exceptionnelle, paramètres ──
-            'view_any_paiement_exceptionnel',
-            'create_paiement_exceptionnel',
-            'autoriser_paiement_exceptionnel',
-            'payer_paiement_exceptionnel',
-            'regulariser_paiement_exceptionnel',
-            'annuler_execution_mouvement_credit',
-
-            // ── Clôture d'exercice : reports, annulations, états de fin de gestion ──
-            'view_any_cloture_exercice',
-            'gerer_cloture_exercice',
-            'arreter_reports_credits',
-            'enregistrer_avis_ca',
-        ];
-
-        $this->command->info('📝 Création permissions spéciales...');
-        $permsSpecialesCreees = 0;
-        foreach ($special as $perm) {
-            $created = Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
-            if ($created->wasRecentlyCreated) $permsSpecialesCreees++;
+        $this->command->info('🔎 Recherche des permissions utilisées dans le code...');
+        $horsCatalogue = [];
+        foreach ($this->permissionsDuCode() as $permission) {
+            if ($this->creer($permission)) {
+                $horsCatalogue[] = $permission;
+            }
         }
-        $this->command->line("  ✓ {$permsSpecialesCreees} nouvelle(s) permission(s) spéciale(s) créée(s)");
+        if ($horsCatalogue) {
+            $this->command->warn('  ⚠️  ' . count($horsCatalogue) . ' permission(s) utilisée(s) dans le code, absentes du catalogue, créées : '
+                . implode(', ', $horsCatalogue));
+            $this->command->warn('     → à ranger dans config/permission.php (clé « catalogue ») (onglet « Autres » de l\'écran des rôles en attendant).');
+        }
+
+        $this->command->line('  ✓ ' . count($this->nouvelles) . ' nouvelle(s) permission(s) créée(s) au total');
 
         // ====================================================
-        // 4. RÔLES ET ATTRIBUTIONS
+        // 3. RÔLES ET ATTRIBUTIONS
         // ====================================================
-        $this->command->info('🔐 Attribution des nouvelles permissions aux rôles...');
-        $this->command->warn('  ⚡ Mode additif — aucune permission existante supprimée');
+        $this->command->info('🔐 Attribution aux rôles...');
+        $this->command->warn('  ⚡ Rôles existants : seules les permissions NOUVELLES sont ajoutées ; '
+            . 'les droits retirés dans l\'écran des rôles restent retirés.');
 
         // ── SUPER ADMIN — reçoit toutes les nouvelles permissions ────
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
@@ -1414,6 +1122,49 @@ class RolePermissionSeeder extends Seeder
      * @param array  $permissions Liste des permissions voulues pour ce rôle
      * @param string $label       Nom pour les logs console
      */
+    /** Crée la permission si elle n'existe pas ; retourne true si elle vient d'être créée. */
+    protected function creer(string $nom): bool
+    {
+        $permission = Permission::firstOrCreate(['name' => $nom, 'guard_name' => 'web']);
+        if ($permission->wasRecentlyCreated) {
+            $this->nouvelles[] = $nom;
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Permissions vérifiées dans le code : ->can('x'), ->cannot('x'), hasPermissionTo('x'),
+     * hasAnyPermission(['x', …]), @can('x'). Les capacités de policy à un mot (« update »…) sont ignorées.
+     */
+    protected function permissionsDuCode(): array
+    {
+        $trouvees = [];
+        $dossiers = array_filter([app_path(), resource_path('views'), base_path('routes')], 'is_dir');
+
+        foreach ($dossiers as $dossier) {
+            $fichiers = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dossier, \FilesystemIterator::SKIP_DOTS));
+            foreach ($fichiers as $fichier) {
+                if (!str_ends_with($fichier->getFilename(), '.php')) {
+                    continue;
+                }
+                $code = file_get_contents($fichier->getPathname());
+
+                preg_match_all("/(?:->can|->cannot|hasPermissionTo|@can|@cannot)\\(\\s*['\"]([a-z][a-z0-9]*(?:_[a-z0-9]+)+)['\"]\\s*[,)]/", $code, $m);
+                array_push($trouvees, ...$m[1]);
+
+                preg_match_all("/hasAnyPermission\\(\\s*\\[([^\\]]*)\\]/", $code, $listes);
+                foreach ($listes[1] as $liste) {
+                    preg_match_all("/['\"]([a-z][a-z0-9]*(?:_[a-z0-9]+)+)['\"]/", $liste, $noms);
+                    array_push($trouvees, ...$noms[1]);
+                }
+            }
+        }
+
+        return array_values(array_unique($trouvees));
+    }
+
     protected function ajouterPermissionsRole(Role $role, array $permissions, string $label): void
     {
         // Permissions existantes en base parmi la liste fournie
@@ -1432,6 +1183,13 @@ class RolePermissionSeeder extends Seeder
 
         // Permissions déjà attribuées à ce rôle
         $dejAttribuees = $role->permissions()->pluck('name')->toArray();
+
+        // ✅ Rôle EXISTANT : seules les permissions créées lors de cette exécution lui sont proposées.
+        //    Une permission retirée volontairement dans l'écran des rôles n'est donc jamais rendue.
+        //    Rôle NOUVEAU (ou super_admin) : liste par défaut complète.
+        if (!$role->wasRecentlyCreated && $label !== 'super_admin') {
+            $existantesEnBase = array_values(array_intersect($existantesEnBase, $this->nouvelles));
+        }
 
         // Nouvelles permissions à ajouter (différence entre voulu et existant)
         $aAjouter = array_values(array_diff($existantesEnBase, $dejAttribuees));
