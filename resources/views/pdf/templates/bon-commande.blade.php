@@ -161,17 +161,10 @@ if ($ligneImputation && !$estBonCommandeRegie) {
 }
 
 // — le tableau des articles —
-$hauteurThead = $MEP::hauteurLigne(1, 8.5, 4);
 $largeurColRef = $largeurContenu * 0.18 - 7;
 $largeurColDes = $largeurContenu * 0.44 - 7;
-$hauteurLignesArticles = $bonCommande->lignes->map(function ($ligne) use ($MEP, $largeurColRef, $largeurColDes) {
-    return $MEP::hauteurLigne(max(
-        $MEP::nbLignes((string) ($ligne->reference ?? '-'), $largeurColRef, 8.5),
-        $MEP::nbLignes((string) $ligne->designation, $largeurColDes, 8.5)
-    ), 8.5, 4);
-})->all();
 
-// — le bloc de fin : totaux, montant en lettres, signatures —
+// — le bloc de fin : totaux, montant en lettres, signatures, mentions —
 $casParticulierFin = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier();
 if ($casParticulierFin) {
     $hauteurTotaux = 0.0;
@@ -191,18 +184,48 @@ $reserveBlocFin   = 11.25 + 9 + $hauteurTotaux
     ), 8)
     + 11.25 + $MEP::hauteurBloc(1, 8) + 11.25      // « Yaoundé Le______ »
     + $MEP::hauteurBloc(1, 8.5) + 7.5              // emplacements de signature
+    + 10.5 + $MEP::hauteurBloc(1, 6.5) + 1.5       // mentions d'impression, en fin de document
     + 12.5                                         // respiration entre le tableau et le bloc de fin
     + 18;                                          // marge de sécurité
 
 // — pages de suite : rappel du numéro —
 $hauteurEnTeteSuite = 46;
 
-$nbLignesParPage = $MEP::lignesParPage(
-    $hauteurLignesArticles,
-    $MEP::place($hauteurChapeau + 6 + $hauteurThead),
-    $MEP::place($hauteurEnTeteSuite + 6 + $hauteurThead),
-    $reserveBlocFin
-);
+/* Répartition des lignes du tableau sur les pages pour une taille de police. */
+$repartir = function (float $taille) use ($MEP, $bonCommande, $hauteurChapeau, $hauteurEnTeteSuite, $reserveBlocFin, $largeurColRef, $largeurColDes) {
+    $hauteurThead = $MEP::hauteurLigne(1, $taille, 4);
+    $hauteurs     = $bonCommande->lignes->map(function ($ligne) use ($MEP, $largeurColRef, $largeurColDes, $taille) {
+        return $MEP::hauteurLigne(max(
+            $MEP::nbLignes((string) ($ligne->reference ?? '-'), $largeurColRef, $taille),
+            $MEP::nbLignes((string) $ligne->designation, $largeurColDes, $taille)
+        ), $taille, 4);
+    })->all();
+
+    return $MEP::lignesParPage(
+        $hauteurs,
+        $MEP::place($hauteurChapeau + 6 + $hauteurThead),
+        $MEP::place($hauteurEnTeteSuite + 6 + $hauteurThead),
+        $reserveBlocFin
+    );
+};
+
+/*
+ * Le tableau se compose en 8.5pt. La taille ne descend d'un cran que si cela
+ * économise réellement une page, et jamais sous 7.5pt (lecture à l'œil nu).
+ */
+$tailleTable     = 8.5;
+$nbLignesParPage = $repartir($tailleTable);
+$nbPages         = count($nbLignesParPage);
+if ($nbPages > 1) {
+    foreach ([8.0, 7.5] as $tailleEssai) {
+        $essai = $repartir($tailleEssai);
+        if (count($essai) < $nbPages) {
+            $tailleTable     = $tailleEssai;
+            $nbLignesParPage = $essai;
+            $nbPages         = count($essai);
+        }
+    }
+}
 
 $lignesAll       = $bonCommande->lignes;
 $lignesChunked   = collect();
@@ -244,12 +267,12 @@ body              { font-size: 8.5pt; }
 table.simple              { width: 100%; border-collapse: collapse; }
 table.simple td           { border: none; padding: 3px; font-size: 8.5pt; }
 table.simple td:first-child { width: 30%; }
-.articles-table        { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 8.5pt; table-layout: fixed; }
+.articles-table        { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: {{ $tailleTable }}pt; table-layout: fixed; }
 .articles-table thead  { display: table-header-group; }
 .articles-table tfoot  { display: table-footer-group; }
 .articles-table tr     { page-break-inside: avoid; page-break-after: auto; }
-.articles-table th     { background: #f0f0f0; font-weight: bold; text-align: center; font-size: 8.5pt; border: 1px solid #000; padding: 4px 3px; overflow: hidden; word-wrap: break-word; }
-.articles-table td     { text-align: left; font-size: 8.5pt; border: 1px solid #000; padding: 4px 3px; overflow: hidden; word-wrap: break-word; white-space: normal; vertical-align: top; }
+.articles-table th     { background: #f0f0f0; font-weight: bold; text-align: center; font-size: {{ $tailleTable }}pt; border: 1px solid #000; padding: 4px 3px; overflow: hidden; word-wrap: break-word; }
+.articles-table td     { text-align: left; font-size: {{ $tailleTable }}pt; border: 1px solid #000; padding: 4px 3px; overflow: hidden; word-wrap: break-word; white-space: normal; vertical-align: top; }
 .articles-table td.nombre { text-align: right; white-space: nowrap; }
 .col-reference   { width: 18%; }
 .col-designation { width: 44%; }
@@ -277,44 +300,36 @@ table.simple td:first-child { width: 30%; }
 .bca-box-continue      { display: inline-block; border: 2px solid #000; padding: 5px 12px; font-weight: bold; font-size: 10pt; margin-bottom: 5px; }
 
 /*
- * ✅ FOOTER FIXE
- * position:fixed → DomPDF répète ce bloc sur CHAQUE page.
- * margin-bottom:2cm sur @page → espace réservé pour éviter le chevauchement.
- * La pagination (Page X/Y) est injectée par page_text() HORS de ce div.
+ * ✅ MENTIONS D'IMPRESSION
+ * Elles ferment le document : flux normal en bas de la dernière page, et non
+ * plus un bloc position:fixed qui repeignait le bas de chaque page en blanc.
  */
-.pdf-footer-fixe {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    height: 1.6cm;
-    border-top: 1px solid #ccc;
-    background: #fff;
-    padding-top: 2px;
-    font-size: 6.5pt;
-    color: #333;
-}
-.pdf-footer-fixe table { width: 100%; border-collapse: collapse; }
-.pdf-footer-fixe td    { border: none; padding: 0 4px; font-size: 6.5pt; vertical-align: middle; }
+.fin-document           { clear: both; margin-top: 14px; padding-top: 3px; border-top: 1px solid #ccc; page-break-inside: avoid; break-inside: avoid; }
+.fin-document table { width: 100%; border-collapse: collapse; }
+.fin-document td    { border: none; padding: 0 4px; font-size: 6.5pt; color: #333; vertical-align: middle; }
 </style>
 @endpush
 
 @section('content')
 
 {{--
-    ✅ SCRIPT PAGINATION — DOIT ÊTRE AU NIVEAU RACINE DU DOCUMENT
+    ✅ NUMÉRO DE PAGE — DOIT ÊTRE AU NIVEAU RACINE DU DOCUMENT
     ─────────────────────────────────────────────────────────────
     RÈGLE DomPDF : le <script type="text/php"> doit être placé
-    HORS de tout élément position:fixed/absolute/relative.
-    S'il est DANS le .pdf-footer-fixe, DomPDF ne l'exécute pas
-    de façon fiable (comportement dépendant de la version).
+    HORS de tout élément position:fixed/absolute/relative, sinon il
+    n'est pas exécuté de façon fiable selon la version.
+    NB : DomPDF 3.x n'exécute ce bloc que si l'option isPhpEnabled est
+    activée (config/dompdf.php ne porte que l'ancien enable_php), donc le
+    document reste identifié par « Suite — Page X » en en-tête de page.
 
-    page_text() inscrit "Page X / Y" sur CHAQUE page automatiquement.
+    page_text() inscrit "Page X / Y" sur CHAQUE page.
     Les variables {PAGE_NUM} et {PAGE_COUNT} sont résolues par DomPDF
     au moment du rendu de chaque page — elles sont donc toujours correctes,
     même si le bloc récapitulatif bascule en page 2.
 
     Coordonnées (points DomPDF, origine = coin supérieur gauche) :
       x = 260  → centré horizontalement sur A4 (595pt de large)
-      y = 820  → dans la zone footer (842pt de haut - 2cm de marge ≈ 785pt)
+      y = 820  → sous la zone de contenu (842pt de haut - 1cm de marge basse)
 --}}
 <script type="text/php">
 if (isset($pdf)) {
@@ -322,20 +337,6 @@ if (isset($pdf)) {
     $pdf->page_text(260, 820, "Page {PAGE_NUM} / {PAGE_COUNT}", $font, 7);
 }
 </script>
-
-{{-- ── Footer fixe — infos sur toutes les pages ─────────────── --}}
-<div class="pdf-footer-fixe">
-    <table>
-        <tr>
-            <td style="width:35%">Imprimé le : {{ $dateImpression }}</td>
-            <td style="width:30%;text-align:center">{{ $sigle }} — BCA {{ $numeroBca }}</td>
-            <td style="width:35%;text-align:right">
-                @if($initiauxCreateur)Par : {{ $initiauxCreateur }}@endif
-            </td>
-        </tr>
-    </table>
-    {{-- La ligne "Page X / Y" est positionnée par page_text() ci-dessus --}}
-</div>
 
 {{-- ── Contenu ───────────────────────────────────────────────── --}}
 @foreach ($lignesChunked as $pageIndex => $lignesPage)
@@ -504,6 +505,19 @@ if (isset($pdf)) {
                 </div>
             </div>
 
+        </div>
+
+        {{-- ── Mentions d'impression : clôturent le document ──────── --}}
+        <div class="fin-document">
+            <table>
+                <tr>
+                    <td style="width:35%">Imprimé le : {{ $dateImpression }}</td>
+                    <td style="width:30%;text-align:center">{{ $sigle }} — BCA {{ $numeroBca }}</td>
+                    <td style="width:35%;text-align:right">
+                        @if($initiauxCreateur)Par : {{ $initiauxCreateur }}@endif
+                    </td>
+                </tr>
+            </table>
         </div>
     @else
         <div class="page-break"></div>

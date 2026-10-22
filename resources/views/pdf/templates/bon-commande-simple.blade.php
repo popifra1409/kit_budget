@@ -136,17 +136,10 @@ $hauteurChapeau += $MEP::hauteurLigne(max(
 $hauteurChapeau += 12;                                                 // marge de calibrage
 
 // — le tableau des articles —
-$hauteurThead   = $MEP::hauteurLigne(1, 8, 3);
 $largeurColRef  = $largeurContenu * 0.16 - 6;
 $largeurColDes  = $largeurContenu * 0.46 - 6;
-$hauteurLignesArticles = $bonCommande->lignes->map(function ($ligne) use ($MEP, $largeurColRef, $largeurColDes) {
-    return $MEP::hauteurLigne(max(
-        $MEP::nbLignes((string) ($ligne->reference ?? '-'), $largeurColRef, 8),
-        $MEP::nbLignes((string) $ligne->designation, $largeurColDes, 8)
-    ), 8, 3);
-})->all();
 
-// — le bloc de fin : totaux, montant en lettres, signataires —
+// — le bloc de fin : totaux, montant en lettres, signataires, mentions —
 $casParticulierFin = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier();
 if ($casParticulierFin) {
     $hauteurTotaux = 0.0;
@@ -160,22 +153,52 @@ if ($casParticulierFin) {
 }
 $montantEnLettres = (string) \App\Helpers\NombreEnLettres::montantCFA($montantTtc);
 $reserveBlocFin   = 9 + $hauteurTotaux          // marge haute + lignes des totaux
-    + 68                                        // margin-bottom du bloc de fin + séparateur + montant en lettres
+    + 12                                        // séparateur pointillé
     + $MEP::hauteurBloc($MEP::nbLignes(
         'Arrete le present bon de commande a la somme de ' . mb_strtoupper($montantEnLettres), $largeurContenu, 8, true
     ), 8)
     + 91.5                                      // Ref. Offre / Conditions + fonction, emplacement et nom
+    + 10.5 + $MEP::hauteurBloc(2, 6.5) + 1.5     // mentions d'impression, en fin de document
     + 18;                                       // marge de sécurité
 
 // — pages de suite : rappel du numéro —
 $hauteurEnTeteSuite = 46;
 
-$nbLignesParPage = $MEP::lignesParPage(
-    $hauteurLignesArticles,
-    $MEP::place($hauteurChapeau + 4.5 + $hauteurThead),
-    $MEP::place($hauteurEnTeteSuite + 4.5 + $hauteurThead),
-    $reserveBlocFin
-);
+/* Répartition des lignes du tableau sur les pages pour une taille de police. */
+$repartir = function (float $taille) use ($MEP, $bonCommande, $hauteurChapeau, $hauteurEnTeteSuite, $reserveBlocFin, $largeurColRef, $largeurColDes) {
+    $hauteurThead = $MEP::hauteurLigne(1, $taille, 3);
+    $hauteurs     = $bonCommande->lignes->map(function ($ligne) use ($MEP, $largeurColRef, $largeurColDes, $taille) {
+        return $MEP::hauteurLigne(max(
+            $MEP::nbLignes((string) ($ligne->reference ?? '-'), $largeurColRef, $taille),
+            $MEP::nbLignes((string) $ligne->designation, $largeurColDes, $taille)
+        ), $taille, 3);
+    })->all();
+
+    return $MEP::lignesParPage(
+        $hauteurs,
+        $MEP::place($hauteurChapeau + 4.5 + $hauteurThead),
+        $MEP::place($hauteurEnTeteSuite + 4.5 + $hauteurThead),
+        $reserveBlocFin
+    );
+};
+
+/*
+ * Le tableau se compose en 8pt. La taille ne descend d'un cran que si cela
+ * économise réellement une page, et jamais sous 7pt (lecture à l'œil nu).
+ */
+$tailleTable     = 8.0;
+$nbLignesParPage = $repartir($tailleTable);
+$nbPages         = count($nbLignesParPage);
+if ($nbPages > 1) {
+    foreach ([7.5, 7.0] as $tailleEssai) {
+        $essai = $repartir($tailleEssai);
+        if (count($essai) < $nbPages) {
+            $tailleTable     = $tailleEssai;
+            $nbLignesParPage = $essai;
+            $nbPages         = count($essai);
+        }
+    }
+}
 
 $lignesAll     = $bonCommande->lignes;
 $lignesChunked = collect();
@@ -227,8 +250,8 @@ body { font-size: 8.5pt; }
 .articles-table       { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 8.5pt; table-layout: fixed; }
 .articles-table thead { display: table-header-group; }
 .articles-table tr    { page-break-inside: avoid; page-break-after: auto; }
-.articles-table th    { background: #f0f0f0; font-weight: bold; text-align: center; font-size: 8pt; border: 1px solid #000; padding: 3px; overflow: hidden; word-wrap: break-word; }
-.articles-table td    { text-align: left; font-size: 8pt; border: 1px solid #000; padding: 3px; overflow: hidden; word-wrap: break-word; white-space: normal; vertical-align: top; }
+.articles-table th    { background: #f0f0f0; font-weight: bold; text-align: center; font-size: {{ $tailleTable }}pt; border: 1px solid #000; padding: 3px; overflow: hidden; word-wrap: break-word; }
+.articles-table td    { text-align: left; font-size: {{ $tailleTable }}pt; border: 1px solid #000; padding: 3px; overflow: hidden; word-wrap: break-word; white-space: normal; vertical-align: top; }
 .articles-table td.nombre { text-align: right; white-space: nowrap; }
 .articles-table tfoot{
     display:table-footer-group;
@@ -267,41 +290,15 @@ body { font-size: 8.5pt; }
 .initiales table { width: 100%; border-collapse: collapse; }
 .initiales td    { border: none; padding: 0 4px; font-size: 6.5pt; vertical-align: top; }
 
-/* ── Footer fixe (identique à bon-commande.blade) ────── */
-.pdf-footer-fixe {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    height: 1.6cm; border-top: 1px solid #ccc;
-    background: #fff; padding-top: 2px; font-size: 6.5pt; color: #333;
-}
-
-.pdf-footer-fixe table { width: 100%; border-collapse: collapse; }
-.pdf-footer-fixe td    { border: none; padding: 0 4px; font-size: 6.5pt; vertical-align: middle; }
-
+/* ── Bloc de fin : totaux, montants, signataires ───────── */
 .bloc-fin-document{
     page-break-inside:avoid;
     break-inside:avoid;
-
-    margin-bottom:20mm;
 }
 </style>
 @endpush
 
 @section('content')
-
-{{-- Footer fixe --}}
-<div class="pdf-footer-fixe">
-    <table>
-        <tr>
-            <td style="width:35%">Imprimé le : {{ $dateImpression }}</td>
-            <td style="width:30%;text-align:center;font-weight:bold;">{{ $sigle }} — N° {{ $bonCommande->numero }}</td>
-            <td style="width:35%;text-align:right;">
-                Créé le : {{ $dateCreation }}
-                @if($nomCreateur !== '—') &nbsp;|&nbsp; Par : {{ $nomCreateur }} @endif
-            </td>
-        </tr>
-    </table>
-</div>
-
 @foreach ($lignesChunked as $pageIndex => $lignesPage)
 
     @if ($pageIndex === 0)
@@ -500,7 +497,19 @@ body { font-size: 8.5pt; }
                 </div>
             </div>
 
-           
+            {{-- ── Mentions d'impression : clôturent le document ── --}}
+            <div class="initiales">
+                <table>
+                    <tr>
+                        <td style="width:35%">Imprimé le : {{ $dateImpression }}</td>
+                        <td style="width:30%;text-align:center;font-weight:bold;">{{ $sigle }} — N° {{ $bonCommande->numero }}</td>
+                        <td style="width:35%;text-align:right;">
+                            Créé le : {{ $dateCreation }}
+                            @if($nomCreateur !== '—') &nbsp;|&nbsp; Par : {{ $nomCreateur }} @endif
+                        </td>
+                    </tr>
+                </table>
+            </div>
         </div>
 
     @else

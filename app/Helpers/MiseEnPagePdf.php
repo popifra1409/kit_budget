@@ -8,8 +8,8 @@ use Dompdf\Options;
 
 /**
  * Géométrie des documents DomPDF A4 : estimation de la hauteur réelle des blocs
- * (métriques de police DomPDF) pour découper les tableaux avant que le bloc de
- * signatures ne passe sous le pied de page fixe.
+ * (métriques de police DomPDF) pour découper les tableaux afin que le bloc de
+ * signatures reste sur une page qui a la place de l'afficher en entier.
  *
  * Ne contient aucune règle métier : uniquement des points et des lignes de texte.
  */
@@ -30,17 +30,14 @@ class MiseEnPagePdf
     public const MARGE_BAS = 1 * self::CM;
     public const MARGE_COTE = 1.5 * self::CM;
 
-    /** Pied de page fixe : height 1.6cm + padding-top 2px + border-top 1px. */
-    public const PIED_DE_PAGE_H = 1.6 * self::CM + 3 * self::PX;
-
     public const LARGEUR_CONTENU = self::PAGE_L - 2 * self::MARGE_COTE;
 
     /**
-     * Bas de la zone où le flux est encore visible : le pied de page fixe est
-     * ancré en bas de la zone de contenu et peint un fond blanc par-dessus le
-     * texte qui l'atteint (c'est ce qui faisait disparaître les signataires).
+     * Bas de la zone où le flux doit rester visible. Les mentions d'impression
+     * sont du flux normal en fin de document : plus rien ne peint par-dessus le
+     * texte, la marge basse de 1cm sert seule de limite.
      */
-    public const FLUX_BAS = self::PAGE_H - self::MARGE_BAS - self::PIED_DE_PAGE_H - 2;
+    public const FLUX_BAS = self::PAGE_H - self::MARGE_BAS - 4;
 
     /** Interligne DomPDF pour DejaVu Sans. */
     public const INTERLIGNE = 1.44;
