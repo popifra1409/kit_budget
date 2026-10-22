@@ -24,10 +24,17 @@ $sigle = $entete['sigle'] ?? $parametres?->sigle ?? 'CHUY';
 
 // ── Logo (identique à bon-commande.blade) ────────────────
 $logoOverride = !empty($entete['logo_override']);
-$logoBase64 = null; $logoMimeType = 'image/jpeg';
+$logoBase64 = null; $logoMimeType = 'image/jpeg'; $logoHauteurPt = null;
 if ($logoOverride) {
     $p = storage_path('app/public/' . ltrim($entete['logo_override'], '/'));
-    if (file_exists($p)) { $logoBase64 = base64_encode(file_get_contents($p)); $logoMimeType = mime_content_type($p) ?: 'image/jpeg'; }
+    if (file_exists($p)) {
+        $logoBase64 = base64_encode(file_get_contents($p)); $logoMimeType = mime_content_type($p) ?: 'image/jpeg';
+        // Le bandeau est affiché en 100% de la largeur de contenu : sa hauteur en dépend.
+        $dimensions = @getimagesize($p);
+        if ($dimensions && ($dimensions[0] ?? 0) > 0) {
+            $logoHauteurPt = \App\Helpers\MiseEnPagePdf::LARGEUR_CONTENU * $dimensions[1] / $dimensions[0];
+        }
+    }
     else $logoOverride = false;
 }
 $logoStdBase64 = null; $logoStdMimeType = 'image/jpeg';
@@ -79,26 +86,105 @@ if ($bonCommande->created_at)
 
 
 // ─────────────────────────────────────────────────────────
-$lignesPage1     = 14;
-$lignesPagesSuiv = 22;
+/* Sauts de page dynamiques : le pied de page fixe (position:fixed) peint un
+   fond blanc sur le bas de la page, et le bloc de fin (totaux, montant en
+   lettres, signataires) y glissait. Les hauteurs sont estimées bloc par bloc
+   avec les métriques de police de DomPDF. */
+$MEP            = \App\Helpers\MiseEnPagePdf::class;
+$largeurContenu = $MEP::LARGEUR_CONTENU;
 
-$lignesAll       = $bonCommande->lignes;
-$lignesChunked   = collect();
-$lignesRest      = $lignesAll;
-$lignesChunked->push($lignesRest->take($lignesPage1));
-$lignesRest = $lignesRest->skip($lignesPage1);
-while ($lignesRest->count() > 0) {
-    $lignesChunked->push($lignesRest->take($lignesPagesSuiv));
-    $lignesRest = $lignesRest->skip($lignesPagesSuiv);
+// — tout ce qui précède le tableau sur la première page —
+$hauteurChapeau = 9;                                                   // margin-top du tableau d'en-tête
+if ($logoOverride && $logoBase64) {
+    $hauteurChapeau += ($logoHauteurPt ?: 60) + 4.5;                   // bandeau pleine largeur + margin-bottom
+} else {
+    $colG = $largeurContenu * 0.22 - 6;
+    $colC = $largeurContenu * 0.56 - 6;
+    $lignesGauche = $MEP::nbLignes('REPUBLIQUE DU CAMEROUN', $colG, 7, true)
+                 + $MEP::nbLignes('Paix - Travail - Patrie', $colG, 7)
+                 + $MEP::nbLignes((string) ($entete['ministere_fr'] ?? ''), $colG, 6.5);
+    $lignesDroite = $MEP::nbLignes('REPUBLIC OF CAMEROON', $colG, 7, true)
+                 + $MEP::nbLignes('Peace - Work - Fatherland', $colG, 7)
+                 + $MEP::nbLignes((string) ($entete['ministere_en'] ?? ''), $colG, 6.5);
+    $lignesCentre = $MEP::nbLignes((string) ($entete['titre_fr'] ?? ''), $colC, 9.5, true)
+                 + $MEP::nbLignes((string) ($entete['titre_en'] ?? ''), $colC, 7.5);
+    if ($entete['sous_direction_fr'] ?? null) {
+        $lignesGauche += $MEP::nbLignes((string) $entete['sous_direction_fr'], $colG, 6);
+        $lignesDroite += $MEP::nbLignes((string) ($entete['sous_direction_en'] ?? $entete['sous_direction_fr']), $colG, 6);
+        $lignesCentre += $MEP::nbLignes((string) $entete['sous_direction_fr'], $colC, 7);
+    }
+    $hauteurChapeau += 5 + max($lignesGauche, $lignesCentre, $lignesDroite) * 10.8 + 3;
+    if ($logoStdBase64) $hauteurChapeau += 25.5;                       // logo 30px + marges 2px/2px
 }
-if ($lignesChunked->isEmpty()) $lignesChunked->push(collect());
-$nombrePages = $lignesChunked->count();
+$hauteurChapeau += 9.75;                                               // filet de séparation
+$hauteurChapeau += 30 + 3;                                             // encadré « COMMANDE N° » + margin-top
+$nomenclatureFinale = $bonCommande->getNomenclaturePrincipale();
+$hauteurChapeau += $MEP::hauteurLigne(max(
+    $MEP::nbLignes('Nom ou raison du Prestataire :', $largeurContenu * 0.38 - 9, 8.5, true),
+    $MEP::nbLignes((string) ($bonCommande->fournisseur->raison_sociale ?? ''), $largeurContenu * 0.62 - 9, 8.5)
+), 8.5, 2);
+$hauteurChapeau += $MEP::hauteurLigne(3, 8.5, 2);                      // mentions de livraison
+$hauteurChapeau += $MEP::hauteurLigne(max(
+    1, $MEP::nbLignes('le plus court possible et a nous confirmer au plus tard le _____________', $largeurContenu * 0.62 - 9, 8.5)
+), 8.5, 2);
+$hauteurChapeau += $MEP::hauteurLigne(max(
+    1, $MEP::nbLignes(($nomenclatureFinale?->code ?? 'N/A') . ' - ' . ($nomenclatureFinale?->libelle ?? 'Non définie'), $largeurContenu * 0.62 - 9, 8.5)
+), 8.5, 2);
+$hauteurChapeau += $MEP::hauteurLigne(max(
+    1, $MEP::nbLignes((string) ($bonCommande->engagement?->objet ?? ($bonCommande->objet ?? '')), $largeurContenu * 0.62 - 9, 8.5)
+), 8.5, 2);
+$hauteurChapeau += 12;                                                 // marge de calibrage
 
+// — le tableau des articles —
+$hauteurThead   = $MEP::hauteurLigne(1, 8, 3);
+$largeurColRef  = $largeurContenu * 0.16 - 6;
+$largeurColDes  = $largeurContenu * 0.46 - 6;
+$hauteurLignesArticles = $bonCommande->lignes->map(function ($ligne) use ($MEP, $largeurColRef, $largeurColDes) {
+    return $MEP::hauteurLigne(max(
+        $MEP::nbLignes((string) ($ligne->reference ?? '-'), $largeurColRef, 8),
+        $MEP::nbLignes((string) $ligne->designation, $largeurColDes, 8)
+    ), 8, 3);
+})->all();
 
-$nombreLignes = $bonCommande->lignes->count();
+// — le bloc de fin : totaux, montant en lettres, signataires —
+$casParticulierFin = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier();
+if ($casParticulierFin) {
+    $hauteurTotaux = 0.0;
+    foreach ($bonCommande->lignesDecompte() as [$libelleDecompte]) {
+        $hauteurTotaux += $MEP::hauteurLigne(max(1, $MEP::nbLignes(
+            mb_strtoupper((string) $libelleDecompte), $largeurContenu * 0.68 - 16, 8.5
+        )), 8.5, 2);
+    }
+} else {
+    $hauteurTotaux = 5 * 17.6;
+}
+$montantEnLettres = (string) \App\Helpers\NombreEnLettres::montantCFA($montantTtc);
+$reserveBlocFin   = 9 + $hauteurTotaux          // marge haute + lignes des totaux
+    + 68                                        // margin-bottom du bloc de fin + séparateur + montant en lettres
+    + $MEP::hauteurBloc($MEP::nbLignes(
+        'Arrete le present bon de commande a la somme de ' . mb_strtoupper($montantEnLettres), $largeurContenu, 8, true
+    ), 8)
+    + 91.5                                      // Ref. Offre / Conditions + fonction, emplacement et nom
+    + 18;                                       // marge de sécurité
 
-$totauxSurNouvellePage =
-    $nombreLignes >= ($lignesPage1 - 3);
+// — pages de suite : rappel du numéro —
+$hauteurEnTeteSuite = 46;
+
+$nbLignesParPage = $MEP::lignesParPage(
+    $hauteurLignesArticles,
+    $MEP::place($hauteurChapeau + 4.5 + $hauteurThead),
+    $MEP::place($hauteurEnTeteSuite + 4.5 + $hauteurThead),
+    $reserveBlocFin
+);
+
+$lignesAll     = $bonCommande->lignes;
+$lignesChunked = collect();
+$indexLigne    = 0;
+foreach ($nbLignesParPage as $nb) {
+    $lignesChunked->push($nb > 0 ? $lignesAll->slice($indexLigne, $nb) : collect());
+    $indexLigne += $nb;
+}
+if ($lignesChunked->isEmpty()) $lignesChunked->push($lignesAll);
 
 @endphp
 
@@ -283,8 +369,7 @@ body { font-size: 8.5pt; }
                 <tr>
                     <td style="padding:2px 4px;font-weight:bold;">IMPUTATION :</td>
                     <td style="padding:2px 4px;">
-                        @php $nomenclature = $bonCommande->getNomenclaturePrincipale(); @endphp
-                        {{ $nomenclature?->code ?? 'N/A' }} - {{ $nomenclature?->libelle ?? 'Non définie' }}
+                        {{ $nomenclatureFinale?->code ?? 'N/A' }} - {{ $nomenclatureFinale?->libelle ?? 'Non définie' }}
                     </td>
                 </tr>
                 <tr>
@@ -317,6 +402,8 @@ body { font-size: 8.5pt; }
 @endif
 
     {{-- Tableau des lignes ────────────────────────────────────── --}}
+    {{-- Une page peut n'accueillir que le bloc de fin : pas de tableau vide. --}}
+    @if ($lignesPage->isNotEmpty())
     <table class="articles-table">
         <colgroup>
             <col class="col-ref"><col class="col-des">
@@ -343,22 +430,16 @@ body { font-size: 8.5pt; }
             @endforeach
         </tbody>
     </table>
+    @endif
 
     @if ($loop->last)
 
         {{-- Totaux ──────────────────────────────────────────────── --}}
+        {{-- Le saut de page est calculé plus haut : la place du bloc de fin est
+             réservée sur la page qui l'accueille. L'en-tête de page de suite porte
+             déjà le numéro de la commande : pas de rappel ici. --}}
         <div class="bloc-fin-document">
 
-        @if($totauxSurNouvellePage)
-            <div class="page-break"></div>
-
-            <div class="rappel-bc">
-                <span class="rappel-bc-box">
-                    COMMANDE {{ $sigle }} N° {{ $bonCommande->numero }}
-                </span>
-            </div>
-        @endif
-        
         <div class="bloc-totaux">
             @php $casParticulier = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier(); @endphp
                 @if ($casParticulier)
@@ -427,26 +508,5 @@ body { font-size: 8.5pt; }
     @endif
 
 @endforeach
-
-{{-- Pagination DomPDF — au niveau racine (identique à bon-commande.blade) --}}
-
-<script type="text/php">
-if (isset($pdf)) {
-
-    $font = $fontMetrics->get_font(
-        "Helvetica",
-        "normal"
-    );
-
-    $pdf->text(
-        50,
-        50,
-        "TEST PAGINATION",
-        $font,
-        12
-    );
-}
-</script>
-</script>
 
 @endsection

@@ -28,10 +28,17 @@ $titreDocument = $entete['titre_document'] ?? 'BON DE COMMANDE ADMINISTRATIF';
 $sigle         = $entete['sigle'] ?? $parametres?->sigle ?? 'CHUY';
 
 $logoOverride   = !empty($entete['logo_override']);
-$logoBase64     = null; $logoMimeType = 'image/jpeg';
+$logoBase64     = null; $logoMimeType = 'image/jpeg'; $logoHauteurPt = null;
 if ($logoOverride) {
     $p = storage_path('app/public/' . ltrim($entete['logo_override'], '/'));
-    if (file_exists($p)) { $logoBase64 = base64_encode(file_get_contents($p)); $logoMimeType = mime_content_type($p) ?: 'image/jpeg'; }
+    if (file_exists($p)) {
+        $logoBase64 = base64_encode(file_get_contents($p)); $logoMimeType = mime_content_type($p) ?: 'image/jpeg';
+        // Le bandeau est affiché en 100% de la largeur de contenu : sa hauteur en dépend.
+        $dimensions = @getimagesize($p);
+        if ($dimensions && ($dimensions[0] ?? 0) > 0) {
+            $logoHauteurPt = \App\Helpers\MiseEnPagePdf::LARGEUR_CONTENU * $dimensions[1] / $dimensions[0];
+        }
+    }
     else $logoOverride = false;
 }
 $logoStdBase64 = null; $logoStdMimeType = 'image/jpeg';
@@ -103,13 +110,115 @@ if (!$estBonCommandeRegie) {
     }
 }
 
-$lignesChunked = collect([$bonCommande->lignes]);
+/* ─── Sauts de page dynamiques ───────────────────────────────────────────
+   Le pied de page fixe (position:fixed) peint un fond blanc sur le bas de
+   chaque page : sans place réservée, le récapitulatif et les signataires
+   glissent dessous et deviennent invisibles à l'impression. Les hauteurs
+   sont donc estimées bloc par bloc avec les métriques de police de DomPDF. */
+$MEP             = \App\Helpers\MiseEnPagePdf::class;
+$largeurContenu  = $MEP::LARGEUR_CONTENU;
+
+// — tout ce qui précède le tableau sur la première page —
+$hauteurChapeau = 9;                                                    // margin-top du tableau d'en-tête
+if ($logoOverride && $logoBase64) {
+    $hauteurChapeau += ($logoHauteurPt ?: 60) + 4.5;                    // bandeau pleine largeur + margin-bottom
+} else {
+    $colG = $largeurContenu * 0.22 - 6;
+    $colC = $largeurContenu * 0.56 - 6;
+    $lignesGauche = $MEP::nbLignes('REPUBLIQUE DU CAMEROUN', $colG, 7, true)
+                 + $MEP::nbLignes('Paix - Travail - Patrie', $colG, 7)
+                 + $MEP::nbLignes((string) ($entete['ministere_fr'] ?? ''), $colG, 6.5);
+    $lignesDroite = $MEP::nbLignes('REPUBLIC OF CAMEROON', $colG, 7, true)
+                 + $MEP::nbLignes('Peace - Work - Fatherland', $colG, 7)
+                 + $MEP::nbLignes((string) ($entete['ministere_en'] ?? ''), $colG, 6.5);
+    $lignesCentre = $MEP::nbLignes((string) ($entete['titre_fr'] ?? ''), $colC, 9.5, true)
+                 + $MEP::nbLignes((string) ($entete['titre_en'] ?? ''), $colC, 7.5);
+    if ($entete['sous_direction_fr'] ?? null) {
+        $lignesGauche  += $MEP::nbLignes((string) $entete['sous_direction_fr'], $colG, 6);
+        $lignesDroite  += $MEP::nbLignes((string) ($entete['sous_direction_en'] ?? $entete['sous_direction_fr']), $colG, 6);
+        $lignesCentre  += $MEP::nbLignes((string) $entete['sous_direction_fr'], $colC, 7);
+    }
+    $hauteurChapeau += 5 + max($lignesGauche, $lignesCentre, $lignesDroite) * 10.8 + 3;
+    if ($logoStdBase64) $hauteurChapeau += 29.25;                       // logo 34px + marges 3px/2px
+}
+$hauteurChapeau += 9.75;                                                // filet de séparation
+$hauteurChapeau += $MEP::hauteurBloc($MEP::nbLignes('DEMANDEUR : ' . strtoupper($service), $largeurContenu - 6, 9), 9) + 2.25;
+$hauteurChapeau += $MEP::hauteurBloc(1, 9) + 3.75;                       // BCA N°
+$hauteurChapeau += $MEP::hauteurBloc($MEP::nbLignes(mb_strtoupper((string) $titreDocument), $largeurContenu, 10, true), 10) + 6;
+$hauteurChapeau += $MEP::hauteurBloc(1, 10) + 7.5 + 7.5 + 9;             // « Pour les objets… » + div + margin-top
+$objetBC        = (string) ($bonCommande->engagement?->objet ?? ($bonCommande->objet ?? ''));
+$hauteurChapeau += $MEP::hauteurLigne(max(
+    $MEP::nbLignes('Objet du bon de commande :', $largeurContenu * 0.30 - 6, 8.5, true),
+    $MEP::nbLignes($objetBC, $largeurContenu * 0.70 - 6, 8.5)
+), 8.5, 3);
+$hauteurChapeau += $MEP::hauteurLigne(max(
+    $MEP::nbLignes('Nom ou raison du Prestataire :', $largeurContenu * 0.30 - 6, 8.5, true),
+    $MEP::nbLignes((string) $prestataireNom, $largeurContenu * 0.70 - 6, 8.5)
+), 8.5, 3);
+$hauteurChapeau += 7.5;                                                 // fermeture de la div d'informations
+if ($ligneImputation && !$estBonCommandeRegie) {
+    $hauteurChapeau += $MEP::hauteurBloc($MEP::nbLignes("Ligne d'imputation budgétaire : $ligneImputation", $largeurContenu - 6, 8), 8) + 3.75;
+}
+
+// — le tableau des articles —
+$hauteurThead = $MEP::hauteurLigne(1, 8.5, 4);
+$largeurColRef = $largeurContenu * 0.18 - 7;
+$largeurColDes = $largeurContenu * 0.44 - 7;
+$hauteurLignesArticles = $bonCommande->lignes->map(function ($ligne) use ($MEP, $largeurColRef, $largeurColDes) {
+    return $MEP::hauteurLigne(max(
+        $MEP::nbLignes((string) ($ligne->reference ?? '-'), $largeurColRef, 8.5),
+        $MEP::nbLignes((string) $ligne->designation, $largeurColDes, 8.5)
+    ), 8.5, 4);
+})->all();
+
+// — le bloc de fin : totaux, montant en lettres, signatures —
+$casParticulierFin = method_exists($bonCommande, 'estCasParticulier') && $bonCommande->estCasParticulier();
+if ($casParticulierFin) {
+    $hauteurTotaux = 0.0;
+    foreach ($bonCommande->lignesDecompte() as [$libelleDecompte]) {
+        $hauteurTotaux += $MEP::hauteurLigne(max(1, $MEP::nbLignes(
+            mb_strtoupper((string) $libelleDecompte), $largeurContenu * 0.80 * 0.68 - 16, 8.5
+        )), 8.5, 3);
+    }
+} else {
+    $hauteurTotaux = 5 * 17.6;
+}
+$montantEnLettres = (string) ($donnees['montant_lettres'] ?? \App\Helpers\NombreEnLettres::montantCFA($montantTtc));
+// Le montant en lettres est saisi en <strong> : c'est la fonte grasse qui décide du nombre de lignes.
+$reserveBlocFin   = 11.25 + 9 + $hauteurTotaux
+    + 10.5 + $MEP::hauteurBloc($MEP::nbLignes(
+        'Arrêté le présent bon de commande administratif à la somme TTC de ' . mb_strtoupper($montantEnLettres), $largeurContenu, 8, true
+    ), 8)
+    + 11.25 + $MEP::hauteurBloc(1, 8) + 11.25      // « Yaoundé Le______ »
+    + $MEP::hauteurBloc(1, 8.5) + 7.5              // emplacements de signature
+    + 12.5                                         // respiration entre le tableau et le bloc de fin
+    + 18;                                          // marge de sécurité
+
+// — pages de suite : rappel du numéro —
+$hauteurEnTeteSuite = 46;
+
+$nbLignesParPage = $MEP::lignesParPage(
+    $hauteurLignesArticles,
+    $MEP::place($hauteurChapeau + 6 + $hauteurThead),
+    $MEP::place($hauteurEnTeteSuite + 6 + $hauteurThead),
+    $reserveBlocFin
+);
+
+$lignesAll       = $bonCommande->lignes;
+$lignesChunked   = collect();
+$indexLigne      = 0;
+foreach ($nbLignesParPage as $nb) {
+    $lignesChunked->push($nb > 0 ? $lignesAll->slice($indexLigne, $nb) : collect());
+    $indexLigne += $nb;
+}
+if ($lignesChunked->isEmpty()) $lignesChunked->push($lignesAll);
+
 @endphp
 
 @extends('pdf.layouts.master', ['orientation' => 'portrait'])
 @section('title', 'BCA N° ' . $numeroBca)
 @section('montant_lettres')
-{{ $donnees['montant_lettres'] ?? \App\Helpers\NombreEnLettres::montantCFA($bonCommande->montant_ttc ?? 0) }}
+{{ $montantEnLettres }}
 @endsection
 
 @push('styles')
@@ -291,6 +400,8 @@ if (isset($pdf)) {
         </div>
     @endif
 
+    {{-- Une page peut n'accueillir que le bloc de fin : pas de tableau vide. --}}
+    @if ($lignesPage->isNotEmpty())
     <table class="articles-table">
         <colgroup>
             <col class="col-reference"><col class="col-designation">
@@ -317,6 +428,7 @@ if (isset($pdf)) {
             @endforeach
         </tbody>
     </table>
+    @endif
 
     @if ($loop->last)
         {{-- Séparateur — coupe le contexte table avant le bloc récapitulatif --}}
