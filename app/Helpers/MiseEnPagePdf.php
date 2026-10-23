@@ -39,6 +39,15 @@ class MiseEnPagePdf
      */
     public const FLUX_BAS = self::PAGE_H - self::MARGE_BAS - 4;
 
+    /**
+     * Format paysage A4 (états de régie) : les marges sont celles du @page du
+     * template, ce document ne passe pas par le layout master.
+     */
+    public const MARGE_BAS_PAYSAGE   = 1.4 * self::CM;
+    public const MARGE_COTE_PAYSAGE  = 1.2 * self::CM;
+    public const LARGEUR_CONTENU_PAYSAGE = self::PAGE_H - 2 * self::MARGE_COTE_PAYSAGE;
+    public const FLUX_BAS_PAYSAGE = self::PAGE_L - self::MARGE_BAS_PAYSAGE - 4;
+
     /** Interligne DomPDF pour DejaVu Sans. */
     public const INTERLIGNE = 1.44;
 
@@ -125,6 +134,12 @@ class MiseEnPagePdf
     public static function place(float $dejaPris): float
     {
         return max(0.0, self::FLUX_BAS - self::MARGE_HAUT - $dejaPris);
+    }
+
+    /** Même calcul en paysage A4. */
+    public static function placePaysage(float $dejaPris): float
+    {
+        return max(0.0, self::FLUX_BAS_PAYSAGE - self::MARGE_HAUT - $dejaPris);
     }
 
     /**

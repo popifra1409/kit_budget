@@ -27,8 +27,8 @@ class RegieAvanceResource extends Resource
     protected static ?string $navigationLabel = 'Régies d\'Avance';
     protected static ?string $modelLabel      = 'Régie d\'Avance';
     protected static ?string $pluralModelLabel = 'Régies d\'Avance';
-    protected static ?string $navigationGroup = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort  = 1;
+    protected static ?string $navigationGroup = 'Régies & menus de dépense';
+    protected static ?int    $navigationSort  = 2;
     protected static ?string $recordTitleAttribute = 'numero';
 
     // =========================================================
@@ -281,7 +281,53 @@ class RegieAvanceResource extends Resource
                         ->columnSpanFull(),
                 ]),
 
-            // ── Section 3 : Observations ──────────────────────
+            // ── Section 3 : Pièces de l'apurement ─────────────
+            Forms\Components\Section::make('Pièces de l\'apurement')
+                ->description(
+                    'Ces références composent le texte qui précède le tableau des dépenses '
+                        . 'de l\'état du compte d\'emploi. Une ligne dont le numéro manque '
+                        . 'n\'est pas imprimée.'
+                )
+                ->schema([
+                    Forms\Components\Grid::make(3)->schema([
+
+                        Forms\Components\TextInput::make('resolution_numero')
+                            ->label('Résolution autorisant le renouvellement — n°')
+                            ->maxLength(120)
+                            ->placeholder('Ex: 026/0003/R/CHUY/CA/DG')
+                            ->columnSpan(2),
+
+                        Forms\Components\DatePicker::make('resolution_date')
+                            ->label('du'),
+                    ]),
+
+                    Forms\Components\Grid::make(3)->schema([
+
+                        Forms\Components\TextInput::make('decision_ouverture_numero')
+                            ->label('Décision portant ouverture de la régie — n°')
+                            ->maxLength(120)
+                            ->columnSpan(2),
+
+                        Forms\Components\DatePicker::make('decision_ouverture_date')
+                            ->label('du'),
+                    ]),
+
+                    Forms\Components\Grid::make(3)->schema([
+
+                        Forms\Components\TextInput::make('decision_designation_numero')
+                            ->label('Décision de désignation des responsables — n°')
+                            ->maxLength(120)
+                            ->columnSpan(2),
+
+                        Forms\Components\DatePicker::make('decision_designation_date')
+                            ->label('du'),
+                    ]),
+                ])
+                ->columns(1)
+                ->collapsible()
+                ->collapsed(),
+
+            // ── Section 4 : Observations ──────────────────────
             Forms\Components\Section::make('Observations')
                 ->schema([
                     Forms\Components\Textarea::make('observations')
@@ -531,24 +577,38 @@ class RegieAvanceResource extends Resource
                         ->modalHeading(fn($record) => 'Compte d\'Emploi — ' . $record->numero)
                         ->modalWidth('2xl')
                         ->form([
-                            Forms\Components\Select::make('decaissement_id')
-                                ->label('Décaissement / Tranche')
+                            Forms\Components\Select::make('decaissements_ids')
+                                ->label('Encaisses apurées')
+                                ->multiple()
                                 ->options(fn($record) => $record->decaissements()
                                     ->orderBy('numero')
                                     ->get()
-                                    ->mapWithKeys(fn($d) => [$d->id => "{$d->numero} — {$d->libelle_tranche}"]))
+                                    ->mapWithKeys(fn($d) => [
+                                        $d->id => trim("{$d->libelle_tranche} — {$d->numero} ("
+                                            . number_format((float) $d->montant_accorde, 0, ',', ' ') . ' FCFA)'),
+                                    ]))
                                 ->required()
                                 ->live()
-                                ->afterStateUpdated(function ($state, callable $set) {
-                                    $d = \App\Models\DecaissementRegie::find($state);
-                                    if ($d) {
-                                        $set('numero_tranche', $d->libelle_tranche);
-                                        if ($d->date_decaissement) {
-                                            $set('date_debut', $d->date_decaissement->format('Y-m-d'));
-                                        }
+                                ->afterStateUpdated(function ($state, callable $set, $record) {
+                                    $decaissements = \App\Models\DecaissementRegie::whereIn('id', $state ?? [])
+                                        ->orderBy('numero')
+                                        ->get();
+
+                                    if ($decaissements->isEmpty()) {
+                                        return;
                                     }
+
+                                    $set('numero_tranche', \App\Models\RegieAvance::enteteTranches($decaissements));
+
+                                    $premier = $decaissements
+                                        ->sortBy(fn($d) => $d->date_decaissement ?? $d->date_demande ?? $record->date_creation)
+                                        ->first();
+                                    $dateDebut = $premier->date_decaissement ?? $premier->date_demande ?? $record->date_creation;
+                                    $set('date_debut', \Carbon\Carbon::parse($dateDebut)->format('Y-m-d'));
+
+                                    $set('texte_apurement', $record->lignesApurementPour($decaissements)->implode("\n"));
                                 })
-                                ->helperText('Seules les dépenses réellement imputées à ce décaissement seront incluses (traçabilité exacte, y compris pour un bon réparti sur plusieurs tranches).')
+                                ->helperText('Plusieurs encaisses peuvent être apurés dans un seul document. Seules les dépenses réellement imputées aux tranches choisies sont incluses (traçabilité exacte, y compris pour un bon réparti sur deux encaisses).')
                                 ->columnSpanFull(),
 
                             Forms\Components\Grid::make(2)->schema([
@@ -574,23 +634,15 @@ class RegieAvanceResource extends Resource
                                 ->required(),
 
                             Forms\Components\TextInput::make('numero_tranche')
-                                ->label('N° de tranche / désignation')
-                                ->placeholder('Ex: QUATRIÈME ENCAISSE'),
+                                ->label('Désignation des encaisses')
+                                ->placeholder('Ex: 1ERE ENCAISSE 2026 ET LA 2EME ENCAISSE')
+                                ->helperText('Complète le titre « APUREMENT DE LA … » — pré-remplie depuis les tranches choisies.'),
 
                             Forms\Components\Textarea::make('texte_apurement')
                                 ->label('Pièces justificatives (une ligne par numéro)')
-                                ->rows(10)
-                                ->placeholder(
-                                    "Résolution N°... portant ouverture de la Régie...\n" .
-                                        "Décision N°... pour l'achat des réactifs...\n" .
-                                        "Décision de Déblocage N°...\n" .
-                                        "Demande d'autorisation du...\n" .
-                                        "Certificat d'Engagement N°...\n" .
-                                        "Quittance de Reversement du solde de gestion...\n" .
-                                        "Quittance de Reversement de l'IR N°...\n" .
-                                        "Tableau des justificatifs de dépenses de l'encaisse N°..."
-                                )
-                                ->helperText('Chaque ligne sera numérotée automatiquement dans le document')
+                                ->rows(12)
+                                ->placeholder('Sélectionnez les encaisses : les pièces saisies sur la fiche de la régie et sur chaque encaisse apparaissent ici.')
+                                ->helperText('Générées depuis la fiche de la régie (résolution, ouverture, désignation) et les « Pièces » de chaque encaisse. Modifiable avant impression ; les lignes manquantes ne sont pas imprimées.')
                                 ->columnSpanFull(),
                         ])
                         ->action(function ($record, array $data) {
@@ -599,13 +651,15 @@ class RegieAvanceResource extends Resource
                                 ->where('est_defaut', true)
                                 ->first();
 
-                            $decaissement = \App\Models\DecaissementRegie::with('provisions')->find($data['decaissement_id']);
-                            $provisionIds = $decaissement?->provisions->pluck('id') ?? collect();
+                            $decaissements = \App\Models\DecaissementRegie::whereIn('id', $data['decaissements_ids'] ?? [])
+                                ->orderBy('numero')
+                                ->get();
                             $statutsFiltre = $data['statuts'] ?? ['paye', 'livre', 'valide'];
 
-                            // ✅ Une ligne par BCR : imputations de ce BCR sur CE décaissement additionnées ;
-                            //    montants exacts si le BCR y est entièrement imputé, prorata sinon.
-                            $depenses = static::depensesDuDecaissement($decaissement, $statutsFiltre, $data['date_debut'], $data['date_fin']);
+                            // ✅ Une ligne par BCR : imputations de ce BCR sur les tranches
+                            //    choisies additionnées — un bon réparti sur deux encaisses
+                            //    n'est donc pas compté deux fois.
+                            $depenses = static::depensesDesDecaissements($decaissements, $statutsFiltre, $data['date_debut'], $data['date_fin']);
 
                             $lignesApurement = collect(explode("\n", $data['texte_apurement'] ?? ''))
                                 ->map(fn($l) => trim($l))
@@ -619,16 +673,20 @@ class RegieAvanceResource extends Resource
                                 'net' => $depenses->sum('net_a_payer'),
                             ];
 
+                            $montantRecu = (float) $decaissements->sum('montant_accorde');
+
                             // ✅ $donnees structuré comme tous les autres documents
                             $donnees = [
                                 '_raw'            => $record,
                                 '_etat_config'    => $etatConfig,
                                 'depenses'        => $depenses,
                                 'lignesApurement' => $lignesApurement,
-                                'numeroTranche'   => $data['numero_tranche'] ?? '',
+                                'numeroTranche'   => $data['numero_tranche'] ?: \App\Models\RegieAvance::enteteTranches($decaissements),
                                 'dateDebut'       => \Carbon\Carbon::parse($data['date_debut']),
                                 'dateFin'         => \Carbon\Carbon::parse($data['date_fin']),
                                 'totaux'          => $totaux,
+                                'montantRecu'     => $montantRecu,
+                                'soldeReverse'    => $montantRecu - (float) $totaux['ttc'],
                             ];
 
                             $template = $etatConfig?->template ?? 'pdf.templates.etat-compte-emploi-regie';
@@ -771,18 +829,35 @@ class RegieAvanceResource extends Resource
 
     /**
      * ✅ Dépenses d'un décaissement (compte d'emploi, retenues IR) : UNE ligne par BCR.
-     *  - imputations du BCR sur les provisions de ce décaissement additionnées ;
-     *  - BCR entièrement imputé sur ce décaissement : montants exacts du BCR ;
-     *  - BCR réparti sur plusieurs décaissements : TTC = montant réellement imputé ici,
-     *    TVA / IR / net au prorata (mention « (part.) »).
      */
     public static function depensesDuDecaissement(?\App\Models\DecaissementRegie $decaissement, array $statuts, $debut, $fin): \Illuminate\Support\Collection
     {
-        if (!$decaissement) {
+        return static::depensesDesDecaissements(
+            $decaissement ? collect([$decaissement]) : collect(),
+            $statuts,
+            $debut,
+            $fin
+        );
+    }
+
+    /**
+     * ✅ Dépenses de plusieurs encaisses apurés ensemble : UNE ligne par BCR.
+     *  - imputations du BCR sur les provisions des tranches choisies additionnées,
+     *    donc un bon réparti sur deux encaisses n'apparaît qu'une fois au total réel ;
+     *  - BCR entièrement imputé sur ces tranches : montants exacts du BCR ;
+     *  - BCR encore réparti ailleurs : TTC = montant réellement imputé ici,
+     *    TVA / IR / net au prorata (mention « (part.) »).
+     *
+     * @param \Illuminate\Support\Collection<int, \App\Models\DecaissementRegie> $decaissements
+     */
+    public static function depensesDesDecaissements(\Illuminate\Support\Collection $decaissements, array $statuts, $debut, $fin): \Illuminate\Support\Collection
+    {
+        if ($decaissements->isEmpty()) {
             return collect();
         }
 
-        $provisionIds = $decaissement->provisions()->pluck('id');
+        $provisionIds = \App\Models\ProvisionLigneRegie::whereIn('decaissement_regie_id', $decaissements->pluck('id'))
+            ->pluck('id');
         $debut = \Carbon\Carbon::parse($debut)->startOfDay();
         $fin = \Carbon\Carbon::parse($fin)->endOfDay();
 

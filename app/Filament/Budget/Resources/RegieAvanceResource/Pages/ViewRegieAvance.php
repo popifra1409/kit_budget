@@ -169,6 +169,36 @@ class ViewRegieAvance extends ViewRecord
                 ])
                 ->columns(3)
                 ->visible(fn($record) => $record->decision_administrative_id),
+
+            Infolists\Components\Section::make('Pièces de l\'apurement')
+                ->description('Références reprises dans le texte qui précède le compte d\'emploi.')
+                ->schema([
+                    Infolists\Components\TextEntry::make('resolution_numero')
+                        ->label('Résolution de renouvellement')
+                        ->placeholder('non renseignée')
+                        ->columnSpanFull(),
+
+                    Infolists\Components\TextEntry::make('resolution_date')
+                        ->label('Date')->date('d/m/Y')->placeholder('—'),
+
+                    Infolists\Components\TextEntry::make('decision_ouverture_numero')
+                        ->label('Décision portant ouverture')
+                        ->placeholder('non renseignée')
+                        ->columnSpanFull(),
+
+                    Infolists\Components\TextEntry::make('decision_ouverture_date')
+                        ->label('Date')->date('d/m/Y')->placeholder('—'),
+
+                    Infolists\Components\TextEntry::make('decision_designation_numero')
+                        ->label('Décision de désignation des responsables')
+                        ->placeholder('non renseignée')
+                        ->columnSpanFull(),
+
+                    Infolists\Components\TextEntry::make('decision_designation_date')
+                        ->label('Date')->date('d/m/Y')->placeholder('—'),
+                ])
+                ->columns(3)
+                ->collapsible(),
         ]);
     }
 }

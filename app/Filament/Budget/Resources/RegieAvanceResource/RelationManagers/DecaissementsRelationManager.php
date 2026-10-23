@@ -447,6 +447,65 @@ class DecaissementsRelationManager extends RelationManager
                             ->send();
                     }),
 
+                // ── Pièces comptables de la tranche ───────────────
+                // L'édition de la tranche n'est possible qu'à l'état « demande » :
+                // ces références, elles, se renseignent après versement et même
+                // après apurement, quand le mandat et la quittance existent.
+                Tables\Actions\Action::make('pieces')
+                    ->label('Pièces')
+                    ->icon('heroicon-o-paper-clip')
+                    ->color('gray')
+                    ->modalHeading(fn($record) => 'Pièces de l\'encaisse — ' . ($record->libelle_tranche ?: $record->numero))
+                    ->modalDescription('Numéros et dates repris tels quels dans le texte qui précède le compte d\'emploi.')
+                    ->fillForm(fn($record) => [
+                        'certificat_numero' => $record->certificat_numero,
+                        'certificat_date'   => $record->certificat_date,
+                        'mandat_numero'     => $record->mandat_numero,
+                        'mandat_date'       => $record->mandat_date,
+                        'quittance_numero'  => $record->quittance_numero,
+                        'quittance_date'    => $record->quittance_date,
+                    ])
+                    ->form([
+                        Forms\Components\Grid::make(3)->schema([
+                            Forms\Components\TextInput::make('certificat_numero')
+                                ->label("Certificat d'engagement — n°")
+                                ->maxLength(120)
+                                ->columnSpan(2),
+
+                            Forms\Components\DatePicker::make('certificat_date')
+                                ->label('du'),
+                        ]),
+
+                        Forms\Components\Grid::make(3)->schema([
+                            Forms\Components\TextInput::make('mandat_numero')
+                                ->label('Mandat de décaissement — n°')
+                                ->maxLength(120)
+                                ->placeholder('Ex: CFS/073')
+                                ->columnSpan(2),
+
+                            Forms\Components\DatePicker::make('mandat_date')
+                                ->label('du'),
+                        ]),
+
+                        Forms\Components\Grid::make(3)->schema([
+                            Forms\Components\TextInput::make('quittance_numero')
+                                ->label('Quittance de reversement du solde — n°')
+                                ->maxLength(120)
+                                ->columnSpan(2),
+
+                            Forms\Components\DatePicker::make('quittance_date')
+                                ->label('du'),
+                        ]),
+                    ])
+                    ->action(function ($record, array $data) {
+                        $record->update($data);
+
+                        Notification::make()
+                            ->title('✅ Pièces de l\'encaisse enregistrées')
+                            ->success()
+                            ->send();
+                    }),
+
                 Tables\Actions\EditAction::make()
                     ->visible(fn($record) => $record?->statut === 'demande'),
 

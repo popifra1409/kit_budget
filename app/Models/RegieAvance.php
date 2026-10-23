@@ -33,6 +33,12 @@ class RegieAvance extends Model
         'statut',
         'date_creation',
         'date_cloture',
+        'resolution_numero',
+        'resolution_date',
+        'decision_ouverture_numero',
+        'decision_ouverture_date',
+        'decision_designation_numero',
+        'decision_designation_date',
         'observations',
         'created_by',
         'updated_by',
@@ -41,6 +47,9 @@ class RegieAvance extends Model
     protected $casts = [
         'date_creation'      => 'date',
         'date_cloture'       => 'date',
+        'resolution_date'    => 'date',
+        'decision_ouverture_date'   => 'date',
+        'decision_designation_date' => 'date',
         'montant_alloue'     => 'decimal:2',
         'montant_decaisse'   => 'decimal:2',
         'montant_depense'    => 'decimal:2',
@@ -290,7 +299,200 @@ class RegieAvance extends Model
             ->log('Régie réapprovisionnée');
     }
 
-    // ── Scopes ───────────────────────────────────────────────
+    // =========================================================
+    // PIÈCES DE L'APUREMENT
+    // =========================================================
+
+    /**
+     * « PHARMACIE » → « Régie d'Avance de la PHARMACIE » ; un libellé qui porte
+     * déjà la mention de la régie est repris tel quel, sinon l'état écrirait
+     * « la Régie d'Avance de la REGIE D'AVANCE DES REACTIFS ».
+     */
+    public function getIntituleRegieAttribute(): string
+    {
+        $libelle = trim(preg_replace('/\s+/u', ' ', (string) $this->libelle));
+
+        if ($libelle === '') {
+            return 'Régie d\'Avance';
+        }
+
+        return preg_match('/r[ée]gie/iu', $libelle)
+            ? $libelle
+            : 'Régie d\'Avance de la ' . $libelle;
+    }
+
+    /**
+     * « 01ERE ENCAISSE 2026 » + « 02EME ENCAISSE » → « 1ERE ENCAISSE 2026 ET LA
+     * 2EME ENCAISSE » : de quoi écrire « APUREMENT DE LA … » sans tripatouiller
+     * les libellés saisis par le régisseur.
+     *
+     * @param \Illuminate\Support\Collection<int, DecaissementRegie> $decaissements
+     */
+    public static function enteteTranches($decaissements): string
+    {
+        $libelles = collect($decaissements)
+            ->map(fn($d) => trim(ltrim((string) $d->libelle_tranche, '0')))
+            ->filter()
+            ->values();
+
+        return $libelles->isEmpty() ? '' : $libelles->implode(' ET LA ');
+    }
+
+    /**
+     * Les pièces justificatives qui précèdent le tableau des dépenses, dans
+     * l'ordre du dossier d'apurement.
+     *
+     * Une ligne dont il manque une référence est omise plutôt qu'imprimée
+     * « Décision n°  du  » : le modal pré-rempli reste éditable, le régisseur
+     * ajoute à la main ce que la fiche ne porte pas.
+     *
+     * @param \Illuminate\Support\Collection<int, DecaissementRegie> $decaissements
+     * @return \Illuminate\Support\Collection<int, string>
+     */
+    public function lignesApurementPour($decaissements): \Illuminate\Support\Collection
+    {
+        $decaissements = collect($decaissements)->filter();
+        $sigle         = ParametresStructure::where('actif', true)->value('sigle');
+        $sigle         = $sigle ?: '';
+        $regie         = $this->intitule_regie;
+        $annee         = $this->exercice?->annee ?: (string) now()->year;
+        $tranches      = static::enteteTranches($decaissements);
+
+        // « 1ERE ENCAISSE 2026 ET LA 2EME ENCAISSE » se lit « la 1ere encaisse
+        // 2026 et la 2eme encaisse » dans une phrase courant.
+        $desEncaisses = $tranches === ''
+            ? "l'encaisse"
+            : 'la ' . mb_strtolower($tranches);
+
+        $lignes = collect();
+
+        // 1 — Résolution de renouvellement
+        if ($this->resolution_numero) {
+            $lignes->push(sprintf(
+                "Résolution n°%s%s autorisant le renouvellement de la %s %spour l'exercice budgétaire %s.",
+                $this->resolution_numero,
+                $this->resolution_date ? ' du ' . $this->resolution_date->format('d/m/Y') : '',
+                $regie,
+                $sigle ? "du {$sigle} " : '',
+                $annee
+            ));
+        }
+
+        // 2 — Décision portant ouverture
+        if ($this->decision_ouverture_numero) {
+            $lignes->push(sprintf(
+                "Décision n°%s%s portant ouverture de la %s%s.",
+                $this->decision_ouverture_numero,
+                $this->decision_ouverture_date ? ' du ' . $this->decision_ouverture_date->format('d/m/Y') : '',
+                $regie,
+                $sigle ? " au {$sigle}" : ''
+            ));
+        }
+
+        // 3 — Décision portant désignation des responsables
+        if ($this->decision_designation_numero) {
+            $lignes->push(sprintf(
+                "Décision n°%s%s portant désignation des responsables chargés de la gestion de la %s%s pour le compte de l'exercice budgétaire %s.",
+                $this->decision_designation_numero,
+                $this->decision_designation_date ? ' du ' . $this->decision_designation_date->format('d/m/Y') : '',
+                $regie,
+                $sigle ? " au {$sigle}" : '',
+                $annee
+            ));
+        }
+
+        if ($decaissements->isEmpty()) {
+            return $lignes->values();
+        }
+
+        // 4 — Demande d'autorisation de mandat
+        if ($tranches !== '') {
+            $lignes->push(sprintf(
+                "Demande d'autorisation d'un mandat de décaissement de %s de la %s%s pour le compte de l'exercice budgétaire %s.",
+                $desEncaisses,
+                $regie,
+                $sigle ? " au {$sigle}" : '',
+                $annee
+            ));
+        }
+
+        // 5 — Décision(s) autorisant le déblocage : la DA propre à la tranche, à
+        // défaut celle qui dote la régie.
+        $decisionsDeblocage = $decaissements
+            ->map(fn($d) => $d->decisionAdministrative ?? $this->decisionAdministrative)
+            ->filter()
+            ->unique('id')
+            ->values();
+
+        foreach ($decisionsDeblocage as $da) {
+            $lignes->push(sprintf(
+                "Décision n°%s%s, autorisant le déblocage de la somme TTC de : %s FCFA représentant %s de la %s pour le compte de l'exercice budgétaire %s.",
+                $da->numero,
+                $da->date_decision ? ' du ' . $da->date_decision->format('d/m/Y') : '',
+                number_format((float) $da->montant_brut, 0, ',', ' '),
+                $desEncaisses,
+                $regie,
+                $annee
+            ));
+        }
+
+        // 6 — Certificats d'engagement
+        foreach ($decaissements->filter(fn($d) => $d->certificat_numero) as $d) {
+            $da = $d->decisionAdministrative ?? $this->decisionAdministrative;
+
+            $lignes->push(sprintf(
+                "Certificat d'engagement n°%s%s%s.",
+                $d->certificat_numero,
+                $d->certificat_date ? ' du ' . $d->certificat_date->format('d/m/Y') : '',
+                $da ? ", décision de déblocage n°{$da->numero}" . ($da->date_decision ? ' du ' . $da->date_decision->format('d/m/Y') : '') : ''
+            ));
+        }
+
+        // 7 — Mandats de décaissement
+        foreach ($decaissements->filter(fn($d) => $d->mandat_numero) as $d) {
+            $lignes->push(sprintf(
+                "Mandat de décaissement n°%s%s.",
+                $d->mandat_numero,
+                $d->mandat_date ? ' du ' . $d->mandat_date->format('d/m/Y') : ''
+            ));
+        }
+
+        // 8 — Quitances de reversement : une seule mention quand les encaisses
+        // apurés ont été reversés par la même quittance.
+        $quitances = $decaissements
+            ->filter(fn($d) => $d->quittance_numero)
+            ->groupBy(fn($d) => $d->quittance_numero . '|' . ($d->quittance_date?->getTimestamp() ?? 0));
+
+        foreach ($quitances as $groupe) {
+            $q       = $groupe->first();
+            $reste   = $groupe->count() > 1
+                ? 'des encaisses apurées'
+                : $desEncaisses;
+
+            $lignes->push(sprintf(
+                "Quittance de reversement du reste %s%s n°%s%s à l'Agence Comptable %s.",
+                $groupe->count() > 1 ? '' : 'de ',
+                $reste,
+                $q->quittance_numero,
+                $q->quittance_date ? ' du ' . $q->quittance_date->format('d/m/Y') : '',
+                $sigle ? "du {$sigle}" : 'du Trésor'
+            ));
+        }
+
+        // 9 — Tableau justificatif
+        $lignes->push(sprintf(
+            "Tableau justificatif des dépenses de %s de la %s pour l'exercice %s.",
+            $desEncaisses,
+            $regie,
+            $annee
+        ));
+
+        return $lignes->values();
+    }
+
+    // =========================================================
+    // SCOPES
+    // =========================================================
     public function scopeActif($query)
     {
         return $query->where('statut', 'actif');
