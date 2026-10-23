@@ -24,7 +24,7 @@ class DossierFournisseurResource extends Resource
     protected static ?string $navigationLabel = 'Dossiers Fournisseurs';
     protected static ?string $modelLabel = 'Dossier Fournisseur';
     protected static ?string $pluralModelLabel = 'Dossiers Fournisseurs';
-    protected static ?string $navigationGroup = 'Fournisseurs & Documents';
+    protected static ?string $navigationGroup = 'Fournisseurs';
     protected static ?int $navigationSort = 2;
 
     // ════════════════════════════════════════════════════════

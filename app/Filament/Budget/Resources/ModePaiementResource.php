@@ -16,8 +16,8 @@ class ModePaiementResource extends Resource
     protected static ?string $navigationLabel  = 'Modes de paiement';
     protected static ?string $modelLabel       = 'Mode de paiement';
     protected static ?string $pluralModelLabel = 'Modes de paiement';
-    protected static ?string $navigationGroup  = 'Configuration Budget';
-    protected static ?int    $navigationSort   = 10;
+    protected static ?string $navigationGroup  = 'Nomenclatures & référentiels';
+    protected static ?int    $navigationSort   = 4;
 
     public static function canViewAny(): bool
     {

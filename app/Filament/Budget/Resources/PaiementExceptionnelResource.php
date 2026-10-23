@@ -25,11 +25,11 @@ class PaiementExceptionnelResource extends Resource
 {
     protected static ?string $model = PaiementExceptionnel::class;
     protected static ?string $navigationIcon = 'heroicon-o-bolt';
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
+    protected static ?string $navigationGroup = 'Liquidation & paiement';
     protected static ?string $navigationLabel = 'Paiements exceptionnels';
     protected static ?string $modelLabel = 'paiement exceptionnel';
     protected static ?string $pluralModelLabel = 'paiements exceptionnels';
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 5;
 
     public static function canViewAny(): bool
     {

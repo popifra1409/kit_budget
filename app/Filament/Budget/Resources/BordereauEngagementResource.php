@@ -25,8 +25,8 @@ class BordereauEngagementResource extends Resource
     protected static ?string $navigationLabel = 'Bordereaux de transmission';
     protected static ?string $modelLabel = 'Bordereau de transmission';
     protected static ?string $pluralModelLabel = 'Bordereaux de transmission';
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup = 'Commandes & engagement';
+    protected static ?int $navigationSort = 5;
 
     // ========================================
     // PERMISSIONS

@@ -26,7 +26,7 @@ class BonCommandeRegieResource extends Resource
     protected static ?string $navigationLabel  = 'BCR / BCM';
     protected static ?string $modelLabel       = 'Bon de Commande Régie';
     protected static ?string $pluralModelLabel = 'Bons de Commande Régie';
-    protected static ?string $navigationGroup  = 'Régies & Menu Dépenses';
+    protected static ?string $navigationGroup  = 'Régies & menus de dépense';
     protected static ?int    $navigationSort   = 3;
     protected static ?string $recordTitleAttribute = 'numero';
 

@@ -21,8 +21,8 @@ class FactureProformaResource extends Resource
     protected static ?string $navigationLabel = 'Factures Proforma';
     protected static ?string $modelLabel = 'Facture Proforma';
     protected static ?string $pluralModelLabel = 'Factures Proforma';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int $navigationSort = 4;
+    protected static ?string $navigationGroup = 'Liquidation & paiement';
+    protected static ?int $navigationSort = 1;
 
     // ========================================
     // PERMISSIONS

@@ -23,8 +23,8 @@ class RecetteReelleResource extends Resource
     protected static ?string $navigationLabel = 'Recettes Réelles';
     protected static ?string $modelLabel      = 'Recette Réelle';
     protected static ?string $pluralModelLabel = 'Recettes Réelles';
-    protected static ?string $navigationGroup = 'Contrôle & Suivi';
-    protected static ?int    $navigationSort  = 10;
+    protected static ?string $navigationGroup = 'Recettes';
+    protected static ?int    $navigationSort  = 2;
 
     private static array $moisLabels = [
         1 => 'Jan',

@@ -28,7 +28,7 @@ class DecisionAdministrativeResource extends Resource
     protected static ?string $navigationLabel = 'Décisions';
     protected static ?string $modelLabel      = 'Décision';
     protected static ?string $pluralModelLabel = 'Décisions';
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
+    protected static ?string $navigationGroup = 'Commandes & engagement';
     protected static ?int    $navigationSort  = 3;
     protected static ?string $recordTitleAttribute = 'numero';
     protected static int     $globalSearchResultsLimit = 20;

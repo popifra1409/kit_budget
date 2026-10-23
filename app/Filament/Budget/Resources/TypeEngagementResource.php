@@ -22,9 +22,9 @@ class TypeEngagementResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Types d\'Engagement';
 
-    protected static ?string $navigationGroup = 'Paramétrage';
+    protected static ?string $navigationGroup = 'Paramétrage du budget';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 2;
 
     /**
      * Permissions – Types d’Engagement

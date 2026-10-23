@@ -24,11 +24,11 @@ class LiquidationResource extends Resource
 {
     protected static ?string $model = Liquidation::class;
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
+    protected static ?string $navigationGroup = 'Liquidation & paiement';
     protected static ?string $navigationLabel = 'Liquidations';
     protected static ?string $modelLabel = 'liquidation';
     protected static ?string $pluralModelLabel = 'liquidations';
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 3;
 
     // ── Droits ──────────────────────────────────────────────
     public static function canViewAny(): bool

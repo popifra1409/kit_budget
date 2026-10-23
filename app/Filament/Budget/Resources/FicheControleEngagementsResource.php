@@ -17,8 +17,8 @@ class FicheControleEngagementsResource extends Resource
     protected static ?string $navigationLabel = 'Fiches de Contrôle';
     protected static ?string $modelLabel = 'Fiche de Contrôle';
     protected static ?string $pluralModelLabel = 'Fiches de Contrôle';
-    protected static ?string $navigationGroup = 'Contrôle & Suivi';
-    protected static ?int $navigationSort = 5;
+    protected static ?string $navigationGroup = 'Contrôle & clôture';
+    protected static ?int $navigationSort = 1;
 
     // ========================================
     // PERMISSIONS

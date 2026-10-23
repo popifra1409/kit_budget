@@ -24,8 +24,8 @@ class VirementBudgetaireResource extends Resource
     protected static ?string $navigationLabel = 'Mouvements de crédits';
     protected static ?string $modelLabel = 'mouvement de crédits';
     protected static ?string $pluralModelLabel = 'Mouvements de crédits';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup = 'Budget & crédits';
+    protected static ?int $navigationSort = 3;
 
     // ========================================
     // PERMISSIONS

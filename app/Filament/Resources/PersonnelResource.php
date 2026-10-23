@@ -23,6 +23,21 @@ class PersonnelResource extends Resource
     protected static ?string $navigationGroup = 'Paramétrage';
     protected static ?int $navigationSort = 1;
 
+    // Écran partagé entre /budget et /admin : rattachement et ordre selon le panel affiché.
+    public static function getNavigationGroup(): ?string
+    {
+        return filament()->getCurrentPanel()?->getId() === 'budget'
+            ? 'Nomenclatures & référentiels'
+            : parent::getNavigationGroup();
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return filament()->getCurrentPanel()?->getId() === 'budget'
+            ? 6
+            : parent::getNavigationSort();
+    }
+
     // ========================================
     // PERMISSIONS
     // ========================================

@@ -23,8 +23,8 @@ class AchatDirectResource extends Resource
     protected static ?string $navigationLabel  = 'Achats Directs';
     protected static ?string $modelLabel       = 'Achat Direct';
     protected static ?string $pluralModelLabel = 'Achats Directs';
-    protected static ?string $navigationGroup  = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort   = 4;
+    protected static ?string $navigationGroup  = 'Régies & menus de dépense';
+    protected static ?int    $navigationSort   = 5;
     protected static ?string $slug             = 'achats-directs';
     protected static ?string $recordTitleAttribute = 'numero';
 

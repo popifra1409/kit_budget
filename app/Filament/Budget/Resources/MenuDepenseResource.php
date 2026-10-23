@@ -24,8 +24,8 @@ class MenuDepenseResource extends Resource
     protected static ?string $navigationLabel = 'Menus Dépenses';
     protected static ?string $modelLabel      = 'Menu Dépense';
     protected static ?string $pluralModelLabel = 'Menus Dépenses';
-    protected static ?string $navigationGroup = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort  = 2;
+    protected static ?string $navigationGroup = 'Régies & menus de dépense';
+    protected static ?int    $navigationSort  = 4;
     protected static ?string $slug            = 'menus-depenses';
 
     // =========================================================

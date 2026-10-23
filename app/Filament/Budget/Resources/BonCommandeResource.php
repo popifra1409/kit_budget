@@ -33,7 +33,7 @@ class BonCommandeResource extends Resource
     use \App\Filament\Budget\Concerns\HasAgentContext;
     protected static ?string $model = BonCommande::class;
 
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
+    protected static ?string $navigationGroup = 'Commandes & engagement';
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
 

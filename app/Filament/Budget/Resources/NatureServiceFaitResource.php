@@ -15,11 +15,11 @@ class NatureServiceFaitResource extends Resource
 {
     protected static ?string $model = NatureServiceFait::class;
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
-    protected static ?string $navigationGroup = 'Paramétrage';
+    protected static ?string $navigationGroup = 'Paramétrage du budget';
     protected static ?string $navigationLabel = 'Natures de service fait';
     protected static ?string $modelLabel = 'nature de service fait';
     protected static ?string $pluralModelLabel = 'natures de service fait';
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 4;
 
     public static function canViewAny(): bool
     {

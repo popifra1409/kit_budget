@@ -22,9 +22,9 @@ class TypeDecisionResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Types de Décision';
 
-    protected static ?string $navigationGroup = 'Paramétrage';
+    protected static ?string $navigationGroup = 'Paramétrage du budget';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 3;
 
     /**
      * Permissions – Types de Décision

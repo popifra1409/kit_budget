@@ -22,10 +22,10 @@ class CompteAdministratif extends Page implements HasForms
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-book-open';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
+    protected static ?string $navigationGroup = 'Contrôle & clôture';
     protected static ?string $navigationLabel = 'Compte administratif';
     protected static ?string $title = 'Compte administratif';
-    protected static ?int $navigationSort = 95;
+    protected static ?int $navigationSort = 3;
     protected static string $view = 'filament.budget.pages.compte-administratif';
 
     public ?int $exercice_id = null;

@@ -20,12 +20,12 @@ class CollectifBudgetaireResource extends Resource
     protected static ?string $model = CollectifBudgetaire::class;
 
     // Navigation
-    protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
+    protected static ?string $navigationIcon = 'heroicon-o-square-2-stack';
     protected static ?string $navigationLabel = 'Collectifs budgétaires';
     protected static ?string $modelLabel = 'Collectif budgétaire';
     protected static ?string $pluralModelLabel = 'Collectifs budgétaires';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int $navigationSort = 3;
+    protected static ?string $navigationGroup = 'Budget & crédits';
+    protected static ?int $navigationSort = 2;
 
     // ========================================
     // PERMISSIONS

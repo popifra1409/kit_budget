@@ -14,8 +14,9 @@ class SaisiePrevisionsBudgetProgrammePage extends Page
 {
     protected static ?string $navigationIcon  = 'heroicon-o-pencil-square';
     protected static ?string $navigationLabel = 'Saisie Prévisions';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static bool    $shouldRegisterNavigation = false; // Accessible via BudgetProgrammePage
+    protected static ?string $navigationGroup = 'Budget & crédits';
+    protected static ?int $navigationSort = 5;
+protected static bool    $shouldRegisterNavigation = false; // Accessible via BudgetProgrammePage
     protected static string  $view = 'filament.pages.saisie-previsions-budget-programme';
 
     public int    $anneeRef;

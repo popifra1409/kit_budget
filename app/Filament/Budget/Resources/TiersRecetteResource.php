@@ -17,11 +17,11 @@ class TiersRecetteResource extends Resource
 {
     protected static ?string $model = TiersRecette::class;
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
-    protected static ?string $navigationGroup = 'Paramétrage';
+    protected static ?string $navigationGroup = 'Recettes';
     protected static ?string $navigationLabel = 'Débiteurs / payeurs';
     protected static ?string $modelLabel = 'débiteur / payeur';
     protected static ?string $pluralModelLabel = 'débiteurs / payeurs';
-    protected static ?int $navigationSort = 45;
+    protected static ?int $navigationSort = 3;
 
     public static function canViewAny(): bool
     {

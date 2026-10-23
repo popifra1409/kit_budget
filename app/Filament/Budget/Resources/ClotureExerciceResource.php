@@ -20,11 +20,11 @@ class ClotureExerciceResource extends Resource
 {
     protected static ?string $model = ClotureExercice::class;
     protected static ?string $navigationIcon = 'heroicon-o-lock-closed';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
+    protected static ?string $navigationGroup = 'Contrôle & clôture';
     protected static ?string $navigationLabel = "Clôture de l'exercice";
     protected static ?string $modelLabel = "clôture d'exercice";
     protected static ?string $pluralModelLabel = "clôtures d'exercice";
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 2;
 
     public static function canViewAny(): bool
     {

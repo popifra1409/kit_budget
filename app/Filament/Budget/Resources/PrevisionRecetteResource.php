@@ -26,8 +26,8 @@ class PrevisionRecetteResource extends Resource
     protected static ?string $navigationLabel  = 'Prévisions de Recettes';
     protected static ?string $modelLabel       = 'Prévision de Recettes';
     protected static ?string $pluralModelLabel = 'Prévisions de Recettes';
-    protected static ?string $navigationGroup  = 'Gestion Budgétaire';
-    protected static ?int    $navigationSort   = 2;
+    protected static ?string $navigationGroup  = 'Recettes';
+    protected static ?int    $navigationSort   = 1;
 
     // ========================================
     // PERMISSIONS

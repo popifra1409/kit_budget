@@ -21,8 +21,8 @@ class DecisionPrevisionnelleResource extends Resource
     protected static ?string $navigationLabel = 'Décisions Prévisionnelles';
     protected static ?string $modelLabel = 'Décision Prévisionnelle';
     protected static ?string $pluralModelLabel = 'Décisions Prévisionnelles';
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
-    protected static ?int $navigationSort = 35;
+    protected static ?string $navigationGroup = 'Commandes & engagement';
+    protected static ?int $navigationSort = 4;
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {

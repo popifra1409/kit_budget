@@ -14,8 +14,8 @@ class DashboardRegie extends Page
 {
     protected static ?string $navigationIcon  = 'heroicon-o-chart-bar';
     protected static ?string $navigationLabel = 'Tableau de bord Régies';
-    protected static ?string $navigationGroup = 'Régies & Menu Dépenses';
-    protected static ?int    $navigationSort  = 0;
+    protected static ?string $navigationGroup = 'Régies & menus de dépense';
+    protected static ?int    $navigationSort  = 1;
     protected static string  $view            = 'filament.budget.pages.dashboard-regie';
 
     public static function canAccess(): bool

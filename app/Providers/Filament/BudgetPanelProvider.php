@@ -23,6 +23,7 @@ use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
 use App\Filament\Pages\Auth\Login;
 use Filament\Navigation\MenuItem;
+use Filament\Navigation\NavigationGroup;
 use Illuminate\Support\Facades\Blade;
 
 class BudgetPanelProvider extends PanelProvider
@@ -90,21 +91,24 @@ class BudgetPanelProvider extends PanelProvider
                 \Filament\Navigation\NavigationItem::make('Apparence & Thèmes')
                     ->url(fn() => route('filament.budget.pages.themes'))
                     ->icon('heroicon-o-paint-brush')
-                    ->group('Paramétrage')
-                    ->sort(99)
+                    ->group('Paramétrage du budget')
+                    ->sort(5)
                     ->visible(fn() => auth()->check()
                         && auth()->user()->hasRole(['super_admin', 'admin'])),
             ])
+            // Ordre et état des groupes du portail Budget (les resources déclarent leur $navigationGroup).
+            // Les 4 groupes du quotidien restent ouverts et restent repliables au clic ;
+            // les 5 autres s'affichent repliés. 'Cadre Logique' retiré : aucun écran du panel ne l'utilisait.
             ->navigationGroups([
-                'Commandes & Engagement',
-                'Régies & Menu Dépenses',
-                'Fournisseurs & Documents',
-                'Gestion Budgétaire',
-                'Cadre Logique',
-                'Contrôle & Suivi',
-                'Configuration Budget',
-                'Paramétrage',
-                // 'Audit' et 'Administration' retirés : ces écrans sont dans le panel Administration (/admin)
+                NavigationGroup::make('Budget & crédits'),
+                NavigationGroup::make('Commandes & engagement'),
+                NavigationGroup::make('Liquidation & paiement'),
+                NavigationGroup::make('Régies & menus de dépense'),
+                NavigationGroup::make('Recettes')->collapsed(),
+                NavigationGroup::make('Fournisseurs')->collapsed(),
+                NavigationGroup::make('Contrôle & clôture')->collapsed(),
+                NavigationGroup::make('Nomenclatures & référentiels')->collapsed(),
+                NavigationGroup::make('Paramétrage du budget')->collapsed(),
             ])
 
 

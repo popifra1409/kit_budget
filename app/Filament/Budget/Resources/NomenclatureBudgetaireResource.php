@@ -21,7 +21,7 @@ class NomenclatureBudgetaireResource extends Resource
     protected static ?string $navigationLabel = 'Nomenclature Budgétaire';
     protected static ?string $modelLabel = 'Nomenclature';
     protected static ?string $pluralModelLabel = 'Nomenclatures';
-    protected static ?string $navigationGroup = 'Configuration Budget';
+    protected static ?string $navigationGroup = 'Nomenclatures & référentiels';
     protected static ?int $navigationSort = 1;
 
     // ========================================

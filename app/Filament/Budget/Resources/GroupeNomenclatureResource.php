@@ -20,7 +20,7 @@ class GroupeNomenclatureResource extends Resource
     protected static ?string $navigationLabel = 'Groupes de nomenclature';
     protected static ?string $modelLabel = 'Groupe de nomenclature';
     protected static ?string $pluralModelLabel = 'Groupes de nomenclature';
-    protected static ?string $navigationGroup = 'Configuration Budget';
+    protected static ?string $navigationGroup = 'Nomenclatures & référentiels';
     protected static ?int $navigationSort = 2;
 
     // ========================================

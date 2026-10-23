@@ -28,8 +28,8 @@ class EngagementResource extends Resource
     protected static ?string $navigationLabel  = 'Engagements';
     protected static ?string $modelLabel       = 'Engagement';
     protected static ?string $pluralModelLabel = 'Engagements';
-    protected static ?string $navigationGroup  = 'Commandes & Engagement';
-    protected static ?int    $navigationSort   = 1;
+    protected static ?string $navigationGroup  = 'Commandes & engagement';
+    protected static ?int    $navigationSort   = 2;
     protected static ?string $recordTitleAttribute = 'numero';
     protected static int     $globalSearchResultsLimit = 20;
 

@@ -28,8 +28,8 @@ class OrdonnancePaiementResource extends Resource
     protected static ?string $navigationLabel = 'Ordonnances de Paiement';
     protected static ?string $modelLabel = 'Ordonnance de Paiement';
     protected static ?string $pluralModelLabel = 'Ordonnances de Paiement';
-    protected static ?string $navigationGroup = 'Commandes & Engagement';
-    protected static ?int $navigationSort = 5;
+    protected static ?string $navigationGroup = 'Liquidation & paiement';
+    protected static ?int $navigationSort = 4;
 
     // ========================================
     // PERMISSIONS

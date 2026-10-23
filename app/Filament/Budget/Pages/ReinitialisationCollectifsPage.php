@@ -22,8 +22,8 @@ class ReinitialisationCollectifsPage extends Page
     protected static ?string $navigationIcon  = 'heroicon-o-arrow-uturn-left';
     protected static ?string $navigationLabel = 'Réinitialiser les collectifs';
     protected static ?string $title           = 'Réinitialisation des collectifs budgétaires';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int    $navigationSort  = 9;
+    protected static ?string $navigationGroup = 'Contrôle & clôture';
+    protected static ?int    $navigationSort  = 4;
     protected static string  $view = 'filament.pages.reinitialisation-collectifs';
 
     /** @var array<int, int> */

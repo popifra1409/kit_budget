@@ -21,8 +21,8 @@ class FournisseurResource extends Resource
     protected static ?string $navigationLabel = 'Fournisseurs';
     protected static ?string $modelLabel = 'Fournisseur';
     protected static ?string $pluralModelLabel = 'Fournisseurs';
-    protected static ?string $navigationGroup = 'Fournisseurs & Documents';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup = 'Fournisseurs';
+    protected static ?int $navigationSort = 1;
 
     // ========================================
     // PERMISSIONS

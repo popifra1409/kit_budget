@@ -22,12 +22,12 @@ use Illuminate\Support\Facades\Log;
 class ReferenceMercurialeResource extends Resource
 {
     protected static ?string $model = ReferenceMercuriale::class;
-    protected static ?string $navigationIcon = 'heroicon-o-book-open';
+    protected static ?string $navigationIcon = 'heroicon-o-bars-3';
     protected static ?string $navigationLabel = 'Références Mercuriales';
     protected static ?string $modelLabel = 'Référence Mercuriale';
     protected static ?string $pluralModelLabel = 'Références Mercuriales';
-    protected static ?string $navigationGroup = 'Configuration Budget';
-    protected static ?int $navigationSort = 5;
+    protected static ?string $navigationGroup = 'Nomenclatures & référentiels';
+    protected static ?int $navigationSort = 3;
 
     // ========================================
     // PERMISSIONS

@@ -19,8 +19,8 @@ class BudgetProgrammePage extends Page
 
     protected static ?string $navigationIcon  = 'heroicon-o-document-chart-bar';
     protected static ?string $navigationLabel = 'Budget Programme';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
-    protected static ?int    $navigationSort  = 5;
+    protected static ?string $navigationGroup = 'Budget & crédits';
+    protected static ?int    $navigationSort  = 4;
     protected static string  $view = 'filament.pages.budget-programme';
 
     public int    $anneeRef;

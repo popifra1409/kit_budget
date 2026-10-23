@@ -28,7 +28,7 @@ class BudgetResource extends Resource
     protected static ?string $navigationLabel = 'Dépenses';
     protected static ?string $modelLabel = 'Dépense';
     protected static ?string $pluralModelLabel = 'Dépenses';
-    protected static ?string $navigationGroup = 'Gestion Budgétaire';
+    protected static ?string $navigationGroup = 'Budget & crédits';
     protected static ?int $navigationSort = 1;
 
     // ========================================
