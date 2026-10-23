@@ -1039,6 +1039,7 @@ class BonCommande extends Model
         $this->montant_ttc        = $d['ttc'];
         $this->net_a_payer        = $d['net'];
         $this->net_a_percevoir    = $d['net'];
+        $this->taux_ir            = $d['taux_ir_effectif'];
     }
 
     /**

@@ -828,8 +828,9 @@ class ViewBonCommande extends ViewRecord
 
                     Infolists\Components\TextEntry::make('montant_ir')
                         ->label(
-                            fn($record) =>
-                            'IR (' . ($record->lignes->first()?->taux_ir ?? 5.5) . '%)'
+                            // Taux réel du décompte (AIR = montant_ir / THT), comme la ligne « AIR » du décompte.
+                            fn($record) => 'IR ('
+                                . str_replace('.', ',', (string) $record->decompteEnregistre()['taux_ir_effectif']) . '%)'
                         )
                         ->formatStateUsing(
                             fn($state, $record) =>
