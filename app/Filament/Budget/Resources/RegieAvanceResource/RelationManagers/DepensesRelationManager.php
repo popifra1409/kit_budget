@@ -519,6 +519,13 @@ class DepensesRelationManager extends RelationManager
                     ->badge()
                     ->color('gray'),
 
+                Tables\Columns\TextColumn::make('numero_facture')
+                    ->label('N° Facture')
+                    ->placeholder('—')
+                    ->color(fn($record) => $record->statut === 'paye'
+                        && !$record->numero_facture ? 'warning' : null)
+                    ->searchable(),
+
                 Tables\Columns\TextColumn::make('montant_ht')
                     ->label('MHT')
                     ->money('XAF')
@@ -637,6 +644,34 @@ class DepensesRelationManager extends RelationManager
                         $this->getOwnerRecord()?->recalculerMontants();
                     }),
 
+                // ── Saisir / corriger le n° de facture ────────
+                Tables\Actions\Action::make('saisirFacture')
+                    ->label(fn($record) => $record?->numero_facture
+                        ? 'Modifier n° facture'
+                        : '🧾 Saisir n° facture')
+                    ->icon('heroicon-o-document-text')
+                    ->color(fn($record) => $record?->numero_facture ? 'gray' : 'warning')
+                    ->visible(
+                        fn($record) =>
+                        in_array($record?->statut, ['valide', 'paye'], true)
+                            && auth()->user()?->can('valider_depense_regie')
+                    )
+                    ->form([
+                        Forms\Components\TextInput::make('numero_facture')
+                            ->label('N° de facture (inscrit sur la facture physique du fournisseur)')
+                            ->required()->maxLength(100)
+                            ->default(fn($record) => $record->numero_facture),
+                    ])
+                    ->action(function ($record, array $data) {
+                        $record->update([
+                            'numero_facture' => trim((string) $data['numero_facture']),
+                        ]);
+                        Notification::make()
+                            ->title('🧾 N° facture enregistré')
+                            ->success()
+                            ->send();
+                    }),
+
                 // ── Valider (débite la provision) ─────────────
                 Tables\Actions\Action::make('valider')
                     ->label('Valider')
@@ -653,7 +688,18 @@ class DepensesRelationManager extends RelationManager
                         $prov    = $record?->provisionLigneRegie;
                         $warning = '';
 
-                        if ($record?->montant_ttc >= $seuilAd) {
+                        // Un achat saisi par lignes garde ses montants sur les
+                        // lignes tant qu'il n'est pas validé : aperçu = somme des
+                        // lignes, à défaut l'en-tête (saisie rapide au montant).
+                        $record?->loadMissing('lignes');
+                        $ttc = $record?->lignes->sum('montant_ttc')
+                            ?: (float) ($record?->montant_ttc ?? 0);
+                        $nap = $record?->lignes->sum('montant_net')
+                            ?: (float) ($record?->net_a_payer ?? 0);
+                        $ir  = $record?->lignes->sum('montant_ir')
+                            ?: (float) ($record?->montant_ir ?? 0);
+
+                        if ($ttc >= $seuilAd) {
                             $warning = '<div class="mt-2 rounded p-2 text-xs font-semibold '
                                 . 'bg-yellow-100 text-yellow-700 '
                                 . 'dark:bg-yellow-900/40 dark:text-yellow-300">'
@@ -666,15 +712,15 @@ class DepensesRelationManager extends RelationManager
                             '<div class="text-sm '
                                 . 'text-slate-800 dark:text-slate-200">'
                                 . '<p>Montant TTC : <strong>'
-                                . number_format($record?->montant_ttc ?? 0, 0, ',', ' ')
+                                . number_format($ttc, 0, ',', ' ')
                                 . ' FCFA</strong></p>'
                                 . '<p>Net à Payer : <strong class="'
                                 . 'text-green-600 dark:text-green-400">'
-                                . number_format($record?->net_a_payer ?? 0, 0, ',', ' ')
+                                . number_format($nap, 0, ',', ' ')
                                 . ' FCFA</strong></p>'
                                 . '<p>IR retenu : <strong class="'
                                 . 'text-red-600 dark:text-red-400">'
-                                . number_format($record?->montant_ir ?? 0, 0, ',', ' ')
+                                . number_format($ir, 0, ',', ' ')
                                 . ' FCFA</strong></p>'
                                 . ($prov
                                     ? '<p>Provision disponible : <strong>'
@@ -688,6 +734,10 @@ class DepensesRelationManager extends RelationManager
                     })
                     ->action(function ($record) {
                         try {
+                            // L'en-tête doit porter la somme des lignes AVANT le
+                            // débit : sinon l'achat valide 0 et l'encaisse ne bouge.
+                            $record->load('lignes')->alignerTotauxSurLignes();
+
                             if ($record->provision_ligne_regie_id) {
                                 ProvisionLigneRegie::findOrFail(
                                     $record->provision_ligne_regie_id
@@ -730,8 +780,21 @@ class DepensesRelationManager extends RelationManager
                             && auth()->user()?->can('valider_depense_regie')
                     )
                     ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->update(['statut' => 'paye']);
+                    ->modalHeading('Marquer la dépense payée')
+                    ->form([
+                        Forms\Components\TextInput::make('numero_facture')
+                            ->label('N° de facture du fournisseur')
+                            ->helperText(
+                                'Référence reprise dans l\'état du compte d\'emploi de la régie.'
+                            )
+                            ->required()->maxLength(100)
+                            ->default(fn($record) => $record->numero_facture),
+                    ])
+                    ->action(function ($record, array $data) {
+                        $record->update([
+                            'statut'         => 'paye',
+                            'numero_facture' => trim((string) ($data['numero_facture'] ?? '')) ?: null,
+                        ]);
                         Notification::make()
                             ->title('✅ Dépense marquée payée')
                             ->success()

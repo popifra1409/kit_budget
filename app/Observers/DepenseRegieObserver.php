@@ -18,22 +18,9 @@ class DepenseRegieObserver
 
     protected function recalculerTout(DepenseRegie $depense): void
     {
-        // ── 1. Provision ──────────────────────────────────────
-        if ($depense->provision_ligne_regie_id) {
-            $depense->provisionLigneRegie?->recalculer();
-        }
-
-        // ── 2. Ligne régie (mini-budget) ──────────────────────
-        if ($depense->ligne_regie_avance_id) {
-            $depense->ligneRegieAvance?->recalculerMontants();
-        }
-
-        // ── 3. Décaissement (tranche) ─────────────────────────
-        if ($depense->decaissement_regie_id) {
-            $depense->decaissementRegie?->recalculerDepenses();
-        }
-
-        // ── 4. Régie globale ──────────────────────────────────
-        $depense->regieAvance?->recalculerMontants();
+        // L'achat direct est chiffré par lignes : l'en-tête, que la provision
+        // débite et que la tranche somme, doit d'abord porter leur synthèse.
+        $depense->alignerTotauxSurLignes();
+        $depense->rafraichirAgregeats();
     }
 }

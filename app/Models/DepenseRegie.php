@@ -17,6 +17,7 @@ class DepenseRegie extends Model
         'decaissement_regie_id',
         'ligne_regie_avance_id',
         'numero',
+        'numero_facture',
         'date_depense',
         'objet',
         'type_depense',
@@ -58,17 +59,80 @@ class DepenseRegie extends Model
             $depense->created_by = auth()->id();
         });
 
-        static::saved(function ($depense) {
-            // Recalculer les montants de la ligne et de la régie
-            $depense->ligneRegieAvance?->recalculerMontants();
-            $depense->regieAvance?->recalculerMontants();
-            $depense->decaissementRegie?->recalculerDepenses();
+        static::saving(function ($depense) {
+            // L'achat direct ne connaît sa tranche que par la provision qu'il a
+            // débitée : sans ce rattachement, le « dépensé » de la tranche et de
+            // la régie ignore l'achat (somme sur decaissement_regie_id).
+            if (!$depense->decaissement_regie_id && $depense->provision_ligne_regie_id) {
+                $depense->decaissement_regie_id =
+                    $depense->provisionLigneRegie?->decaissement_regie_id;
+            }
         });
+        // Les recalculs d'agrégats appartiennent à DepenseRegieObserver : c'est
+        // lui qui doit aligner les totaux avant de resommer provision, tranche
+        // et régie, qui lisent tous montant_ttc de l'en-tête.
+    }
 
-        static::deleted(function ($depense) {
-            $depense->ligneRegieAvance?->recalculerMontants();
-            $depense->regieAvance?->recalculerMontants();
-        });
+    // =========================================================
+    // TOTAUX ET AGRÉGATS
+    // =========================================================
+
+    /**
+     * L'achat direct est chiffré par lignes, mais c'est le montant_ttc de
+     * l'en-tête que la provision débite et que l'encaisse somme. Sans ce
+     * recopié, valider un achat depuis la fiche régie débite 0 FCFA : le
+     * dépensé reste nul et le disponible ne bouge pas.
+     */
+    public function alignerTotauxSurLignes(): void
+    {
+        $totaux = [
+            'montant_ht'  => round((float) $this->lignes()->sum('montant_ht'), 2),
+            'montant_tva' => round((float) $this->lignes()->sum('montant_tva'), 2),
+            'montant_ttc' => round((float) $this->lignes()->sum('montant_ttc'), 2),
+            'montant_ir'  => round((float) $this->lignes()->sum('montant_ir'), 2),
+            'net_a_payer' => round((float) $this->lignes()->sum('montant_net'), 2),
+        ];
+
+        // Dépense saisie sans lignes chiffrées (saisie rapide depuis la régie) :
+        // ses montants d'en-tête sont la saisie elle-même, on n'écrit rien.
+        if ($totaux['montant_ttc'] <= 0) {
+            return;
+        }
+
+        $ecart = false;
+        foreach ($totaux as $champ => $valeur) {
+            if (abs((float) $this->{$champ} - $valeur) > 0.005) {
+                $ecart = true;
+                break;
+            }
+        }
+        if (!$ecart) {
+            return;
+        }
+
+        // updateQuietly : pas de récursion dans saved(), les agrégats sont
+        // rafraîchis par l'appelant.
+        $this->updateQuietly($totaux);
+    }
+
+    /**
+     * Chaîne d'agrégats dans l'ordre : provision → ligne de mini-budget →
+     * tranche → régie. Chacun relit montant_ttc de l'en-tête, d'où
+     * alignerTotauxSurLignes() appelé avant.
+     */
+    public function rafraichirAgregeats(): void
+    {
+        $this->provisionLigneRegie?->recalculer();
+        $this->ligneRegieAvance?->recalculerMontants();
+
+        // Un achat direct n'est rattaché à une tranche que par sa provision :
+        // decaissement_regie_id reste NULL à la saisie, sans ce fallback la
+        // tranche ne recalcule ni son dépensé ni le disponible de ses provisions.
+        $decaissement = $this->decaissementRegie
+            ?? $this->provisionLigneRegie?->decaissement;
+        $decaissement?->recalculerDepenses();
+
+        $this->regieAvance?->recalculerMontants();
     }
 
     // ── Relations ─────────────────────────────────────────────

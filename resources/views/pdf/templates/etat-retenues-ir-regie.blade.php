@@ -55,7 +55,7 @@ $budgetSuivante = 26;
 
 $chunks = collect(); $page = collect(); $poids = 0; $budget = $budgetPage1;
 foreach ($depenses as $d) {
-    $p = max(1, (int) ceil(mb_strlen($d->fournisseur?->raison_sociale ?? '') / 26));
+    $p = max(1, (int) ceil(mb_strlen((string) ($d->fournisseur_nom ?? '')) / 26));
     if ($page->isNotEmpty() && ($poids + $p) > $budget) {
         $chunks->push($page); $page = collect(); $poids = 0; $budget = $budgetSuivante;
     }
@@ -226,7 +226,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
         <tr>
             <td class="num">{{ $idx + 1 }}</td>
             <td>{{ $d->numero }}@if($d->date_emission) du {{ \Carbon\Carbon::parse($d->date_emission)->format('d/m/Y') }}@endif</td>
-            <td>{{ $d->fournisseur?->raison_sociale ?? '—' }}</td>
+            <td>{{ $d->fournisseur_nom ?? '—' }}</td>
             <td class="money">{{ number_format($d->montant_ttc, 0, ',', ' ') }}</td>
             <td class="money">{{ $d->montant_tva > 0 ? number_format($d->montant_tva, 0, ',', ' ') : '0' }}</td>
             <td class="money">{{ number_format($d->montant_ir, 0, ',', ' ') }}</td>

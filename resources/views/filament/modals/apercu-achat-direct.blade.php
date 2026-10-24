@@ -117,6 +117,12 @@
         </tr>
         <tr>
             <td colspan="2" style="padding:3px 0;">
+                <strong>N° de facture :</strong>
+                {{ $depense->numero_facture ?: '⚠️ non renseignée — à saisir en marquant l\'achat payé' }}
+            </td>
+        </tr>
+        <tr>
+            <td colspan="2" style="padding:3px 0;">
                 <strong>Objet :</strong> {{ $depense->objet }}
             </td>
         </tr>

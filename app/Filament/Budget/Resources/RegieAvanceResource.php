@@ -608,7 +608,7 @@ class RegieAvanceResource extends Resource
 
                                     $set('texte_apurement', $record->lignesApurementPour($decaissements)->implode("\n"));
                                 })
-                                ->helperText('Plusieurs encaisses peuvent être apurés dans un seul document. Seules les dépenses réellement imputées aux tranches choisies sont incluses (traçabilité exacte, y compris pour un bon réparti sur deux encaisses).')
+                                ->helperText('Plusieurs encaisses peuvent être apurés dans un seul document. Sont inclus les bons de commande de la régie ET les achats directs imputés à ces encaisses, chacun à son montant réellement imputé (un bon réparti sur deux encaisses n\'est compté qu\'une fois).')
                                 ->columnSpanFull(),
 
                             Forms\Components\Grid::make(2)->schema([
@@ -828,7 +828,8 @@ class RegieAvanceResource extends Resource
     }
 
     /**
-     * ✅ Dépenses d'un décaissement (compte d'emploi, retenues IR) : UNE ligne par BCR.
+     * ✅ Dépenses d'un décaissement (compte d'emploi, retenues IR) : UNE ligne par
+     * pièce — bon de commande de régie comme achat direct.
      */
     public static function depensesDuDecaissement(?\App\Models\DecaissementRegie $decaissement, array $statuts, $debut, $fin): \Illuminate\Support\Collection
     {
@@ -841,12 +842,22 @@ class RegieAvanceResource extends Resource
     }
 
     /**
-     * ✅ Dépenses de plusieurs encaisses apurés ensemble : UNE ligne par BCR.
+     * ✅ Dépenses de plusieurs encaisses apurés ensemble : UNE ligne par pièce.
+     *
+     * Une régie paie des bons de commande ET des achats directs ; les deux
+     * familles alimentent le compte d'emploi.
+     *
+     * BCR :
      *  - imputations du BCR sur les provisions des tranches choisies additionnées,
      *    donc un bon réparti sur deux encaisses n'apparaît qu'une fois au total réel ;
      *  - BCR entièrement imputé sur ces tranches : montants exacts du BCR ;
      *  - BCR encore réparti ailleurs : TTC = montant réellement imputé ici,
      *    TVA / IR / net au prorata (mention « (part.) »).
+     * Achat direct : rattaché à l'encaisse par la provision qu'il a débitée, au
+     * montant près (pas de répartition possible sur deux encaisses).
+     *
+     * La colonne « N° FACTURE » porte le numéro de facture quand il existe,
+     * toujours suivi de la pièce d'origine entre parenthèses.
      *
      * @param \Illuminate\Support\Collection<int, \App\Models\DecaissementRegie> $decaissements
      */
@@ -861,7 +872,7 @@ class RegieAvanceResource extends Resource
         $debut = \Carbon\Carbon::parse($debut)->startOfDay();
         $fin = \Carbon\Carbon::parse($fin)->endOfDay();
 
-        return \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
+        $bonsDeCommande = \App\Models\ProvisionConsommation::whereIn('provision_ligne_regie_id', $provisionIds)
             ->with('bonCommandeRegie.fournisseur')
             ->get()
             ->groupBy('bon_commande_regie_id')
@@ -877,15 +888,19 @@ class RegieAvanceResource extends Resource
                 $ratio = $ttc > 0 ? min(1, $impute / $ttc) : 0;
                 $part = fn($v) => $complet ? (float) $v : round((float) $v * $ratio, 0);
 
+                // Le n° de facture est parfois ressaisi à l'identique du bon :
+                // une seule fois dans la cellule, sinon la référence est doublée.
+                $facture = $bcr->numero_facture_definitive ?: '⚠️ facture non renseignée';
+
                 return (object) [
-                    'numero'        => ($bcr->numero_facture_definitive
-                        ? $bcr->numero_facture_definitive
-                        : '⚠️ ' . $bcr->numero . ' (facture non renseignée)')
-                        . ($complet ? '' : ' (part.)'),
+                    'numero'        => $facture
+                            . ($facture === $bcr->numero ? '' : ' (' . $bcr->numero . ')')
+                            . ($complet ? '' : ' (part.)'),
                     'bcr'           => $bcr->numero,
                     'statut'        => $bcr->statut,
                     'date_emission' => $bcr->date_emission,
                     'fournisseur'   => $bcr->fournisseur,
+                    'fournisseur_nom' => $bcr->fournisseur?->raison_sociale,
                     'montant_ttc'   => $complet ? $ttc : round($impute, 0),
                     'montant_tva'   => $part($bcr->montant_tva),
                     'montant_ir'    => $part($bcr->montant_ir),
@@ -893,6 +908,34 @@ class RegieAvanceResource extends Resource
                 ];
             })
             ->filter()
+            ->values();
+
+        // Achats directs : la dépense a débité une provision, qui porte l'encaisse.
+        // Comme pour un BCR, la colonne N° FACTURE porte le n° de facture du
+        // fournisseur, le n° de l'achat (DR…) rappelé entre parenthèses.
+        $achatsDirects = \App\Models\DepenseRegie::whereIn('provision_ligne_regie_id', $provisionIds)
+            ->where('type_depense', 'achat_direct')
+            ->with('fournisseur')
+            ->get()
+            ->map(function ($d) {
+                $facture = $d->numero_facture ?: '⚠️ facture non renseignée';
+                return (object) [
+                    'numero'        => $facture
+                            . ($facture === $d->numero ? '' : ' (' . $d->numero . ')'),
+                    'bcr'           => $d->numero,
+                    'statut'        => $d->statut,
+                    'date_emission' => $d->date_depense,
+                    'fournisseur'   => $d->fournisseur,
+                    'fournisseur_nom' => $d->fournisseur?->raison_sociale ?: $d->fournisseur_libre,
+                    'montant_ttc'   => (float) $d->montant_ttc,
+                    'montant_tva'   => (float) $d->montant_tva,
+                    'montant_ir'    => (float) $d->montant_ir,
+                    'net_a_payer'   => (float) $d->net_a_payer,
+                ];
+            });
+
+        return $bonsDeCommande
+            ->concat($achatsDirects)
             ->filter(fn($d) => in_array($d->statut, $statuts, true))
             ->filter(fn($d) => !$d->date_emission || \Carbon\Carbon::parse($d->date_emission)->between($debut, $fin))
             ->sortBy('date_emission')

@@ -43,4 +43,21 @@ class LigneDepenseRegie extends Model
     {
         return $this->belongsTo(DepenseRegie::class);
     }
+
+    protected static function booted(): void
+    {
+        // Le repeater écrit les lignes après l'en-tête : c'est ici que l'achat
+        // direct récupère ses totaux, puis le disponible de son encaisse.
+        $synchroniser = function (self $ligne) {
+            $depense = $ligne->depenseRegie;
+            if (!$depense) {
+                return;
+            }
+            $depense->alignerTotauxSurLignes();
+            $depense->rafraichirAgregeats();
+        };
+
+        static::saved($synchroniser);
+        static::deleted($synchroniser);
+    }
 }

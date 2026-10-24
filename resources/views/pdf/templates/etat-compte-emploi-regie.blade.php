@@ -59,8 +59,9 @@ if ($parametres?->logo) {
 }
 
 // ── Titrage et montants, calculés avant la pagination ─────────
-$decimales = fn($v) => (round((float) $v, 2) === round((float) $v, 0)) ? 0 : 2;
-$fmt       = fn($v) => number_format((float) $v, $decimales($v), ',', ' ');
+// Le franc CFA n'a pas de sous-division et le tableau arrondit déjà au franc :
+// l'arrêté doit énoncer exactement les mêmes montants que la ligne TOTAL.
+$fmt = fn($v) => number_format(round((float) $v), 0, ',', ' ');
 
 $intituleRegie = mb_strtoupper($regie->intitule_regie);
 
@@ -152,7 +153,7 @@ $repartir = function () use ($MEP, $depenses, $hauteurChapeau, $hauteurEnTeteSui
         return $MEP::hauteurLigne(
             max(
                 $MEP::nbLignes((string) $d->numero, $largeurColFact, 8),
-                $MEP::nbLignes((string) ($d->fournisseur?->raison_sociale ?? '—'), $largeurColFour, 8)
+                $MEP::nbLignes((string) ($d->fournisseur_nom ?? '—'), $largeurColFour, 8)
             ),
             8,
             4
@@ -360,7 +361,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
         <tr>
             <td class="num">{{ $offsets[$i] + $idx + 1 }}</td>
             <td>{{ $d->numero }}@if($d->date_emission) du {{ \Carbon\Carbon::parse($d->date_emission)->format('d/m/Y') }}@endif</td>
-            <td>{{ $d->fournisseur?->raison_sociale ?? '—' }}</td>
+            <td>{{ $d->fournisseur_nom ?? '—' }}</td>
             <td class="money">{{ number_format($d->montant_ttc, 0, ',', ' ') }}</td>
             <td class="money">{{ number_format($d->montant_tva, 0, ',', ' ') }}</td>
             <td class="money">{{ number_format($d->montant_ir,  0, ',', ' ') }}</td>
