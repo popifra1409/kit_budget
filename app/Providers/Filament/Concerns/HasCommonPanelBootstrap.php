@@ -218,6 +218,7 @@ trait HasCommonPanelBootstrap
             'budget'           => ['💰', 'Budget',             '/budget',           'access_module_budget'],
             'marches'          => ['📋', 'Marchés',            '/marches',          'access_module_marches'],
             'comptable'        => ['📦', 'Matières',           '/comptable',        'access_module_comptable'],
+            'financier'        => ['💵', 'Comptabilité & Flux', '/financier',       'access_module_financier'],
             'suivi-evaluation' => ['📊', 'Suivi & Évaluation', '/suivi-evaluation', 'access_module_suivi_evaluation'],
         ];
     }

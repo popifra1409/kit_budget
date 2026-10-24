@@ -437,6 +437,34 @@ return [
             ],
 
             // ════════════════════════════════════════════════════════
+            'financier' => [
+                'libelle' => 'Gestion comptable et flux financiers',
+                'icone'   => 'heroicon-o-calculator',
+                'acces'   => 'access_module_financier',
+                'rubriques' => [
+                    'Plan comptable et tiers' => [
+                        'crud' => ['compte_comptable', 'rattachement_tiers'],
+                        'speciales' => ['lier_compte_nomenclature_budgetaire'],
+                    ],
+                    'Journaux et écritures' => [
+                        'crud' => ['journal_comptable', 'ecriture_comptable'],
+                        'speciales' => [
+                            'comptabiliser_ecriture',
+                            'annuler_ecriture',
+                            'generer_ecritures_documents',
+                        ],
+                    ],
+                    'États financiers' => [
+                        'speciales' => [
+                            'view_balance_comptes',
+                            'view_grand_livre',
+                            'exporter_etats_financiers',
+                        ],
+                    ],
+                ],
+            ],
+
+            // ════════════════════════════════════════════════════════
             'marches' => [
                 'libelle' => 'Marchés publics',
                 'icone'   => 'heroicon-o-building-office',

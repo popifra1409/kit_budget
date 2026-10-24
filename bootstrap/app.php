@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'portal/login',
             'budget/login',
             'comptable/login',
+            'financier/login',
             'marches/login',
         ]);
 
