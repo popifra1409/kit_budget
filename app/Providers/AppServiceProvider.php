@@ -29,6 +29,10 @@ use App\Support\Audit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Filament\Tables\Table;
+use Filament\Widgets\Widget;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Resources\Pages\ManageRelatedRecords;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -228,5 +232,37 @@ class AppServiceProvider extends ServiceProvider
             'agent-budgetaire-widget',
             \App\Filament\Budget\Widgets\AgentBudgetaireWidget::class
         );
+
+        /*
+        |------------------------------------------------------------------
+        | UNIFORMISATION DES TABLES (mémoire de session + chargement différé)
+        |------------------------------------------------------------------
+        | Une fois choisi, un filtre / une recherche / un tri d'une liste survit
+        | à la navigation dans le panneau : il ne se réinitialise que si
+        | l'utilisateur l'efface lui-même (puce « Clear all filters »).
+        | Le chargement différé peint d'abord la page, puis les lignes.
+        |
+        | Volontairement exclus : les tables imbriquées (RelationManager, onglets
+        | ManageRelatedRecords) et les widgets. Leur état dépend de
+        | l'enregistrement affiché : persisté, il fuiterait d'une fiche à l'autre.
+        |
+        | Contrôle : php artisan tinker /tmp/harness_listes.php
+        */
+        Table::configureUsing(function (Table $table): void {
+            $livewire = $table->getLivewire();
+
+            if ($livewire instanceof RelationManager
+                || $livewire instanceof ManageRelatedRecords
+                || $livewire instanceof Widget) {
+                return;
+            }
+
+            $table
+                ->persistFiltersInSession()
+                ->persistSearchInSession()
+                ->persistColumnSearchesInSession()
+                ->persistSortInSession()
+                ->deferLoading();
+        });
     }
 }

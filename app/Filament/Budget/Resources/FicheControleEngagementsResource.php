@@ -9,6 +9,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 
 class FicheControleEngagementsResource extends Resource
 {
@@ -53,20 +54,76 @@ class FicheControleEngagementsResource extends Resource
     // ========================================
 
     /**
-     * ✅ Calcule le total engagé depuis les engagements actifs (non annulés, non supprimés)
-     *    Utilise une requête directe pour éviter le N+1 et avoir des données fraîches
+     * ✅ Engagements actifs (ni annulés, ni supprimés) d'une ligne budgétaire.
+     *    $record null → predicates corrélées, utilisées dans le sous-select de
+     *    getEloquentQuery() ; sinon comparaison aux valeurs de la ligne.
+     *    Source unique de vérité pour la liste ET pour les calculs unitaires.
      */
-    private static function getTotalEngage(LigneBudgetaire $record): float
+    private static function engagementsActifs(?LigneBudgetaire $record = null): \Illuminate\Database\Query\Builder
     {
-        return (float) \App\Models\Engagement::query()
-            ->where('budget_id', $record->budget_id)
-            ->where('nomenclature_principale_id', $record->nomenclature_id)
-            ->whereNotIn('statut', ['annule'])
-            ->sum('montant_engage');
+        $query = DB::table('engagements')
+            ->whereNull('engagements.deleted_at')
+            ->whereNotIn('engagements.statut', ['annule']);
+
+        return $record === null
+            ? $query
+                ->whereColumn('engagements.budget_id', 'lignes_budgetaires.budget_id')
+                ->whereColumn('engagements.nomenclature_principale_id', 'lignes_budgetaires.nomenclature_id')
+            : $query
+                ->where('engagements.budget_id', $record->budget_id)
+                ->where('engagements.nomenclature_principale_id', $record->nomenclature_id);
     }
 
     /**
-     * ✅ Calcule le disponible réel = budget_initial - totalEngagé
+     * ✅ Ordonnances d'un type donné, rattachées aux engagements actifs d'une ligne.
+     *    Mêmes predicates que engagementsActifs() (record null → sous-select corrélé).
+     */
+    private static function ordonnancesDeLaLigne(string $type, ?LigneBudgetaire $record = null): \Illuminate\Database\Query\Builder
+    {
+        $query = DB::table('ordonnances_paiement')
+            ->join('engagements', 'engagements.id', '=', 'ordonnances_paiement.engagement_id')
+            ->whereNull('ordonnances_paiement.deleted_at')
+            ->whereNull('engagements.deleted_at')
+            ->whereNotIn('engagements.statut', ['annule'])
+            ->where('ordonnances_paiement.type_ordonnance', $type)
+            ->whereNotIn('ordonnances_paiement.statut', ['annulee']);
+
+        return $record === null
+            ? $query
+                ->whereColumn('engagements.budget_id', 'lignes_budgetaires.budget_id')
+                ->whereColumn('engagements.nomenclature_principale_id', 'lignes_budgetaires.nomenclature_id')
+            : $query
+                ->where('engagements.budget_id', $record->budget_id)
+                ->where('engagements.nomenclature_principale_id', $record->nomenclature_id);
+    }
+
+    /**
+     * ✅ Calcule le total engagé depuis les engagements actifs (non annulés, non supprimés)
+     *    En liste, la valeur arrive déjà du select corrélé : aucune requête par ligne.
+     */
+    private static function getTotalEngage(LigneBudgetaire $record): float
+    {
+        if (isset($record->total_engage_calcule)) {
+            return (float) $record->total_engage_calcule;
+        }
+
+        return (float) self::engagementsActifs($record)->sum('montant_engage');
+    }
+
+    /**
+     * ✅ Calcule le nombre d'engagements actifs de la ligne
+     */
+    private static function getNbEngagements(LigneBudgetaire $record): int
+    {
+        if (isset($record->nb_engagements_calcule)) {
+            return (int) $record->nb_engagements_calcule;
+        }
+
+        return (int) self::engagementsActifs($record)->count();
+    }
+
+    /**
+     * ✅ Calcule le disponible réel = budget_rectifie - totalEngagé
      *    (ne dépend PAS de la colonne stockée disponible_engagement qui peut être stale)
      */
     private static function getDisponibleReel(LigneBudgetaire $record): float
@@ -80,17 +137,11 @@ class FicheControleEngagementsResource extends Resource
      */
     private static function getMontantOP(LigneBudgetaire $record): float
     {
-        return (float) \App\Models\OrdonnancePaiement::query()
-            ->whereHas(
-                'engagement',
-                fn($q) => $q
-                    ->where('budget_id', $record->budget_id)
-                    ->where('nomenclature_principale_id', $record->nomenclature_id)
-                    ->whereNotIn('statut', ['annule'])
-            )
-            ->where('type_ordonnance', 'standard')
-            ->whereNotIn('statut', ['annulee'])
-            ->sum('montant_net');
+        if (isset($record->montant_op_calcule)) {
+            return (float) $record->montant_op_calcule;
+        }
+
+        return (float) self::ordonnancesDeLaLigne('standard', $record)->sum('ordonnances_paiement.montant_net');
     }
 
     /**
@@ -98,17 +149,11 @@ class FicheControleEngagementsResource extends Resource
      */
     private static function getMontantOPT(LigneBudgetaire $record): float
     {
-        return (float) \App\Models\OrdonnancePaiement::query()
-            ->whereHas(
-                'engagement',
-                fn($q) => $q
-                    ->where('budget_id', $record->budget_id)
-                    ->where('nomenclature_principale_id', $record->nomenclature_id)
-                    ->whereNotIn('statut', ['annule'])
-            )
-            ->where('type_ordonnance', 'impot')
-            ->whereNotIn('statut', ['annulee'])
-            ->sum('montant_net');
+        if (isset($record->montant_opt_calcule)) {
+            return (float) $record->montant_opt_calcule;
+        }
+
+        return (float) self::ordonnancesDeLaLigne('impot', $record)->sum('ordonnances_paiement.montant_net');
     }
 
     /**
@@ -230,13 +275,7 @@ class FicheControleEngagementsResource extends Resource
 
                 Tables\Columns\TextColumn::make('nb_engagements')
                     ->label('Nb Engagements')
-                    ->getStateUsing(
-                        fn($record) =>
-                        \App\Models\Engagement::where('budget_id', $record->budget_id)
-                            ->where('nomenclature_principale_id', $record->nomenclature_id)
-                            ->whereNotIn('statut', ['annule'])
-                            ->count()
-                    )
+                    ->getStateUsing(fn($record) => self::getNbEngagements($record))
                     ->badge()->color('gray'),
 
                 Tables\Columns\TextColumn::make('created_at')
@@ -382,9 +421,25 @@ class FicheControleEngagementsResource extends Resource
         ];
     }
 
+    /**
+     * ✅ La liste calcule les agrégats en 4 sous-slections corrélées (une seule
+     *    requête pour la page) au lieu de 6 requêtes par ligne. Les helpers
+     *    privés lisent ces attributs quand ils existent : la liste et le détail
+     *    affichent donc exactement les mêmes montants.
+     */
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
         return parent::getEloquentQuery()
-            ->with(['budget.exercice', 'nomenclature']);
+            ->with(['budget.exercice', 'nomenclature'])
+            ->addSelect([
+                'total_engage_calcule' => self::engagementsActifs()
+                    ->selectRaw('coalesce(sum(engagements.montant_engage), 0)'),
+                'nb_engagements_calcule' => self::engagementsActifs()
+                    ->selectRaw('count(*)'),
+                'montant_op_calcule' => self::ordonnancesDeLaLigne('standard')
+                    ->selectRaw('coalesce(sum(ordonnances_paiement.montant_net), 0)'),
+                'montant_opt_calcule' => self::ordonnancesDeLaLigne('impot')
+                    ->selectRaw('coalesce(sum(ordonnances_paiement.montant_net), 0)'),
+            ]);
     }
 }

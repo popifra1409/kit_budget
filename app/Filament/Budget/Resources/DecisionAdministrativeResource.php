@@ -162,6 +162,40 @@ class DecisionAdministrativeResource extends Resource
         });
     }
 
+    /**
+     * Portée « à traiter par moi » : mes brouillons non transmis, ce qu'on m'a
+     * transmis en attente de mon action, et ce qu'on m'a retourné.
+     */
+    public static function restreindreATraiter(Builder $query): Builder
+    {
+        $userId = auth()->id();
+
+        return $query->where(function ($q) use ($userId) {
+            // 1. Mes brouillons non transmis
+            $q->where(function ($subQ) use ($userId) {
+                    $subQ->where('created_by', $userId)
+                        ->where('statut', 'brouillon')
+                        ->whereDoesntHave('transmissions', function ($t) {
+                            $t->where('statut', 'en_attente');
+                        });
+                })
+                // 2. Transmis À MOI (en attente de mon action)
+                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                    $transmission->where('destinataire_id', $userId)
+                        ->where('statut', 'en_attente');
+                })
+                // 3. Retournés À MOI pour correction
+                ->orWhere(function ($subQ) use ($userId) {
+                    $subQ->where('created_by', $userId)
+                        ->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('statut', 'retourne')
+                                ->latest()
+                                ->limit(1);
+                        });
+                });
+        });
+    }
+
     // =========================================================
     // FORMULAIRE
     // =========================================================
@@ -806,7 +840,6 @@ class DecisionAdministrativeResource extends Resource
                                 'this_year'    => 'Cette année',
                                 'last_year'    => 'Année dernière',
                             ])
-                            ->default('today')
                             ->placeholder('Sélectionner une période'),
                     ])
                     ->query(function ($query, array $data) {
@@ -955,7 +988,7 @@ class DecisionAdministrativeResource extends Resource
                     })
                     ->toggle()
                     ->default(false)
-                    ->indicateUsing(fn() => '📌 Mes décisions actives'),
+                    ->indicator('📌 Mes décisions actives'),
 
                 Tables\Filters\Filter::make('mes_transmissions')
                     ->label('📤 Mes transmissions envoyées')
@@ -967,42 +1000,16 @@ class DecisionAdministrativeResource extends Resource
                     })
                     ->toggle()
                     ->default(false)
-                    ->indicateUsing(fn() => '📤 Transmissions envoyées en attente'),
+                    ->indicator('📤 Transmissions envoyées en attente'),
 
                 Tables\Filters\Filter::make('a_traiter')
                     ->label('📌 A traiter par moi')
-                    ->query(function ($query) {
-                        $userId = auth()->id();
-                        return $query->where(function ($q) use ($userId) {
-
-                            // 1. Mes brouillons non transmis
-                            $q->where(function ($subQ) use ($userId) {
-                                $subQ->where('created_by', $userId)
-                                    ->where('statut', 'brouillon')
-                                    ->whereDoesntHave('transmissions', function ($t) {
-                                        $t->where('statut', 'en_attente');
-                                    });
-                            })
-
-                                // 2. Transmis À MOI
-                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
-                                })
-
-                                // 3. Retournés À MOI
-                                ->orWhere(function ($subQ) use ($userId) {
-                                    $subQ->where('created_by', $userId)
-                                        ->whereHas('transmissions', function ($transmission) {
-                                            $transmission->where('statut', 'retourne')
-                                                ->latest()->limit(1);
-                                        });
-                                });
-                        });
-                    })
+                    ->query(fn ($query) => static::restreindreATraiter($query))
                     ->toggle()
-                    ->default(true)
-                    ->indicateUsing(fn() => '📌 Décisions nécessitant mon action'),
+                    // Activé uniquement si l'utilisateur a du travail en attente : un
+                    // superviseur qui ne saisit rien ouvrirait sinon une liste vide.
+                    ->default(fn () => static::restreindreATraiter(static::getEloquentQuery())->exists())
+                    ->indicator('📌 Décisions nécessitant mon action'),
 
 
                 Tables\Filters\SelectFilter::make('exercice_id')

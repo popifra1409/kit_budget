@@ -360,8 +360,16 @@ class Tache extends Model
      */
     public function getTotalAe(): float
     {
-        if ($this->estTachePrincipale() && $this->sousTaches()->exists()) {
-            return $this->sousTaches()->sum('ae');
+        if ($this->estTachePrincipale()) {
+            // La collection est déjà chargée dans les listes et les états :
+            // sommer en mémoire évite une requête par tâche.
+            if ($this->relationLoaded('sousTaches')) {
+                if ($this->sousTaches->isNotEmpty()) {
+                    return (float) $this->sousTaches->sum('ae');
+                }
+            } elseif ($this->sousTaches()->exists()) {
+                return $this->sousTaches()->sum('ae');
+            }
         }
 
         return (float) $this->ae;
@@ -372,8 +380,14 @@ class Tache extends Model
      */
     public function getTotalCp(): float
     {
-        if ($this->estTachePrincipale() && $this->sousTaches()->exists()) {
-            return $this->sousTaches()->sum('cp');
+        if ($this->estTachePrincipale()) {
+            if ($this->relationLoaded('sousTaches')) {
+                if ($this->sousTaches->isNotEmpty()) {
+                    return (float) $this->sousTaches->sum('cp');
+                }
+            } elseif ($this->sousTaches()->exists()) {
+                return $this->sousTaches()->sum('cp');
+            }
         }
 
         return (float) $this->cp;

@@ -241,7 +241,7 @@ class DossierFournisseurResource extends Resource
             ->groupsInDropdownOnDesktop()
 
             ->filters([
-                // ✅ Filtre période — Aujourd'hui par défaut
+                // ✅ Filtre période — sans sélection par défaut
                 Tables\Filters\Filter::make('periode')
                     ->form([
                         Forms\Components\Select::make('periode')
@@ -258,11 +258,10 @@ class DossierFournisseurResource extends Resource
                                 'this_year'    => 'Cette année',
                                 'last_year'    => 'Année dernière',
                             ])
-                            ->default('today')
                             ->placeholder('Toutes les périodes'),
                     ])
                     ->query(function ($query, array $data) {
-                        $periode = $data['periode'] ?? 'today';
+                        $periode = $data['periode'] ?? null;
                         return match ($periode) {
                             'today'        => $query->whereDate('date_ouverture', today()),
                             'yesterday'    => $query->whereDate('date_ouverture', today()->subDay()),
@@ -290,7 +289,10 @@ class DossierFournisseurResource extends Resource
                             'this_year'    => 'Cette année',
                             'last_year'    => 'Année dernière',
                         ];
-                        $p = $data['periode'] ?? 'today';
+                        $p = $data['periode'] ?? null;
+                        if (!$p) {
+                            return null;
+                        }
                         return 'Période : ' . ($labels[$p] ?? $p);
                     }),
 

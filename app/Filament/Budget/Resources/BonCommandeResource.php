@@ -1340,6 +1340,40 @@ class BonCommandeResource extends Resource
         });
     }
 
+    /**
+     * Portée « à traiter par moi » : mes brouillons non transmis, ce qu'on m'a
+     * transmis en attente de mon action, et ce qu'on m'a retourné.
+     */
+    public static function restreindreATraiter(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        $userId = auth()->id();
+
+        return $query->where(function ($q) use ($userId) {
+            // 1. Mes brouillons (pas encore transmis)
+            $q->where(function ($subQ) use ($userId) {
+                    $subQ->where('created_by', $userId)
+                        ->where('statut', 'brouillon')
+                        ->whereDoesntHave('transmissions', function ($t) {
+                            $t->where('statut', 'en_attente');
+                        });
+                })
+                // 2. Transmis À MOI (en attente de mon action)
+                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
+                    $transmission->where('destinataire_id', $userId)
+                        ->where('statut', 'en_attente');
+                })
+                // 3. Retournés À MOI pour correction
+                ->orWhere(function ($subQ) use ($userId) {
+                    $subQ->where('created_by', $userId)
+                        ->whereHas('transmissions', function ($transmission) {
+                            $transmission->where('statut', 'retourne')
+                                ->latest()
+                                ->limit(1);
+                        });
+                });
+        });
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -1577,11 +1611,10 @@ class BonCommandeResource extends Resource
                                 'this_year' => 'Cette année',
                                 'last_year' => 'Année dernière',
                             ])
-                            ->default('today')
                             ->placeholder('Sélectionner une période'),
                     ])
                     ->query(function ($query, array $data) {
-                        $periode = $data['periode'] ?? 'today';
+                        $periode = $data['periode'] ?? null;
 
                         return match ($periode) {
                             'today' => $query->whereDate('date_emission', today()),
@@ -1613,7 +1646,7 @@ class BonCommandeResource extends Resource
                     })
                     ->indicateUsing(function (array $data): ?string {
                         if (!($data['periode'] ?? null)) {
-                            return 'Période : Aujourd\'hui';
+                            return null;
                         }
 
                         $labels = [
@@ -1671,7 +1704,7 @@ class BonCommandeResource extends Resource
                     })
                     ->toggle()
                     ->default(false)
-                    ->indicateUsing(fn() => '📁 Tous les bons (créés par moi)'),
+                    ->indicator('📁 Tous les bons (créés par moi)'),
 
                 Tables\Filters\Filter::make('mes_transmissions')
                     ->label('📤 Mes transmissions envoyées')
@@ -1683,43 +1716,16 @@ class BonCommandeResource extends Resource
                     })
                     ->toggle()
                     ->default(false) // ✅ DÉSACTIVÉ par défaut (cache les transmissions)
-                    ->indicateUsing(fn() => '📤 Transmissions envoyées en attente'),
+                    ->indicator('📤 Transmissions envoyées en attente'),
 
                 Tables\Filters\Filter::make('à_traiter')
                     ->label('📌 A traiter par moi')
-                    ->query(function ($query) {
-                        $userId = auth()->id();
-
-                        return $query->where(function ($q) use ($userId) {
-                            // 1. Mes brouillons (pas encore transmis)
-                            $q->where(function ($subQ) use ($userId) {
-                                $subQ->where('created_by', $userId)
-                                    ->where('statut', 'brouillon')
-                                    ->whereDoesntHave('transmissions', function ($t) {
-                                        $t->where('statut', 'en_attente');
-                                    });
-                            })
-                                // OU
-                                // 2. Transmis À MOI (en attente de mon action)
-                                ->orWhereHas('transmissions', function ($transmission) use ($userId) {
-                                    $transmission->where('destinataire_id', $userId)
-                                        ->where('statut', 'en_attente');
-                                })
-                                // OU
-                                // 3. Retournés À MOI pour correction
-                                ->orWhere(function ($subQ) use ($userId) {
-                                    $subQ->where('created_by', $userId)
-                                        ->whereHas('transmissions', function ($transmission) {
-                                            $transmission->where('statut', 'retourne')
-                                                ->latest()
-                                                ->limit(1);
-                                        });
-                                });
-                        });
-                    })
+                    ->query(fn ($query) => static::restreindreATraiter($query))
                     ->toggle()
-                    ->default(true)
-                    ->indicateUsing(fn() => '📌 Bons nécessitant mon action'),
+                    // Activé uniquement si l'utilisateur a du travail en attente : un
+                    // superviseur qui ne saisit rien ouvrirait sinon une liste vide.
+                    ->default(fn () => static::restreindreATraiter(static::getEloquentQuery())->exists())
+                    ->indicator('📌 Bons nécessitant mon action'),
 
                 Tables\Filters\SelectFilter::make('exercice_id')
                     ->label('Exercice')

@@ -306,7 +306,17 @@ class TacheResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        // Les colonnes affichent les montants (getTotalAe/getTotalCp), le parent,
+        // la chaîne activité→action→programme et le nombre de sous-tâches : tout
+        // est chargé d'avance pour éviter une requête par ligne.
+        return parent::getEloquentQuery()->with([
+            'exercice',
+            'parent',
+            'activite.action.programme',
+            'nomenclature',
+            'service',
+            'sousTaches',
+        ]);
     }
 
     // ========================================
@@ -377,7 +387,7 @@ class TacheResource extends Resource
                         Tables\Columns\Summarizers\Summarizer::make()->label('Total AE')
                             ->using(function ($query) {
                                 $tacheIds = (clone $query)->where('niveau', 'tache')->pluck('id');
-                                $taches   = \App\Models\Tache::whereIn('id', $tacheIds)->get();
+                                $taches   = \App\Models\Tache::with('sousTaches')->whereIn('id', $tacheIds)->get();
                                 return number_format($taches->sum(fn($t) => $t->getTotalAe()), 0, ',', ' ') . ' FCFA';
                             }),
                     ])
@@ -395,7 +405,7 @@ class TacheResource extends Resource
                         Tables\Columns\Summarizers\Summarizer::make()->label('Total CP')
                             ->using(function ($query) {
                                 $tacheIds = (clone $query)->where('niveau', 'tache')->pluck('id');
-                                $taches   = \App\Models\Tache::whereIn('id', $tacheIds)->get();
+                                $taches   = \App\Models\Tache::with('sousTaches')->whereIn('id', $tacheIds)->get();
                                 return number_format($taches->sum(fn($t) => $t->getTotalCp()), 0, ',', ' ') . ' FCFA';
                             }),
                     ])

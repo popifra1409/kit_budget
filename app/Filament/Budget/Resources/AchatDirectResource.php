@@ -36,9 +36,18 @@ class AchatDirectResource extends Resource
     {
         return auth()->user()?->can('view_any_depense_regie') ?? false;
     }
+
+    /**
+     * Un achat direct appartient à la régie de son responsable.
+     */
+    public static function accessible($record): bool
+    {
+        return $record->regieAvance?->estGerePar(auth()->user()) ?? false;
+    }
+
     public static function canView($record): bool
     {
-        return auth()->user()?->can('view_depense_regie') ?? false;
+        return (auth()->user()?->can('view_depense_regie') ?? false) && static::accessible($record);
     }
     public static function canCreate(): bool
     {
@@ -46,11 +55,15 @@ class AchatDirectResource extends Resource
     }
     public static function canEdit($record): bool
     {
-        return auth()->user()?->can('update_depense_regie') && $record->statut === 'brouillon';
+        return (auth()->user()?->can('update_depense_regie') ?? false)
+            && static::accessible($record)
+            && $record->statut === 'brouillon';
     }
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_depense_regie') && $record->statut === 'brouillon';
+        return (auth()->user()?->can('delete_depense_regie') ?? false)
+            && static::accessible($record)
+            && $record->statut === 'brouillon';
     }
 
     // =========================================================
@@ -200,15 +213,7 @@ class AchatDirectResource extends Resource
                         ->label('Régie / Menu Dépense')
                         ->options(function () {
                             return RegieAvance::where('statut', 'actif')
-                                ->when(
-                                    !auth()->user()?->hasAnyRole([
-                                        'super_admin',
-                                        'admin',
-                                        'daaf',
-                                        'agence_comptable',
-                                    ]),
-                                    fn($q) => $q->where('responsable_id', auth()->id())
-                                )
+                                ->visiblePour(auth()->user())
                                 ->get()
                                 ->mapWithKeys(fn($r) => [
                                     $r->id => "{$r->numero} — {$r->libelle} ({$r->label_type})"
@@ -234,6 +239,8 @@ class AchatDirectResource extends Resource
                                 'decaissement',
                                 fn($q) => $q->where('regie_avance_id', $regieId)
                                     ->where('statut', 'verse')
+                                    // la régie choisie doit rester visible par l'utilisateur
+                                    ->whereHas('regieAvance', fn($r) => $r->visiblePour(auth()->user()))
                             )
                                 ->where(function ($q) use ($record) {
                                     // ✅ Toujours inclure la provision actuelle même si montant = 0
@@ -757,7 +764,7 @@ class AchatDirectResource extends Resource
 
                 Tables\Filters\SelectFilter::make('regie_avance_id')
                     ->label('Régie')
-                    ->options(fn() => RegieAvance::pluck('libelle', 'id'))
+                    ->options(fn() => RegieAvance::visiblePour(auth()->user())->pluck('libelle', 'id'))
                     ->searchable(),
 
                 Tables\Filters\Filter::make('periode')
@@ -1009,30 +1016,20 @@ class AchatDirectResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $query = parent::getEloquentQuery()
+        $user = auth()->user();
+
+        return parent::getEloquentQuery()
             ->where('type_depense', 'achat_direct')
             ->with([
                 'regieAvance',
                 'fournisseur',
                 'ligneRegieAvance.nomenclature',
                 'lignes'
-            ]);
-
-        $user = auth()->user();
-        if ($user && !$user->hasAnyRole([
-            'super_admin',
-            'admin',
-            'daaf',
-            'agence_comptable',
-            'controleur_financier',
-        ])) {
-            $query->whereHas(
+            ])
+            ->whereHas(
                 'regieAvance',
-                fn($q) => $q->where('responsable_id', $user->id)
+                fn($q) => $q->visiblePour($user)
             );
-        }
-
-        return $query;
     }
 
     public static function getRelations(): array

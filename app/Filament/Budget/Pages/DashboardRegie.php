@@ -34,10 +34,7 @@ class DashboardRegie extends Page
 
         $regies = RegieAvance::where('statut', 'actif')
             ->when($exercice, fn($q) => $q->where('exercice_id', $exercice->id))
-            ->when(
-                !auth()->user()?->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable']),
-                fn($q) => $q->where('responsable_id', auth()->id())
-            )
+            ->visiblePour(auth()->user())
             ->with(['lignes', 'decaissements', 'depenses', 'bonsCommande'])
             ->get();
 
@@ -64,12 +61,9 @@ class DashboardRegie extends Page
             'ligneRegieAvance.nomenclature',
             'fournisseur',
         ])
-            ->when(
-                !auth()->user()?->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable']),
-                fn($q) => $q->whereHas(
-                    'regieAvance',
-                    fn($r) => $r->where('responsable_id', auth()->id())
-                )
+            ->whereHas(
+                'regieAvance',
+                fn($r) => $r->visiblePour(auth()->user())
             )
             ->whereIn('statut', ['valide', 'paye'])
             ->when($exercice, fn($q) => $q->whereHas(
@@ -102,12 +96,9 @@ class DashboardRegie extends Page
         ])
             ->where('engage', true)
             ->whereNotIn('statut', ['annule'])
-            ->when(
-                !auth()->user()?->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable']),
-                fn($q) => $q->whereHas(
-                    'regieAvance',
-                    fn($r) => $r->where('responsable_id', auth()->id())
-                )
+            ->whereHas(
+                'regieAvance',
+                fn($r) => $r->visiblePour(auth()->user())
             )
             ->when($exercice, fn($q) => $q->whereHas(
                 'regieAvance',

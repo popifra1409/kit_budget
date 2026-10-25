@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -214,12 +215,73 @@ class RegieAvance extends Model
     }
 
     /**
+     * ✅ Agrégats de consommation en sous-sélections corrélées, à injecter dans
+     *    ->addSelect() d'une liste : une seule requête pour toute la page au lieu
+     *    de trois par tranche. Les prédicats sont identiques à
+     *    montantEngageReel() / montantPayeNonEngage(), qui lisent ces attributs
+     *    quand ils sont présents — liste et détail restent concordants.
+     *
+     * @return array<string, \Illuminate\Database\Query\Builder>
+     */
+    public static function selectsConsommations(): array
+    {
+        $tranches = fn() => DB::query()
+            ->select('decaissements_regies.id')
+            ->from('decaissements_regies')
+            ->whereIn('decaissements_regies.statut', ['verse', 'apure'])
+            ->whereColumn('decaissements_regies.regie_avance_id', 'regies_avances.id');
+
+        return [
+            // BCR engagés : consommation tracée sur les provisions des tranches versées/apurées
+            'engage_traces_calcule' => DB::table('provision_consommations')
+                ->join('provisions_lignes_regies', 'provisions_lignes_regies.id', '=', 'provision_consommations.provision_ligne_regie_id')
+                ->join('decaissements_regies', 'decaissements_regies.id', '=', 'provisions_lignes_regies.decaissement_regie_id')
+                ->whereIn('decaissements_regies.statut', ['verse', 'apure'])
+                ->whereColumn('decaissements_regies.regie_avance_id', 'regies_avances.id')
+                ->selectRaw('coalesce(sum(provision_consommations.montant), 0)'),
+
+            // Achats directs validés/payés rattachés à une tranche de la régie
+            'engage_direct_calcule' => DB::table('depenses_regies')
+                ->leftJoin('provisions_lignes_regies', 'provisions_lignes_regies.id', '=', 'depenses_regies.provision_ligne_regie_id')
+                ->whereIn('depenses_regies.statut', ['valide', 'paye'])
+                ->where(function ($query) use ($tranches) {
+                    $query->whereIn('depenses_regies.decaissement_regie_id', $tranches())
+                        ->orWhereIn('provisions_lignes_regies.decaissement_regie_id', $tranches());
+                })
+                ->selectRaw('coalesce(sum(depenses_regies.montant_ttc), 0)'),
+
+            // BCR payés au-delà de leur engagement tracé (déficit à régulariser)
+            'paye_non_engage_calcule' => DB::table('bons_commande_regies')
+                ->leftJoin(
+                    DB::raw('(select bon_commande_regie_id, sum(montant) as total from provision_consommations group by bon_commande_regie_id) as traces'),
+                    'traces.bon_commande_regie_id',
+                    '=',
+                    'bons_commande_regies.id'
+                )
+                ->whereNull('bons_commande_regies.deleted_at')
+                ->where('bons_commande_regies.statut', 'paye')
+                ->whereColumn('bons_commande_regies.regie_avance_id', 'regies_avances.id')
+                ->selectRaw('coalesce(sum(greatest(0, bons_commande_regies.montant_ttc - coalesce(traces.total, 0))), 0)'),
+
+            'ir_collecte_calcule' => DB::table('decaissements_regies')
+                ->whereColumn('decaissements_regies.regie_avance_id', 'regies_avances.id')
+                ->selectRaw('coalesce(sum(decaissements_regies.montant_ir_collecte), 0)'),
+        ];
+    }
+
+    /**
      * Ce que la régie a déjà consommé : les BCR au statut engagé et les achats
      * directs validés. Livrer ou payer un BCR ne change rien ici — la somme avait
      * déjà été réservée sur l'encaisse au moment de l'engagement.
      */
     public function montantEngageReel(): float
     {
+        if (isset($this->engage_traces_calcule, $this->engage_direct_calcule)) {
+            return (float) $this->engage_traces_calcule
+                + (float) $this->engage_direct_calcule
+                + $this->montantPayeNonEngage();
+        }
+
         return (float) $this->decaissements()
             ->whereIn('statut', ['verse', 'apure'])
             ->get()
@@ -235,6 +297,10 @@ class RegieAvance extends Model
      */
     public function montantPayeNonEngage(): float
     {
+        if (isset($this->paye_non_engage_calcule)) {
+            return (float) $this->paye_non_engage_calcule;
+        }
+
         $bons = $this->bonsCommande()->where('statut', 'paye')->get(['id', 'montant_ttc']);
 
         if ($bons->isEmpty()) {
@@ -511,6 +577,30 @@ class RegieAvance extends Model
     public function scopePourResponsable($query, int $userId)
     {
         return $query->where('responsable_id', $userId);
+    }
+
+    /**
+     * Toutes les régies pour la supervision, uniquement les siennes pour un
+     * responsable de régie.
+     */
+    public function scopeVisiblePour($query, $user)
+    {
+        if (!$user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $user->voitToutesLesRegies()
+            ? $query
+            : $query->where('responsable_id', $user->id);
+    }
+
+    /**
+     * Cette régie est-elle accessible à cet utilisateur ?
+     */
+    public function estGerePar($user): bool
+    {
+        return $user !== null
+            && ($user->voitToutesLesRegies() || (int) $this->responsable_id === (int) $user->id);
     }
 
     // ── Accesseurs ───────────────────────────────────────────

@@ -36,9 +36,14 @@ class MenuDepenseResource extends Resource
         return auth()->user()?->can('view_any_menu_depense') ?? false;
     }
 
+    public static function accessible($record): bool
+    {
+        return $record?->estGerePar(auth()->user()) ?? false;
+    }
+
     public static function canView($record): bool
     {
-        return auth()->user()?->can('view_menu_depense') ?? false;
+        return (auth()->user()?->can('view_menu_depense') ?? false) && static::accessible($record);
     }
 
     public static function canCreate(): bool
@@ -48,13 +53,15 @@ class MenuDepenseResource extends Resource
 
     public static function canEdit($record): bool
     {
-        return auth()->user()?->can('update_menu_depense')
+        return (auth()->user()?->can('update_menu_depense') ?? false)
+            && static::accessible($record)
             && $record->statut === 'actif';
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_menu_depense')
+        return (auth()->user()?->can('delete_menu_depense') ?? false)
+            && static::accessible($record)
             && $record->statut === 'actif'
             && $record->montant_depense == 0;
     }
@@ -459,22 +466,9 @@ class MenuDepenseResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $query = parent::getEloquentQuery()
+        return parent::getEloquentQuery()
             ->where('type', 'menu_depense')
-            ->with(['exercice', 'responsable', 'budget', 'lignes']);
-
-        $user = auth()->user();
-
-        if (!$user) return $query->whereRaw('1 = 0');
-
-        if ($user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agence_comptable'])) {
-            return $query;
-        }
-
-        if ($user->can('view_any_menu_depense')) {
-            return $query;
-        }
-
-        return $query->where('responsable_id', $user->id);
+            ->with(['exercice', 'responsable', 'budget', 'lignes'])
+            ->visiblePour(auth()->user());
     }
 }

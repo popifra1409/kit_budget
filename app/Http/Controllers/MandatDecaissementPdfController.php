@@ -24,6 +24,13 @@ class MandatDecaissementPdfController extends Controller
 
     protected function generer(RegieAvance $regie, DecaissementRegie $decaissement)
     {
+        abort_unless($regie->estGerePar(auth()->user()), 403, "Régie non accessible.");
+        abort_unless(
+            (int) $decaissement->regie_avance_id === (int) $regie->id,
+            403,
+            "Ce décaissement n'appartient pas à la régie demandée."
+        );
+
         $regie->load([
             'responsable',
             'exercice',

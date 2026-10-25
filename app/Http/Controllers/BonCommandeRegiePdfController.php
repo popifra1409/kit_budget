@@ -10,6 +10,12 @@ class BonCommandeRegiePdfController extends Controller
 {
     protected function preparerDonnees(BonCommandeRegie $bcr): array
     {
+        abort_unless(
+            $bcr->regieAvance?->estGerePar(auth()->user()) ?? false,
+            403,
+            "Bon de commande rattaché à une régie qui ne vous est pas accessible."
+        );
+
         $bcr->load([
             'lignes.referenceMercuriale',
             'fournisseur',

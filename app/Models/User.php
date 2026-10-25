@@ -339,6 +339,30 @@ class User extends Authenticatable implements FilamentUser
         //return $this->hasMany(\App\Models\DepenseReelle::class, 'createur_id');
     }
 
+    /**
+     * Régies d'avance et menus de dépense dont cet utilisateur est responsable
+     */
+    public function regiesGerees()
+    {
+        return $this->hasMany(\App\Models\RegieAvance::class, 'responsable_id');
+    }
+
+    // ========================================
+    // VISIBILITÉ DES RÉGIES
+    // ========================================
+
+    /**
+     * Le responsable d'une régie ne doit voir que la sienne ; la supervision
+     * (DAAF, agence comptable, contrôleur financier, direction générale) garde la
+     * vue globale. Les rôles super_admin/admin restent en repli pour que la
+     * supervision tienne avant que la permission ne soit semée.
+     */
+    public function voitToutesLesRegies(): bool
+    {
+        return $this->can('superviser_toutes_les_regies')
+            || $this->hasAnyRole(['super_admin', 'admin']);
+    }
+
     // ========================================
     // MÉTHODES HELPER POUR BORDEREAUX
     // ========================================

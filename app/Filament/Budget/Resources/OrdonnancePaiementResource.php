@@ -289,10 +289,10 @@ class OrdonnancePaiementResource extends Resource
                                 'this_year' => 'Cette année',
                                 'last_year' => 'Année dernière',
                             ])
-                            ->default('today')->placeholder('Sélectionner une période'),
+                            ->placeholder('Sélectionner une période'),
                     ])
                     ->query(function ($query, array $data) {
-                        $periode = $data['periode'] ?? 'today';
+                        $periode = $data['periode'] ?? null;
                         return match ($periode) {
                             'today'         => $query->whereDate('date_emission', today()),
                             'yesterday'     => $query->whereDate('date_emission', today()->subDay()),
@@ -320,7 +320,10 @@ class OrdonnancePaiementResource extends Resource
                             'this_year' => 'Cette année',
                             'last_year' => 'Année dernière',
                         ];
-                        return 'Période : ' . ($labels[$data['periode'] ?? 'today'] ?? 'Aujourd\'hui');
+                        if (!($data['periode'] ?? null)) {
+                            return null;
+                        }
+                        return 'Période : ' . ($labels[$data['periode']] ?? $data['periode']);
                     }),
 
                 Tables\Filters\SelectFilter::make('type_ordonnance')

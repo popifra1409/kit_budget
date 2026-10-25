@@ -39,9 +39,18 @@ class RegieAvanceResource extends Resource
         return auth()->user()?->can('view_any_regie_avance') ?? false;
     }
 
+    /**
+     * Un responsable de régie n'accède qu'à ses propres régies ; la supervision
+     * (permission superviser_toutes_les_regies) accède à toutes.
+     */
+    public static function accessible($record): bool
+    {
+        return $record?->estGerePar(auth()->user()) ?? false;
+    }
+
     public static function canView($record): bool
     {
-        return auth()->user()?->can('view_regie_avance') ?? false;
+        return (auth()->user()?->can('view_regie_avance') ?? false) && static::accessible($record);
     }
 
     public static function canCreate(): bool
@@ -51,13 +60,15 @@ class RegieAvanceResource extends Resource
 
     public static function canEdit($record): bool
     {
-        return auth()->user()?->can('update_regie_avance')
+        return (auth()->user()?->can('update_regie_avance') ?? false)
+            && static::accessible($record)
             && in_array($record->statut, ['actif']);
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_regie_avance')
+        return (auth()->user()?->can('delete_regie_avance') ?? false)
+            && static::accessible($record)
             && $record->statut === 'actif'
             // Un BCR engagé a déjà consommé l'encaisse : la régie n'est plus vide.
             && (float) $record->montant_engage == 0.0
@@ -409,8 +420,10 @@ class RegieAvanceResource extends Resource
                 Tables\Columns\TextColumn::make('montant_ir_collecte')
                     ->label('IR collecté')
                     ->getStateUsing(
-                        fn($record) =>
-                        $record->decaissements()->sum('montant_ir_collecte')
+                        fn($record) => (float) (
+                            $record->ir_collecte_calcule
+                            ?? $record->decaissements()->sum('montant_ir_collecte')
+                        )
                     )
                     ->money('XAF')
                     ->color('danger')
@@ -591,6 +604,7 @@ class RegieAvanceResource extends Resource
                                 ->live()
                                 ->afterStateUpdated(function ($state, callable $set, $record) {
                                     $decaissements = \App\Models\DecaissementRegie::whereIn('id', $state ?? [])
+                                        ->where('regie_avance_id', $record->id)
                                         ->orderBy('numero')
                                         ->get();
 
@@ -652,6 +666,7 @@ class RegieAvanceResource extends Resource
                                 ->first();
 
                             $decaissements = \App\Models\DecaissementRegie::whereIn('id', $data['decaissements_ids'] ?? [])
+                                ->where('regie_avance_id', $record->id)
                                 ->orderBy('numero')
                                 ->get();
                             $statutsFiltre = $data['statuts'] ?? ['paye', 'livre', 'valide'];
@@ -718,8 +733,10 @@ class RegieAvanceResource extends Resource
                                     ->mapWithKeys(fn($d) => [$d->id => "{$d->numero} — {$d->libelle_tranche}"]))
                                 ->required()
                                 ->live()
-                                ->afterStateUpdated(function ($state, callable $set) {
-                                    $d = \App\Models\DecaissementRegie::find($state);
+                                ->afterStateUpdated(function ($state, callable $set, $record) {
+                                    $d = \App\Models\DecaissementRegie::where('id', $state)
+                                        ->where('regie_avance_id', $record->id)
+                                        ->first();
                                     if ($d) {
                                         $set('numero_tranche', $d->libelle_tranche);
                                         if ($d->date_decaissement) {
@@ -762,7 +779,10 @@ class RegieAvanceResource extends Resource
                                 ->where('est_defaut', true)
                                 ->first();
 
-                            $decaissement = \App\Models\DecaissementRegie::with('provisions')->find($data['decaissement_id']);
+                            $decaissement = \App\Models\DecaissementRegie::with('provisions')
+                                ->where('id', $data['decaissement_id'])
+                                ->where('regie_avance_id', $record->id)
+                                ->first();
                             $provisionIds = $decaissement?->provisions->pluck('id') ?? collect();
                             $statutsFiltre = $data['statuts'] ?? ['paye', 'livre', 'valide'];
 
@@ -954,25 +974,11 @@ class RegieAvanceResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $query = parent::getEloquentQuery()
+        return parent::getEloquentQuery()
             ->where('type', 'rav')
-            ->with(['exercice', 'responsable', 'budget']);
-
-        $user = auth()->user();
-
-        if (!$user) return $query->whereRaw('1 = 0');
-
-        // ✅ Supervision : voit tout
-        if ($user->hasAnyRole(['super_admin', 'admin', 'daaf', 'agent_comptable'])) {
-            return $query;
-        }
-
-        // ✅ Permission view_any = voit toutes les régies
-        if ($user->can('view_any_regie_avance')) {
-            return $query;
-        }
-
-        // ✅ Autres : uniquement ses régies (responsable)
-        return $query->where('responsable_id', $user->id);
+            ->with(['exercice', 'responsable', 'budget'])
+            ->visiblePour(auth()->user())
+            // ✅ Consommation calculée en une requête pour la page (voir le modèle)
+            ->addSelect(\App\Models\RegieAvance::selectsConsommations());
     }
 }

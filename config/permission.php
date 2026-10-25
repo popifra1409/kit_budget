@@ -332,6 +332,7 @@ return [
                     "Régies d'avance et menus de dépenses" => [
                         'crud' => ['regie_avance', 'menu_depense', 'decaissement_regie', 'depense_regie', 'bon_commande_regie'],
                         'speciales' => [
+                            'superviser_toutes_les_regies',
                             'valider_regie_avance',
                             'suspendre_regie_avance',
                             'cloturer_regie_avance',

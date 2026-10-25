@@ -59,6 +59,24 @@ class Exercice extends Model
                 static::where('id', '!=', $exercice->id)->update(['actif' => false]);
             }
         });
+
+        // Le mémoire de getActif() ne doit jamais survivre à un changement d'état
+        static::saved(fn() => static::flushExerciceActif());
+        static::deleted(fn() => static::flushExerciceActif());
+        static::restored(fn() => static::flushExerciceActif());
+    }
+
+    /**
+     * Mémoire de la requête : getActif() est appelé des dizaines de fois par
+     * rendu (badge de navigation, filtres par défaut, garde des formulaires).
+     */
+    private static ?self $exerciceActifMemo = null;
+    private static bool $exerciceActifMemoCharge = false;
+
+    public static function flushExerciceActif(): void
+    {
+        self::$exerciceActifMemo = null;
+        self::$exerciceActifMemoCharge = false;
     }
 
     // ========================================
@@ -326,11 +344,16 @@ class Exercice extends Model
     // ========================================
 
     /**
-     * Obtenir l'exercice actif
+     * Obtenir l'exercice actif (mémoirisé pour la durée de la requête)
      */
     public static function getActif(): ?self
     {
-        return static::where('actif', true)->first();
+        if (!self::$exerciceActifMemoCharge) {
+            self::$exerciceActifMemoCharge = true;
+            self::$exerciceActifMemo = static::where('actif', true)->first();
+        }
+
+        return self::$exerciceActifMemo;
     }
 
     /**

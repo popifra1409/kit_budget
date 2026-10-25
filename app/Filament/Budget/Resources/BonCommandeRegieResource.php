@@ -37,9 +37,18 @@ class BonCommandeRegieResource extends Resource
     {
         return auth()->user()?->can('view_any_bon_commande_regie') ?? false;
     }
+
+    /**
+     * Un bon de commande régie appartient à la régie de son responsable.
+     */
+    public static function accessible($record): bool
+    {
+        return $record->regieAvance?->estGerePar(auth()->user()) ?? false;
+    }
+
     public static function canView($record): bool
     {
-        return auth()->user()?->can('view_bon_commande_regie') ?? false;
+        return (auth()->user()?->can('view_bon_commande_regie') ?? false) && static::accessible($record);
     }
     public static function canCreate(): bool
     {
@@ -47,12 +56,14 @@ class BonCommandeRegieResource extends Resource
     }
     public static function canEdit($record): bool
     {
-        return auth()->user()?->can('update_bon_commande_regie')
+        return (auth()->user()?->can('update_bon_commande_regie') ?? false)
+            && static::accessible($record)
             && $record->statut === 'brouillon';
     }
     public static function canDelete($record): bool
     {
-        return auth()->user()?->can('delete_bon_commande_regie')
+        return (auth()->user()?->can('delete_bon_commande_regie') ?? false)
+            && static::accessible($record)
             && $record->statut === 'brouillon'
             && !$record->engage;
     }
@@ -127,15 +138,7 @@ class BonCommandeRegieResource extends Resource
                         ->label('Régie / Menu Dépense')
                         ->options(function () {
                             return RegieAvance::where('statut', 'actif')
-                                ->when(
-                                    !auth()->user()?->hasAnyRole([
-                                        'super_admin',
-                                        'admin',
-                                        'daaf',
-                                        'agence_comptable',
-                                    ]),
-                                    fn($q) => $q->where('responsable_id', auth()->id())
-                                )
+                                ->visiblePour(auth()->user())
                                 ->with('exercice')
                                 ->get()
                                 ->mapWithKeys(fn($r) => [
@@ -164,6 +167,8 @@ class BonCommandeRegieResource extends Resource
                                 'decaissement',
                                 fn($q) => $q->where('regie_avance_id', $regieId)
                                     ->where('statut', 'verse')
+                                    // la régie choisie doit rester visible par l'utilisateur
+                                    ->whereHas('regieAvance', fn($r) => $r->visiblePour(auth()->user()))
                             )
                                 ->where('montant_disponible', '>', 0)
                                 ->with(['ligneRegie.nomenclature', 'decaissement'])
@@ -782,10 +787,8 @@ class BonCommandeRegieResource extends Resource
                                 'this_year'    => 'Cette année',
                                 'last_year'    => 'Année dernière',
                             ])
-                            ->default('today')
                             ->placeholder('Toutes les périodes'),
                     ])
-                    ->default(['periode' => 'today'])
                     ->query(function ($query, array $data) {
                         return $query->when(
                             $data['periode'] ?? null,
@@ -839,7 +842,7 @@ class BonCommandeRegieResource extends Resource
 
                 Tables\Filters\SelectFilter::make('regie_avance_id')
                     ->label('Régie')
-                    ->options(fn() => RegieAvance::pluck('libelle', 'id'))
+                    ->options(fn() => RegieAvance::visiblePour(auth()->user())->pluck('libelle', 'id'))
                     ->searchable(),
             ])
             ->actions([
@@ -1458,23 +1461,13 @@ class BonCommandeRegieResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $query = parent::getEloquentQuery()
-            ->with(['regieAvance', 'fournisseur', 'lignes', 'ligneRegieAvance.nomenclature']);
-
         $user = auth()->user();
-        if ($user && !$user->hasAnyRole([
-            'super_admin',
-            'admin',
-            'daaf',
-            'agence_comptable',
-            'controleur_financier',
-        ])) {
-            $query->whereHas(
-                'regieAvance',
-                fn($q) => $q->where('responsable_id', $user->id)
-            );
-        }
 
-        return $query;
+        return parent::getEloquentQuery()
+            ->with(['regieAvance', 'fournisseur', 'lignes', 'ligneRegieAvance.nomenclature'])
+            ->whereHas(
+                'regieAvance',
+                fn($q) => $q->visiblePour($user)
+            );
     }
 }

@@ -566,9 +566,8 @@ class MemoireDepenseResource extends Resource
                                 'this_year' => 'Cette année',
                                 'last_year' => 'Année dernière',
                             ])
-                            ->default('today')->placeholder('Toutes les périodes'),
+                            ->placeholder('Toutes les périodes'),
                     ])
-                    ->default(['periode' => 'today'])
                     ->query(function ($query, array $data) {
                         return $query->when($data['periode'] ?? null, fn($q, $p) => match ($p) {
                             'today'        => $q->whereDate('date_memoire', today()),

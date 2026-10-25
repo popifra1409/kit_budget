@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\NombreEnLettres;
 use App\Models\MemoireDepense;
 use App\Models\ParametresStructure;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -79,7 +80,7 @@ class PdfGenerator
         return [
             '_raw'            => $memoire,
             'montant_lettres' => $memoire->montant_lettres
-                ?? \App\Services\NombreEnLettres::convertir($memoire->montant_ttc ?? 0),
+                ?? NombreEnLettres::convertir($memoire->montant_ttc ?? 0),
         ];
     }
 }
