@@ -652,6 +652,16 @@ class RegieAvanceResource extends Resource
                                 ->placeholder('Ex: 1ERE ENCAISSE 2026 ET LA 2EME ENCAISSE')
                                 ->helperText('Complète le titre « APUREMENT DE LA … » — pré-remplie depuis les tranches choisies.'),
 
+                            Forms\Components\Select::make('ordre_impression')
+                                ->label('Ordre d\'impression')
+                                ->options([
+                                    'montant' => 'Montants payés décroissants — blocs « Bons de commande » puis « Achats directs », avec un sous-total par bloc',
+                                    'date'    => 'Chronologique — les dates se suivent, un seul tableau sans blocs',
+                                ])
+                                ->default('montant')
+                                ->required()
+                                ->helperText('Le tri ne change ni les pièces ni les montants : il ne déplace que les lignes du tableau.'),
+
                             Forms\Components\Textarea::make('texte_apurement')
                                 ->label('Pièces justificatives (une ligne par numéro)')
                                 ->rows(12)
@@ -670,11 +680,15 @@ class RegieAvanceResource extends Resource
                                 ->orderBy('numero')
                                 ->get();
                             $statutsFiltre = $data['statuts'] ?? ['paye', 'livre', 'valide'];
+                            $ordre = $data['ordre_impression'] ?? 'montant';
 
                             // ✅ Une ligne par BCR : imputations de ce BCR sur les tranches
                             //    choisies additionnées — un bon réparti sur deux encaisses
                             //    n'est donc pas compté deux fois.
-                            $depenses = static::depensesDesDecaissements($decaissements, $statutsFiltre, $data['date_debut'], $data['date_fin']);
+                            $depenses = static::ordonnerDepensesPourCompteEmploi(
+                                static::depensesDesDecaissements($decaissements, $statutsFiltre, $data['date_debut'], $data['date_fin']),
+                                $ordre
+                            );
 
                             $lignesApurement = collect(explode("\n", $data['texte_apurement'] ?? ''))
                                 ->map(fn($l) => trim($l))
@@ -700,6 +714,7 @@ class RegieAvanceResource extends Resource
                                 'dateDebut'       => \Carbon\Carbon::parse($data['date_debut']),
                                 'dateFin'         => \Carbon\Carbon::parse($data['date_fin']),
                                 'totaux'          => $totaux,
+                                'ordre'           => $ordre,
                                 'montantRecu'     => $montantRecu,
                                 'soldeReverse'    => $montantRecu - (float) $totaux['ttc'],
                             ];
@@ -917,6 +932,7 @@ class RegieAvanceResource extends Resource
                             . ($facture === $bcr->numero ? '' : ' (' . $bcr->numero . ')')
                             . ($complet ? '' : ' (part.)'),
                     'bcr'           => $bcr->numero,
+                    'nature'        => 'bon_commande',
                     'statut'        => $bcr->statut,
                     'date_emission' => $bcr->date_emission,
                     'fournisseur'   => $bcr->fournisseur,
@@ -943,6 +959,7 @@ class RegieAvanceResource extends Resource
                     'numero'        => $facture
                             . ($facture === $d->numero ? '' : ' (' . $d->numero . ')'),
                     'bcr'           => $d->numero,
+                    'nature'        => 'achat_direct',
                     'statut'        => $d->statut,
                     'date_emission' => $d->date_depense,
                     'fournisseur'   => $d->fournisseur,
@@ -959,6 +976,32 @@ class RegieAvanceResource extends Resource
             ->filter(fn($d) => in_array($d->statut, $statuts, true))
             ->filter(fn($d) => !$d->date_emission || \Carbon\Carbon::parse($d->date_emission)->between($debut, $fin))
             ->sortBy('date_emission')
+            ->values();
+    }
+
+    /**
+     * ✅ Ordre d'impression du compte d'emploi. Le tri ne change aucun montant,
+     * il ne déplace que les lignes : « montant » regroupe les pièces par nature
+     * (les bons de commande d'abord) puis les range du net à payer le plus élevé
+     * au plus faible ; « date » laisse l'ordre chronologique du tableau simple.
+     *
+     * @param \Illuminate\Support\Collection<int, object> $depenses
+     */
+    public static function ordonnerDepensesPourCompteEmploi(
+        \Illuminate\Support\Collection $depenses,
+        string $ordre = 'montant'
+    ): \Illuminate\Support\Collection {
+        if ($ordre !== 'montant') {
+            return $depenses->sortBy('date_emission')->values();
+        }
+
+        $rangBloc = array_flip(['bon_commande', 'achat_direct']);
+
+        // Les deux tris sont stables (PHP >= 8) : décroître les montants d'abord
+        // garde cet ordre à l'intérieur de chaque bloc.
+        return $depenses
+            ->sortByDesc('net_a_payer')
+            ->sortBy(fn($d) => $rangBloc[$d->nature] ?? count($rangBloc))
             ->values();
     }
 

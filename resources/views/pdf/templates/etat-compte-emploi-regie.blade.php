@@ -4,12 +4,13 @@
  * Variables reçues :
  *   $donnees['_raw']            → RegieAvance
  *   $donnees['_etat_config']    → EtatConfig (pour getEntete)
- *   $donnees['depenses']        → Collection (une entrée par BCR, toutes tranches confondues)
+ *   $donnees['depenses']        → Collection (une entrée par pièce : BCR ou achat direct)
  *   $donnees['lignesApurement'] → Collection de strings (pièces justificatives)
  *   $donnees['numeroTranche']   → string  « 1ERE ENCAISSE 2026 ET LA 2EME ENCAISSE »
  *   $donnees['dateDebut']       → Carbon
  *   $donnees['dateFin']         → Carbon
  *   $donnees['totaux']          → array [ttc, tva, ir, net]
+ *   $donnees['ordre']           → 'montant' (blocs triés par net décroissant) | 'date'
  *   $donnees['montantRecu']     → float   somme des encaisses apurés
  *   $donnees['soldeReverse']    → float   reçu − dépensé
  */
@@ -19,6 +20,7 @@ $MEP             = MiseEnPagePdf::class;
 $regie           = $donnees['_raw'];
 $etatConfig      = $donnees['_etat_config'] ?? null;
 $depenses        = $donnees['depenses'];
+$ordre           = $donnees['ordre'] ?? 'montant';
 $lignesApurement = $donnees['lignesApurement'] ?? collect();
 $numeroTranche   = trim($donnees['numeroTranche'] ?? '');
 $dateDebut       = $donnees['dateDebut'];
@@ -148,23 +150,78 @@ $reserveBlocFin = $MEP::hauteurLigne(1, 8, 3)
     + 14 + 2.25 + 0.75 + $MEP::hauteurBloc(1, 6.5) + 1.5 // mentions d'impression
     + 18;                                                // marge de sécurité
 
-$repartir = function () use ($MEP, $depenses, $hauteurChapeau, $hauteurEnTeteSuite, $hauteurThead, $reserveBlocFin, $largeurColFact, $largeurColFour) {
-    $hauteurs = $depenses->map(function ($d) use ($MEP, $largeurColFact, $largeurColFour) {
-        return $MEP::hauteurLigne(
-            max(
-                $MEP::nbLignes((string) $d->numero, $largeurColFact, 8),
-                $MEP::nbLignes((string) ($d->fournisseur_nom ?? '—'), $largeurColFour, 8)
-            ),
-            8,
-            4
-        );
-    })->all();
+// ── Lignes structurées du tableau ─────────────────────────────
+// En option « montants décroissants », les pièces sont regroupées par nature :
+// un titre de bloc et un sous-total s'intercalent entre les lignes. Le découpage
+// en pages porte donc sur cette suite structurée — un titre ne peut pas terminer
+// une page ni un sous-total la commencer.
+$libelleBloc = fn(?string $nature): string => match ($nature) {
+    'bon_commande' => 'BONS DE COMMANDE',
+    'achat_direct' => 'ACHATS DIRECTS',
+    default        => mb_strtoupper(str_replace('_', ' ', (string) $nature)),
+};
 
+$regroupe = $ordre === 'montant';
+$blocs    = $regroupe ? $depenses->groupBy('nature') : collect([null => $depenses]);
+
+$rangees = collect();
+$numero  = 0;
+foreach ($blocs as $nature => $bloc) {
+    if ($regroupe && $bloc->isNotEmpty()) {
+        $rangees->push([
+            'type'  => 'entete',
+            'titre' => $libelleBloc($nature) . ' — ' . $bloc->count() . ' pièce' . ($bloc->count() > 1 ? 's' : ''),
+        ]);
+    }
+
+    foreach ($bloc as $d) {
+        $rangees->push(['type' => 'ligne', 'n' => ++$numero, 'd' => $d]);
+    }
+
+    if ($regroupe && $bloc->isNotEmpty()) {
+        $rangees->push([
+            'type'    => 'sous-total',
+            'libelle' => 'Sous-total ' . $libelleBloc($nature),
+            'ttc'     => $bloc->sum('montant_ttc'),
+            'tva'     => $bloc->sum('montant_tva'),
+            'ir'      => $bloc->sum('montant_ir'),
+            'net'     => $bloc->sum('net_a_payer'),
+        ]);
+    }
+}
+
+$hauteurRangee = function (array $r) use ($MEP, $largeurContenu, $largeurColFact, $largeurColFour): float {
+    if ($r['type'] === 'entete') {
+        return $MEP::hauteurLigne($MEP::nbLignes($r['titre'], $largeurContenu - 8, 8, true), 8, 4);
+    }
+
+    if ($r['type'] === 'sous-total') {
+        return $MEP::hauteurLigne(1, 8, 3);
+    }
+
+    return $MEP::hauteurLigne(
+        max(
+            $MEP::nbLignes((string) $r['d']->numero, $largeurColFact, 8),
+            $MEP::nbLignes((string) ($r['d']->fournisseur_nom ?? '—'), $largeurColFour, 8)
+        ),
+        8,
+        4
+    );
+};
+
+$gardeApres = $rangees
+    ->map(fn(array $r, int $i) => $r['type'] === 'entete'
+        || ($rangees[$i + 1]['type'] ?? '') === 'sous-total')
+    ->values()
+    ->all();
+
+$repartir = function () use ($MEP, $rangees, $hauteurRangee, $gardeApres, $hauteurChapeau, $hauteurEnTeteSuite, $hauteurThead, $reserveBlocFin) {
     return $MEP::lignesParPage(
-        $hauteurs,
+        array_map($hauteurRangee, $rangees->all()),
         $MEP::placePaysage($hauteurChapeau + 6 + $hauteurThead),
         $MEP::placePaysage($hauteurEnTeteSuite + 6 + $hauteurThead),
-        $reserveBlocFin
+        $reserveBlocFin,
+        $gardeApres
     );
 };
 
@@ -178,17 +235,10 @@ if ($nbLignesParPage === [0] && $reserveBlocFin > $MEP::placePaysage($hauteurCha
     $pageTableau     = 1;
 }
 
-$lignesAll = $depenses->values();
-$chunks    = collect($nbLignesParPage)->map(fn($n) => $lignesAll->splice(0, $n));
+$reste  = collect($rangees->all());
+$chunks = collect($nbLignesParPage)->map(fn($n) => $reste->splice(0, $n));
 if ($chunks->isEmpty()) {
     $chunks = collect([collect()]);
-}
-
-$offsets = [];
-$cumul   = 0;
-foreach ($chunks as $i => $chunk) {
-    $offsets[$i] = $cumul;
-    $cumul      += $chunk->count();
 }
 
 $dateImpression = now()->format('d/m/Y à H:i');
@@ -238,6 +288,8 @@ $dateImpression = now()->format('d/m/Y à H:i');
     table.depenses td.num   { text-align:center; }
     table.depenses td.money { text-align:right; white-space:nowrap; }
     table.depenses tr.total-row td { font-weight:bold; background:#f0f0f0; }
+    table.depenses tr.bloc-row  td { font-weight:bold; background:#f7f7f7; text-align:left;
+                                     letter-spacing:0.4px; }
 
     .col-no   { width:4%; }
     .col-fact { width:30%; }
@@ -357,16 +409,31 @@ $dateImpression = now()->format('d/m/Y à H:i');
         </tr>
     </thead>
     <tbody>
-        @foreach ($lignesPage as $idx => $d)
-        <tr>
-            <td class="num">{{ $offsets[$i] + $idx + 1 }}</td>
-            <td>{{ $d->numero }}@if($d->date_emission) du {{ \Carbon\Carbon::parse($d->date_emission)->format('d/m/Y') }}@endif</td>
-            <td>{{ $d->fournisseur_nom ?? '—' }}</td>
-            <td class="money">{{ number_format($d->montant_ttc, 0, ',', ' ') }}</td>
-            <td class="money">{{ number_format($d->montant_tva, 0, ',', ' ') }}</td>
-            <td class="money">{{ number_format($d->montant_ir,  0, ',', ' ') }}</td>
-            <td class="money">{{ number_format($d->net_a_payer, 0, ',', ' ') }}</td>
-        </tr>
+        @foreach ($lignesPage as $r)
+            @if ($r['type'] === 'entete')
+            <tr class="bloc-row">
+                <td colspan="7">{{ $r['titre'] }}</td>
+            </tr>
+            @elseif ($r['type'] === 'sous-total')
+            <tr class="total-row">
+                <td colspan="3" style="text-align:right; padding:3px 8px;">{{ $r['libelle'] }}</td>
+                <td class="money">{{ number_format($r['ttc'], 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($r['tva'], 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($r['ir'],  0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($r['net'], 0, ',', ' ') }}</td>
+            </tr>
+            @else
+            @php $d = $r['d']; @endphp
+            <tr>
+                <td class="num">{{ $r['n'] }}</td>
+                <td>{{ $d->numero }}@if($d->date_emission) du {{ \Carbon\Carbon::parse($d->date_emission)->format('d/m/Y') }}@endif</td>
+                <td>{{ $d->fournisseur_nom ?? '—' }}</td>
+                <td class="money">{{ number_format($d->montant_ttc, 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($d->montant_tva, 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($d->montant_ir,  0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($d->net_a_payer, 0, ',', ' ') }}</td>
+            </tr>
+            @endif
         @endforeach
 
         @if ($dernierePage)

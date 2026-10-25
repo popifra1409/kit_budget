@@ -147,35 +147,53 @@ class MiseEnPagePdf
      *
      * Le bloc qui suit le tableau (récapitulatif, montant en lettres,
      * signatures) est ajouté comme une ligne virtuelle en dernière position :
-     * il ne peut donc jamais être séparé de la page qui doit l'accueillir, et
+     * il ne peut donc jamais être séparé de la page qui doit l'afficher en entier, et
      * les lignes de tableau en trop sont poussées sur la page suivante.
      *
-     * @param float[] $hauteurs hauteur de chaque ligne du tableau, en points
+     * @param float[]  $hauteurs    hauteur de chaque ligne du tableau, en points
+     * @param bool[]   $gardeApres  true = cette ligne ne peut pas être la dernière de sa page
      * @return int[] nombre de lignes du tableau par page
      */
-    public static function lignesParPage(array $hauteurs, float $capacitePremiere, float $capaciteAutres, float $reserve): array
-    {
+    public static function lignesParPage(
+        array $hauteurs,
+        float $capacitePremiere,
+        float $capaciteAutres,
+        float $reserve,
+        array $gardeApres = []
+    ): array {
         $lignes = array_values($hauteurs);
+        $garde  = array_values($gardeApres);
         if ($reserve > 0) {
             $lignes[] = $reserve;
+            $garde[]  = false;
         }
 
         $repartition = [];
-        $courante = 0;
-        $utilise = 0.0;
-        $capacite = max($capacitePremiere, 0.0);
+        $debutPage   = 0;
+        $utilise     = 0.0;
+        $capacite    = max($capacitePremiere, 0.0);
 
-        foreach ($lignes as $hauteur) {
-            if ($courante > 0 && $utilise + $hauteur > $capacite) {
-                $repartition[] = $courante;
-                $courante = 0;
-                $utilise = 0.0;
-                $capacite = max($capaciteAutres, 0.0);
+        foreach ($lignes as $index => $hauteur) {
+            if ($index === $debutPage || $utilise + $hauteur <= $capacite) {
+                $utilise += $hauteur;
+                continue;
             }
-            $courante++;
-            $utilise += $hauteur;
+
+            // Couper après une ligne « garde à suivre » laisserait un titre de bloc
+            // ou une pièce seul·e en bas de page : on remonte la coupe avant elle, la
+            // page suivante la reçoit en tête.
+            $derniere = $index - 1;
+            while ($derniere > $debutPage && ($garde[$derniere] ?? false)) {
+                $derniere--;
+            }
+
+            $repartition[] = $derniere - $debutPage + 1;
+            $debutPage     = $derniere + 1;
+            $utilise       = array_sum(array_slice($lignes, $debutPage, $index - $debutPage + 1));
+            $capacite      = max($capaciteAutres, 0.0);
         }
-        $repartition[] = $courante;
+
+        $repartition[] = count($lignes) - $debutPage;
 
         if ($reserve > 0) {
             $repartition[count($repartition) - 1]--;
