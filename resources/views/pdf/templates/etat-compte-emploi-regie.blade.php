@@ -11,6 +11,7 @@
  *   $donnees['dateFin']         → Carbon
  *   $donnees['totaux']          → array [ttc, tva, ir, net]
  *   $donnees['ordre']           → 'montant' (blocs triés par net décroissant) | 'date'
+ *   $donnees['nonImputees']     → Collection pièces sans imputation sur un encaisse (annexe)
  *   $donnees['montantRecu']     → float   somme des encaisses apurés
  *   $donnees['soldeReverse']    → float   reçu − dépensé
  */
@@ -21,6 +22,7 @@ $regie           = $donnees['_raw'];
 $etatConfig      = $donnees['_etat_config'] ?? null;
 $depenses        = $donnees['depenses'];
 $ordre           = $donnees['ordre'] ?? 'montant';
+$nonImputees     = $donnees['nonImputees'] ?? collect();
 $lignesApurement = $donnees['lignesApurement'] ?? collect();
 $numeroTranche   = trim($donnees['numeroTranche'] ?? '');
 $dateDebut       = $donnees['dateDebut'];
@@ -136,7 +138,9 @@ $largeurColFour = $largeurContenu * 0.24 - 4.5;
 $hauteurThead   = $MEP::hauteurLigne(1, 8, 5);
 $hauteurEnTeteSuite = $MEP::hauteurBloc(1, 8.5) + 8;
 
-// Bloc de fin : total, arrêté, signature, mentions — jamais coupé entre deux pages.
+// Bloc de fin : arrêté, signature, mentions — jamais coupé entre deux pages.
+// Le TOTAL et l'annexe des pièces non imputées sont des lignes du flux : ils
+// suivent la coupe naturelle du tableau, la réserve ne retient donc plus le TOTAL.
 $hauteurArrete = 12 + $MEP::hauteurBloc(1, 8.5);
 foreach ($lignesArrete as [$libelle, $valeur]) {
     $texte = $libelle . ' : ' . $fmt($valeur) . ' FCFA ('
@@ -144,8 +148,7 @@ foreach ($lignesArrete as [$libelle, $valeur]) {
     $hauteurArrete += $MEP::hauteurBloc($MEP::nbLignes($texte, $largeurContenu - 30, 8.5), 8.5) + 3;
 }
 
-$reserveBlocFin = $MEP::hauteurLigne(1, 8, 3)
-    + $hauteurArrete
+$reserveBlocFin = $hauteurArrete
     + 30 + $MEP::hauteurBloc(1, 9)                       // « Le Régisseur »
     + 14 + 2.25 + 0.75 + $MEP::hauteurBloc(1, 6.5) + 1.5 // mentions d'impression
     + 18;                                                // marge de sécurité
@@ -190,18 +193,25 @@ foreach ($blocs as $nature => $bloc) {
     }
 }
 
-$hauteurRangee = function (array $r) use ($MEP, $largeurContenu, $largeurColFact, $largeurColFour): float {
+// Texte de la colonne « N° FACTURE » : mesuré et imprimé par le même code, pour
+// que la hauteur retenue par la pagination corresponde à ce qui est posé sur la
+// page. Le statut n'existe que sur les lignes de l'annexe.
+$texteFact = fn($d): string => (string) $d->numero
+    . ($d->date_emission ? ' du ' . \Carbon\Carbon::parse($d->date_emission)->format('d/m/Y') : '')
+    . (!empty($d->statut_label) ? ' — ' . $d->statut_label : '');
+
+$hauteurRangee = function (array $r) use ($MEP, $largeurContenu, $largeurColFact, $largeurColFour, $texteFact): float {
     if ($r['type'] === 'entete') {
         return $MEP::hauteurLigne($MEP::nbLignes($r['titre'], $largeurContenu - 8, 8, true), 8, 4);
     }
 
-    if ($r['type'] === 'sous-total') {
+    if ($r['type'] === 'sous-total' || $r['type'] === 'total-general') {
         return $MEP::hauteurLigne(1, 8, 3);
     }
 
     return $MEP::hauteurLigne(
         max(
-            $MEP::nbLignes((string) $r['d']->numero, $largeurColFact, 8),
+            $MEP::nbLignes($texteFact($r['d']), $largeurColFact, 8),
             $MEP::nbLignes((string) ($r['d']->fournisseur_nom ?? '—'), $largeurColFour, 8)
         ),
         8,
@@ -209,9 +219,48 @@ $hauteurRangee = function (array $r) use ($MEP, $largeurContenu, $largeurColFact
     );
 };
 
+// Le TOTAL est une ligne du flux : elle suit les pièces, y compris quand le
+// tableau se coupe, et reste la dernière ligne du compte d'emploi lui-même.
+$rangees->push([
+    'type' => 'total-general',
+    'ttc'  => $totaux['ttc'],
+    'tva'  => $totaux['tva'],
+    'ir'   => $totaux['ir'],
+    'net'  => $totaux['net'],
+]);
+
+// Annexe hors totaux : l'argent est sorti de la régie (ou la pièce est prête à
+// sortir) sans peser sur un encaisse. Comptée à part, elle ne modifie ni
+// « Montant dépensé » ni « Solde reversé » ; le statut de chaque ligne dit si la
+// pièce est déjà payée.
+if ($nonImputees->isNotEmpty()) {
+    $rangees->push([
+        'type'   => 'entete',
+        'alerte' => true,
+        'titre'  => '⚠️ PIÈCES NON IMPUTÉES À UN ENCAISSE — '
+            . $nonImputees->count() . ' pièce' . ($nonImputees->count() > 1 ? 's' : '')
+            . ' (' . number_format(round($nonImputees->sum('montant_ttc')), 0, ',', ' ') . ' FCFA)',
+    ]);
+
+    $numeroAnnexe = 0;
+    foreach ($nonImputees as $d) {
+        $rangees->push(['type' => 'ligne', 'n' => ++$numeroAnnexe, 'd' => $d]);
+    }
+
+    $rangees->push([
+        'type'    => 'sous-total',
+        'alerte'  => true,
+        'libelle' => "Sous-total non imputé — hors compte d'emploi",
+        'ttc'     => $nonImputees->sum('montant_ttc'),
+        'tva'     => $nonImputees->sum('montant_tva'),
+        'ir'      => $nonImputees->sum('montant_ir'),
+        'net'     => $nonImputees->sum('net_a_payer'),
+    ]);
+}
+
 $gardeApres = $rangees
     ->map(fn(array $r, int $i) => $r['type'] === 'entete'
-        || ($rangees[$i + 1]['type'] ?? '') === 'sous-total')
+        || in_array(($rangees[$i + 1]['type'] ?? ''), ['sous-total', 'total-general'], true))
     ->values()
     ->all();
 
@@ -290,6 +339,9 @@ $dateImpression = now()->format('d/m/Y à H:i');
     table.depenses tr.total-row td { font-weight:bold; background:#f0f0f0; }
     table.depenses tr.bloc-row  td { font-weight:bold; background:#f7f7f7; text-align:left;
                                      letter-spacing:0.4px; }
+    /* Annexe : pièces rattachées à aucun encaisse. Alerte visible, hors totaux. */
+    table.depenses tr.bloc-row.alerte-row td   { background:#f6ecec; color:#8b1a1a; }
+    table.depenses tr.total-row.alerte-row td  { background:#fbeaea; color:#8b1a1a; }
 
     .col-no   { width:4%; }
     .col-fact { width:30%; }
@@ -391,7 +443,9 @@ $dateImpression = now()->format('d/m/Y à H:i');
 @endif
 
 @php $dernierePage = $i === $chunks->count() - 1; @endphp
-@if ($i >= $pageTableau)
+{{-- Une page réservée au bloc de fin (arrêté) n'a pas de lignes : pas d'en-tête
+     de tableau orphelin. Un tableau vide reste imprimé quand il est seul. --}}
+@if ($i >= $pageTableau && ($lignesPage->isNotEmpty() || $chunks->count() === 1))
 <table class="depenses">
     <colgroup>
         <col class="col-no"><col class="col-fact"><col class="col-four">
@@ -411,12 +465,20 @@ $dateImpression = now()->format('d/m/Y à H:i');
     <tbody>
         @foreach ($lignesPage as $r)
             @if ($r['type'] === 'entete')
-            <tr class="bloc-row">
+            <tr class="bloc-row{{ !empty($r['alerte']) ? ' alerte-row' : '' }}">
                 <td colspan="7">{{ $r['titre'] }}</td>
             </tr>
             @elseif ($r['type'] === 'sous-total')
-            <tr class="total-row">
+            <tr class="total-row{{ !empty($r['alerte']) ? ' alerte-row' : '' }}">
                 <td colspan="3" style="text-align:right; padding:3px 8px;">{{ $r['libelle'] }}</td>
+                <td class="money">{{ number_format($r['ttc'], 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($r['tva'], 0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($r['ir'],  0, ',', ' ') }}</td>
+                <td class="money">{{ number_format($r['net'], 0, ',', ' ') }}</td>
+            </tr>
+            @elseif ($r['type'] === 'total-general')
+            <tr class="total-row">
+                <td colspan="3" style="text-align:right; padding:3px 8px;">TOTAL</td>
                 <td class="money">{{ number_format($r['ttc'], 0, ',', ' ') }}</td>
                 <td class="money">{{ number_format($r['tva'], 0, ',', ' ') }}</td>
                 <td class="money">{{ number_format($r['ir'],  0, ',', ' ') }}</td>
@@ -426,7 +488,7 @@ $dateImpression = now()->format('d/m/Y à H:i');
             @php $d = $r['d']; @endphp
             <tr>
                 <td class="num">{{ $r['n'] }}</td>
-                <td>{{ $d->numero }}@if($d->date_emission) du {{ \Carbon\Carbon::parse($d->date_emission)->format('d/m/Y') }}@endif</td>
+                <td>{{ $texteFact($d) }}</td>
                 <td>{{ $d->fournisseur_nom ?? '—' }}</td>
                 <td class="money">{{ number_format($d->montant_ttc, 0, ',', ' ') }}</td>
                 <td class="money">{{ number_format($d->montant_tva, 0, ',', ' ') }}</td>
@@ -435,16 +497,6 @@ $dateImpression = now()->format('d/m/Y à H:i');
             </tr>
             @endif
         @endforeach
-
-        @if ($dernierePage)
-        <tr class="total-row">
-            <td colspan="3" style="text-align:right; padding:3px 8px;">TOTAL</td>
-            <td class="money">{{ number_format($totaux['ttc'], 0, ',', ' ') }}</td>
-            <td class="money">{{ number_format($totaux['tva'], 0, ',', ' ') }}</td>
-            <td class="money">{{ number_format($totaux['ir'],  0, ',', ' ') }}</td>
-            <td class="money">{{ number_format($totaux['net'], 0, ',', ' ') }}</td>
-        </tr>
-        @endif
     </tbody>
 </table>
 @endif

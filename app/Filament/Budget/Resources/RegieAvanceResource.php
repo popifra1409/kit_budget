@@ -704,6 +704,13 @@ class RegieAvanceResource extends Resource
 
                             $montantRecu = (float) $decaissements->sum('montant_accorde');
 
+                            // ✅ Annexe : pièces rattachées à aucun encaisse. Elles ne rentrent
+                            //    ni dans $depenses ni dans $totaux — le compte d'emploi reste
+                            //    équilibré, l'anomalie est seulement rendue visible.
+                            $nonImputees = static::piecesNonImputees(
+                                $record, $statutsFiltre, $data['date_debut'], $data['date_fin']
+                            );
+
                             // ✅ $donnees structuré comme tous les autres documents
                             $donnees = [
                                 '_raw'            => $record,
@@ -715,6 +722,7 @@ class RegieAvanceResource extends Resource
                                 'dateFin'         => \Carbon\Carbon::parse($data['date_fin']),
                                 'totaux'          => $totaux,
                                 'ordre'           => $ordre,
+                                'nonImputees'     => $nonImputees,
                                 'montantRecu'     => $montantRecu,
                                 'soldeReverse'    => $montantRecu - (float) $totaux['ttc'],
                             ];
@@ -1002,6 +1010,113 @@ class RegieAvanceResource extends Resource
         return $depenses
             ->sortByDesc('net_a_payer')
             ->sortBy(fn($d) => $rangBloc[$d->nature] ?? count($rangBloc))
+            ->values();
+    }
+
+    /**
+     * ✅ Pièces que le compte d'emploi ne peut rattacher à aucun encaisse :
+     *  - bons dont tout ou partie du TTC n'a aucune ligne d'imputation
+     *    (`provision_consommations`) — l'argent est sorti de la régie, ou le bon
+     *    est prêt à sortir, sans peser sur une tranche ;
+     *  - achats directs jamais rattachés à une provision.
+     *
+     * Tout statut non exclu du tableau d'apurement est concerné, pas seulement
+     * « payé » : un bon validé jamais imputé est une anomalie à afficher aussi.
+     * Le statut est rappelé sur la ligne pour dire si l'argent est déjà sorti.
+     *
+     * Elles restent hors des totaux de l'apurement, qui doit égaler les encaisses
+     * reçus, mais le document les imprime : sans elles, une dépense payée
+     * disparaît silencieusement de l'état (voir `RegieAvance::montantPayeNonEngage()`
+     * et `budget:audit-regie`, qui comptent le même reliquat).
+     */
+    public static function piecesNonImputees(
+        \App\Models\RegieAvance $regie,
+        array $statuts,
+        $debut,
+        $fin
+    ): \Illuminate\Support\Collection {
+        $debut = \Carbon\Carbon::parse($debut)->startOfDay();
+        $fin = \Carbon\Carbon::parse($fin)->endOfDay();
+
+        $bons = \App\Models\BonCommandeRegie::where('regie_avance_id', $regie->id)
+            ->whereIn('statut', $statuts)
+            ->with('fournisseur')
+            ->get();
+
+        $traces = \App\Models\ProvisionConsommation::whereIn('bon_commande_regie_id', $bons->pluck('id'))
+            ->selectRaw('bon_commande_regie_id, SUM(montant) as total')
+            ->groupBy('bon_commande_regie_id')
+            ->pluck('total', 'bon_commande_regie_id');
+
+        // Un bon partiellement imputé n'est listé qu'à hauteur de son reliquat,
+        // TVA / IR / net proratisés comme sur la ligne « (part.) » du tableau.
+        $libelleStatut = fn(?string $s): string => match ($s) {
+            'paye'  => 'payé',
+            'livre' => 'livré',
+            'valide' => 'validé',
+            default => (string) $s,
+        };
+
+        $lignes = $bons->map(function ($bcr) use ($traces, $libelleStatut) {
+            $reliquat = round((float) $bcr->montant_ttc - (float) ($traces[$bcr->id] ?? 0), 2);
+            if ($reliquat < 1) {
+                return null;
+            }
+
+            $ttc = (float) $bcr->montant_ttc;
+            $ratio = $ttc > 0 ? min(1, $reliquat / $ttc) : 0;
+            $part = fn($v) => round((float) $v * $ratio, 0);
+
+            $facture = $bcr->numero_facture_definitive ?: '⚠️ facture non renseignée';
+
+            return (object) [
+                'numero'        => $facture
+                        . ($facture === $bcr->numero ? '' : ' (' . $bcr->numero . ')')
+                        . ($ratio < 1 ? ' (part. non tracée)' : ''),
+                'statut_label'  => $libelleStatut($bcr->statut),
+                'bcr'           => $bcr->numero,
+                'nature'        => 'bon_commande',
+                'statut'        => $bcr->statut,
+                'date_emission' => $bcr->date_emission,
+                'fournisseur'   => $bcr->fournisseur,
+                'fournisseur_nom' => $bcr->fournisseur?->raison_sociale,
+                'montant_ttc'   => round($reliquat, 0),
+                'montant_tva'   => $part($bcr->montant_tva),
+                'montant_ir'    => $part($bcr->montant_ir),
+                'net_a_payer'   => $part($bcr->net_a_payer),
+            ];
+        });
+
+        $achatsDirects = \App\Models\DepenseRegie::where('regie_avance_id', $regie->id)
+            ->where('type_depense', 'achat_direct')
+            ->whereNull('provision_ligne_regie_id')
+            ->whereIn('statut', $statuts)
+            ->with('fournisseur')
+            ->get()
+            ->map(function ($d) use ($libelleStatut) {
+                $facture = $d->numero_facture ?: '⚠️ facture non renseignée';
+
+                return (object) [
+                    'numero'        => $facture
+                            . ($facture === $d->numero ? '' : ' (' . $d->numero . ')'),
+                    'statut_label'  => $libelleStatut($d->statut),
+                    'bcr'           => $d->numero,
+                    'nature'        => 'achat_direct',
+                    'statut'        => $d->statut,
+                    'date_emission' => $d->date_depense,
+                    'fournisseur'   => $d->fournisseur,
+                    'fournisseur_nom' => $d->fournisseur?->raison_sociale ?: $d->fournisseur_libre,
+                    'montant_ttc'   => (float) $d->montant_ttc,
+                    'montant_tva'   => (float) $d->montant_tva,
+                    'montant_ir'    => (float) $d->montant_ir,
+                    'net_a_payer'   => (float) $d->net_a_payer,
+                ];
+            });
+
+        return $lignes->concat($achatsDirects)
+            ->filter()
+            ->filter(fn($d) => !$d->date_emission || \Carbon\Carbon::parse($d->date_emission)->between($debut, $fin))
+            ->sortByDesc('net_a_payer')
             ->values();
     }
 
