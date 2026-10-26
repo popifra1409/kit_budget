@@ -399,6 +399,26 @@ class DecisionAdministrative extends Model
         return (float) ($this->montant_brut ?? 0) - $this->total_retenues_calcule;
     }
 
+    /**
+     * ✅ L'argent effectivement remis à une régie par cette décision : le BRUT.
+     *
+     * Une avance remise à une régie ne règle aucun fournisseur : les retenues
+     * calculées sur la DA (IR, CNPS, IRNC, autres retenues) n'ont pas d'objet à
+     * ce stade. Elles ne doivent donc pas amputer l'enveloppe, sous peine de
+     * retrancher deux fois — ici et à chaque paiement de fournisseur fait par la
+     * régie, qui retient elle-même l'IR et la TVA (d'où « État des retenues IR »).
+     * Une DA de 50 000 000 donne 2 tranches de 25 000 000, pas 23 625 000.
+     *
+     * Le net ne reste la référence que d'une DA sans brut renseigné (reprise
+     * d'un document saisi directement au net).
+     */
+    public function montantPourRegie(): float
+    {
+        $brut = (float) ($this->montant_brut ?? 0);
+
+        return $brut > 0 ? $brut : (float) ($this->montant_net ?? 0);
+    }
+
     public function getEstPrevisionnelAttribute(): bool
     {
         return (bool) ($this->attributes['est_previsionnel'] ?? false);

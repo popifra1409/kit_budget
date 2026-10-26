@@ -423,7 +423,7 @@ class MenuDepenseResource extends Resource
                                     ->get()
                                     ->mapWithKeys(fn($da) => [
                                         $da->id => "{$da->numero} — {$da->objet} "
-                                            . "(" . number_format($da->montant_net, 0, ',', ' ')
+                                            . "(" . number_format($da->montantPourRegie(), 0, ',', ' ')
                                             . " FCFA)"
                                     ]);
                             })
@@ -438,7 +438,7 @@ class MenuDepenseResource extends Resource
                         Notification::make()
                             ->title('✅ Menu Dépense réapprovisionné')
                             ->success()
-                            ->body("+ " . number_format($da->montant_net, 0, ',', ' ') . " FCFA")
+                            ->body("+ " . number_format($da->montantPourRegie(), 0, ',', ' ') . " FCFA")
                             ->send();
                     }),
             ]);

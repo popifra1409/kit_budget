@@ -37,7 +37,7 @@ class DecisionsSourcesRelationManager extends RelationManager
                         ->mapWithKeys(fn($da) => [
                             $da->id =>
                             "{$da->numero} — {$da->objet} "
-                                . "(" . number_format($da->montant_net, 0, ',', ' ') . " FCFA)"
+                                . "(" . number_format($da->montantPourRegie(), 0, ',', ' ') . " FCFA)"
                         ]);
                 })
                 ->required()
@@ -52,8 +52,8 @@ class DecisionsSourcesRelationManager extends RelationManager
                     $da = DecisionAdministrative::find($state);
                     if (!$da) return;
 
-                    // Pré-remplir le montant net
-                    $set('montant_da', $da->montant_net);
+                    // Pré-remplir le montant remis au menu dépense (retenues non déduites)
+                    $set('montant_da', $da->montantPourRegie());
 
                     // ✅ Chercher l'engagement directement
                     $engagement = \App\Models\Engagement::where('engageable_id', $state)
@@ -182,11 +182,11 @@ class DecisionsSourcesRelationManager extends RelationManager
                             . number_format($lb->disponible_engagement, 0, ',', ' ') . ' FCFA'
                             . '</td></tr>'
 
-                            // Montant net DA
+                            // Montant remis à la régie
                             . '<tr class="border-b border-slate-200 dark:border-slate-700">'
-                            . '<td class="font-semibold pr-4 py-1">Montant net DA :</td>'
+                            . '<td class="font-semibold pr-4 py-1">Montant alloué à la régie :</td>'
                             . '<td class="py-1 text-green-600 dark:text-green-400 font-semibold">'
-                            . number_format($da->montant_net, 0, ',', ' ') . ' FCFA'
+                            . number_format($da->montantPourRegie(), 0, ',', ' ') . ' FCFA'
                             . '</td></tr>'
 
                             // Montant alloué saisi

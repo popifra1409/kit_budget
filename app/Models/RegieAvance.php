@@ -80,7 +80,7 @@ class RegieAvance extends Model
                     $regie->decision_administrative_id
                 );
                 if ($da) {
-                    $regie->montant_alloue = (float) ($da->montant_net ?? 0);
+                    $regie->montant_alloue = $da->montantPourRegie();
                 }
             }
         });
@@ -353,15 +353,17 @@ class RegieAvance extends Model
             throw new \Exception("La décision doit être engagée avant d'alimenter la régie.");
         }
 
+        $apport = $da->montantPourRegie();
+
         $this->update([
-            'montant_alloue'     => $this->montant_alloue + $da->montant_net,
-            'montant_disponible' => $this->montant_disponible + $da->montant_net,
+            'montant_alloue'     => $this->montant_alloue + $apport,
+            'montant_disponible' => $this->montant_disponible + $apport,
         ]);
 
         activity()
             ->performedOn($this)
             ->causedBy(auth()->user())
-            ->withProperties(['montant' => $da->montant_net, 'da' => $da->numero])
+            ->withProperties(['montant' => $apport, 'da' => $da->numero])
             ->log('Régie réapprovisionnée');
     }
 

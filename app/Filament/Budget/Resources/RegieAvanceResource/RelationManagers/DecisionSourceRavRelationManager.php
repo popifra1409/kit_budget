@@ -38,7 +38,7 @@ class DecisionSourceRavRelationManager extends RelationManager
                         ->mapWithKeys(fn($da) => [
                             $da->id =>
                             "{$da->numero} — {$da->objet} "
-                                . "(" . number_format($da->montant_net, 0, ',', ' ')
+                                . "(" . number_format($da->montantPourRegie(), 0, ',', ' ')
                                 . " FCFA)"
                         ]);
                 })
@@ -56,8 +56,9 @@ class DecisionSourceRavRelationManager extends RelationManager
                     $da = DecisionAdministrative::find($state);
                     if (!$da) return;
 
-                    // ✅ Toujours depuis la DA
-                    $set('montant_da', $da->montant_net);
+                    // ✅ Toujours depuis la DA : l'avance à la régie n'est pas un
+                    //    paiement de fournisseur, aucune retenue n'est déduite.
+                    $set('montant_da', $da->montantPourRegie());
 
                     // ── Résoudre nomenclature via engagement ──────
                     $engagement = \App\Models\Engagement::where('engageable_id', $state)
@@ -145,9 +146,9 @@ class DecisionSourceRavRelationManager extends RelationManager
                             . '<td class="py-1 text-blue-600 dark:text-blue-400">'
                             . number_format($lb->disponible_engagement, 0, ',', ' ') . ' FCFA'
                             . '</td></tr>'
-                            . '<tr><td class="font-semibold py-1">Montant net DA :</td>'
+                            . '<tr><td class="font-semibold py-1">Montant alloué à la régie :</td>'
                             . '<td class="py-1 text-green-600 dark:text-green-400 font-semibold">'
-                            . number_format($da->montant_net, 0, ',', ' ') . ' FCFA'
+                            . number_format($da->montantPourRegie(), 0, ',', ' ') . ' FCFA'
                             . '</td></tr>'
                             . ($montant > 0
                                 ? '<tr><td class="font-semibold py-1">Après allocation :</td>'
@@ -213,8 +214,9 @@ class DecisionSourceRavRelationManager extends RelationManager
                         $da = DecisionAdministrative::find($daId);
                         if (!$da) throw new \Exception("DA introuvable (id={$daId}).");
 
-                        // ✅ Lire le montant depuis la DA — priorité sur le formulaire
-                        $montant = (float) ($da->montant_net ?? $data['montant_da'] ?? 0);
+                        // ✅ Lire le montant depuis la DA — priorité sur le formulaire.
+                        //    L'avance remise à la régie ignore les retenues de la DA.
+                        $montant = (float) ($da->montantPourRegie() ?: $data['montant_da'] ?? 0);
                         if ($montant <= 0) {
                             $montant = (float) ($data['montant_da'] ?? 0);
                         }

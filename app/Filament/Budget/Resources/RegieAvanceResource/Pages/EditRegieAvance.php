@@ -21,7 +21,7 @@ class EditRegieAvance extends EditRecord
             if ($da) {
                 // ✅ Sync uniquement montant_alloue depuis la DA
                 if (empty($data['montant_alloue']) || $data['montant_alloue'] == 0) {
-                    $data['montant_alloue'] = $da->montant_net;
+                    $data['montant_alloue'] = $da->montantPourRegie();
                 }
                 // ❌ encaisse_annuelle NON touchée — saisie manuelle uniquement
             }
@@ -38,8 +38,8 @@ class EditRegieAvance extends EditRecord
         if ($daId) {
             $da = \App\Models\DecisionAdministrative::find($daId);
             if ($da && (empty($data['montant_alloue']) || $data['montant_alloue'] == 0)) {
-                // ✅ Sync uniquement montant_alloue
-                $data['montant_alloue'] = $da->montant_net;
+                // ✅ Sync uniquement montant_alloue (avance non soumise aux retenues)
+                $data['montant_alloue'] = $da->montantPourRegie();
                 // ❌ encaisse_annuelle NON touchée
             }
         }

@@ -194,20 +194,22 @@ class RegieAvanceResource extends Resource
                                     );
                                     if (!$da) return;
 
-                                    // ✅ Uniquement montant_alloue
-                                    $set('montant_alloue', $da->montant_net);
+                                    // ✅ Uniquement montant_alloue — l'avance remise à la
+                                    //    régie n'est pas un paiement de fournisseur : pas de
+                                    //    retenue déduite ici (voir montantPourRegie()).
+                                    $set('montant_alloue', $da->montantPourRegie());
                                     // ❌ encaisse_annuelle non touchée
 
                                     \Filament\Notifications\Notification::make()
-                                        ->title('✅ Montant net syncé depuis ' . $da->numero)
-                                        ->body(number_format($da->montant_net, 0, ',', ' ') . ' FCFA')
+                                        ->title('✅ Montant syncé depuis ' . $da->numero)
+                                        ->body(number_format($da->montantPourRegie(), 0, ',', ' ') . ' FCFA')
                                         ->success()->send();
                                 }),
                         ])->columnSpanFull(),
 
-                        // ✅ Montant net à décaisser (anciennement "Montant alloué")
+                        // ✅ Enveloppe remise à la régie (anciennement "Montant alloué")
                         Forms\Components\TextInput::make('montant_alloue')
-                            ->label('Montant net à décaisser (FCFA)')
+                            ->label('Montant à décaisser pour la régie (FCFA)')
                             ->numeric()
                             ->default(0)
                             ->prefix('FCFA')
