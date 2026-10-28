@@ -101,7 +101,11 @@ if (!$estBonCommandeRegie) {
         $codeArticle      = $engagementBC->nomenclaturePrincipale->getCodeArticle()??substr($nomenclatureCode,0,6)??null;
         $dateEng          = \Carbon\Carbon::parse($engagementBC->date_engagement);
         $anneeImputation  = $engagementBC->exercice?->annee ?? $dateEng->year;
-        $moisImputation   = $dateEng->format('m');
+        // ✅ Le 2e segment est le sous-programme de la ligne (SP-3 → 3), plus le
+        //    mois d'engagement ; le mois ne sert que de repli sans rattachement.
+        $moisImputation   = $engagementBC->nomenclaturePrincipale->segmentSousProgramme(
+                                $engagementBC->exercice_id)
+                            ?? $dateEng->format('m');
     }
     if ($nomenclatureCode) {
         $pa = ($codeArticle && $codeArticle !== $nomenclatureCode) ? $codeArticle.'-' : '';

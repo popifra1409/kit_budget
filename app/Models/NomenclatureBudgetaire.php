@@ -332,6 +332,40 @@ class NomenclatureBudgetaire extends Model
     }
 
     /**
+     * Segment « sous-programme » de la ligne d'imputation budgétaire.
+     *
+     * Une imputation s'écrit {exercice}-{sous-programme}-{article}-{ligne de
+     * nomenclature} : ce qui identifie la structure de dépense, c'est le
+     * sous-programme rattaché à la ligne — pas le mois d'engagement. Un code
+     * « SP-3 » donne donc « 3 », et 2026-3-300000-244123 remplace
+     * 2026-10-300000-244123.
+     *
+     * Remonte la chaîne comme LigneBudgetaire::getClassificationStrategique() :
+     * Nomenclature → Tache (sous_tache) → Activité → Action → Programme.
+     * À défaut de sous-programme, les chiffres du programme national (P-413 →
+     * 413) sont utilisés ; null si aucune tâche de l'exercice ne rattache cette
+     * nomenclature à un programme.
+     */
+    public function segmentSousProgramme(?int $exerciceId = null): ?string
+    {
+        $programmes = \App\Models\Tache::where('nomenclature_id', $this->id)
+            ->where('niveau', 'sous_tache')
+            ->when($exerciceId, fn($q) => $q->where('exercice_id', $exerciceId))
+            ->orderBy('id')
+            ->with('activite.action.programme')
+            ->get()
+            ->map(fn($t) => $t->activite?->action?->programme)
+            ->filter();
+
+        $programme = $programmes->first(fn($p) => $p->niveau === 'sous_programme')
+            ?? $programmes->first();
+
+        $chiffres = preg_replace('/\D/', '', (string) ($programme?->code ?? ''));
+
+        return $chiffres !== '' ? $chiffres : null;
+    }
+
+    /**
      * Vérifie que le type de la ligne correspond au type de son groupe (si rattachée).
      * Utile pour un contrôle en amont (FormRequest) sans déclencher d'exception.
      */
