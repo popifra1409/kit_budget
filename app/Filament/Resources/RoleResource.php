@@ -324,6 +324,13 @@ class RoleResource extends Resource
             'transmettre_bordereau_engagement' => '📤 Transmettre bordereau',
             'valider_bordereau_engagement' => '✅ Valider bordereau',
             'rejeter_bordereau_engagement' => '❌ Rejeter bordereau',
+            // Mouvements de crédits — workflow (une autorisation par étape)
+            'approuver_virement_budgetaire' => '✅ Approuver un mouvement de crédits',
+            'rejeter_virement_budgetaire' => '❌ Rejeter un mouvement de crédits',
+            'executer_virement_budgetaire' => '⚡ Exécuter un mouvement (déplacer les crédits)',
+            'remettre_en_attente_virement_budgetaire' => '↩️ Remettre un mouvement en attente (retirer l\'approbation, récupérer, réactiver)',
+            'annuler_virement_budgetaire' => '🚫 Annuler un mouvement avant exécution',
+            'annuler_execution_mouvement_credit' => '↩️ Annuler l\'exécution (contre-passation des crédits)',
             // Comptabilité matières
             'valider_expression_besoin' => '✅ Valider expression besoins',
             'soumettre_expression_besoin' => '📤 Soumettre expression besoins',

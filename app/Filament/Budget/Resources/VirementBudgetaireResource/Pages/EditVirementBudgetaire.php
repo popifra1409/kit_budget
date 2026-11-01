@@ -15,7 +15,8 @@ class EditVirementBudgetaire extends EditRecord
         return [
             Actions\ViewAction::make(),
             Actions\DeleteAction::make()
-                ->visible(fn($record) => $record->statut === 'en_attente'),
+                ->visible(fn($record) => $record->statut === 'en_attente' && VirementBudgetaireResource::canDelete($record))
+                ->authorize(fn($record) => VirementBudgetaireResource::canDelete($record)),
         ];
     }
 

@@ -13,6 +13,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
 use Filament\Notifications\Notification;
+use Filament\Support\Exceptions\Halt;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use App\Services\Budget\MouvementCreditService;
@@ -81,14 +82,36 @@ class VirementBudgetaireResource extends Resource
         return auth()->user()?->can('view_virement_budgetaire') ?? false;
     }
 
-    public static function canExecuter($record): bool
+    /** Étape du workflow : permission requise sur un mouvement non piloté par un collectif. */
+    public static function peutUtiliser(string $permission, $record): bool
     {
-        return auth()->user()?->can('executer_virement_budgetaire') ?? false;
+        $user = auth()->user();
+
+        if (!$user || $record->estPiloteParCollectif()) {
+            return false;
+        }
+
+        return $user->can($permission) || $user->can('super_admin_virement_budgetaire');
     }
 
-    public static function canAnnuler($record): bool
+    /**
+     * ✅ Refus côté serveur, appelé dans chaque action() avant toute écriture : `visible()` ne protège pas,
+     *    une action masquée au rendu reste appelable.
+     */
+    public static function autoriser(string $permission, $record): void
     {
-        return auth()->user()?->can('annuler_virement_budgetaire') ?? false;
+        if (static::peutUtiliser($permission, $record)) {
+            return;
+        }
+
+        Notification::make()
+            ->title('Action refusée — droit insuffisant')->danger()
+            ->body("Cette étape du workflow exige la permission « {$permission} ». Elle s'accorde par rôle "
+                . '(écran Rôles → module Budget → rubrique « Mouvements de crédits et collectifs »). '
+                . 'Le mouvement reste consultable, rien n\'a été modifié.')
+            ->persistent()->send();
+
+        throw new Halt;
     }
 
     // ========================================
@@ -419,11 +442,13 @@ class VirementBudgetaireResource extends Resource
                     Tables\Actions\EditAction::make()
                         ->visible(fn($record) => static::canEdit($record)),
 
-                    // ── Workflow : tout est réversible tant que le mouvement n'est pas exécuté ──
+                    // ── Workflow : chaque étape est contrôlée par sa permission.
+                    //    visible() masque le bouton, autoriser() refuse l'appel (une action masquée reste appelable). ──
                     Tables\Actions\Action::make('approuver')
                         ->label('Approuver')
                         ->icon('heroicon-o-check-circle')->color('success')
-                        ->visible(fn($record) => $record->statut === 'en_attente' && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => $record->statut === 'en_attente' && static::peutUtiliser('approuver_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('approuver_virement_budgetaire', $record))
                         ->requiresConfirmation()
                         ->modalHeading('Approuver le mouvement')
                         ->modalDescription(function ($record) {
@@ -434,64 +459,94 @@ class VirementBudgetaireResource extends Resource
                         })
                         // ✅ Acte formel saisi dans la fenêtre d'approbation (pré-rempli s'il existe déjà)
                         ->form(fn($record) => static::champsActeFormel($record))
-                        ->action(fn($record, array $data) => static::approuverAvecActe($record, $data)),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('approuver_virement_budgetaire', $record);
+                            static::approuverAvecActe($record, $data);
+                        }),
 
                     Tables\Actions\Action::make('executer')
                         ->label('Exécuter')
                         ->icon('heroicon-o-bolt')->color('primary')
-                        ->visible(fn($record) => $record->statut === 'approuve' && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => $record->statut === 'approuve' && static::peutUtiliser('executer_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('executer_virement_budgetaire', $record))
                         ->requiresConfirmation()
                         ->modalHeading('Exécuter le mouvement')
                         ->modalDescription(fn($record) => 'Les crédits (' . number_format($record->montant, 0, ',', ' ') . ' FCFA) seront déplacés. Une annulation ultérieure passera par une contre-passation.')
-                        ->action(fn($record) => static::transition(fn() => $record->executer(), 'Mouvement exécuté : lignes budgétaires mises à jour')),
+                        ->action(function ($record) {
+                            static::autoriser('executer_virement_budgetaire', $record);
+                            static::transition(fn() => $record->executer(), 'Mouvement exécuté : lignes budgétaires mises à jour');
+                        }),
 
                     Tables\Actions\Action::make('retirer_approbation')
                         ->label("Retirer l'approbation")
                         ->icon('heroicon-o-arrow-uturn-left')->color('warning')
-                        ->visible(fn($record) => $record->statut === 'approuve' && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => $record->statut === 'approuve' && static::peutUtiliser('remettre_en_attente_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('remettre_en_attente_virement_budgetaire', $record))
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif (ex. : correction du montant)')->required()->rows(2)])
-                        ->action(fn($record, array $data) => static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement remis en attente : il est de nouveau modifiable')),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('remettre_en_attente_virement_budgetaire', $record);
+                            static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement remis en attente : il est de nouveau modifiable');
+                        }),
 
                     Tables\Actions\Action::make('rejeter')
                         ->label('Rejeter')
                         ->icon('heroicon-o-x-circle')->color('danger')
-                        ->visible(fn($record) => in_array($record->statut, ['en_attente', 'approuve'], true) && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => in_array($record->statut, ['en_attente', 'approuve'], true) && static::peutUtiliser('rejeter_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('rejeter_virement_budgetaire', $record))
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif du rejet')->required()->rows(2)])
-                        ->action(fn($record, array $data) => static::transition(fn() => $record->rejeter(auth()->user(), $data['motif']), 'Mouvement rejeté')),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('rejeter_virement_budgetaire', $record);
+                            static::transition(fn() => $record->rejeter(auth()->user(), $data['motif']), 'Mouvement rejeté');
+                        }),
 
                     Tables\Actions\Action::make('recuperer')
                         ->label('Récupérer (remettre en attente)')
                         ->icon('heroicon-o-arrow-path')->color('info')
-                        ->visible(fn($record) => $record->statut === 'rejete' && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => $record->statut === 'rejete' && static::peutUtiliser('remettre_en_attente_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('remettre_en_attente_virement_budgetaire', $record))
                         ->modalDescription(fn($record) => $record->motif_rejet ? 'Motif du rejet : ' . $record->motif_rejet : null)
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif de la récupération (corrections prévues)')->required()->rows(2)])
-                        ->action(fn($record, array $data) => static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement récupéré : il est de nouveau modifiable')),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('remettre_en_attente_virement_budgetaire', $record);
+                            static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement récupéré : il est de nouveau modifiable');
+                        }),
 
                     Tables\Actions\Action::make('annuler_mouvement')
                         ->label('Annuler le mouvement')
                         ->icon('heroicon-o-no-symbol')->color('gray')
-                        ->visible(fn($record) => in_array($record->statut, ['en_attente', 'approuve', 'rejete'], true) && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => in_array($record->statut, ['en_attente', 'approuve', 'rejete'], true) && static::peutUtiliser('annuler_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('annuler_virement_budgetaire', $record))
                         ->modalDescription('Le mouvement reste consultable, et pourra être réactivé si nécessaire.')
                         ->form([Forms\Components\Textarea::make('motif')->label("Motif de l'annulation")->required()->rows(2)])
-                        ->action(fn($record, array $data) => static::transition(fn() => $record->annulerMouvement(auth()->user(), $data['motif']), 'Mouvement annulé')),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('annuler_virement_budgetaire', $record);
+                            static::transition(fn() => $record->annulerMouvement(auth()->user(), $data['motif']), 'Mouvement annulé');
+                        }),
 
                     Tables\Actions\Action::make('reactiver')
                         ->label('Réactiver (remettre en attente)')
                         ->icon('heroicon-o-arrow-path')->color('info')
-                        ->visible(fn($record) => $record->statut === 'annule' && !$record->estPiloteParCollectif())
+                        ->visible(fn($record) => $record->statut === 'annule' && static::peutUtiliser('remettre_en_attente_virement_budgetaire', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('remettre_en_attente_virement_budgetaire', $record))
                         ->modalDescription(fn($record) => 'Le mouvement repasse en attente et redevient modifiable ; il devra être approuvé à nouveau.'
                             . ($record->motif_annulation ? "\nMotif de l'annulation : " . $record->motif_annulation : ''))
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif de la réactivation')->required()->rows(2)])
-                        ->action(fn($record, array $data) => static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement réactivé : il est de nouveau modifiable')),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('remettre_en_attente_virement_budgetaire', $record);
+                            static::transition(fn() => $record->remettreEnAttente(auth()->user(), $data['motif']), 'Mouvement réactivé : il est de nouveau modifiable');
+                        }),
 
                     Tables\Actions\Action::make('annuler_execution')
                         ->label("Annuler l'exécution (contre-passation)")
                         ->icon('heroicon-o-arrow-uturn-down')->color('danger')
-                        ->visible(fn($record) => $record->statut === 'execute' && !$record->estPiloteParCollectif()
-                            && (auth()->user()?->can('annuler_execution_mouvement_credit') || auth()->user()?->can('super_admin_virement_budgetaire')))
+                        ->visible(fn($record) => $record->statut === 'execute' && static::peutUtiliser('annuler_execution_mouvement_credit', $record))
+                        ->authorize(fn($record) => static::peutUtiliser('annuler_execution_mouvement_credit', $record))
                         ->modalDescription('Les crédits reviennent sur la ligne source, et le mouvement repasse en attente. Refusé si la ligne destination a déjà engagé les crédits reçus.')
                         ->form([Forms\Components\Textarea::make('motif')->label('Motif de la contre-passation')->required()->rows(2)])
-                        ->action(fn($record, array $data) => static::transition(fn() => $record->annulerExecution(auth()->user(), $data['motif']), 'Exécution annulée : crédits restitués à la ligne source')),
+                        ->action(function ($record, array $data) {
+                            static::autoriser('annuler_execution_mouvement_credit', $record);
+                            static::transition(fn() => $record->annulerExecution(auth()->user(), $data['motif']), 'Exécution annulée : crédits restitués à la ligne source');
+                        }),
 
                 ])
                     ->label('Actions')
@@ -507,10 +562,24 @@ class VirementBudgetaireResource extends Resource
                     // ✅ Seuls les mouvements en attente ou rejetés : un mouvement exécuté
                     //    entre dans le budget rectifié des lignes, le supprimer fausserait les dotations.
                     Tables\Actions\DeleteBulkAction::make()
+                        ->authorize(fn() => auth()->user()?->can('super_admin_virement_budgetaire') ?? false)
                         ->action(function ($records) {
-                            $supprimables = $records->filter(fn($r) => in_array($r->statut, ['en_attente', 'rejete'], true));
+                            // ✅ canDelete() : super admin du module + exercice non clôturé
+                            $autorises = $records->filter(fn($r) => static::canDelete($r));
+                            $refusesDroit = $records->count() - $autorises->count();
+
+                            if ($autorises->isEmpty()) {
+                                Notification::make()
+                                    ->title('Suppression refusée')->danger()
+                                    ->body('Supprimer un mouvement exige « super_admin_virement_budgetaire » et un exercice ouvert. '
+                                        . $refusesDroit . ' mouvement(s) non supprimable(s) pour vous.')
+                                    ->persistent()->send();
+                                return;
+                            }
+
+                            $supprimables = $autorises->filter(fn($r) => in_array($r->statut, ['en_attente', 'rejete'], true));
                             $supprimables->each->delete();
-                            $refuses = $records->count() - $supprimables->count();
+                            $refuses = $autorises->count() - $supprimables->count();
                             Notification::make()
                                 ->title($supprimables->count() . ' mouvement(s) supprimé(s)')
                                 ->body($refuses ? "{$refuses} mouvement(s) approuvé(s) ou exécuté(s) conservé(s)." : null)

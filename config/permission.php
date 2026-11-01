@@ -318,6 +318,11 @@ return [
                     'Mouvements de crédits et collectifs' => [
                         'crud' => ['virement_budgetaire', 'collectif_budgetaire'],
                         'speciales' => [
+                            'approuver_virement_budgetaire',
+                            'rejeter_virement_budgetaire',
+                            'executer_virement_budgetaire',
+                            'remettre_en_attente_virement_budgetaire',
+                            'annuler_virement_budgetaire',
                             'annuler_execution_mouvement_credit',
                             'gerer_collectif_budgetaire',
                             'valider_collectif_budgetaire',

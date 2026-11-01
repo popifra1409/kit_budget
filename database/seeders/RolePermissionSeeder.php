@@ -409,6 +409,15 @@ class RolePermissionSeeder extends Seeder
                 'annuler_execution_mouvement_credit',
                 'update_virement_budgetaire',
 
+                // ── Workflow des mouvements de crédits : une permission par étape ──
+                //    Le droit de créer un mouvement ne donne plus, par accident, celui de le valider
+                //    ou de l'exécuter (contrôle interne : séparation auteur / valideur / exécutant).
+                'approuver_virement_budgetaire',
+                'rejeter_virement_budgetaire',
+                'executer_virement_budgetaire',
+                'remettre_en_attente_virement_budgetaire',
+                'annuler_virement_budgetaire',
+
                 'view_any_cloture_exercice',
                 'gerer_cloture_exercice',
                 'enregistrer_avis_ca',
@@ -585,6 +594,13 @@ class RolePermissionSeeder extends Seeder
                 'view_any_paiement_exceptionnel',
                 'autoriser_paiement_exceptionnel',
                 'annuler_execution_mouvement_credit',
+
+                // ── Workflow des mouvements de crédits : validation et exécution ──
+                'approuver_virement_budgetaire',
+                'rejeter_virement_budgetaire',
+                'executer_virement_budgetaire',
+                'remettre_en_attente_virement_budgetaire',
+                'annuler_virement_budgetaire',
 
                 'view_any_cloture_exercice',
                 'arreter_reports_credits',
@@ -1100,6 +1116,26 @@ class RolePermissionSeeder extends Seeder
             ],
             'responsable_sous_programme'
         );
+
+        // ── RATTRAPAGE du workflow « mouvements de crédits » ────────────
+        //    executer_virement_budgetaire et annuler_virement_budgetaire existaient déjà en base
+        //    (réservées à admin/super_admin), donc ajouterPermissionsRole() — strictement additif
+        //    sur les NOUVELLES permissions — ne les attribuerait jamais à daaf/directeur_general.
+        //    Ces deux rôles doivent pourtant piloter le workflow ; attribution explicite, ici.
+        foreach (['daaf', 'directeur_general'] as $nomRole) {
+            $role = Role::findByName($nomRole);
+            $aDonner = array_values(array_diff(
+                Permission::whereIn('name', [
+                    'executer_virement_budgetaire',
+                    'annuler_virement_budgetaire',
+                ])->pluck('name')->all(),
+                $role->permissions()->pluck('name')->all()
+            ));
+            if ($aDonner) {
+                $role->givePermissionTo($aDonner);
+                $this->command->line("  ✓ {$nomRole} — workflow mouvements : " . implode(', ', $aDonner));
+            }
+        }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
