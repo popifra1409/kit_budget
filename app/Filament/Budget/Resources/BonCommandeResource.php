@@ -1167,6 +1167,10 @@ class BonCommandeResource extends Resource
                                 ->label('Rabais négocié (FCFA)')
                                 ->numeric()->minValue(0)->default(0)->suffix('FCFA')
                                 ->live(onBlur: true)
+                                ->helperText(fn(callable $get, $record) =>
+                                    'Assiette disponible (' . (BonCommande::RABAIS_SUR[$get('rabais_sur') ?: 'exonere'] ?? 'rabais')
+                                    . ') : ' . number_format(static::assietteRabais($get, $record), 0, ',', ' ') . ' FCFA.')
+                                ->rule(fn(callable $get, $record): \Closure => static::regleRabais($get, $record))
                                 ->afterStateUpdated(fn(callable $set, callable $get) => static::recalculerTotaux($get('lignes'), $set, $get)),
                             Forms\Components\Select::make('rabais_sur')
                                 ->label('Le rabais porte sur')
@@ -1247,6 +1251,54 @@ class BonCommandeResource extends Resource
         static::recalculerTotaux($lignes, function ($key, $value) use ($set) {
             $set("../../{$key}", $value);
         }, $get, '../../');
+    }
+
+    /**
+     * Assiette réellement disponible pour le rabais saisi : mêmes lignes que BonCommande::decompte(),
+     * avec repli sur les lignes enregistrées quand le formulaire n'en affiche aucune.
+     */
+    protected static function assietteRabais(callable $get, $record): float
+    {
+        $lignes = $get('lignes') ?: ($record?->lignes?->all() ?? []);
+
+        return (float) BonCommande::decompte(
+            $lignes,
+            0.0,
+            $get('rabais_sur') ?: 'exonere',
+            (bool) $get('exonere_tva'),
+            (bool) $get('exonere_ir'),
+        )['base_rabais'];
+    }
+
+    /**
+     * ✅ Refuser un rabais que BonCommande::decompte() plafonnerait silencieusement à l'enregistrement :
+     *    le plafond comparé est base_rabais, la même source que le décompte affiché.
+     */
+    protected static function regleRabais(callable $get, $record): \Closure
+    {
+        return function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+            $rabais = (float) ($value ?? 0);
+            if ($rabais <= 0) {
+                return;
+            }
+
+            $base = static::assietteRabais($get, $record);
+            if ($rabais <= $base + 0.01) {
+                return;
+            }
+
+            $f = fn($v) => number_format((float) $v, 0, ',', ' ');
+            $libelle = BonCommande::RABAIS_SUR[$get('rabais_sur') ?: 'exonere'] ?? 'cette assiette';
+
+            $fail($base > 0
+                ? "Rabais supérieur à l'assiette : {$libelle} = {$f($base)} FCFA d'après les lignes saisies. "
+                    . "Un rabais de {$f($rabais)} FCFA serait ramené à {$f($base)} FCFA à l'enregistrement : "
+                    . 'réduisez le rabais ou choisissez une autre assiette.'
+                : "Rabais impossible : aucune ligne ne fournit d'assiette ({$libelle} = 0 FCFA). "
+                    . "Le rabais de {$f($rabais)} FCFA serait supprimé à l'enregistrement : renseignez d'abord les lignes"
+                    . (blank($record?->numero) ? '' : " du bon de commande {$record->numero}")
+                    . ' ou choisissez une autre assiette.');
+        };
     }
 
     /**

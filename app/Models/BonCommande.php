@@ -100,6 +100,36 @@ class BonCommande extends Model
         'montant_rabais' => 'decimal:2',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | COLONNES RECALCULÉES PAR LE MODÈLE
+    |--------------------------------------------------------------------------
+    | hook saving -> calculerMontants() -> appliquerDecompte(). Elles changent en
+    | base à CHAQUE écriture, y compris un simple changement de statut : le
+    | garde-fou « BC non brouillon » (updating) ne doit donc pas les lire comme une
+    | modification venue de l'utilisateur.
+    |
+    | ⚠️ Toute colonne ajoutée à appliquerDecompte() doit être reprise ici, sinon
+    |    annuler() / récupérer() / l'enregistrement du formulaire lèvent une erreur
+    |    « Modification interdite » sur tous les BC dont le décompte n'est pas déjà
+    |    aligné (249 des 297 BC de la base au 2026-10-30).
+    |
+    | montant_rabais et rabais_sur sont volontairement ABSENTS : saisis en tête du
+    | formulaire, ils restent protégés.
+    */
+    public const COLONNES_RECALCULEES = [
+        'montant_ht',
+        'montant_tva',
+        'montant_ir',
+        'montant_ttc',
+        'net_a_payer',
+        'net_a_percevoir',
+        'taux_ir',
+        'montant_ht_brut',
+        'montant_ht_exonere',
+        'montant_ht_taxable',
+    ];
+
     /**
      * Relation : Type d'engagement
      */
@@ -585,15 +615,11 @@ class BonCommande extends Model
                 'updated_by',
                 'updated_at',
                 'created_at',
-                'montant_ir',
-                'net_a_payer',
-                'net_a_percevoir',
-                'montant_ht',
-                'montant_tva',
-                'montant_ttc',
                 'statut_avant_annulation',
                 'mode_arrondi',
                 'type_engagement_id',
+                // montants recalculés par le hook saving — jamais une saisie utilisateur
+                ...static::COLONNES_RECALCULEES,
             ];
 
             // Vérifier si SEULEMENT des champs autorisés ont été modifiés
@@ -962,6 +988,7 @@ class BonCommande extends Model
             'ht_brut' => $rond($htBrut),
             'rabais' => $rond($r),
             'rabais_sur' => $rabaisSur ?: 'exonere',
+            'base_rabais' => $base,                                   // assiette non plafonnée, pour refuser un rabais trop élevé
             'ht_net' => $rond($htNet),
             'tva' => $rond($tva),
             'ir' => $rond($ir),

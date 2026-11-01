@@ -36,13 +36,38 @@ class MandatDecaissementPdfController extends Controller
             'exercice',
             'budget',
             'lignes.nomenclature',
-            'decisionAdministrative.engagement.nomenclaturePrincipale',
+            'decisionsSource.nomenclature',
+            'decisionAdministrative',
         ]);
 
-        $params       = \App\Models\ParametresStructure::where('actif', true)->first();
-        $daSource     = $regie->decisionAdministrative;
-        $engagement   = $daSource?->engagement;
-        $nomenclature = $engagement?->nomenclaturePrincipale;
+        $params   = \App\Models\ParametresStructure::where('actif', true)->first();
+        $daSource = $regie->decisionAdministrative;
+
+        // ✅ L'engagement d'une DA ne se lit pas par `$daSource?->engagement` : le
+        //    morph map attend l'alias « decision_administrative » alors que la base
+        //    stocke « App\Models\DecisionAdministrative » — la relation restait
+        //    vide et le mandat imprimait « 2026-04-——-—— » sans imputation.
+        //    Résolution explicite sur les deux formes, comme les écrans de régie,
+        //    hors portée du scope d'exercice (le mandat suit sa DA, quel que soit
+        //    l'exercice actif).
+        $engagement = $daSource?->engagement
+            ?? ($daSource
+                ? \App\Models\Engagement::with('nomenclaturePrincipale')
+                    ->withoutGlobalScope('exercice')
+                    ->where('engageable_id', $daSource->id)
+                    ->where(function ($q) {
+                        $q->where('engageable_type', 'App\\Models\\DecisionAdministrative')
+                            ->orWhere('engageable_type', 'decision_administrative');
+                    })
+                    ->orderBy('id')
+                    ->first()
+                : null);
+        $nomenclature = $engagement?->nomenclaturePrincipale
+            // ✅ DA non engagée (aucun engagement pour la décision) : l'imputation
+            //    de la régie reste connue par sa liaison à la DA source, puis par
+            //    sa ligne de mini-budget.
+            ?? $regie->decisionsSource->first()?->nomenclature
+            ?? $regie->lignes->first()?->nomenclature;
 
         // ✅ Matricule + Nom depuis Personnel lié via user_id
         $matricule    = '—';
@@ -68,12 +93,17 @@ class MandatDecaissementPdfController extends Controller
             : ($nomenclature ? substr($nomenclature->code, 0, 4) : '——');
         $codeNomenclature = $nomenclature?->code ?? '——';
 
-        // ✅ Imputation : {exercice}-{mois}-{article}-{ligne nomenclature}
+        // ✅ Imputation : {exercice}-{sous-programme}-{article}-{ligne nomenclature}
+        //    Même règle que le bon de commande administratif : le 2e segment est
+        //    le sous-programme de la ligne (SP-3 → 3), pas le mois de la décision.
         $annee = $regie->exercice?->annee ?? date('Y');
         $mois  = $daSource?->date_decision
             ? \Carbon\Carbon::parse($daSource->date_decision)->format('m')
             : str_pad(now()->month, 2, '0', STR_PAD_LEFT);
-        $imputation = "{$annee}-{$mois}-{$codeArticle}-{$codeNomenclature}";
+        $segmentImputation = ($nomenclature?->segmentSousProgramme(
+            $engagement?->exercice_id ?? $regie->exercice_id
+        )) ?? $mois;
+        $imputation = "{$annee}-{$segmentImputation}-{$codeArticle}-{$codeNomenclature}";
 
         // ✅ Taux depuis la DA source
         $tauxIr  = (float) ($daSource?->taux_ir  ?? 0);

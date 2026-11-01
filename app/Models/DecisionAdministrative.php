@@ -112,6 +112,46 @@ class DecisionAdministrative extends Model
         'billetage'  => 'decimal:2',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | COLONNES RECALCULÉES PAR LE MODÈLE (mode « calcule »)
+    |--------------------------------------------------------------------------
+    | hook saving -> calculerMontants(). Elles changent en base à CHAQUE écriture,
+    | y compris un simple changement de statut : le garde-fou « décision non
+    | brouillon » (updating) ne doit donc pas les lire comme une modification
+    | venue de l'utilisateur.
+    |
+    | ⚠️ Toute colonne ajoutée à calculerMontants() doit être reprise ici, sinon
+    |    annuler() / l'enregistrement du formulaire lèvent une erreur
+    |    « Modification interdite » sur les décisions dont le décompte n'est plus
+    |    aligné (16 décisions au 2026-10-30 : montant_net et total_taxes).
+    |
+    | Restent PROTÉGÉES, parce que saisies même en mode calcule :
+    |   montant_irnc, montant_redevance_audiovisuelle, montant_feicom,
+    |   autres_retenues, montant_brut et tous les taux.
+    | Et le mode « forfait » ne recalcule rien : la liste n'est alors pas étendue.
+    */
+    public const COLONNES_RECALCULEES = [
+        'montant_ht',
+        'montant_tva',
+        'montant_cnps',
+        'montant_ir',
+        'total_taxes',
+        'montant_net',
+    ];
+
+    /**
+     * Mode de saisie réellement applicable à cette écriture : celui du formulaire
+     * en cours, sinon celui de la base, sinon « calcule ».
+     */
+    public function modeSaisieEffectif(): string
+    {
+        return $this->attributes['mode_saisie']
+            ?? $this->getOriginal('mode_saisie')
+            ?? $this->mode_saisie
+            ?? 'calcule';
+    }
+
     // =========================================================
     // BOOT
     // =========================================================
@@ -136,10 +176,7 @@ class DecisionAdministrative extends Model
         });
 
         static::saving(function ($decision) {
-            $mode = $decision->attributes['mode_saisie']
-                ?? $decision->getOriginal('mode_saisie')
-                ?? $decision->mode_saisie
-                ?? 'calcule';
+            $mode = $decision->modeSaisieEffectif();
 
             if ($mode === 'forfait') return;
 
@@ -167,6 +204,15 @@ class DecisionAdministrative extends Model
                 'mode_saisie',
                 'da_reelle_id',
             ];
+
+            // En mode « calcule », le hook saving réécrit lui-même ces colonnes :
+            // ce n'est pas une saisie de l'utilisateur (voir COLONNES_RECALCULEES).
+            if ($decision->modeSaisieEffectif() !== 'forfait') {
+                $champsAutorisesSansRestriction = [
+                    ...$champsAutorisesSansRestriction,
+                    ...static::COLONNES_RECALCULEES,
+                ];
+            }
 
             $champsDirty         = array_keys($decision->getDirty());
             $modificationAutorisee = empty(array_diff($champsDirty, $champsAutorisesSansRestriction));
@@ -537,10 +583,7 @@ class DecisionAdministrative extends Model
      */
     public function calculerMontants(): void
     {
-        $mode = $this->attributes['mode_saisie']
-            ?? $this->getOriginal('mode_saisie')
-            ?? $this->mode_saisie
-            ?? 'calcule';
+        $mode = $this->modeSaisieEffectif();
 
         if ($mode === 'forfait') {
             \Log::info('calculerMontants() — ignoré (forfait)', ['da' => $this->numero]);

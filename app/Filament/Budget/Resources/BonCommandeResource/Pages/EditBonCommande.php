@@ -7,6 +7,7 @@ use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;
+use Illuminate\Validation\ValidationException;
 
 class EditBonCommande extends EditRecord
 {
@@ -277,6 +278,23 @@ class EditBonCommande extends EditRecord
                 'quantite' => $l['quantite'] ?? 0,
             ])->toArray(),
         ]);
+
+        // ✅ Les lignes soumises vide alors que le BC en possède = formulaire dans un état anormal.
+        //    Sans refus, l'enregistrement supprimerait toutes les lignes et remettrait les montants à zéro.
+        $nbLignesBd = $this->record->lignes()->count();
+
+        if (empty($data['lignes']) && $nbLignesBd > 0 && $this->record->statut !== 'brouillon') {
+            $message = "Les {$nbLignesBd} lignes enregistrées du bon de commande {$this->record->numero} "
+                . "n'apparaissent pas dans le formulaire. Enregistrer en cet état les supprimerait toutes "
+                . 'et remettrait les montants à zéro. Rechargez la page, les lignes réapparaîtront ; '
+                . 'si le problème persiste, prévenez le support.';
+
+            Notification::make()
+                ->title('❌ Enregistrement refusé')
+                ->danger()->body($message)->persistent()->send();
+
+            throw ValidationException::withMessages(['lignes' => $message]);
+        }
 
         $data = self::forcerExonerationTVA($data);
 
