@@ -26,7 +26,7 @@ class ViewVirementBudgetaire extends ViewRecord
         $apres = fn() => $this->record->refresh();   // la fiche affiche aussitôt le nouveau statut
 
         /** visible() masque le bouton ; autoriser() refuse l'appel (une action masquée reste appelable). */
-        $etape = fn(string $permission, string $statutOuTableau) => function ($record) use ($R, $permission, $statutOuTableau) {
+        $etape = fn(string $permission, string|array $statutOuTableau) => function ($record) use ($R, $permission, $statutOuTableau) {
             $statuts = (array) $statutOuTableau;
             return in_array($record->statut, $statuts, true) && $R::peutUtiliser($permission, $record);
         };
