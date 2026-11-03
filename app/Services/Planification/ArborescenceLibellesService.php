@@ -74,16 +74,20 @@ class ArborescenceLibellesService
 
         $parAction = $activites->groupBy('action_id');
 
+        $blocs = $sps->map(fn(SousProgrammeEp $sp) => $this->construireSousProgramme(
+            $sp,
+            $actionsParSp->get($sp->id, collect()),
+            $parAction,
+            $exerciceId
+        ));
+
         return [
-            'psp'             => $psp,
-            'csp'             => $psp->cspMinistere,
-            'exercice'        => Exercice::find($exerciceId),
-            'sous_programmes' => $sps->map(fn(SousProgrammeEp $sp) => $this->construireSousProgramme(
-                $sp,
-                $actionsParSp->get($sp->id, collect()),
-                $parAction,
-                $exerciceId
-            )),
+            'psp'              => $psp,
+            'csp'              => $psp->cspMinistere,
+            'exercice'         => Exercice::find($exerciceId),
+            'sous_programmes'  => $blocs,
+            // Récapitulatif de tête : les sous-programmes hors circuit de validation
+            'sans_responsable' => $blocs->reject(fn($b) => filled($b['responsable']))->values(),
         ];
     }
 
@@ -101,6 +105,11 @@ class ArborescenceLibellesService
         }
         if (!$sp->programmeBudgetaire) {
             $this->observer('Sous-programme', $sp->libelle, 'Aucun programme de rattachement (ministériel)');
+        }
+        // Le responsable est la clé du cloisonnement de la revue : sans lui, le sous-programme
+        // n'est visible que pour les comptes habilités « view_all_arborescence_libelles ».
+        if (!$sp->responsable_id) {
+            $this->observer('Sous-programme', $sp->libelle, 'Responsable du sous-programme non désigné');
         }
         // Le programme de rattachement sert de repli : on ne signale l'absence de programme EP
         // que si aucune action n'a pu être retrouvée
@@ -143,6 +152,7 @@ class ArborescenceLibellesService
             'sp'           => $sp,
             'sp_texte'     => $this->codeLibelle($sp->code, $sp->libelle),
             'sp_alertes'   => $alertesSp,
+            'responsable'  => $sp->responsable?->name,
             'programme'    => $sp->programmeBudgetaire
                 ? $this->codeLibelle($sp->programmeBudgetaire->code, $sp->programmeBudgetaire->libelle)
                 : null,

@@ -56,7 +56,9 @@ class SousProgrammeEpResource extends Resource
                     Forms\Components\Select::make('responsable_id')
                         ->label('Responsable')
                         ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
-                        ->searchable(),
+                        ->searchable()
+                        ->required()
+                        ->helperText('Le responsable du sous-programme pilote la revue des libellés : sans lui, le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
                     Forms\Components\Textarea::make('description')->columnSpanFull(),
                 ])
                 ->columns(2),
@@ -101,6 +103,10 @@ class SousProgrammeEpResource extends Resource
                     ->badge()
                     ->color(fn(?string $state) => $state ? 'success' : 'danger')
                     ->placeholder('Non rattaché'),
+
+                Tables\Columns\TextColumn::make('responsable.name')
+                    ->label('Responsable')
+                    ->placeholder('Non désigné'),
 
                 Tables\Columns\TextColumn::make('planStrategiqueEp.libelle')->label('PSP'),
                 Tables\Columns\BadgeColumn::make('statut')->colors([

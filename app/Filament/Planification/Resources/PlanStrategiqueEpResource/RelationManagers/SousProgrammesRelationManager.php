@@ -61,7 +61,9 @@ class SousProgrammesRelationManager extends RelationManager
             Forms\Components\Select::make('responsable_id')
                 ->label('Responsable de mise en œuvre')
                 ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
-                ->searchable(),
+                ->searchable()
+                ->required()
+                ->helperText('Le responsable du sous-programme pilote la revue des libellés : sans lui, le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
 
             // ── Rattachements : deux champs distincts ──────────────────
             Forms\Components\Select::make('programme_budgetaire_id')

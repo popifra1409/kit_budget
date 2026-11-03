@@ -26,7 +26,16 @@
             @endif
         </td>
     </tr>
-    <tr><th>Responsable</th><td>{{ $bloc['sp']->responsable?->name ?? '—' }}</td></tr>
+    <tr>
+        <th>Responsable</th>
+        <td>
+            @if ($bloc['responsable'] ?? null)
+                {{ $bloc['responsable'] }}
+            @else
+                <span class="mx-alerte">Non désigné</span>
+            @endif
+        </td>
+    </tr>
     <tr><th>Objectif</th><td>{{ $bloc['sp']->objectif ?? '—' }}</td></tr>
     <tr>
         <th>Indicateur(s) du sous-programme</th>
