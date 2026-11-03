@@ -12,50 +12,63 @@ class ArborescenceLibellesExport implements WithMultipleSheets
     public function sheets(): array
     {
         $sps = $this->t['sous_programmes'];
+        $annee = $this->t['exercice']?->annee;
 
-        // Une ligne par sous-tache, tous les niveaux repetes (filtrable et triable dans Excel)
-        $libelles = $sps->flatMap(fn($b) => collect($b['lignes'])->map(fn($r) => [
-            $b['sp_texte'],
-            $b['programme'] ?? '',
-            $b['sp']->responsable?->name ?? '',
-            $r['ctx']['action'] ?? '',
-            $r['ctx']['activite'] ?? '',
-            $r['ctx']['extrants'] ?? '',
-            $r['ctx']['indicateurs'] ?? '',
-            $r['ctx']['tache'] ?? '',
-            $r['ligne']['sous_tache'] ?? ($r['message'] ?? ''),
-            $r['ligne']['nomenclature'] ?? '',
-        ]))->all();
+        // Une feuille par sous-programme, dans l'ordre de l'état PDF
+        $pris = [];
+        $sheets = $sps->map(function ($b) use (&$pris, $annee) {
+            $nom = $this->nomOnglet($b['sp_texte'], $pris);
+            $pris[] = $nom;
 
-        $observations = $sps->flatMap(fn($b) => $b['observations']->map(fn($o) => [
+            return new LibellesSousProgrammeSheet($b, $nom, $annee);
+        })->all();
+
+        // Feuille de rattrapage : toutes les observations, filtrables et triables
+        $sheets[] = new ArraySheet('Observations', [
+            'Sous-programme',
+            'Responsable',
+            'Niveau',
+            'Libellé',
+            'Observation',
+        ], $sps->flatMap(fn($b) => $b['observations']->map(fn($o) => [
             $b['sp_texte'],
-            $b['sp']->responsable?->name ?? '',
+            $b['responsable'] ?? 'Non désigné',
             $o['niveau'],
             $o['libelle'],
             $o['constat'],
-        ]))->all();
+        ]))->all());
 
-        return [
-            new ArraySheet('Libellés', [
-                'Sous-programme',
-                'Programme de rattachement',
-                'Responsable',
-                'Action',
-                'Activité',
-                'Extrant(s)',
-                'Indicateur(s)',
-                'Tâche',
-                'Sous-tâche',
-                'Ligne budgétaire',
-            ], $libelles),
+        return $sheets;
+    }
 
-            new ArraySheet('Observations', [
-                'Sous-programme',
-                'Responsable',
-                'Niveau',
-                'Libellé',
-                'Observation',
-            ], $observations),
-        ];
+    /**
+     * Nom d'onglet Excel : 31 caractères maximum, sans : \ / ? * [ ], et unique dans le classeur
+     * (deux sous-programmes peuvent partager leurs 31 premiers caractères).
+     */
+    protected function nomOnglet(string $texte, array $pris): string
+    {
+        $nom = trim(preg_replace('/[\s:\/\\\\\?\*\[\]]+/u', ' ', $texte));
+
+        if (mb_strlen($nom) > 31) {
+            // coupure sur un mot plutôt qu'en plein milieu du libellé
+            $nom = mb_substr($nom, 0, 31);
+            $espace = mb_strrpos($nom, ' ');
+            if ($espace !== false && $espace >= 8) {
+                $nom = mb_substr($nom, 0, $espace);
+            }
+        }
+        $nom = rtrim($nom, ' -');
+
+        if (!in_array($nom, $pris, true)) {
+            return $nom;
+        }
+
+        $base = mb_substr($nom, 0, 27);
+        $i = 2;
+        while (in_array("{$base} ({$i})", $pris, true)) {
+            $i++;
+        }
+
+        return "{$base} ({$i})";
     }
 }
