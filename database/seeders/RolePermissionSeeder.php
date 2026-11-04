@@ -865,6 +865,67 @@ class RolePermissionSeeder extends Seeder
             [
                 'access_module_portal',
                 'access_module_marches',
+
+                // ── Paramétrage des marchés : le référentiel est tenu par le service
+                //    des marchés, pas par l'administration centrale. ──
+                'view_any_type_procedure',        'view_type_procedure',
+                'create_type_procedure',          'update_type_procedure',        'delete_type_procedure',
+                'view_any_type_contrat',          'view_type_contrat',
+                'create_type_contrat',            'update_type_contrat',          'delete_type_contrat',
+                'view_any_categorie_marche',      'view_categorie_marche',
+                'create_categorie_marche',        'update_categorie_marche',      'delete_categorie_marche',
+                'view_any_element_evaluation_dao','view_element_evaluation_dao',
+                'create_element_evaluation_dao',  'update_element_evaluation_dao','delete_element_evaluation_dao',
+                'view_any_commission',            'view_commission',
+                'create_commission',              'update_commission',            'delete_commission',
+                'view_any_type_ordre_service',      'view_type_ordre_service',
+                'create_type_ordre_service',        'update_type_ordre_service',    'delete_type_ordre_service',
+
+                // ── Cycle de vie du marché : le service des marchés tient la procédure
+                //    de bout en bout, sauf le retrait de sa propre validation (étape B). ──
+                'view_any_marche',                'view_marche',
+                'create_marche',                  'update_marche',                'delete_marche',
+                'valider_marche',                 'publier_dao_marche',           'ouvrir_plis_marche',
+                'annuler_marche',
+
+                // ── Réception des offres (étape C) : le service des marchés prend les
+                //    dépôts au guichet et en décide la recevabilité. force_update_offre
+                //    reste à l'administration — une décision du matin ne se réécrit pas
+                //    le soir par celui qui l'a prise. ──
+                'view_any_offre',                 'view_offre',
+                'create_offre',                   'update_offre',                 'delete_offre',
+                'valider_offre',                  'rejeter_offre',
+
+                // ── Évaluation et attribution (étape D) : le service des marchés tient la
+                //    grille, et porte la décision qui clôture la procédure. lever_attribution
+                //    est la même main qui rouvre les plis — pas un droit de réécriture :
+                //    lever fige la note antérieure et rend un marché en évaluation. ──
+                'view_any_evaluation',             'view_evaluation',
+                'create_evaluation',               'update_evaluation',            'delete_evaluation',
+                'attribuer_marche',               'lever_attribution_marche',
+
+                // ── Homologation et ordres de service (étape E) : le service des marchés
+                //    approuve l'attribution et commande l'exécution. create_ordre_service
+                //    est la permission de l'émission (l'action du marché écrit cette ligne,
+                //    il n'y a pas de permission doublon) ; lever_homologation_marche est la
+                //    même main qui défait sa décision, et elle ne vaut que tant qu'aucun
+                //    ordre n'est parti. force_update_ordre_service reste à l'administration. ──
+                'homologuer_marche',              'lever_homologation_marche',
+                'view_any_ordre_service',           'view_ordre_service',
+                'create_ordre_service',             'update_ordre_service',         'delete_ordre_service',
+
+                // ── Fiche de présence (étape E) : la séance de la commission est dressée
+                //    depuis le marché, émargée ligne par ligne, et le visa se pose et se
+                //    lève par un acte nommé — une case retournée sans main ne serait plus
+                //    une signature. create_fiche_presence est la permission du dressage,
+                //    comme pour l'ordre de service : pas de doublon. Le PDF, lui, se
+                //    télécharge sous telecharger_fiche_presence ; corriger une fiche dont
+                //    le marché est clos reste à l'administration (force_update...). ──
+                'view_any_fiche_presence',          'view_fiche_presence',
+                'create_fiche_presence',            'update_fiche_presence',          'delete_fiche_presence',
+                'viser_fiche_presence',             'lever_visa_fiche_presence',
+                'telecharger_fiche_presence',
+
                 'view_any_fournisseur',
                 'view_fournisseur',
                 'view_any_dossier_fournisseur',

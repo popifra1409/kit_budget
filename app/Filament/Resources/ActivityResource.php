@@ -138,6 +138,27 @@ class ActivityResource extends Resource
                         'restored'      => 'success',
                         'login_failed'  => 'danger',
                         'archivage'     => 'gray',
+                        // Marchés publics — le cycle du marché, dans la palette du journal
+                        'publier_dao'   => 'info',
+                        'ouvrir_plis'   => 'primary',
+                        'classer_manuellement' => 'warning',
+                        'revenir_au_seuil'     => 'gray',
+                        // Réception des offres ; « rejeter » sert aussi aux liquidations
+                        // et aux virements, qui étaient jusque-là en gris par défaut.
+                        'rejeter'       => 'danger',
+                        'lever_decision' => 'warning',
+                        // Évaluation et attribution (étape D) : noter est une saisie, comme
+                        // « updated » ; attribuer est la décision, et sa levée se signale.
+                        'evaluer'          => 'info',
+                        'attribuer'        => 'success',
+                        'lever_attribution' => 'warning',
+                        // Homologation et ordres de service (étape E) : l'homologation est
+                        // une décision (success), sa levée et l'émission d'un ordre de
+                        // service se signalent — ce sont les actes qui engagent l'exécution.
+                        'homologuer'         => 'success',
+                        'lever_homologation' => 'warning',
+                        'demarrer_execution' => 'primary',
+                        'emettre_ordre_service' => 'info',
                         'correction_donnees', 'correctifs_donnees', 'corriger_beneficiaire' => 'warning',
                         default         => 'gray',
                     })
@@ -151,6 +172,10 @@ class ActivityResource extends Resource
                     // ✅ CORRIGE : subject_type contient un alias ('engagement'), pas la classe
                     ->color(fn($state, $record) => match (class_basename($record->getSubjectClass() ?? '')) {
                         'BonCommande'            => 'info',
+                        'Marche'                 => 'info',
+                        'Offre'                  => 'info',
+                        'Evaluation'             => 'info',
+                        'OrdreService'           => 'info',
                         'DecisionAdministrative' => 'warning',
                         'Engagement'             => 'primary',
                         'OrdonnancePaiement'     => 'success',
@@ -253,6 +278,23 @@ class ActivityResource extends Resource
                         'transmettre'  => '📤 Transmis',
                         'cloturer'     => '🏁 Clôturé',
                         'retourner'    => '↩️ Retourné',
+                        // ── Cycle des marchés ────────────────
+                        'publier_dao'   => '📢 DAO publié',
+                        'ouvrir_plis'   => '📂 Plis ouverts',
+                        'classer_manuellement' => '✋ Classé contre le seuil',
+                        'revenir_au_seuil'     => '📐 Reclasé par le seuil',
+                        // ── Réception des offres ───────────────
+                        'rejeter'        => '🚫 Rejeté',
+                        'lever_decision' => '↩️ Décision levée',
+                        // ── Évaluation & attribution ───────────
+                        'evaluer'           => '📝 Note portée',
+                        'attribuer'         => '🏆 Attribué',
+                        'lever_attribution' => '↩️ Attribution levée',
+                        // ── Homologation & exécution ───────────
+                        'homologuer'            => '🛡️ Homologué',
+                        'lever_homologation'    => '↩️ Homologation levée',
+                        'demarrer_execution'    => '▶️ Exécution démarrée',
+                        'emettre_ordre_service' => '📄 Ordre de service émis',
                         // ── Auth & Sécurité ─────────────────
                         'login'         => '🔓 Connexion',
                         'logout'        => '🔒 Déconnexion',
@@ -361,10 +403,16 @@ class ActivityResource extends Resource
                             ->formatStateUsing(fn($state, $record) => $record->getEventLabel())
                             ->badge()
                             ->color(fn($state) => match ($state) {
-                                'created', 'valider', 'login', 'marquer_payee', 'cloturer' => 'success',
-                                'updated', 'transformer', 'transmettre'                    => 'info',
-                                'deleted', 'annuler', 'access_denied'                     => 'danger',
-                                'recuperer', 'desengager', 'devalider', 'retourner'       => 'warning',
+                                'created', 'valider', 'login', 'marquer_payee', 'cloturer',
+                                'attribuer', 'homologuer'                                          => 'success',
+                                'updated', 'transformer', 'transmettre', 'publier_dao', 'evaluer',
+                                'emettre_ordre_service'                                            => 'info',
+                                'deleted', 'annuler', 'access_denied', 'rejeter'         => 'danger',
+                                'recuperer', 'desengager', 'devalider', 'retourner',
+                                'classer_manuellement', 'lever_decision', 'lever_attribution',
+                                'lever_homologation'                                               => 'warning',
+                                'ouvrir_plis'                                               => 'primary',
+                                'demarrer_execution'                                      => 'primary',
                                 'engager'                                                  => 'primary',
                                 default                                                    => 'gray',
                             }),

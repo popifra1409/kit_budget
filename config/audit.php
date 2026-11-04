@@ -136,6 +136,21 @@ return [
                 'App\Models\DossierFournisseur'    => 'Dossier fournisseur',
                 'App\Models\PieceDossier'          => 'Pièce de dossier',
                 'App\Models\ReferenceMercuriale'   => 'Référence mercuriale',
+                'App\Models\Marche'                => 'Marché',
+                'App\Models\Offre'                 => 'Offre',
+                'App\Models\Evaluation'            => 'Note d\'évaluation',
+                'App\Models\TypeProcedure'         => 'Type de procédure',
+                'App\Models\TypeContrat'           => 'Type de contrat',
+                'App\Models\CategorieMarche'       => 'Catégorie de marché',
+                'App\Models\ElementEvaluationDao'  => 'Élément d\'évaluation du DAO',
+                'App\Models\OrdreService'          => 'Ordre de service',
+                'App\Models\TypeOrdreService'      => 'Type d\'ordre de service',
+                'App\Models\Commission'            => 'Commission',
+                'App\Models\CommissionMembre'      => 'Membre de commission',
+                // Étape E : la fiche qui constate la séance, et la case de visa de
+                // chaque membre. Les deux s'écrivent, donc les deux se relisent.
+                'App\Models\FichePresence'         => 'Fiche de présence',
+                'App\Models\FichePresenceMembre'   => 'Émargement de la fiche de présence',
             ],
         ],
 

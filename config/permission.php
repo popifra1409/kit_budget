@@ -475,7 +475,70 @@ return [
                 'libelle' => 'Marchés publics',
                 'icone'   => 'heroicon-o-building-office',
                 'acces'   => 'access_module_marches',
-                'rubriques' => [],
+                'rubriques' => [
+                    // Le marché lui-même : cycle de vie piloté par des actions,
+                    // chacune sous sa permission (voir MarcheResource). L'offre est le
+                    // dépôt qui alimente ce cycle une fois le DAO publié ; sa décision
+                    // a sa propre permission, distincte de la saisie.
+                    'Appels d\'Offres' => [
+                        'crud' => ['marche', 'offre'],
+                        'speciales' => [
+                            'valider_marche',
+                            'publier_dao_marche',
+                            'ouvrir_plis_marche',
+                            'annuler_marche',
+                            'force_update_marche',
+                            'valider_offre',
+                            'rejeter_offre',
+                            'force_update_offre',
+                        ],
+                    ],
+                    // Noter est une saisie, attribuer est une décision : la grille a son
+                    // CRUD, l'attribution et sa levée n'existent que comme permissions
+                    // propres — jamais confondues avec update_marche.
+                    //
+                    // La fiche de présence (étape E) range ici parce qu'elle constate la
+                    // séance où les plis sont ouverts et les offres jugées, pas celle où le
+                    // service est commandé. `create_fiche_presence` est la permission du
+                    // dressage — l'action se prend sur le marché, pas de doublon ; viser et
+                    // lever le visa sont deux actes nommés sur la ligne, et le PDF de la
+                    // fiche se télécharge sous sa propre permission, comme les autres pièces.
+                    'Évaluation & Attribution' => [
+                        'crud' => ['evaluation', 'fiche_presence'],
+                        'speciales' => [
+                            'attribuer_marche',
+                            'lever_attribution_marche',
+                            'viser_fiche_presence',
+                            'lever_visa_fiche_presence',
+                            'telecharger_fiche_presence',
+                            'force_update_fiche_presence',
+                        ],
+                    ],
+                    // Étape E : l'homologation rend la décision définitive, l'ordre de
+                    // service commande l'exécution au titulaire. Les deux se décident
+                    // sur la fiche du marché, mais ce ne sont pas des écritures de la
+                    // fiche — chaque acte a sa permission et sa levée en propre, comme
+                    // l'attribution à l'étape D. `create_ordre_service` (le CRUD) est ce
+                    // qui autorise l'émission : pas de permission doublon.
+                    'Suivi d\'Exécution' => [
+                        'crud' => ['ordre_service'],
+                        'speciales' => [
+                            'homologuer_marche',
+                            'lever_homologation_marche',
+                            'force_update_ordre_service',
+                        ],
+                    ],
+                    'Paramétrage' => [
+                        'crud' => [
+                            'type_procedure',
+                            'type_contrat',
+                            'categorie_marche',
+                            'element_evaluation_dao',
+                            'commission',
+                            'type_ordre_service',
+                        ],
+                    ],
+                ],
             ],
 
             // ════════════════════════════════════════════════════════

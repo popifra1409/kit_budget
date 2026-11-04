@@ -174,6 +174,19 @@ class AppServiceProvider extends ServiceProvider
 
             // Marchés publics
             'piece_dossier'                => \App\Models\PieceDossier::class,
+            'type_procedure'               => \App\Models\TypeProcedure::class,
+            'type_contrat'                 => \App\Models\TypeContrat::class,
+            'categorie_marche'             => \App\Models\CategorieMarche::class,
+            'element_evaluation_dao'       => \App\Models\ElementEvaluationDao::class,
+            'commission'                   => \App\Models\Commission::class,
+            'commission_membre'            => \App\Models\CommissionMembre::class,
+            'marche'                       => \App\Models\Marche::class,
+            'offre'                        => \App\Models\Offre::class,
+            'evaluation'                   => \App\Models\Evaluation::class,
+            'ordre_service'                => \App\Models\OrdreService::class,
+            'type_ordre_service'           => \App\Models\TypeOrdreService::class,
+            'fiche_presence'               => \App\Models\FichePresence::class,
+            'fiche_presence_membre'        => \App\Models\FichePresenceMembre::class,
 
             // Planification stratégique
             'cadre_logique'                => \App\Models\CadreLogique::class,
