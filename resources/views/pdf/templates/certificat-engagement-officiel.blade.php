@@ -70,58 +70,21 @@ $anneeExercice = \App\Models\Exercice::find($engagement->exercice_id)?->annee
 $nomenclature = $engagement->nomenclaturePrincipale;
 
 // ── Ligne budgétaire ──────────────────────────────────────
-$ligneBudgetaire  = null;
-$dotationInitiale = 0;
-$budgetRectifie   = 0;
-$disponibleAvant  = 0;
-$disponibleApres  = 0;
+// L'état que le certificat imprime est celui du JOUR DE L'ENGAGEMENT, par une source
+// unique (HistoriqueLigneBudgetaireService::etatPourEngagement). Avant : le budget
+// rectifié de la ligne, lu tel quel, y faisait apparaître un virement passé quatre mois
+// après la signature, et le disponible imprimé sous le visa changeait de 3 800 000 F
+// d'une impression à l'autre.
+$etatLigne = app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
+    ->etatPourEngagement($engagement);
+
+$ligneBudgetaire  = $etatLigne['ligne'];
+$dotationInitiale = $etatLigne['dotation_initiale'];
+$budgetRectifie   = $etatLigne['dotation_finale'];
+$collectifsLigne  = $etatLigne['modifications'];
+$disponibleAvant  = $etatLigne['disponible_avant'];
+$disponibleApres  = $etatLigne['disponible_apres'];
 $montantEngage    = (float) ($engagement->montant_engage ?? 0);
-
-if ($nomenclature) {
-    $ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-        ->where('nomenclature_id', $nomenclature->id)
-        ->first();
-
-    if ($ligneBudgetaire) {
-
-        $dotationInitiale = (float) ($ligneBudgetaire->budget_initial
-            ?? $ligneBudgetaire->montant_initial
-            ?? 0);
-
-        $budgetRectifie = (float) ($ligneBudgetaire->budget_rectifie
-            ?? ($dotationInitiale
-                + ($ligneBudgetaire->virements_entrants ?? 0)
-                - ($ligneBudgetaire->virements_sortants ?? 0)));
-
-        // ✅ Modifications de la ligne depuis la dotation initiale : collectifs budgétaires
-        //    (augmentations, réductions, virements internes au collectif) et virements budgétaires.
-        //    Source unique, partagée avec la fiche de contrôle des engagements.
-        //    ✅ CORRIGÉ — les virements d'un collectif (ex. 669604 → 617100) n'étaient pas lus.
-        $collectifsLigne = app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
-            ->modifications($ligneBudgetaire);
-
-        // ✅ PRIORITÉ 1 : snapshots figés au moment de l'engagement
-        if ($engagement->snapshot_disponible_avant !== null) {
-
-            $dotationInitiale = (float) ($engagement->snapshot_budget_initial ?? $dotationInitiale);
-            $budgetRectifie   = (float) ($engagement->snapshot_budget_rectifie ?? $budgetRectifie);
-            $disponibleAvant  = (float) $engagement->snapshot_disponible_avant;
-            $disponibleApres  = (float) $engagement->snapshot_disponible_apres;
-
-        } else {
-            // ✅ FALLBACK : recalcul chronologique pour anciens engagements
-            $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
-                ->where('budget_id', $ligneBudgetaire->budget_id)
-                ->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
-                ->where('id', '<', $engagement->id)
-                ->whereIn('statut', ['provisoire', 'definitif'])
-                ->sum('montant_engage');
-
-            $disponibleAvant = $budgetRectifie - $totalEngageAvant;
-            $disponibleApres = $disponibleAvant - $montantEngage;
-        }
-    }
-}
 
 // ── Hiérarchie budgétaire ─────────────────────────────────
 $tache = $activite = $action = null;
@@ -462,15 +425,6 @@ if ($createdAt) {
 
     {{-- ── Montants ────────────────────────────────────────────── --}}
     @if ($ligneBudgetaire)
-
-        {{-- Notice snapshot --}}
-        @if ($engagement->snapshot_disponible_avant !== null)
-            <div class="snapshot-notice">
-                📌 Montants figés à la date d'engagement
-                ({{ \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') }})
-                — indépendants des engagements ultérieurs sur cette ligne.
-            </div>
-        @endif
 
         <div class="ligne-montant">
             <div class="lm-label">Dotation initiale :</div>

@@ -56,6 +56,8 @@ class Engagement extends Model
         'date_validation' => 'datetime',
         'montant_engage'  => 'decimal:2',
         'exercice'        => 'integer',
+        'snapshot_modifications' => 'array',
+        'snapshot_fige_le'       => 'datetime',
     ];
 
     /**
@@ -360,6 +362,28 @@ class Engagement extends Model
     {
         // Couvre 'App\Models\BonCommande' ET l'alias 'bon_commande'
         return $query->whereIn('engageable_type', static::formesDuType((string) $type));
+    }
+
+    // =========================================================
+    // ÉTAT ATTESTÉ PAR LE PAPIER
+    // =========================================================
+
+    /**
+     * La borne chronologique d'un document : le certificat d'engagement et l'ordonnance
+     * de paiement attestent l'état de la ligne AU JOUR DE L'ENGAGEMENT, pas au jour où
+     * l'on ré-imprime. Sans cette borne, un virement passé quatre mois plus tard
+     * réécrivait un papier déjà visé et timbré.
+     *
+     * `endOfDay()` : les mouvements du jour même de l'engagement sont déjà dans le
+     * papier, puisqu'ils étaient en base quand il a été dressé.
+     */
+    public function dateEmission(): \Illuminate\Support\Carbon
+    {
+        // `date_engagement` est NOT NULL en base ; `created_at` ne couvre qu'un modèle
+        // non encore enregistré, par exemple un aperçu dressé avant sauvegarde.
+        return \Illuminate\Support\Carbon::parse(
+            $this->date_engagement ?? $this->created_at ?? now()
+        )->endOfDay();
     }
 
     // =========================================================

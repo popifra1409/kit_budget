@@ -12,6 +12,7 @@
 5. [Sécurisation](#sécurisation)
 6. [Maintenance et monitoring](#maintenance)
 7. [Haute disponibilité](#haute-disponibilité)
+8. [Déployer une mise à jour — runbook](#-partie-12--déployer-une-mise-à-jour-runbook)
 
 ---
 
@@ -1012,6 +1013,168 @@ VACUUM ANALYZE;
 
 ---
 
+## 🚚 PARTIE 12 : Déployer une mise à jour (runbook)
+
+Cette partie complète l'installation : elle décrit comment faire passer une évolution du
+code en production sans perdre de données et sans fenêtre d'incohérence. Les commandes
+sont celles d'un poste PowerShell en administrateur.
+
+### Étape 12.1 : La règle d'ordre
+
+**Une migration s'applique avant le code qui en dépend, jamais après.**
+
+Un ajout de colonnes facultatives est compatible avec l'ancien code : il les ignore.
+L'inverse ne l'est pas. Dès qu'un observateur, un modèle ou un gabarit lit une colonne
+qui n'existe pas encore, l'écran d'enregistrement part en exception 500 — et l'enregistrement
+est à moitié fait. C'est le cas du gel des états imprimés (`2026_11_04_000014_…`, sept
+colonnes + `EngagementObserver`) : sans la migration, **plus aucun engagement ne peut être créé**.
+
+D'où l'ordre, toujours : sauvegarde → fermeture → code → migration → traitement des
+données → caches → réouverture → contrôle.
+
+### Étape 12.2 : Sauvegarde et état réel de la base
+
+```powershell
+cd C:\inetpub\wwwroot\gestion-budget
+
+# 1. Sauvegarde, avec le script de l'étape 9.3
+& C:\Scripts\backup-postgres.ps1
+Get-ChildItem D:\Backups\PostgreSQL -Filter "*.backup" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+# 2. Ce qui va VRAIMENT s'appliquer — à lire avant de continuer
+php artisan migrate:status
+```
+
+`migrate:status` est l'étape qui compte : `php artisan migrate --force` applique **tout ce
+qui est pending**, c'est-à-dire le contenu de la branche, pas seulement la migration visée.
+Un commit de module (marchés publics, financier…) embarque ses propres tables. Si la liste
+annoncée ne correspond pas à ce qui devait partir, on arrête là plutôt que de dérouler.
+
+### Étape 12.3 : Fenêtre de maintenance
+
+```powershell
+php artisan down --render="errors::503" --retry=10
+```
+
+Le `--retry` affiche un « réessayez dans 10 minutes » plutôt qu'une page blanche. La
+fenêtre dure le temps des étapes 12.4 à 12.7 ; sur une mise à jour de ce calibre, comptez
+cinq à dix minutes, l'essentiel étant la reprise des écritures de données.
+
+### Étape 12.4 : Code et dépendances
+
+```powershell
+git log --oneline -1          # NOTER ce SHA : c'est où l'on revient si la mise à jour échoue
+
+git fetch origin
+git checkout release
+git pull --ff-only origin release
+git log --oneline -3
+
+composer install --optimize-autoloader --no-dev
+```
+
+`--ff-only` refuse un pull qui aurait divergé — dans ce cas on cherche, on ne force pas.
+
+### Étape 12.5 : Schéma
+
+```powershell
+php artisan migrate --force
+php artisan migrate:status    # plus aucune ligne Pending
+```
+
+### Étape 12.6 : Traitement des données existantes
+
+Les nouvelles règles qui écrivent dans des colonnes neuves ne valent que pour les
+documents d'après : ceux déjà en base ont besoin d'un backfill. **Toujours un aperçu
+sans écriture avant le vrai run**, et on compare les chiffres à ceux annoncés par la
+recette, pas à ceux d'une base de développement.
+
+```powershell
+# Gel des états imprimés (certificats d'engagement, ordonnances de paiement)
+php artisan engagements:fix-snapshots --sans-ecrire    # annonce, n'écrit rien
+php artisan engagements:fix-snapshots                  # gèle
+
+# Référentiels du module marchés — firstOrCreate, donc ré-exécutable sans écraser une saisie
+php artisan db:seed --class=TypesProcedureSeeder
+php artisan db:seed --class=TypesContratSeeder
+php artisan db:seed --class=CategoriesMarcheSeeder
+php artisan db:seed --class=ElementsEvaluationDaoSeeder
+php artisan db:seed --class=TypesOrdreServiceSeeder
+```
+
+Deux garde-fous déjà dans le code : `engagements:fix-snapshots` sort en code 1 si les
+colonnes manquent, et `--forcer` n'est **jamais** un réflexe de déploiement — il reposerait
+des gels déjà posés et effacerait la trace de ce qui a été reconstruit.
+
+### Étape 12.7 : Caches
+
+```powershell
+php artisan filament:clear-cached-components
+php artisan cache:clear
+php artisan view:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan event:cache
+```
+
+`view:clear` n'est pas décoratif : Filament et Blade mettent les gabarits en cache, un
+gabarit PDF modifié continue de sortir l'ancienne version sans lui. Si un écran garde un
+comportement d'avant malgré ça, l'OPcache de FastCGI est en cause :
+
+```powershell
+iisreset
+```
+
+### Étape 12.8 : Réouverture et contrôle
+
+```powershell
+php artisan up
+Get-Content storage\logs\laravel.log -Tail 50
+```
+
+Le contrôle ne se limite pas à « le site répond » :
+
+- relancer l'aperçu de la commande de données — il doit annoncer **0 à écrire** ;
+- ouvrir une fiche métier et vérifier une valeur connue ;
+- pour le gel, **ré-imprimer un document déjà visé avant la mise à jour** : il doit sortir
+  les chiffres du papier signé, quand bien même l'écran de suivi de la même ligne
+  budgétaire affiche l'état du jour. Ces deux valeurs sont censées différer ;
+- créer un brouillon, l'enregistrer, l'annuler, pour prouver que le cycle d'écriture vit.
+
+### Étape 12.9 : Retour arrière
+
+```powershell
+# Code : revenir au SHA d'avant, puis refaire les caches de l'étape 12.7
+git checkout <SHA_précédent>
+php artisan optimize:clear
+
+# La migration, elle, reste en place
+```
+
+**On ne déroule pas `migrate:rollback` après un backfill.** Le `down()` de la migration
+supprime les colonnes, donc les données qui y ont été écrites. Les colonnes additionnelles
+sont silencieuses pour l'ancien code : on les laisse et on les reprend à la mise à jour
+suivante. Une annulation complète passe par la sauvegarde de l'étape 12.2 :
+
+```powershell
+php artisan down
+& "C:\Program Files\PostgreSQL\14\bin\pg_restore.exe" -U budget_user -d gestion_budget --clean --if-exists D:\Backups\PostgreSQL\<fichier>.backup
+php artisan up
+```
+
+Trois avertissements, dans l'ordre où ils font mal : `--clean` **droppe** les objets avant de
+les recréer — c'est le rétablissement complet de la sauvegarde, pas un rustinage ; l'app doit
+être `down`, sinon les connexions en cours font échouer les drops ; et tout ce qui a été saisi
+après la sauvegarde est perdu. C'est le geste qui annule une mise à jour ratée, pas celui qui
+corrige un chiffre.
+
+`git checkout <SHA_précédent>` place la tête en **detached HEAD** : c'est voulu, mais un
+`git pull` y est sans effet. Pour revenir sur la branche, `git checkout release` avant la
+mise à jour suivante.
+
+---
+
 ## ✅ Checklist finale
 ```
 ☐ Windows Server 2016/2019 installé
@@ -1037,6 +1200,8 @@ VACUUM ANALYZE;
 ☐ Monitoring configuré
 ☐ Tests d'accès réussis
 ☐ Documentation remise à l'équipe IT
+☐ Runbook de mise à jour connu (PARTIE 12) : la migration précède le code qui la lit
+☐ Sauvegarde d'avant mise à jour vérifiée avant tout `migrate --force`
 ```
 
 ---

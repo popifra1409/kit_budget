@@ -89,68 +89,22 @@ $nomenclature = $engagement->nomenclaturePrincipale;
 $numeroBca = $donnees['numero_bca'] ?? $numeroDoc ?? '—';
 
 // ── Ligne budgétaire et montants ──────────────────────────
-$ligneBudgetaire = null;
-$dotationInitiale = 0;
-$budgetRectifie = 0;
-$disponibleAvant = 0;
-$disponibleApres = 0;
-$montantEngage = (float) ($engagement->montant_engage ?? 0);
+// L'état imprimé est celui du jour de l'engagement (source unique, partagée avec le
+// certificat officiel et l'ordonnance) : ni le budget rectifié d'aujourd'hui, ni les
+// seuls collectifs de dépense — les virements y passaient aussi, à leur date.
+$etatLigne = app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
+    ->etatPourEngagement($engagement);
 
-if ($nomenclature) {
-$ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-->where('nomenclature_id', $nomenclature->id)
-->first();
+$ligneBudgetaire   = $etatLigne['ligne'];
+$dotationInitiale  = $etatLigne['dotation_initiale'];
+$budgetRectifie    = $etatLigne['dotation_finale'];
+$collectifsLigne   = $etatLigne['modifications'];
+$virementsEntrants = $etatLigne['virements_entrants'];
+$virementsSortants = $etatLigne['virements_sortants'];
+$disponibleAvant   = $etatLigne['disponible_avant'];
+$disponibleApres   = $etatLigne['disponible_apres'];
+$montantEngage     = (float) ($engagement->montant_engage ?? 0);
 
-if ($ligneBudgetaire) {
-$dotationInitiale = (float) ($ligneBudgetaire->budget_initial
-?? $ligneBudgetaire->montant_initial
-?? 0);
-
-$virementsEntrants = (float) ($ligneBudgetaire->virements_entrants ?? 0);
-$virementsSortants = (float) ($ligneBudgetaire->virements_sortants ?? 0);
-
-$budgetRectifie = (float) ($ligneBudgetaire->budget_rectifie
-?? ($dotationInitiale + $virementsEntrants - $virementsSortants));
-
-// ✅ AJOUT — Collectifs budgétaires adoptés ayant modifié cette ligne.
-//    Tous les collectifs adoptés, mouvements actifs uniquement (les mouvements annulés sont exclus).
-$collectifsLigne = \App\Models\MouvementCollectif::query()
-    ->where(function ($q) use ($ligneBudgetaire) {
-        $q->where('ligne_depense_id', $ligneBudgetaire->id)
-          ->orWhere('nouvelle_ligne_depense_id', $ligneBudgetaire->id);
-    })
-    ->where(fn ($q) => $q->whereNull('statut')->orWhere('statut', 'actif'))
-    ->whereNull('date_annulation')
-    ->whereHas('collectif', fn ($q) => $q->where('statut', 'adopte'))
-    ->with('collectif')
-    ->orderBy('created_at')
-    ->get();
-
-// ✅ PRIORITÉ 1 : snapshots figés au moment de l'engagement
-// Ces valeurs ne changent jamais même après de nouveaux engagements
-if ($engagement->snapshot_disponible_avant !== null) {
-
-$dotationInitiale = (float) ($engagement->snapshot_budget_initial ?? $dotationInitiale);
-$budgetRectifie = (float) ($engagement->snapshot_budget_rectifie ?? $budgetRectifie);
-$disponibleAvant = (float) $engagement->snapshot_disponible_avant;
-$disponibleApres = (float) $engagement->snapshot_disponible_apres;
-
-} else {
-// ✅ FALLBACK : recalcul chronologique pour anciens engagements
-// Utiliser '<' au lieu de '!=' pour n'inclure QUE les antérieurs
-    // Cela garantit la stabilité même sans snapshot
-    $totalEngageAvant=\App\Models\Engagement::withoutGlobalScope('exercice')
-    ->where('budget_id', $ligneBudgetaire->budget_id)
-    ->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
-    ->where('id', '<', $engagement->id)
-        ->whereIn('statut', ['provisoire', 'definitif'])
-        ->sum('montant_engage');
-
-        $disponibleAvant = $budgetRectifie - $totalEngageAvant;
-        $disponibleApres = $disponibleAvant - $montantEngage;
-        }
-        }
-        }
 
         // ── Hiérarchie budgétaire ─────────────────────────────────
         $tache = null;
@@ -304,33 +258,25 @@ $disponibleApres = (float) $engagement->snapshot_disponible_apres;
 
         @if ($ligneBudgetaire)
 
-        {{-- ✅ Notice snapshot — affichée uniquement si snapshot disponible --}}
-        @if ($engagement->snapshot_disponible_avant !== null)
-        <div class="snapshot-notice">
-            📌 Montants figés à la date d'engagement
-            ({{ \Carbon\Carbon::parse($engagement->date_engagement)->format('d/m/Y') }})
-            — indépendants des engagements ultérieurs sur cette ligne.
-        </div>
-        @endif
-
         <div class="info-line">
             <strong>DOTATION INITIALE :</strong>
             {{ number_format($dotationInitiale, 0, ',', ' ') }} F CFA
         </div>
 
-        {{-- ✅ AJOUT — Collectifs budgétaires adoptés ayant modifié la ligne --}}
-        @if (isset($collectifsLigne) && $collectifsLigne->isNotEmpty())
-            @foreach ($collectifsLigne as $index => $mouvement)
+        {{-- Modifications de la ligne avant l'engagement : collectifs adoptés et virements --}}
+        @if ($collectifsLigne->isNotEmpty())
+            @foreach ($collectifsLigne as $index => $modification)
             <div class="info-line">
-                <strong>COLLECTIF BUDGÉTAIRE {{ $collectifsLigne->count() > 1 ? $index + 1 : '' }}</strong>
-                ({{ $mouvement->collectif?->numero }}@if ($mouvement->collectif?->date_adoption) du {{ \Carbon\Carbon::parse($mouvement->collectif->date_adoption)->format('d/m/Y') }}@endif) :
-                {{ $mouvement->montant_modification >= 0 ? '+' : '' }}{{ number_format($mouvement->montant_modification, 0, ',', ' ') }} F CFA
+                <strong>{{ strtoupper($modification['origine']) }} {{ $collectifsLigne->count() > 1 ? $index + 1 : '' }}</strong>
+                ({{ $modification['reference'] }}@if ($modification['date']) du {{ $modification['date']->format('d/m/Y') }}@endif)
+                @if ($modification['contrepartie']) — {{ $modification['montant'] >= 0 ? 'depuis' : 'vers' }} {{ $modification['contrepartie'] }}@endif :
+                {{ $modification['montant'] >= 0 ? '+' : '' }}{{ number_format($modification['montant'], 0, ',', ' ') }} F CFA
             </div>
             @endforeach
 
             <div class="info-line">
-                <strong>DOTATION APRÈS COLLECTIF{{ $collectifsLigne->count() > 1 ? 'S' : '' }} :</strong>
-                {{ number_format($dotationInitiale + $collectifsLigne->sum('montant_modification'), 0, ',', ' ') }} F CFA
+                <strong>DOTATION APRÈS MODIFICATIONS :</strong>
+                {{ number_format($dotationInitiale + $collectifsLigne->sum('montant'), 0, ',', ' ') }} F CFA
             </div>
         @endif
 

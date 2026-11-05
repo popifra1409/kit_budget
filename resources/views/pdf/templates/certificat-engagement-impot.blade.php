@@ -19,39 +19,23 @@ $numeroBca = $engagement->reference_document
 ?? $engagement->engageable?->numero
 ?? '—';
 
-// ── Ligne budgétaire ──────────────────────────────────
-$ligneBudgetaire = null;
-$dotationInitiale = 0;
-$disponibleAvant = 0;
-$disponibleApres = 0;
+// ── Ligne budgétaire et montants ──────────────────────────
+// L'état que le papier imprime est celui du jour de l'engagement, par la même source
+// que le certificat : le budget rectifié de la ligne change à chaque virement, un
+// document déjà visé ne doit pas le suivre.
+$etatLigne = app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
+    ->etatPourEngagement($engagement);
 
-if ($nomenclature) {
-$ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-->where('nomenclature_id', $nomenclature->id)
-->first();
+$ligneBudgetaire   = $etatLigne['ligne'];
+$dotationInitiale  = $etatLigne['dotation_initiale'];
+$budgetRectifie    = $etatLigne['dotation_finale'];
+$collectifsLigne   = $etatLigne['modifications'];
+$virementsEntrants = $etatLigne['virements_entrants'];
+$virementsSortants = $etatLigne['virements_sortants'];
+$disponibleAvant   = $etatLigne['disponible_avant'];
+$disponibleApres   = $etatLigne['disponible_apres'];
+$montantEngage     = (float) ($engagement->montant_engage ?? 0);
 
-if ($ligneBudgetaire) {
-$dotationInitiale = $ligneBudgetaire->budget_initial
-?? $ligneBudgetaire->montant_initial
-?? 0;
-
-$virementsEntrants = $ligneBudgetaire->virements_entrants ?? 0;
-$virementsSortants = $ligneBudgetaire->virements_sortants ?? 0;
-
-$budgetRectifie = $ligneBudgetaire->budget_rectifie
-?? ($dotationInitiale + $virementsEntrants - $virementsSortants);
-
-$totalEngageAvant = \App\Models\Engagement::where('budget_id', $ligneBudgetaire->budget_id)
-->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
-->where('id', '!=', $engagement->id)
-->whereIn('statut', ['provisoire', 'definitif'])
-->sum('montant_engage');
-
-$disponibleAvant = $budgetRectifie - $totalEngageAvant;
-$montantEngage = (float) ($engagement->montant_engage ?? 0);
-$disponibleApres = $disponibleAvant - $montantEngage;
-}
-}
 
 // ── Hiérarchie budgétaire ─────────────────────────────
 $tache = $activite = $action = $programme = $sousProgramme = $objectif = null;

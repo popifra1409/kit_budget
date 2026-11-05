@@ -11,47 +11,23 @@ $engagement = $ordonnance->engagement;
 $nomenclature = $engagement->nomenclaturePrincipale;
 $documentSource = $engagement?->engageable;
 
-// ── Ligne budgétaire et montants disponibles ──────────────
-$ligneBudgetaire = null;
-$dotationInitiale = 0;
-$virementsEntrants = 0;
-$virementsSortants = 0;
-$budgetRectifie = 0;
-$disponibleAvant = 0;
-$disponibleApres = 0;
+// ── Ligne budgétaire et montants ──────────────────────────
+// L'état que le papier imprime est celui du jour de l'engagement, par la même source
+// que le certificat : le budget rectifié de la ligne change à chaque virement, un
+// document déjà visé ne doit pas le suivre.
+$etatLigne = app(\App\Services\Budget\HistoriqueLigneBudgetaireService::class)
+    ->etatPourEngagement($engagement);
 
-if ($nomenclature) {
-$ligneBudgetaire = \App\Models\LigneBudgetaire::where('budget_id', $engagement->budget_id)
-->where('nomenclature_id', $nomenclature->id)
-->first();
+$ligneBudgetaire   = $etatLigne['ligne'];
+$dotationInitiale  = $etatLigne['dotation_initiale'];
+$budgetRectifie    = $etatLigne['dotation_finale'];
+$collectifsLigne   = $etatLigne['modifications'];
+$virementsEntrants = $etatLigne['virements_entrants'];
+$virementsSortants = $etatLigne['virements_sortants'];
+$disponibleAvant   = $etatLigne['disponible_avant'];
+$disponibleApres   = $etatLigne['disponible_apres'];
+$montantEngage     = (float) ($engagement->montant_engage ?? 0);
 
-if ($ligneBudgetaire) {
-$dotationInitiale = (float) ($ligneBudgetaire->budget_initial
-?? $ligneBudgetaire->montant_initial ?? 0);
-$virementsEntrants = (float) ($ligneBudgetaire->virements_entrants ?? 0);
-$virementsSortants = (float) ($ligneBudgetaire->virements_sortants ?? 0);
-$budgetRectifie = (float) ($ligneBudgetaire->budget_rectifie
-?? ($dotationInitiale + $virementsEntrants - $virementsSortants));
-$montantEngage = (float) ($engagement->montant_engage ?? 0);
-
-if ($engagement->snapshot_disponible_avant !== null) {
-$dotationInitiale = (float) ($engagement->snapshot_budget_initial ?? $dotationInitiale);
-$budgetRectifie = (float) ($engagement->snapshot_budget_rectifie ?? $budgetRectifie);
-$disponibleAvant = (float) $engagement->snapshot_disponible_avant;
-$disponibleApres = (float) $engagement->snapshot_disponible_apres;
-} else {
-$totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
-->where('budget_id', $ligneBudgetaire->budget_id)
-->where('nomenclature_principale_id', $ligneBudgetaire->nomenclature_id)
-->where('id', '<', $engagement->id)
-    ->whereIn('statut', ['provisoire', 'definitif'])
-    ->sum('montant_engage');
-
-    $disponibleAvant = $budgetRectifie - $totalEngageAvant;
-    $disponibleApres = $disponibleAvant - $montantEngage;
-    }
-    }
-    }
 
     // ── Nomenclature ──────────────────────────────────────────
     if ($engagement) {
@@ -621,13 +597,6 @@ $totalEngageAvant = \App\Models\Engagement::withoutGlobalScope('exercice')
                                     </td>
                                     <td>
                                         {{ number_format($disponibleAvant, 0, ',', ' ') }} F CFA
-                                        @if ($engagement->snapshot_disponible_avant !== null)
-                                        <div class="snapshot-notice">
-                                            📌 Figé au
-                                            {{ \Carbon\Carbon::parse($engagement->date_engagement)
-                                            ->format('d/m/Y') }}
-                                        </div>
-                                        @endif
                                     </td>
                                 </tr>
                                 @endif

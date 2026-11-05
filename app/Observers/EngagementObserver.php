@@ -3,37 +3,45 @@
 namespace App\Observers;
 
 use App\Models\Engagement;
-use App\Models\LigneBudgetaire;
+use App\Services\Budget\HistoriqueLigneBudgetaireService;
 
+/**
+ * Le gel à l'émission : copier l'état de la ligne au moment où le document naît.
+ *
+ * La coupure chronologique (volet 1) reconstruit l'état du jour du papier à partir de ce
+ * que la base en dit encore. Elle ne peut pas deviner un engagement que
+ * Engagement::annuler() a effacé en forceDelete(), ni un virement re-daté quatre mois
+ * après le visa. Ce gel-là est la copie du papier lui-même : il ne se recalcule plus.
+ *
+ * Deux moments, pas un de plus :
+ *  - `created()` : l'identifiant vient d'être connu, et « engagé avant » se trie sur
+ *    (date, identifiant) en s'excluant soi-même. À `creating()`, le document n'aurait
+ *    pas de place dans ce tri.
+ *  - `updating()` : l'état se reprend quand le document change de consistance — budget,
+ *    ligne, jour, montant. Rien d'autre ne le défait : poser un visa, solder, corriger
+ *    une observation ne doit pas faire bouger un chiffre déjà signé.
+ *
+ * Le gel s'écrit sans événements ni journal d'activité : ce n'est pas une décision de
+ * gestion, c'est la trace de l'état. `snapshot_fige_le` dit laquelle des deux.
+ */
 class EngagementObserver
 {
-    public function creating(Engagement $engagement): void
+    public function created(Engagement $engagement): void
     {
-        // Ne pas écraser si déjà rempli
-        if ($engagement->snapshot_disponible_avant !== null) return;
+        app(HistoriqueLigneBudgetaireService::class)->geler($engagement);
+    }
 
-        $lb = LigneBudgetaire::where('budget_id', $engagement->budget_id)
-            ->where('nomenclature_id', $engagement->nomenclature_principale_id)
-            ->first();
+    public function updating(Engagement $engagement): void
+    {
+        $historique = app(HistoriqueLigneBudgetaireService::class);
 
-        if (!$lb) return;
+        $gele = $historique->estGele($engagement);
+        $defait = $engagement->isDirty(HistoriqueLigneBudgetaireService::CHAMPS_QUI_GELENT);
 
-        $budgetRectifie = (float) ($lb->budget_rectifie ?? $lb->budget_initial);
-        $montant        = (float) ($engagement->montant_engage ?? 0);
-
-        // Total engagé AVANT cet engagement (tous les engagements existants)
-        $totalEngageAvant = Engagement::withoutGlobalScope('exercice')
-            ->where('budget_id', $engagement->budget_id)
-            ->where('nomenclature_principale_id', $engagement->nomenclature_principale_id)
-            ->whereIn('statut', ['provisoire', 'definitif'])
-            ->sum('montant_engage');
-
-        $disponibleAvant = $budgetRectifie - $totalEngageAvant;
-
-        $engagement->snapshot_budget_initial    = $lb->budget_initial;
-        $engagement->snapshot_budget_rectifie   = $budgetRectifie;
-        $engagement->snapshot_total_engage_avant = $totalEngageAvant;
-        $engagement->snapshot_disponible_avant   = $disponibleAvant;
-        $engagement->snapshot_disponible_apres   = $disponibleAvant - $montant;
+        if (!$gele || $defait) {
+            // Rempli ici, écrit par l'UPDATE en cours : `updating()` est déclenché avant
+            // que le modèle ne calcule ses colonnes sales.
+            $historique->poserGel($engagement);
+        }
     }
 }
