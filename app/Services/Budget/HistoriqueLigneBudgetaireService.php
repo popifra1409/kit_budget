@@ -9,6 +9,7 @@ use App\Models\MouvementCollectif;
 use App\Models\VirementBudgetaire;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Historique des modifications d'une ligne budgétaire depuis sa dotation initiale.
@@ -54,6 +55,15 @@ class HistoriqueLigneBudgetaireService
         'date_engagement',
         'montant_engage',
     ];
+
+    /** Événements du journal d'activité qui racontent la disparition d'un engagement. */
+    public const EVENEMENTS_RETRAIT = ['deleted', 'annuler'];
+
+    /** Retraits journalisés réduits à ce qui est reportable sur une ligne — chargé une fois. */
+    protected ?Collection $retraits = null;
+
+    /** Vies en cours des engagements retirés, par numéro : l'index du dédoublonnage. */
+    protected ?Collection $viesEnCours = null;
 
     /**
      * @param  ?Carbon  $jusquau  Borne chronologique : null = état du jour (écrans,
@@ -248,6 +258,137 @@ class HistoriqueLigneBudgetaireService
     }
 
     /**
+     * Les pièces retirées de la ligne, telles que le journal d'activité les raconte.
+     *
+     * Engagement::annuler() et la suppression d'un engagement sont des forceDelete() : la
+     * table ne garde plus la trace d'un papier qui a pourtant occupé la ligne un moment, et
+     * qu'un document signé à ce moment-là a compté. activity_log, lui, conserve le payload
+     * de la suppression.
+     *
+     * Une pièce retirée compte pour un document quand sa fenêtre [apparition, retrait)
+     * couvre la date de ce document. Sans borne — écran vivant, tableau de bord — elle ne
+     * compte pas : elle n'occupe plus la ligne aujourd'hui.
+     *
+     * Ce que le journal ne sait pas dire, sur les 505 retraits enregistrés :
+     *  - 292 ne portent pas la ligne (payload minimal, ou événement « annuler », qui n'a
+     *    qu'un montant) : perdus, faute de savoir où les porter ;
+     *  - 213 portent la ligne mais jamais le budget ; la seule nomenclature du parc portée
+     *    par deux budgets est donc écartée, elle ne serait rattachable à aucune ligne ;
+     *  - date_engagement n'apparaît dans aucun payload : l'apparition est date_validation,
+     *    à défaut le premier événement du même enregistrement. C'est une date système, pas
+     *    la date budgétaire du papier.
+     *
+     * @return Collection<int, object{numero: ?string, ligne_id: int, montant: float, depuis_le: Carbon, retire_le: Carbon}>
+     */
+    public function piecesRetirees(LigneBudgetaire $ligne, ?Carbon $jusquau = null): Collection
+    {
+        if ($jusquau === null) {
+            return collect();
+        }
+
+        return $this->retraitsJournalises()
+            ->where('ligne_id', (int) $ligne->nomenclature_id)
+            ->reject(fn($retrait) => $this->dejaEnVie($retrait))
+            ->filter(fn($retrait) => $retrait->depuis_le->lte($jusquau)
+                && $retrait->retire_le->gt($jusquau))
+            ->values();
+    }
+
+    /**
+     * Les retraits reportables sur une ligne, une fois par instance du service.
+     *
+     * @return Collection<int, object{numero: ?string, ligne_id: int, montant: float, depuis_le: Carbon, retire_le: Carbon}>
+     */
+    public function retraitsJournalises(): Collection
+    {
+        if ($this->retraits !== null) {
+            return $this->retraits;
+        }
+
+        $retraits = DB::table('activity_log')
+            ->where('subject_type', 'engagement')
+            ->whereIn('event', self::EVENEMENTS_RETRAIT)
+            ->orderBy('created_at')
+            ->get(['subject_id', 'description', 'properties', 'created_at']);
+
+        // Faute de date_engagement au payload, le premier événement du même enregistrement
+        // tient lieu d'apparition. Une agrégation, pas un second balayage des payloads.
+        $apparitions = DB::table('activity_log')
+            ->where('subject_type', 'engagement')
+            ->selectRaw('subject_id, min(created_at) as apparut')
+            ->groupBy('subject_id')
+            ->pluck('apparut', 'subject_id');
+
+        $budgetsParNomenclature = LigneBudgetaire::query()
+            ->selectRaw('nomenclature_id, count(distinct budget_id) nb_budgets')
+            ->groupBy('nomenclature_id')
+            ->pluck('nb_budgets', 'nomenclature_id');
+
+        return $this->retraits = $retraits
+            ->map(function ($e) use ($apparitions, $budgetsParNomenclature) {
+                $proprietes = (array) json_decode((string) $e->properties, true);
+                $old = (array) ($proprietes['old'] ?? []);
+
+                $ligne = isset($old['nomenclature_principale_id'])
+                    ? (int) $old['nomenclature_principale_id'] : null;
+                $montant = $old['montant_engage'] ?? ($proprietes['details']['montant'] ?? null);
+                $apparition = $this->date($old['date_validation'] ?? null)
+                    ?? $this->date($apparitions->get($e->subject_id));
+
+                if ($ligne === null || $montant === null || $apparition === null
+                    || (int) $budgetsParNomenclature->get($ligne, 1) > 1) {
+                    return null;
+                }
+
+                return (object) [
+                    'numero'    => $old['numero']
+                        ?? $this->numeroDans((string) ($proprietes['description'] ?? $e->description)),
+                    'ligne_id'  => $ligne,
+                    'montant'   => (float) $montant,
+                    'depuis_le' => $apparition,
+                    'retire_le' => $this->date($e->created_at),
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * Une pièce retirée puis recréée sous le même numéro est déjà portée par l'engagé tant
+     * que sa vie en cours y figure : dans ce cas, ne rien réintégrer.
+     */
+    private function dejaEnVie(object $retrait): bool
+    {
+        if ($retrait->numero === null) {
+            return false;
+        }
+
+        return $this->viesEnCours()
+            ->get($retrait->numero, collect())
+            ->contains(fn($vie) => (int) $vie->nomenclature_principale_id === $retrait->ligne_id
+                && $vie->date_engagement !== null
+                && $vie->date_engagement->lt($retrait->retire_le));
+    }
+
+    private function viesEnCours(): Collection
+    {
+        if ($this->viesEnCours === null) {
+            $this->viesEnCours = Engagement::withoutGlobalScope('exercice')
+                ->whereIn('numero', $this->retraitsJournalises()->pluck('numero')->filter()->unique())
+                ->get(['numero', 'nomenclature_principale_id', 'date_engagement'])
+                ->groupBy('numero');
+        }
+
+        return $this->viesEnCours;
+    }
+
+    /** BE-DA26-00159, BE26-00001, BE-BCAC26-00003 : le numéro tel que la description le porte. */
+    private function numeroDans(string $description): ?string
+    {
+        return preg_match('/BE-[A-Z]{0,3}\d{2}-\d{3,6}|BE\d{2}-\d{3,6}/', $description, $m) ? $m[0] : null;
+    }
+
+    /**
      * Une modification regarde le papier quand elle est antérieure à sa borne. Une
      * modification non datable en sort : ce qu'on ne peut pas situer dans le temps ne
      * peut pas être attesté sur un document signé.
@@ -319,7 +460,8 @@ class HistoriqueLigneBudgetaireService
      *  - l'engagé avant : les engagements du même jour passent avant celui-ci dans
      *    l'ordre (date, identifiant) — l'ancien `id <` comparait des clés d'insertion,
      *    pas le calendrier ; un engagement soldé ou annulé depuis comptait ce jour-là,
-     *    il compte donc encore ;
+     *    il compte donc encore, et une pièce retirée depuis ce jour-là nous revient par
+     *    le journal d'activité (piecesRetirees()) ;
      *  - le disponible, qui en découle.
      */
     public function etatAuJourDuPapier(?Engagement $engagement): array
@@ -352,8 +494,8 @@ class HistoriqueLigneBudgetaireService
             ->where('id', '!=', $engagement->id)
             // Un engagement soldé, annulé ou retiré depuis était comptable le jour du
             // papier : il compte encore. (Un engagement « annulé » par
-            // Engagement::annuler() est forceDelete() : lui est irrécupérable, c'est ce
-            // que le gel posé par geler() doit couvrir.)
+            // Engagement::annuler() est forceDelete() : la table ne le montre plus, le
+            // journal d'activité si — c'est piecesRetirees() qui le replie ici.)
             ->whereIn('statut', ['provisoire', 'definitif', 'solde', 'annule'])
             ->where(fn($s) => $s->whereNull('date_annulation')
                 ->orWhere('date_annulation', '>', $dateEmission))
@@ -367,6 +509,10 @@ class HistoriqueLigneBudgetaireService
                       ->where('id', '<', $engagement->id);
                 }))
             ->sum('montant_engage');
+
+        // La pièce retirée avant le papier et ressuscitée depuis : absente de la somme
+        // ci-dessus, présente sur le document signé.
+        $engageAvant += (float) $this->piecesRetirees($ligne, $dateEmission)->sum('montant');
 
         $etat['total_engage_avant'] = $engageAvant;
         $etat['disponible_avant']   = $dotation - $engageAvant;

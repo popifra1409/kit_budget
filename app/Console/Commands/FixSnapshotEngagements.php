@@ -17,10 +17,11 @@ use Illuminate\Support\Facades\Schema;
  * porte la date du jour, et c'est ce qui permettra de distinguer, dans un recours, un
  * chiffre que le document a connu de un chiffre qu'on lui a rendu.
  *
- * La reconstruction a une limite, et le rapport doit la dire : un engagement passé par
- * Engagement::annuler() est en `forceDelete()`, donc absent du « engagé avant »
- * reconstitué. Un document retrouvé ainsi n'est pas faux, il est reconstruit — en cas de
- * doute, c'est le papier qu'il faut regarder, pas la base.
+ * La reconstruction a une limite, et le rapport doit la dire : un engagement annulé ou
+ * supprimé est en `forceDelete()`, donc absent du « engagé avant » — sauf quand le journal
+ * d'activité a gardé sa trace (Historique::piecesRetirees()). Les retraits que le journal
+ * ne sait ni dater ni placer restent perdus : un document retrouvé ainsi n'est pas faux, il
+ * est reconstruit — en cas de doute, c'est le papier qu'il faut regarder, pas la base.
  */
 class FixSnapshotEngagements extends Command
 {
@@ -49,7 +50,8 @@ class FixSnapshotEngagements extends Command
         $sansEcrire = (bool) $this->option('sans-ecrire');
         $max        = (int) $this->option('max');
 
-        $compte = ['gelés' => 0, 'déjà gelés' => 0, 'sans ligne' => 0, 'retrouvés' => 0, 'examinés' => 0];
+        $compte = ['gelés' => 0, 'déjà gelés' => 0, 'sans ligne' => 0, 'retrouvés' => 0,
+            'examinés' => 0, 'réintégrés' => 0];
 
         Engagement::withoutGlobalScope('exercice')->withTrashed()
             ->when($this->option('exercice'), fn($q, $annee) => $q->where('exercice', (int) $annee))
@@ -65,6 +67,8 @@ class FixSnapshotEngagements extends Command
 
                         continue;
                     }
+
+                    $engageAvantGel = $engagement->snapshot_total_engage_avant;
 
                     if (!$historique->poserGel($engagement)) {
                         $compte['sans ligne']++;
@@ -83,6 +87,13 @@ class FixSnapshotEngagements extends Command
                         - $this->dotationDuJour($engagement)) > 0.005) {
                         $compte['retrouvés']++;
                     }
+
+                    // Et ce que le journal de la ligne rend à l'engagé avant : une pièce
+                    // retirée depuis, que le papier signé avait comptée.
+                    if ($engageAvantGel !== null
+                        && (float) $engagement->snapshot_total_engage_avant > (float) $engageAvantGel + 0.005) {
+                        $compte['réintégrés']++;
+                    }
                 }
 
                 return true;
@@ -96,6 +107,7 @@ class FixSnapshotEngagements extends Command
                 ['Déjà gelés, laissés tels quels', $compte['déjà gelés']],
                 ['Sans ligne budgétaire — rien à geler', $compte['sans ligne']],
                 ["Dont l'état reconstitué diffère de l'état du jour", $compte['retrouvés']],
+                ['Dont une pièce retirée est réintégrée à l\'engagé avant', $compte['réintégrés']],
             ]
         );
 
