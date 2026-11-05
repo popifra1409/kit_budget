@@ -41,7 +41,7 @@
 
     // ✅ NOUVEAUX IMPÔTS : FEICOM et Redevance Audiovisuelle
     $montantFEICOM = $donnees['montant_feicom'] ?? 0;
-    $montantRedevanceAV = $donnees['montant_redevance_av'] ?? 0;
+    $montantRedevanceAV = $donnees['montant_redevance'] ?? 0;
 
     $autresRetenues = $donnees['autres_retenues'] ?? 0;
     $montantNet = $donnees['montant_net'] ?? 0;

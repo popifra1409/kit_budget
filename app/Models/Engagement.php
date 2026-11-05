@@ -713,6 +713,21 @@ class Engagement extends Model
     // =========================================================
     // CRÉATION DES ORDONNANCES DE PAIEMENT
     // =========================================================
+
+    /**
+     * Les montants tels que les ordonnances seront créées : le document source, puis la
+     * répartition sur la liquidation en cours d'ordonnancement. Le récapitulatif présenté
+     * avant l'action lit ce tableau, donc il ne peut plus promettre autre chose que ce que
+     * `creerOrdonnancesPaiement()` écrira.
+     */
+    public function donneesPourOrdonnancement(): array
+    {
+        $donnees = $this->extraireDonneesDocument(true);
+        $liquidation = $this->liquidationPourOrdonnancement();
+
+        return $liquidation ? $this->repartirPourLiquidation($donnees, $liquidation) : $donnees;
+    }
+
     public function creerOrdonnancesPaiement(?\App\Models\Liquidation $liquidation = null): array
     {
         if ($this->statut !== 'definitif') {

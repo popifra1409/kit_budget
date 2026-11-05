@@ -79,10 +79,9 @@ class ViewEngagement extends ViewRecord
                 })
                 ->modalContent(function ($record) {
                     $record->load(['engageable', 'beneficiaire']);
-                    $donnees = $record->extraireDonneesDocument();
                     return view('filament.modals.recap-ordonnances', [
                         'engagement' => $record,
-                        'donnees'    => $donnees,
+                        'donnees'    => $record->donneesPourOrdonnancement(),
                     ]);
                 })
                 ->modalWidth('3xl')

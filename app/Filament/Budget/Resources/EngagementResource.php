@@ -461,15 +461,11 @@ class EngagementResource extends Resource
                         ->requiresConfirmation()
                         ->modalHeading('Créer les ordonnances de paiement')
                         ->modalContent(function ($record) {
-                            $montantTotal = $record->montant_engage;
-                            $montantIR    = 0;
-                            if ($record->estBonCommande() && $record->engageable) $montantIR = $record->engageable->montant_ir ?? 0;
-                            elseif ($record->estDecision() && $record->engageable) $montantIR = $record->engageable->montant_ir ?? 0;
+                            $record->load(['engageable', 'beneficiaire']);
+
                             return view('filament.modals.recap-ordonnances', [
-                                'engagement'    => $record,
-                                'montant_total' => $montantTotal,
-                                'montant_ir'    => $montantIR,
-                                'montant_net'   => $montantTotal - $montantIR,
+                                'engagement' => $record,
+                                'donnees'    => $record->donneesPourOrdonnancement(),
                             ]);
                         })
                         ->action(function ($record) {

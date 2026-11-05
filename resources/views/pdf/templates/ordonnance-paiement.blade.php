@@ -135,7 +135,7 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
     'cnps' => $donneesEngagement['montant_cnps'] ?? 0,
     'irnc' => $donneesEngagement['montant_irnc'] ?? 0,
     'feicom' => $donneesEngagement['montant_feicom'] ?? 0,
-    'redevance_av' => $donneesEngagement['montant_redevance_av'] ?? 0,
+    'redevance_av' => $donneesEngagement['montant_redevance'] ?? 0,
     'autres' => $donneesEngagement['autres_retenues'] ?? 0,
     ];
     $montantTotalImpots = $detailImpots['ir'] + $detailImpots['tva']
