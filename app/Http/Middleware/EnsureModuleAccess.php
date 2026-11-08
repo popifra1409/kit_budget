@@ -30,6 +30,16 @@ class EnsureModuleAccess
         }
 
         if (!$user->can("access_module_{$moduleId}")) {
+            // Ce refus ne lève rien : il redirige. Sans appel explicite, la tentative ne
+            // laisserait aucune trace — c'est le chemin le plus direct pour qu'un agent
+            // essaye un module qui ne lui est pas ouvert.
+            \App\Models\ActivityLog::logAccesRefuse(
+                "module {$moduleId}",
+                $request->route()?->getName(),
+                null,
+                ['motif' => "permission access_module_{$moduleId} absente"]
+            );
+
             return redirect()->to('/portal')
                 ->with(
                     'module_access_denied',

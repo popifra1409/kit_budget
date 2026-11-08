@@ -29,6 +29,25 @@ return [
     // Les commandes de correction de donnees tracent deja elles-memes leurs operations.
     'journaliser_console' => env('AUDIT_CONSOLE', false),
 
+    /*
+    | Conservation du journal : les deux regles doivent rester coerentes entre elles.
+    |
+    | archivage_mois  age ou activity:archive bascule une entree dans activity_log_archives
+    | purge_jours     age ou logs:clean supprime definitivement une entree de la table active
+    |
+    | La purge ne peut jamais atteindre une entree plus vieille que son propre seuil avant
+    | que l'archivage ait pu la deplacer : sinon la duree de purge detruit la preuve au lieu
+    | de la conserver. C'est ce que verifie le garde-fou de ViderAnciensLogs.
+    |
+    | La duree de purge peut etre surchargee par etablissement (colonne
+    | duree_conservation_logs de parametres_structure) : la plus longue fait loi, la valeur
+    | de ce fichier n'est que le plancher quand aucun etablissement ne l'a renseigne.
+    */
+    'conservation' => [
+        'archivage_mois' => 6,
+        'purge_jours'    => 365,
+    ],
+
     // Champs jamais enregistres dans le journal (secrets, horodatages techniques)
     'champs_exclus' => [
         'password',
@@ -39,6 +58,13 @@ return [
         'created_at',
         'updated_at',
         'deleted_at',
+    ],
+
+    // Champs jamais enregistres, par prefixe : le gel des etats imprimes (snapshot_*)
+    // recopie ce que le papier dit deja. Ce n'est pas une decision de gestion, et sa
+    // valeur de verite se lit dans le champ metier qui l'a fait bouger.
+    'champs_exclus_prefixes' => [
+        'snapshot_',
     ],
 
     // Longueur maximale d'une valeur texte conservee dans le journal
@@ -197,7 +223,11 @@ return [
             'libelle' => 'Administration',
             'modeles' => [
                 'App\Models\User'                => 'Utilisateur',
-                'App\Models\Role'                => 'Rôle',
+                // Le morph map relie l'alias « role » au rôle Spatie (config/permission.php),
+                // et c'est lui que le écran Rôles journalise : App\Models\Role, qui ne sert
+                // qu'à l'alias « role_application », ne correspondait à aucune des 472 lignes
+                // du journal et laissait leur module vide.
+                'Spatie\Permission\Models\Role'   => 'Rôle',
                 'App\Models\Personnel'           => 'Personnel',
                 'App\Models\Service'             => 'Service',
                 'App\Models\Exercice'            => 'Exercice',

@@ -38,5 +38,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Les refus d'accès réellement opposés — `->authorize()` de Filament, `abort(403)`
+        // des contrôleurs — passent tous par là. C'est le seul point que les deux chemins
+        // traversent : les journaliser écran par écran en laisserait sortir le prochain
+        // fichier. `renderable` et non `reportable`, parce que le framework ne signale
+        // jamais ces deux exceptions (elles sont dans sa liste internalDontReport).
+        $exceptions->renderable(function (Throwable $e, Illuminate\Http\Request $request): void {
+            App\Models\ActivityLog::journaliserRefusOppose($e);
+        });
     })->create();

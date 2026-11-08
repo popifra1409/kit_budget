@@ -39,6 +39,7 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
     $tache = $activite = $action = $programme = $sousProgramme = $objectif = null;
     $codeProgramme = $codeSousProgramme = $codeAction = $codeActivite = '';
     $codeTache = $codeArticle = $codeParagraphe = $codeChapitre = '';
+    $libelleProgramme = $libelleSousProgramme = $libelleAction = $libelleActivite = '';
 
     if ($nomenclature) {
     $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
@@ -94,6 +95,11 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
     : substr($nomenclature->code, 0, 4);
     }
 
+    $libelleProgramme     = $programme?->libelle ?? '';
+    $libelleSousProgramme = $sousProgramme?->libelle ?? '';
+    $libelleAction        = $action?->libelle ?? '';
+    $libelleActivite      = $activite?->libelle ?? '';
+
     // ── Bénéficiaire ──────────────────────────────────────────
     $beneficiaire = null;
     if ($ordonnance->beneficiaire) {
@@ -108,6 +114,8 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
     $nomBeneficiaire = $beneficiaire->raison_sociale
     ?? ($beneficiaire->nom_complet
     ?? ($beneficiaire->name ?? 'N/A'));
+    $beneficiaireAdresse = $beneficiaire->adresse ?? '';
+    $beneficiaireVille   = $beneficiaire->ville ?? '';
 
     // ── Montants selon le type de document ───────────────────
     if ($engagement && $engagement->engageable) {
@@ -166,6 +174,53 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
     $banque = (float) ($documentSource->banque ?? 0);
     $billetage = (float) ($documentSource->billetage ?? 0);
     $aVentilation = ($banque > 0 || $billetage > 0);
+    }
+
+    // ── État imprimé : le gel de l'émission, avec repli sur le vif ───
+    // Le bloc budgétaire (dotation, collectifs, disponibles) continue de venir du gel
+    // du certificat par etatPourEngagement() : pas de seconde vérité sur le même
+    // circuit. Tout ce que l'ordonnance tape elle-même — montants, retenues,
+    // imputation, banque/billetage, bénéficiaire — sort de l'état posé à l'émission,
+    // pour qu'une ré-impression redise le papier qui a circulé.
+    $etatPapier = app(\App\Services\Budget\GelOrdonnancePaiementService::class)
+        ->etatPourImpression($ordonnance);
+
+    if ($etatPapier['gele']) {
+        $montantImputation  = $etatPapier['imputation'];
+        $montantBrut        = $etatPapier['brut'];
+        $montantNet         = $etatPapier['net'];
+        $montantTotalImpots = $etatPapier['retenu'];
+
+        $banque    = $etatPapier['banque'];
+        $billetage = $etatPapier['billetage'];
+        $aVentilation = ($banque > 0 || $billetage > 0);
+
+        $h = $etatPapier['hierarchie'];
+
+        $codeChapitre   = $h['chapitre'];
+        $codeParagraphe = $h['paragraphe'];
+        $codeArticle    = $h['article'];
+        $codeTache      = $h['tache'];
+        $codeActivite   = $h['activite'];
+        $codeAction     = $h['action'];
+        $codeProgramme  = $h['programme'];
+
+        $libelleProgramme     = $h['libelle_programme'];
+        $libelleSousProgramme = $h['libelle_sous_programme'];
+        $libelleAction        = $h['libelle_action'];
+        $libelleActivite      = $h['libelle_activite'];
+
+        // Le gel stocke le code brut du sous-programme : le « (12) » se recompose ici
+        // comme à l'émission. Ce qui dérive, c'est la source, pas le formatage.
+        $chiffresSousProgramme = preg_replace('/[^0-9]/', '', $h['sous_programme']);
+        $codeSousProgramme = $h['sous_programme'] === '' ? '' : ($chiffresSousProgramme !== ''
+            ? '(' . (int) $chiffresSousProgramme . ')'
+            : $h['sous_programme']);
+
+        $beneficiaireGele = $etatPapier['beneficiaire'];
+        $nomBeneficiaire  = ($beneficiaireGele['nom'] ?? '') !== '' ? $beneficiaireGele['nom'] : 'N/A';
+        $beneficiaireAdresse = $beneficiaireGele['adresse'] ?? '';
+        $beneficiaireVille   = $beneficiaireGele['ville'] ?? '';
     }
 
     // ── Pied de page : créateur et dates ─────────────────────
@@ -393,23 +448,23 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
                         </span>
                         @if ($codeSousProgramme)
                         <span style="font-weight:bold;">
-                            {{ $codeSousProgramme }} - {{ $sousProgramme->libelle ?? '' }}
+                            {{ $codeSousProgramme }} - {{ $libelleSousProgramme }}
                         </span>
                         @else
-                        {{ $codeProgramme }} - {{ $programme->libelle ?? '' }}
+                        {{ $codeProgramme }} - {{ $libelleProgramme }}
                         @endif
                     </div>
                     @endif
 
                     @if ($codeAction)
                     <div>• <span class="font-bold" style="font-size:7pt;">ACTION : </span>
-                        {{ $codeAction }} - {{ $action->libelle ?? '' }}
+                        {{ $codeAction }} - {{ $libelleAction }}
                     </div>
                     @endif
 
                     @if ($codeActivite)
                     <div>• <span class="font-bold" style="font-size:7pt;">ACTIVITÉ : </span>
-                        {{ $codeActivite }} - {{ $activite->libelle ?? '' }}
+                        {{ $codeActivite }} - {{ $libelleActivite }}
                     </div>
                     @endif
 
@@ -650,8 +705,8 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
                                                 font-weight:bold; min-height:20px;
                                                 line-height:1.1;">
                                             {{ $nomBeneficiaire }}
-                                            - {{ $beneficiaire->adresse ?? '' }}
-                                            - {{ $beneficiaire->ville   ?? '' }}
+                                            - {{ $beneficiaireAdresse }}
+                                            - {{ $beneficiaireVille }}
                                         </div>
                                     </td>
                                 </tr>

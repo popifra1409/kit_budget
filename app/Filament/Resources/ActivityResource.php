@@ -135,6 +135,8 @@ class ActivityResource extends Resource
                         'cloturer'      => 'success',
                         'retourner'     => 'warning',
                         'access_denied' => 'danger',
+                        'permissions_modifiees'  => 'warning',
+                        'permissions_attribuees' => 'success',
                         'restored'      => 'success',
                         'login_failed'  => 'danger',
                         'archivage'     => 'gray',
@@ -300,6 +302,9 @@ class ActivityResource extends Resource
                         'logout'        => '🔒 Déconnexion',
                         'access_denied' => '🚫 Accès refusé',
                         'login_failed'  => '⚠️ Échec de connexion',
+                        // ── Droits d'un rôle ────────────────
+                        'permissions_modifiees'  => '🔑 Droits modifiés',
+                        'permissions_attribuees' => '🔑 Droits accordés',
                         // ── Audit des données ──────────────
                         'restored'            => '♻️ Restauré',
                         'correction_donnees'  => '🛠️ Correction de données',
@@ -404,11 +409,12 @@ class ActivityResource extends Resource
                             ->badge()
                             ->color(fn($state) => match ($state) {
                                 'created', 'valider', 'login', 'marquer_payee', 'cloturer',
-                                'attribuer', 'homologuer'                                          => 'success',
+                                'attribuer', 'homologuer', 'permissions_attribuees'     => 'success',
                                 'updated', 'transformer', 'transmettre', 'publier_dao', 'evaluer',
                                 'emettre_ordre_service'                                            => 'info',
                                 'deleted', 'annuler', 'access_denied', 'rejeter'         => 'danger',
                                 'recuperer', 'desengager', 'devalider', 'retourner',
+                                'permissions_modifiees',
                                 'classer_manuellement', 'lever_decision', 'lever_attribution',
                                 'lever_homologation'                                               => 'warning',
                                 'ouvrir_plis'                                               => 'primary',

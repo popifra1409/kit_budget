@@ -11,6 +11,9 @@ class EditRole extends EditRecord
 {
     protected static string $resource = RoleResource::class;
 
+    /** Noms de permissions tels qu'attachés au rôle avant l'enregistrement en cours. */
+    protected array $permissionsAvant = [];
+
     /**
      * Actions d'en-tête
      */
@@ -62,6 +65,12 @@ class EditRole extends EditRecord
                     // Copier les permissions
                     $nouveauRole->syncPermissions($this->record->permissions);
 
+                    // Un rôle qui naît d'une copie accorde bel et bien des droits : la
+                    // trace doit être la même que sur l'écran de création.
+                    \App\Models\ActivityLog::journaliserDroitsDeRole($nouveauRole, [], [
+                        'duplique_de' => $this->record->name,
+                    ], nouveau: true);
+
                     Notification::make()
                         ->success()
                         ->title('Rôle dupliqué')
@@ -105,6 +114,20 @@ class EditRole extends EditRecord
     }
 
     /**
+     * Instantané des droits avant tout écriture.
+     *
+     * `CheckboxList::relationship()` déhydrate son état : la nouvelle liste ne passe jamais
+     * par $data, elle est synchronisée sur le pivot par Form::getState() lui-même — donc
+     * AVANT mutateFormDataBeforeSave, où la lecture ne rendrait plus que l'état d'après.
+     * beforeValidate est le premier hook appelé par EditRecord::save(), transaction ouverte
+     * mais pivot encore intact : c'est le seul point comparable.
+     */
+    protected function beforeValidate(): void
+    {
+        $this->permissionsAvant = $this->record->permissions()->pluck('permissions.name')->all();
+    }
+
+    /**
      * Modifier les données avant la sauvegarde
      */
     protected function mutateFormDataBeforeSave(array $data): array
@@ -140,16 +163,11 @@ class EditRole extends EditRecord
             ->body("Le rôle **{$role->name}** a été modifié avec succès")
             ->send();
 
-        // Log de l'activité
-        activity()
-            ->performedOn($role)
-            ->causedBy(auth()->user())
-            ->withProperties([
-                'niveau_hierarchique' => $role->niveau_hierarchique,
-                'permissions_count' => $role->permissions()->count(),
-                'users_count' => $role->users()->count(),
-            ])
-            ->log("Modification du rôle {$role->name}");
+        // Log de l'activité — avec le détail des cases, pas seulement le compteur
+        \App\Models\ActivityLog::journaliserDroitsDeRole($role, $this->permissionsAvant, [
+            'niveau_hierarchique' => $role->niveau_hierarchique,
+            'users_count'         => $role->users()->count(),
+        ]);
     }
 
     /**

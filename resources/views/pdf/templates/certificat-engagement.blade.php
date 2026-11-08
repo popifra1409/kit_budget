@@ -263,20 +263,87 @@ $montantEngage     = (float) ($engagement->montant_engage ?? 0);
             {{ number_format($dotationInitiale, 0, ',', ' ') }} F CFA
         </div>
 
-        {{-- Modifications de la ligne avant l'engagement : collectifs adoptés et virements --}}
+        {{-- Les mouvements qui ont touché la dotation tiennent sur une ligne. Le certificat
+             autorise un engagement, il n'est pas l'état des mouvements de la ligne : rendu
+             ligne à ligne, six collectifs mangeaient le tiers de la page. Rien n'est perdu
+             pour autant — le détail reste dans le gel (`snapshot_modifications`) et s'imprime
+             sur l'état des mouvements de crédits. --}}
         @if ($collectifsLigne->isNotEmpty())
-            @foreach ($collectifsLigne as $index => $modification)
+            @php
+                $nb    = $collectifsLigne->count();
+                $plus  = (float) $collectifsLigne->where('montant', '>=', 0)->sum('montant');
+                $moins = (float) $collectifsLigne->where('montant', '<', 0)->sum('montant');
+                $net   = $plus + $moins;
+
+                $origines  = $collectifsLigne->pluck('origine')->unique()->values();
+                // mb_strtoupper et non strtoupper : « Collectif budgétaire » passe par là,
+                // et l'uppercase byte par byte cassait l'accent du titre imprimé.
+                $libelle   = match (true) {
+                    $nb === 1 => mb_strtoupper($origines->first()),
+                    $origines->count() === 1 => ['Collectif budgétaire' => 'COLLECTIFS BUDGÉTAIRES',
+                        'Virement budgétaire' => 'VIREMENTS BUDGÉTAIRES'][$origines->first()]
+                        ?? mb_strtoupper($origines->first()),
+                    default => 'COLLECTIFS ET VIREMENTS BUDGÉTAIRES',
+                };
+
+                $references = $collectifsLigne->pluck('reference')->filter()->unique()->values();
+                $jours      = $collectifsLigne->pluck('date')->filter()
+                    ->sortBy(fn($d) => $d->timestamp)->values();
+
+                $parties = [$nb.' opération'.($nb > 1 ? 's' : '')];
+                if ($references->count() === 1) {
+                    $parties[] = $references->first();
+                } elseif ($references->count() > 1) {
+                    $parties[] = $references->count().' références';
+                }
+                if ($jours->isNotEmpty()) {
+                    $parties[] = $jours->first()->toDateString() === $jours->last()->toDateString()
+                        ? 'du '.$jours->first()->format('d/m/Y')
+                        : 'du '.$jours->first()->format('d/m/Y').' au '.$jours->last()->format('d/m/Y');
+                }
+
+                $mouvements = array_values(array_filter([
+                    $plus  > 0 ? '+'.number_format($plus, 0, ',', ' ').' F CFA' : null,
+                    $moins < 0 ? number_format($moins, 0, ',', ' ').' F CFA' : null,
+                ], fn($t) => $t !== null));
+                if ($mouvements === []) {
+                    // Mouvements soldés à zéro : la ligne reste, sinon le « soit » pend dans
+                    // le vide et le lecteur croit à une impression cassée.
+                    $mouvements = [number_format($net, 0, ',', ' ').' F CFA'];
+                }
+
+                $solde = ($net > 0 ? '+' : '').number_format($net, 0, ',', ' ').' F CFA';
+
+                // Les lignes en contrepartie sont la justification du mouvement : un virement
+                // sans destinataire ne dit plus rien. Agrégées par sens et bornées, elles
+                // tiennent en queue de la même ligne, en petit caractère.
+                $codes = function (bool $entrant) use ($collectifsLigne) {
+                    return $collectifsLigne
+                        ->filter(fn($m) => $m['contrepartie']
+                            && ($entrant ? $m['montant'] >= 0 : $m['montant'] < 0))
+                        ->pluck('contrepartie')->unique()->values();
+                };
+                $bornir = function ($liste) {
+                    return $liste->count() > 6
+                        ? $liste->take(6)->implode(', ').', +'.($liste->count() - 6).' autres'
+                        : $liste->implode(', ');
+                };
+                $contreparties = array_values(array_filter([
+                    $codes(true)  ->isNotEmpty() ? 'depuis '.$bornir($codes(true)) : null,
+                    $codes(false) ->isNotEmpty() ? 'vers '.$bornir($codes(false)) : null,
+                ], fn($t) => $t !== null));
+            @endphp
+
+            {{-- Le « soit » ne sert que quand les deux sens se partagent la ligne : à un
+                 seul signe, le répéter ferait croire à deux montants différents. La ligne
+                 reste d'un tenant — une coupure avant la virgule s'imprime telle quelle. --}}
             <div class="info-line">
-                <strong>{{ strtoupper($modification['origine']) }} {{ $collectifsLigne->count() > 1 ? $index + 1 : '' }}</strong>
-                ({{ $modification['reference'] }}@if ($modification['date']) du {{ $modification['date']->format('d/m/Y') }}@endif)
-                @if ($modification['contrepartie']) — {{ $modification['montant'] >= 0 ? 'depuis' : 'vers' }} {{ $modification['contrepartie'] }}@endif :
-                {{ $modification['montant'] >= 0 ? '+' : '' }}{{ number_format($modification['montant'], 0, ',', ' ') }} F CFA
+                <strong>{{ $libelle }}</strong> ({{ implode(' · ', $parties) }}) : {{ implode(' · ', $mouvements) }}@if ($plus > 0 && $moins < 0), soit <strong>{{ $solde }}</strong>@endif@if ($contreparties !== []) <span style="font-size:8px;font-style:italic;">— {{ implode(' · ', $contreparties) }}</span>@endif
             </div>
-            @endforeach
 
             <div class="info-line">
                 <strong>DOTATION APRÈS MODIFICATIONS :</strong>
-                {{ number_format($dotationInitiale + $collectifsLigne->sum('montant'), 0, ',', ' ') }} F CFA
+                {{ number_format($dotationInitiale + $net, 0, ',', ' ') }} F CFA
             </div>
         @endif
 

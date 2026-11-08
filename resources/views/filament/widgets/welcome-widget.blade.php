@@ -25,6 +25,16 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         {{ $data['email'] }}
                     </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        @if ($data['last_login'])
+                            Cette connexion : {{ $data['last_login'] }}
+                        @else
+                            Première connexion de ce compte depuis le traçage
+                        @endif
+                        @if ($data['previous_login'])
+                            · Connexion précédente : {{ $data['previous_login'] }}
+                        @endif
+                    </p>
                 </div>
             </div>
 

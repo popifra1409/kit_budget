@@ -27,6 +27,8 @@ use App\Models\LigneBudgetaire;
 use App\Observers\LigneBudgetaireConcordanceObserver;
 use App\Models\Engagement;
 use App\Observers\EngagementObserver;
+use App\Models\OrdonnancePaiement;
+use App\Observers\OrdonnancePaiementObserver;
 use App\Support\Audit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\Permission\Models\Role;
@@ -234,6 +236,7 @@ class AppServiceProvider extends ServiceProvider
         BonCommandeRegie::observe(BonCommandeRegieObserver::class);
         LigneBudgetaire::observe(LigneBudgetaireConcordanceObserver::class);
         Engagement::observe(EngagementObserver::class);
+        OrdonnancePaiement::observe(OrdonnancePaiementObserver::class);
 
         // ✅ AJOUT — Audit de tous les modules (modeles listes dans config/audit.php,
         //    hors modeles deja journalises nativement par LogsActivity)

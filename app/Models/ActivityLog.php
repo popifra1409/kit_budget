@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Auth\Access\AuthorizationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Spatie\Activitylog\Models\Activity as SpatieActivity;
 
 class ActivityLog extends SpatieActivity
@@ -102,22 +105,159 @@ class ActivityLog extends SpatieActivity
     public static function logAccesRefuse(
         string  $action,
         ?string $resource = null,
-        ?int    $resourceId = null
+        ?int    $resourceId = null,
+        array   $extra = []
     ): void {
         try {
             activity('security')
                 ->causedBy(auth()->user())
-                ->withProperties([
+                ->withProperties(array_merge([
                     'action'      => $action,
                     'resource'    => $resource,
                     'resource_id' => $resourceId,
                     'url'         => request()?->fullUrl(),
                     'ip'          => request()?->ip(),
-                ])
+                ], $extra))
                 ->event('access_denied')
                 ->log("Accès refusé : {$action}" . ($resource ? " sur {$resource}" : ''));
         } catch (\Exception $e) {
             \Log::warning("ActivityLog::logAccesRefuse échoué : " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Journaliser le refus que le logiciel vient d'opposer.
+     *
+     * Les 600-garde-fous `->visible()` de l'interface ne sont pas des refus : un bouton
+     * caché n'atteint jamais le serveur, et le tracer noierait le journal sous des
+     * intentions que personne n'a exprimées. Ici on ne trace que ce qui est réellement
+     * dit « non » : le 403 d'une ressource, d'une page ou d'une action Filament refusée,
+     * et le `abort(403)` des contrôleurs — exports, impressions, fiches de contrôle.
+     *
+     * Le point d'entrée est `withExceptions()->renderable()`, pas `reportable()` :
+     * `AuthorizationException` et `HttpException` sont dans `$internalDontReport` du
+     * framework, donc `reportable()` ne les voit jamais passer.
+     */
+    public static function journaliserRefusOppose(\Throwable $e): void
+    {
+        $refus = $e instanceof AuthorizationException
+            || ($e instanceof HttpException && $e->getStatusCode() === 403);
+
+        if (!$refus) {
+            return;
+        }
+
+        // Le journal ne doit jamais transformer un 403 en 500 : cette méthode est appelée
+        // depuis le gestionnaire d'exceptions lui-même, elle avale donc \Throwable et pas
+        // seulement \Exception — un Error y serait sinon devenu une erreur applicative.
+        try {
+            // prepareException() remplace AuthorizationException par une HttpException
+            // 403 : la classe d'origine ne survit que dans le previous.
+            $source   = $e->getPrevious() ?: $e;
+            $route    = request()?->route();
+            $document = null;
+
+            // Un 403 sur un document se relit par ce document : Filament a déjà résolu le
+            // paramètre de route, c'est la seule trace de la cible qui vaille.
+            foreach ($route?->parameters() ?? [] as $parametre) {
+                if ($parametre instanceof Model) {
+                    $document = $parametre;
+                    break;
+                }
+            }
+
+            $action = $route?->getName()
+                ?: trim((string) preg_replace('#/\d+$#', '', (string) request()?->path()), '/');
+
+            static::logAccesRefuse(
+                $action !== '' ? $action : 'route inconnue',
+                $document ? class_basename($document) : null,
+                $document ? (int) $document->getKey() : null,
+                [
+                    'exception' => class_basename($source),
+                    'motif'     => mb_substr($e->getMessage(), 0, 190),
+                ]
+            );
+        } catch (\Throwable $erreur) {
+            \Log::warning('ActivityLog::journaliserRefusOppose échoué : ' . $erreur->getMessage());
+        }
+    }
+
+    // =========================================================
+    // Logging spécialisé — droits d'un rôle (écran Rôles)
+    // =========================================================
+
+    /**
+     * Journalise l'enregistrement d'un rôle avec le détail des cases cochées et décochées.
+     *
+     * L'écran écrivait déjà « Modification du rôle X » avec un compteur de permissions :
+     * il répondait à « combien de droits ce rôle en a-t-il maintenant », pas à « qui a reçu
+     * quel droit, et qui l'a perdu » — c'est pourtant la seconde question qu'on pose dans un
+     * contrôle, et elle est restée hors du journal (charte §5.3).
+     *
+     * L'appelant fournit l'état d'avant, lu avant que le formulaire ne synchrone le pivot :
+     * `CheckboxList::relationship()` déhydrate son état, la liste des permissions ne passe
+     * donc jamais par `$data`, et après coup il n'y a plus rien à comparer. L'état d'après se
+     * relit en base, jamais dans l'instance : c'est la synchronisation du pivot qui fait foi.
+     *
+     * Aucun diff, aucune écriture : cocher puis décocher avant d'enregistrer laisse le journal
+     * propre, et une simple correction du niveau hiérarchique ne se déguise pas en campagne
+     * de droits.
+     *
+     * @param Model $role             le rôle concerné
+     * @param array $permissionsAvant noms de permissions, avant la synchronisation du pivot
+     * @param array $extra            propriétés propres à l'écran (niveau, porteurs…)
+     * @param bool  $nouveau          rôle qui naît ici : toute la liste est un accord
+     */
+    public static function journaliserDroitsDeRole(
+        Model $role,
+        array $permissionsAvant,
+        array $extra = [],
+        bool  $nouveau = false,
+    ): void {
+        try {
+            $apres = $role->permissions()->pluck('permissions.name')->all();
+            $noms  = $permissionsAvant;
+
+            // Listes triées : l'ordre du pivot ne doit pas imposer sa logique à la lecture
+            // du journal, et une comparaison d'une écriture à l'autre demande du stable.
+            $tri      = function (array $liste): array {
+                sort($liste);
+
+                return array_values($liste);
+            };
+            $ajoutees = $tri(array_diff($apres, $noms));
+            $retirees = $tri(array_diff($noms, $apres));
+            $noms     = $tri($noms);
+
+            $activite = activity()
+                ->performedOn($role)
+                ->causedBy(auth()->user())
+                ->withProperties($extra + [
+                    'permissions_count'    => count($apres),
+                    'permissions_avant'    => $noms,
+                    'permissions_ajoutees' => $ajoutees,
+                    'permissions_retirees' => $retirees,
+                ]);
+
+            if ($nouveau) {
+                $activite->event('permissions_attribuees')
+                    ->log("Création du rôle {$role->name} avec " . count($apres) . ' droit(s)');
+
+                return;
+            }
+
+            if ($ajoutees !== [] || $retirees !== []) {
+                $activite->event('permissions_modifiees')
+                    ->log("Droits modifiés sur le rôle {$role->name} "
+                        . '(+' . count($ajoutees) . ' / −' . count($retirees) . ')');
+
+                return;
+            }
+
+            $activite->log("Modification du rôle {$role->name}");
+        } catch (\Exception $e) {
+            \Log::warning('ActivityLog::journaliserDroitsDeRole échoué : ' . $e->getMessage());
         }
     }
 
@@ -216,6 +356,8 @@ class ActivityLog extends SpatieActivity
             'cloturer'      => '🏁 Clôturé',
             'retourner'     => '↩️ Retourné',
             'access_denied' => '🚫 Accès refusé',
+            'permissions_modifiees'  => '🔑 Droits modifiés',
+            'permissions_attribuees' => '🔑 Droits accordés',
             'restored'      => '♻️ Restauré',
             'login_failed'  => '⚠️ Échec de connexion',
             'archivage'     => '🗄️ Archivage du journal',

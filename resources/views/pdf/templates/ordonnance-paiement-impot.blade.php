@@ -21,6 +21,7 @@ if ($engagement) {
 $tache = $activite = $action = $programme = $sousProgramme = $objectif = null;
 $codeProgramme = $codeSousProgramme = $codeAction = $codeActivite = '';
 $codeTache = $codeArticle = $codeParagraphe = $codeChapitre = '';
+$libelleProgramme = $libelleSousProgramme = $libelleAction = $libelleActivite = '';
 
 if ($nomenclature) {
     $tache = $nomenclature->tache ?? $nomenclature->taches()->first();
@@ -86,6 +87,11 @@ if ($nomenclature) {
         : substr($nomenclature->code, 0, 4);
 }
 
+$libelleProgramme     = $programme?->libelle ?? '';
+$libelleSousProgramme = $sousProgramme?->libelle ?? '';
+$libelleAction        = $action?->libelle ?? '';
+$libelleActivite      = $activite?->libelle ?? '';
+
 // ── Réverseur ─────────────────────────────────────────────
 $reverseur = null;
 if ($engagement && $documentSource) {
@@ -143,6 +149,45 @@ if ($engagement->estDecision() && $documentSource) {
 
     $tauxIr  = (float) ($documentSource->taux_ir  ?? 0);
     $tauxTsr = (float) ($documentSource->taux_tsr ?? 0);
+}
+
+// ── État imprimé : le gel de l'émission, avec repli sur le vif ──
+// Les valeurs se figent, la mise en page se recompose : les libellés « IR (10,50 %) »
+// sont construits après ce bloc à partir des taux gelés, comme à l'émission. Le papier
+// n'a pas de bloc budgétaire — dotation et disponibles ne se lisent pas ici.
+$etatPapier = app(\App\Services\Budget\GelOrdonnancePaiementService::class)
+    ->etatPourImpression($ordonnance);
+
+if ($etatPapier['gele']) {
+    $detailImpots       = $etatPapier['retenues'];
+    $montantTotalImpots = $etatPapier['retenu'];
+
+    $montantIr   = $etatPapier['lignes']['ir'];
+    $montantIrnc = $etatPapier['lignes']['irnc'];
+    $montantTsr  = $etatPapier['lignes']['tsr'];
+
+    $tauxIr   = $etatPapier['taux']['ir'] ?? 0;
+    $tauxIrnc = $etatPapier['taux']['irnc'] ?? 0;
+    $tauxTsr  = $etatPapier['taux']['tsr'] ?? 0;
+
+    $h = $etatPapier['hierarchie'];
+
+    $codeChapitre   = $h['chapitre'];
+    $codeParagraphe = $h['paragraphe'];
+    $codeArticle    = $h['article'];
+    $codeTache      = $h['tache'];
+    $codeActivite   = $h['activite'];
+    $codeAction     = $h['action'];
+    $codeProgramme  = $h['programme'];
+    $codeSousProgramme = $h['sous_programme'];
+
+    $libelleProgramme     = $h['libelle_programme'];
+    $libelleSousProgramme = $h['libelle_sous_programme'];
+    $libelleAction        = $h['libelle_action'];
+    $libelleActivite      = $h['libelle_activite'];
+
+    $reverseurGele = $etatPapier['reverseur'];
+    $nomReverseur  = ($reverseurGele['nom'] ?? '') !== '' ? $reverseurGele['nom'] : 'N/A';
 }
 
 // ✅ Labels avec taux
@@ -289,23 +334,23 @@ if ($createdAt) {
             <div style="margin-top:5px; font-size:8pt;">
                 @if ($codeSousProgramme)
                 <div>• <span class="font-bold" style="font-size:8pt;">SOUS-PROGRAMME :</span>
-                    {{ $codeSousProgramme }} - {{ $sousProgramme->libelle ?? '' }}
+                    {{ $codeSousProgramme }} - {{ $libelleSousProgramme }}
                 </div>
                 @elseif ($codeProgramme)
                 <div>• <span class="font-bold" style="font-size:8pt;">PROGRAMME :</span>
-                    {{ $codeProgramme }} - {{ $programme->libelle ?? '' }}
+                    {{ $codeProgramme }} - {{ $libelleProgramme }}
                 </div>
                 @endif
 
                 @if ($codeAction)
                 <div>• <span class="font-bold" style="font-size:7.5pt;">ACTION :</span>
-                    {{ $codeAction }} - {{ $action->libelle ?? '' }}
+                    {{ $codeAction }} - {{ $libelleAction }}
                 </div>
                 @endif
 
                 @if ($codeActivite)
                 <div>• <span class="font-bold" style="font-size:7.5pt;">ACTIVITE :</span>
-                    {{ $codeActivite }} - {{ $activite->libelle ?? '' }}
+                    {{ $codeActivite }} - {{ $libelleActivite }}
                 </div>
                 @endif
 

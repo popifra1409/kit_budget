@@ -68,6 +68,17 @@ class OrdonnancePaiement extends Model
         'montant_irnc'         => 'decimal:2',
         'montant_autres_taxes' => 'decimal:2',
         'metadata'             => 'array',
+
+        // Le gel de l'etat imprime (Volet 2). Jamais dans $fillable : ces colonnes-la
+        // recopient le papier, un formulaire ne doit pas pouvoir les dicter.
+        'snapshot_montant_brut'   => 'decimal:2',
+        'snapshot_montant_net'    => 'decimal:2',
+        'snapshot_montant_retenu' => 'decimal:2',
+        'snapshot_montants'       => 'array',
+        'snapshot_retenues'       => 'array',
+        'snapshot_imputation'     => 'array',
+        'snapshot_identites'      => 'array',
+        'snapshot_fige_le'        => 'datetime',
     ];
 
     protected static function booted(): void

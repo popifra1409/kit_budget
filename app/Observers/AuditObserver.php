@@ -83,6 +83,17 @@ class AuditObserver
         $exclus = array_merge(config('audit.champs_exclus', []), $modele->getHidden());
         $longueurMax = (int) config('audit.longueur_max_valeur', 500);
 
+        // Les colonnes de gel recopient l'etat imprime : ce ne sont pas des decisions de
+        // gestion. Sans ce filtre, chaque edition d'ordonnance verserait dans le journal
+        // sept blocs de json qui ne font que redire le papier.
+        foreach ((array) config('audit.champs_exclus_prefixes', []) as $prefixe) {
+            foreach (array_keys($valeurs) as $champ) {
+                if (str_starts_with($champ, $prefixe)) {
+                    $exclus[] = $champ;
+                }
+            }
+        }
+
         $resultat = array_diff_key($valeurs, array_flip($exclus));
 
         foreach ($resultat as $champ => $valeur) {
