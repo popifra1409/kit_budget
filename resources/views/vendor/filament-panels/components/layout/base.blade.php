@@ -141,10 +141,5 @@
         {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::SCRIPTS_AFTER, scopes: $livewire?->getRenderHookScopes()) }}
 
         {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::BODY_END, scopes: $livewire?->getRenderHookScopes()) }}
-        
-        <script src="{{ asset('js/filament/sidebar-toggle.js') }}"></script>
-
-        {{-- Bouton Toggle --}}
-        @include('components.sidebar-toggle-button')
     </body>
 </html>
