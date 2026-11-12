@@ -8,7 +8,9 @@ use App\Models\Activite;
 use App\Models\Exercice;
 use App\Models\PlanStrategiqueEp;
 use App\Models\SousProgrammeEp;
+use App\Services\Planification\CadreLogiqueEtendu;
 use App\Services\Planification\CadreLogiqueSousProgrammes;
+use App\Services\Planification\EtatsActionsSousProgramme;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
@@ -101,5 +103,71 @@ class RapportController extends Controller
             : $rapport->psp->code;
 
         return "cadre-logique-{$code}-{$rapport->anneeReference()}.{$extension}";
+    }
+
+    // ── Cadre logique modèle étendu : jusqu'à la tâche, par sous-programme ────
+
+    public function cadreLogiqueEtenduPdf(SousProgrammeEp $sousProgramme, Exercice $exercice)
+    {
+        $rapport = new CadreLogiqueEtendu($sousProgramme, $exercice);
+
+        $pdf = Pdf::loadView('filament.planification.pdf.cadre-logique-modele-etendu', [
+            'rapport' => $rapport,
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download($this->cadreLogiqueEtenduNom($rapport, 'pdf'));
+    }
+
+    public function cadreLogiqueEtenduExcel(SousProgrammeEp $sousProgramme, Exercice $exercice)
+    {
+        $rapport = new CadreLogiqueEtendu($sousProgramme, $exercice);
+
+        return Excel::download(
+            new \App\Exports\CadreLogique\CadreLogiqueEtenduExport($rapport),
+            $this->cadreLogiqueEtenduNom($rapport, 'xlsx')
+        );
+    }
+
+    protected function cadreLogiqueEtenduNom(CadreLogiqueEtendu $rapport, string $extension): string
+    {
+        return sprintf(
+            'cadre-logique-etendu-%s-%d.%s',
+            $rapport->sousProgramme->code,
+            $rapport->exercice->annee,
+            $extension
+        );
+    }
+
+    // ── États isolés des actions d'un sous-programme : un état par action ─────
+
+    public function etatsActionsPdf(SousProgrammeEp $sousProgramme, Exercice $exercice)
+    {
+        $rapport = new EtatsActionsSousProgramme($sousProgramme, $exercice);
+
+        $pdf = Pdf::loadView('filament.planification.pdf.etats-actions-sous-programme', [
+            'rapport' => $rapport,
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download($this->etatsActionsNom($rapport, 'pdf'));
+    }
+
+    public function etatsActionsExcel(SousProgrammeEp $sousProgramme, Exercice $exercice)
+    {
+        $rapport = new EtatsActionsSousProgramme($sousProgramme, $exercice);
+
+        return Excel::download(
+            new \App\Exports\EtatsActions\EtatsActionsSousProgrammeExport($rapport),
+            $this->etatsActionsNom($rapport, 'xlsx')
+        );
+    }
+
+    protected function etatsActionsNom(EtatsActionsSousProgramme $rapport, string $extension): string
+    {
+        return sprintf(
+            'etats-actions-%s-%d.%s',
+            $rapport->sousProgramme->code,
+            $rapport->exercice->annee,
+            $extension
+        );
     }
 }

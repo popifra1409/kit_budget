@@ -214,6 +214,18 @@ Route::middleware(['web', 'auth'])->group(function () {
                 ->name('cadre-logique.pdf');
             Route::get('/cadre-logique/{psp}/{exercice}/excel', [RapportController::class, 'cadreLogiqueExcel'])
                 ->name('cadre-logique.excel');
+
+            // Cadre logique — modèle étendu : nomenclature, AE/CP et tâches d'un sous-programme
+            Route::get('/cadre-logique-etendu/{sousProgramme}/{exercice}/pdf', [RapportController::class, 'cadreLogiqueEtenduPdf'])
+                ->name('cadre-logique-etendu.pdf');
+            Route::get('/cadre-logique-etendu/{sousProgramme}/{exercice}/excel', [RapportController::class, 'cadreLogiqueEtenduExcel'])
+                ->name('cadre-logique-etendu.excel');
+
+            // États isolés des actions : un état (une page, un onglet) par action du sous-programme
+            Route::get('/etats-actions/{sousProgramme}/{exercice}/pdf', [RapportController::class, 'etatsActionsPdf'])
+                ->name('etats-actions.pdf');
+            Route::get('/etats-actions/{sousProgramme}/{exercice}/excel', [RapportController::class, 'etatsActionsExcel'])
+                ->name('etats-actions.excel');
         });
 
     // ── Rapport PPA ──

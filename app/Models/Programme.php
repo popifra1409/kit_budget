@@ -23,6 +23,7 @@ class Programme extends Model
         'code',
         'libelle',
         'description',
+        'responsable_personnel_id',
         'annee',
         'actif',
     ];
@@ -47,6 +48,19 @@ class Programme extends Model
     public function actions(): HasMany
     {
         return $this->hasMany(Action::class);
+    }
+
+    /**
+     * Relation : l'agent responsable du programme ou du sous-programme.
+     *
+     * `withTrashed()` : Personnel est en SoftDeletes, donc la contrainte `nullOnDelete`
+     * de la colonne ne se déclenche jamais sur un `delete()` ordinaire — l'identifiant
+     * reste posé. Sans ce scope, la BelongsTo masquerait la ligne trashed et renverrait
+     * null : le cadre logique perdrait son responsable sans rien signaler.
+     */
+    public function responsablePersonnel(): BelongsTo
+    {
+        return $this->belongsTo(Personnel::class, 'responsable_personnel_id')->withTrashed();
     }
 
     /**

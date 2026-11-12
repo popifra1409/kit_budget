@@ -6,6 +6,8 @@ use App\Filament\Planification\Resources\ProgrammeResource\Pages;
 use App\Models\Programme;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -152,6 +154,25 @@ class ProgrammeResource extends Resource
                         Forms\Components\Textarea::make('description')
                             ->label('Description')->rows(3)->columnSpanFull(),
 
+                        Forms\Components\Select::make('responsable_personnel_id')
+                            ->label('Responsable (agent)')
+                            ->searchable()->preload()
+                            ->placeholder('Aucun')
+                            // La liste vient des agents en poste. Un agent déjà posé sur ce
+                            // programme mais retiré entre-temps reste dans la liste, sinon le
+                            // champ afficherait un identifiant nu et un enregistrement sans
+                            // clic pourrait effacer le responsable. Le suffixe le signale :
+                            // ce n'est pas un choix à faire pour la première fois.
+                            ->options(fn ($record) => \App\Models\Personnel::withTrashed()
+                                ->where(fn ($q) => $q->whereNull('deleted_at')
+                                    ->orWhere('id', $record?->responsable_personnel_id))
+                                ->orderBy('nom')->orderBy('prenoms')->get()
+                                ->mapWithKeys(fn ($p) => [
+                                    $p->id => $p->nom_complet.' ('.($p->matricule ?: '—').')'
+                                        .($p->trashed() ? ' — agent retiré' : ''),
+                                ]))
+                            ->helperText('Table des personnels, et non des comptes : un agent sans accès peut être responsable. C\'est lui qu\'imprimera le cadre logique étendu.'),
+
                         Forms\Components\TextInput::make('annee')
                             ->label('Année budgétaire')->required()->numeric()
                             ->default(now()->year)->minValue(2020)->maxValue(2050),
@@ -182,9 +203,141 @@ class ProgrammeResource extends Resource
             ]);
     }
 
+    // ========================================
+    // INFOLIST — lecture seule (page « Voir » et ses futures impressions)
+    // ========================================
+
+    /**
+     * Définie sur le resource et non sur la page : `ViewProgramme` ne surcharge pas
+     * `infolist()`, donc il délègue ici. Une page qui redéclarerait son propre schéma
+     * ferait disparaître ce bloc de l'écran sans qu'aucune vérification ne le signale.
+     *
+     * Aucun garde d'édition ici : « Voir » s'applique aussi aux exercices clôturés, qui
+     * sont précisément ceux dont on consulte le responsable après coup.
+     */
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist->schema([
+            Infolists\Components\Section::make('Exercice')
+                ->schema([
+                    Infolists\Components\TextEntry::make('exercice.annee')
+                        ->label('Exercice')->placeholder('Aucun exercice rattaché'),
+
+                    Infolists\Components\TextEntry::make('exercice.statut')
+                        ->label('Statut')->badge()
+                        ->formatStateUsing(fn (?string $state): ?string => $state === null ? null : ucfirst($state))
+                        ->color(fn (?string $state): string => match ($state) {
+                            'actif' => 'success',
+                            'cloture' => 'warning',
+                            'archive' => 'danger',
+                            default => 'gray',
+                        }),
+
+                    Infolists\Components\TextEntry::make('annee')->label('Année budgétaire'),
+
+                    Infolists\Components\IconEntry::make('actif')->label('Actif')->boolean(),
+                ])
+                ->columns(4),
+
+            Infolists\Components\Section::make('Hiérarchie')
+                ->schema([
+                    Infolists\Components\TextEntry::make('niveau')
+                        ->label('Niveau')->badge()
+                        ->formatStateUsing(fn (?string $state): string => match ($state) {
+                            'programme' => 'Programme',
+                            'sous_programme' => 'Sous-programme',
+                            default => ucfirst((string) $state),
+                        })
+                        ->color(fn (?string $state): string => $state === 'sous_programme' ? 'success' : 'primary'),
+
+                    Infolists\Components\TextEntry::make('parent')
+                        ->label('Programme parent')
+                        ->placeholder('Aucun (programme principal)')
+                        ->formatStateUsing(fn (?Programme $state): ?string => $state === null
+                            ? null
+                            : "{$state->code} — {$state->libelle}"),
+                ])
+                ->columns(2),
+
+            Infolists\Components\Section::make('Informations du Programme')
+                ->schema([
+                    Infolists\Components\TextEntry::make('code')->label('Code')->weight('bold')->copyable(),
+
+                    Infolists\Components\TextEntry::make('libelle')->label('Libellé')->weight('bold'),
+
+                    Infolists\Components\TextEntry::make('description')
+                        ->label('Description')->placeholder('Aucune description')
+                        ->columnSpanFull(),
+
+                    // L'agent, pas le compte : la BelongsTo est `withTrashed()`, donc un
+                    // agent retiré affiche encore son nom — signalé en rouge plutôt que
+                    // remplacé par « Aucun », qui ferait passer un retrait pour un oubli.
+                    // `helperText()` : v3 n'a pas de `description()` sur une entry, et le
+                    // harnais l'a découvert à l'exécution, `php -l` n'y voyant rien.
+                    Infolists\Components\TextEntry::make('responsablePersonnel.nom_complet')
+                        ->label('Responsable (agent)')
+                        ->placeholder('Aucun agent désigné')
+                        ->helperText(fn (?Programme $record): ?string => static::responsableResume($record))
+                        ->color(fn (?Programme $record): ?string => $record->responsablePersonnel?->trashed()
+                            ? 'danger' : null),
+                ])
+                ->columns(2),
+
+            Infolists\Components\Section::make('Objectif Principal')
+                ->schema([
+                    Infolists\Components\RepeatableEntry::make('objectifsPrincipaux')
+                        ->label('')
+                        ->schema([
+                            Infolists\Components\TextEntry::make('libelle')->label('Objectif principal'),
+                            Infolists\Components\TextEntry::make('ordre')->label('Ordre'),
+                        ])
+                        ->columns(2),
+                ])
+                ->description('Aucun objectif principal enregistré')
+                ->collapsible(),
+        ]);
+    }
+
+    /**
+     * Détail du champ « Responsable » (helperText de l'entry, seconde ligne du « Voir ») :
+     * matricule, service, fonction, et l'avertissement de retrait. Séparé du schéma parce
+     * que le cadre logique étendu imprimera la même information et ne devra pas la
+     * réécrire.
+     */
+    public static function responsableResume(?Programme $record): ?string
+    {
+        $agent = $record?->responsablePersonnel;
+
+        if (!$agent) {
+            return null;
+        }
+
+        $resume = collect([
+            $agent->matricule ? 'Matricule '.$agent->matricule : null,
+            $agent->service?->nom,
+            $agent->fonction,
+        ])->filter()->implode(' · ');
+
+        if ($agent->trashed()) {
+            $resume = ($resume === '' ? '' : $resume.' · ').
+                'agent retiré — à remplacer';
+        }
+
+        return $resume === '' ? null : $resume;
+    }
+
+    // ========================================
+    // REQUÊTE
+    // ========================================
+
+    // `exercice` sert aux gardes `estModifiable()` des actions de la table.
+    // `responsablePersonnel` est redondant pour la liste — Filament ajoute de lui-même la
+    // relation de toute colonne `a.b` à la requête de table (`getEagerLoads()` la contient
+    // même sans ce `with()`, vérifié par mutation) — mais le cadre logique étendu, lui,
+    // lira des Programmes hors table et comptera sur cet eager-load.
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('exercice');
+        return parent::getEloquentQuery()->with(['exercice', 'responsablePersonnel']);
     }
 
     // ========================================
@@ -231,6 +384,17 @@ class ProgrammeResource extends Resource
                             ? "{$record->parent->code} - " . \Str::limit($record->parent->libelle, 30)
                             : '—'
                     ),
+
+                // `nom_complet` est un accesseur, pas une colonne : ni sortable ni
+                // searchable ici, le SQL n'a rien à trier. Le tri par responsable se fera
+                // depuis la table des personnels.
+                Tables\Columns\TextColumn::make('responsablePersonnel.nom_complet')
+                    ->label('Responsable')->toggleable(isToggledHiddenByDefault: false)
+                    ->placeholder('—')
+                    ->tooltip(fn ($record) => $record->responsablePersonnel
+                        ? 'Matricule '.($record->responsablePersonnel->matricule ?: '—')
+                            .($record->responsablePersonnel->trashed() ? ' — agent retiré' : '')
+                        : null),
 
                 Tables\Columns\TextColumn::make('annee')->label('Année')->sortable(),
 
@@ -297,6 +461,7 @@ class ProgrammeResource extends Resource
         return [
             'index'                 => Pages\ListProgrammes::route('/'),
             'create'                => Pages\CreateProgramme::route('/create'),
+            'view'                  => Pages\ViewProgramme::route('/{record}'),
             'edit'                  => Pages\EditProgramme::route('/{record}/edit'),
             'generer-cadre-logique' => Pages\GenerationCadreLogique::route('/generer-cadre-logique'),
         ];
