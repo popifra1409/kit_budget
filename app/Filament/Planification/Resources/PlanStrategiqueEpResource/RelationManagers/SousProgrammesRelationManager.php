@@ -8,6 +8,7 @@ use App\Models\SousProgrammeEp;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -58,12 +59,10 @@ class SousProgrammesRelationManager extends RelationManager
             Forms\Components\Textarea::make('cadre_institutionnel')
                 ->label('Cadre institutionnel de mise en œuvre')
                 ->columnSpanFull(),
-            Forms\Components\Select::make('responsable_id')
-                ->label('Responsable de mise en œuvre')
-                ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
-                ->searchable()
+            \App\Filament\Planification\Components\ResponsableSelect::make()
+                ->label('Responsable (agent)')
                 ->required()
-                ->helperText('Le responsable du sous-programme pilote la revue des libellés : sans lui, le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
+                ->helperText('Agent de la table des personnels : la revue des libellés et la matrice d\'arrimage ne lui montrent que ses sous-programmes. Sans agent désigné — ou sans fiche reliée à un login — le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
 
             // ── Rattachements : deux champs distincts ──────────────────
             Forms\Components\Select::make('programme_budgetaire_id')
@@ -108,7 +107,7 @@ class SousProgrammesRelationManager extends RelationManager
                     ->colors(['primary' => 'operationnel', 'warning' => 'support']),
                 Tables\Columns\TextColumn::make('code')->searchable(),
                 Tables\Columns\TextColumn::make('libelle')->searchable()->wrap(),
-                Tables\Columns\TextColumn::make('responsable.name')->label('Responsable'),
+                Tables\Columns\TextColumn::make('responsable.nom_complet')->label('Responsable'),
                 Tables\Columns\TextColumn::make('programmeBudgetaire.code')
                     ->label('Rattachement')
                     ->placeholder('—'),
@@ -183,18 +182,83 @@ class SousProgrammesRelationManager extends RelationManager
                             $record->update(['statut' => 'en_transmission']);
                         }),
 
+                    // Le droit commande le bouton, plus la transmission : un brouillon se
+                    // valide ici sans avoir circulé. Le refus, lui, reste lisible sur la ligne.
                     Tables\Actions\Action::make('valider')
                         ->label('Valider')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
-                        ->visible(
-                            fn(SousProgrammeEp $record) =>
-                            $record->estDestinataireActuel() && auth()->user()->can('valider_sous_programme_ep')
-                        )
+                        ->visible(fn() => auth()->user()->can('valider_sous_programme_ep'))
                         ->requiresConfirmation()
+                        ->modalHeading(fn(SousProgrammeEp $record) => "Valider — {$record->code}")
+                        ->modalDescription('Le sous-programme passe à « Validé ». Transmettre reste le chemin tracé entre deux agents, ce n\'est plus une condition de la validation.')
                         ->action(function (SousProgrammeEp $record) {
-                            $record->cloturerTransmission('Validé');
-                            $record->update(['statut' => 'valide']);
+                            // « visible » n'empêche pas l'appel : le droit est revérifié ici.
+                            if (!auth()->user()?->can('valider_sous_programme_ep')) {
+                                Notification::make()
+                                    ->title('Action non autorisée')
+                                    ->danger()
+                                    ->body('Votre rôle ne donne pas le droit de valider un sous-programme.')
+                                    ->persistent()
+                                    ->send();
+
+                                return;
+                            }
+
+                            try {
+                                $record->valider();
+                                Notification::make()
+                                    ->title("« {$record->code} » est validé")
+                                    ->success()
+                                    ->send();
+                            } catch (\Throwable $e) {
+                                Notification::make()
+                                    ->title('Validation refusée')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
+                                    ->send();
+                            }
+                        }),
+
+                    // Bouton visible dès que l'utilisateur a le droit, même si le
+                    // sous-programme n'est pas encore en état : le refus doit se lire,
+                    // pas disparaître de la ligne.
+                    Tables\Actions\Action::make('mettreEnVigueur')
+                        ->label('Mettre en vigueur')
+                        ->icon('heroicon-o-play-circle')
+                        ->color('success')
+                        ->visible(fn() => auth()->user()->can('mettre_en_vigueur_sous_programme_ep'))
+                        ->requiresConfirmation()
+                        ->modalHeading(fn(SousProgrammeEp $record) => "Mettre en vigueur — {$record->code}")
+                        ->modalDescription('Le sous-programme passe de « Validé » à « En vigueur » : son contenu devient la référence de l\'exercice.')
+                        ->action(function (SousProgrammeEp $record) {
+                            // Le « visible » ci-dessus ne protège pas l'appel : un action
+                            // masquée reste exécutable en POSTant son nom.
+                            if (!auth()->user()?->can('mettre_en_vigueur_sous_programme_ep')) {
+                                Notification::make()
+                                    ->title('Action non autorisée')
+                                    ->danger()
+                                    ->body('Votre rôle ne donne pas le droit de mettre un sous-programme en vigueur.')
+                                    ->persistent()
+                                    ->send();
+                                return;
+                            }
+
+                            try {
+                                $record->mettreEnVigueur();
+                                Notification::make()
+                                    ->title("« {$record->code} » est en vigueur")
+                                    ->success()
+                                    ->send();
+                            } catch (\Throwable $e) {
+                                Notification::make()
+                                    ->title('Mise en vigueur refusée')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
+                                    ->send();
+                            }
                         }),
 
                     Tables\Actions\Action::make('retourner')

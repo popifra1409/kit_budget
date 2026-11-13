@@ -22,7 +22,7 @@ class SousProgrammeEp extends Model
         'code',
         'libelle',
         'description',
-        'responsable_id',
+        'responsable_personnel_id',
         // ✅ AJOUT — sans lui, le « Programme de rattachement » choisi dans le formulaire
         //    était ignoré à l'enregistrement (affectation de masse silencieusement filtrée)
         'programme_budgetaire_id',
@@ -37,6 +37,129 @@ class SousProgrammeEp extends Model
 
     public const MAX_SOUS_PROGRAMMES = 4;
     public const MAX_SUPPORT = 1;
+
+    /** Cycle du statut, du brouillon à la clôture. Sert aux messages de refus. */
+    public const STATUTS = [
+        'brouillon'       => 'Brouillon',
+        'en_transmission' => 'En transmission',
+        'valide'          => 'Validé',
+        'en_vigueur'      => 'En vigueur',
+        'cloture'         => 'Clôturé',
+    ];
+
+    public function statutLabel(): string
+    {
+        return self::STATUTS[$this->statut] ?? $this->statut;
+    }
+
+    /**
+     * La validation se commande-t-elle sans faire statuer deux personnes à la fois ?
+     *
+     * Elle ne dépend plus d'une transmission : un brouillon se valide sans avoir jamais
+     * circulé. Une transmission OUVERTE, en revanche, désigne celle ou celui qui statue —
+     * tant qu'elle n'est pas close, la validation appartient à ce destinataire.
+     */
+    public function peutEtreValide(): bool
+    {
+        return ! in_array($this->statut, ['valide', 'en_vigueur', 'cloture'], true)
+            && $this->transmissionBloquante() === null;
+    }
+
+    /**
+     * La transmission en cours qui interdit à la session de statuer, `null` si elle est bien
+     * adressée à elle — ou s'il n'y en a pas.
+     *
+     * `HasWorkflow::estEnCoursDeTransmissionPourAutrui()` ne rend qu'un booléen, et le refus
+     * doit nommer le destinataire : la ligne elle-même est donc nécessaire ici. Vérification
+     * faite, les deux méthodes répondent pareil hors session — le trait compare en SQL, où
+     * Laravel compile `destinataire_id != null` en `… is not null`, ce qui laisse passer la
+     * transmission au lieu de la masquer.
+     */
+    public function transmissionBloquante(): ?Transmission
+    {
+        $enCours = $this->transmissionEnCours();
+
+        return $enCours !== null && (int) $enCours->destinataire_id !== (int) auth()->id()
+            ? $enCours
+            : null;
+    }
+
+    /**
+     * La seule écriture de « valide » du sous-programme.
+     *
+     * Avant elle, valider exigeait d'être le destinataire d'une transmission : le chargé de
+     * programmation devait transmettre à lui-même pour faire apparaître le bouton. Depuis,
+     * la permission suffit ; la transmission reste le chemin tracé, elle n'est plus la
+     * condition d'accès.
+     *
+     * @throws \RuntimeException quand la transition n'est pas légale
+     */
+    public function valider(?string $reponse = null): void
+    {
+        if (in_array($this->statut, ['valide', 'en_vigueur'], true)) {
+            throw new \RuntimeException(
+                "« {$this->code} » est déjà « {$this->statutLabel()} » : la mise en vigueur est l'étape suivante."
+            );
+        }
+
+        if ($this->statut === 'cloture') {
+            throw new \RuntimeException(
+                "« {$this->code} » est clôturé : on ne valide pas un sous-programme clôturé."
+            );
+        }
+
+        if ($bloquante = $this->transmissionBloquante()) {
+            throw new \RuntimeException(
+                'Le sous-programme est en cours de transmission chez '
+                    . ($bloquante->destinataire?->name ?? 'un destinataire indéfini')
+                    . " ({$bloquante->getActionLabel()}) : seul ce destinataire peut statuer."
+                    . ' Rappelez-la, ou faites-la clôturer, avant de valider.'
+            );
+        }
+
+        // Une transmission adressée à la session se clôt sur la décision, pour qu'aucune
+        // corbeille « en attente » ne survive au document qu'elle a fait statuer.
+        if ($this->transmissionEnCours() !== null) {
+            $this->cloturerTransmission($reponse ?? 'Validé');
+        }
+
+        $this->update(['statut' => 'valide']);
+    }
+
+    /**
+     * Dernière marche du cycle : venir après la validation, et une
+     * transmission en cours ferait statuer deux personnes à la fois.
+     */
+    public function peutEtreMisEnVigueur(): bool
+    {
+        return $this->statut === 'valide' && !$this->estEnCoursDeTransmission();
+    }
+
+    /**
+     * Le seul écriture de « en_vigueur » du logiciel. Avant elle, ce badge
+     * ne sortait que des seeders : un état que personne ne pouvait atteindre.
+     *
+     * @throws \RuntimeException quand la transition n'est pas légale
+     */
+    public function mettreEnVigueur(): void
+    {
+        if ($this->statut !== 'valide') {
+            throw new \RuntimeException(
+                "Seul un sous-programme validé peut être mis en vigueur — statut actuel : « {$this->statutLabel()} »."
+                    . ($this->statut === 'brouillon' ? " Validez-le d'abord (action « Valider »), la transmission n'est pas requise." : '')
+            );
+        }
+
+        if ($this->estEnCoursDeTransmission()) {
+            throw new \RuntimeException(
+                "Le sous-programme est en cours de transmission chez "
+                    . ($this->getDestinataireActuel()?->name ?? 'un destinataire indéfini')
+                    . ' : attendez sa réponse.'
+            );
+        }
+
+        $this->update(['statut' => 'en_vigueur']);
+    }
 
     protected static function boot(): void
     {
@@ -93,9 +216,18 @@ class SousProgrammeEp extends Model
         return $this->belongsTo(PlanStrategiqueEp::class, 'plan_strategique_ep_id');
     }
 
+    /**
+     * L'agent responsable de la mise en œuvre du sous-programme.
+     *
+     * Il ne sert pas qu'à l'impression : c'est sur lui que se cloisonnent la revue des
+     * libellés et la matrice d'arrimage, via la fiche agent reliée au compte de session
+     * (`User::personnel()`). Un agent sans compte reste désignable — son nom s'imprime —,
+     * mais il ne peut pas ouvrir ces deux écrans sur ses seuls sous-programmes tant que sa
+     * fiche n'est reliée à aucun login.
+     */
     public function responsable(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'responsable_id');
+        return $this->belongsTo(Personnel::class, 'responsable_personnel_id')->withTrashed();
     }
 
     /**

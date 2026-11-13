@@ -31,12 +31,20 @@ class ArborescenceLibellesService
     protected array $compteurs = [];
     protected Collection $nomenclatures;
 
-    /** Tous les SP, ou seulement ceux dont l'utilisateur est responsable (filtre cote serveur). */
+    /**
+     * Tous les SP, ou seulement ceux dont l'AGENT de l'utilisateur est responsable.
+     *
+     * Le compte de session n'est pas un responsable : il en designe un via `personnels.user_id`,
+     * renseigné sur trois fiches seulement. Un compte sans fiche agent ne cloisonne donc sur
+     * rien, et recoit 0 — une liste vide, jamais la liste complete qu'un `col = null`
+     * laisserait passer si la colonne était mal filtrée.
+     */
     public function sousProgrammesVisibles(PlanStrategiqueEp $psp, User $user): Builder
     {
         return SousProgrammeEp::query()
             ->where('plan_strategique_ep_id', $psp->id)
-            ->when(!$user->can('view_all_arborescence_libelles'), fn($q) => $q->where('responsable_id', $user->id))
+            ->when(!$user->can('view_all_arborescence_libelles'),
+                fn($q) => $q->where('responsable_personnel_id', $user->personnel?->id ?? 0))
             ->orderBy('code');
     }
 
@@ -108,7 +116,7 @@ class ArborescenceLibellesService
         }
         // Le responsable est la clé du cloisonnement de la revue : sans lui, le sous-programme
         // n'est visible que pour les comptes habilités « view_all_arborescence_libelles ».
-        if (!$sp->responsable_id) {
+        if (!$sp->responsable_personnel_id) {
             $this->observer('Sous-programme', $sp->libelle, 'Responsable du sous-programme non désigné');
         }
         // Le programme de rattachement sert de repli : on ne signale l'absence de programme EP
@@ -152,7 +160,7 @@ class ArborescenceLibellesService
             'sp'           => $sp,
             'sp_texte'     => $this->codeLibelle($sp->code, $sp->libelle),
             'sp_alertes'   => $alertesSp,
-            'responsable'  => $sp->responsable?->name,
+            'responsable'  => $sp->responsable?->nom_complet,
             'programme'    => $sp->programmeBudgetaire
                 ? $this->codeLibelle($sp->programmeBudgetaire->code, $sp->programmeBudgetaire->libelle)
                 : null,

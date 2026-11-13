@@ -32,7 +32,7 @@ class IdentificationSousProgrammesExport implements FromCollection, WithHeadings
             $sp->indicateurs->pluck('libelle')->implode(' | '),
             $sp->strategie,
             $sp->cadre_institutionnel,
-            $sp->responsable?->name,
+            $sp->responsable?->nom_complet,
         ]);
     }
 }

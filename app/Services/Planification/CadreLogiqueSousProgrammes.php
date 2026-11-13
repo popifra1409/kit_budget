@@ -101,7 +101,7 @@ class CadreLogiqueSousProgrammes
         return [
             'titre' => $titre,
             'objectif' => $modele->objectifPourCadreLogique(),
-            'responsable' => $modele->responsable?->name,
+            'responsable' => $modele->responsable?->nom_complet,
             'lignes' => $modele->indicateurs
                 ->sortBy('code')
                 ->map(fn($indicateur) => [

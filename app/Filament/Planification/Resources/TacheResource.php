@@ -2,6 +2,7 @@
 
 namespace App\Filament\Planification\Resources;
 
+use App\Filament\Planification\Resources\Concerns\EmpecheTacheSansCredit;
 use App\Filament\Planification\Resources\TacheResource\Pages;
 use App\Models\Tache;
 use Filament\Forms;
@@ -15,6 +16,8 @@ use App\Models\Exercice;
 
 class TacheResource extends Resource
 {
+    use EmpecheTacheSansCredit;
+
     protected static ?string $model = Tache::class;
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
     protected static ?string $navigationLabel = 'Tâches';
@@ -173,6 +176,8 @@ class TacheResource extends Resource
                                 (bool) $record?->sousTaches()->exists() => 'Cette tâche a des sous-tâches : la nomenclature se renseigne sur chacune d\'elles.',
                                 default => 'Facultatif : liez directement la tâche à une nomenclature si elle n\'a pas de sous-tâche ; ses AE/CP se saisissent alors ci-dessous.',
                             }),
+
+                        static::confirmationTacheSansCredit(),
                     ])
                     ->columns(2),
 
@@ -226,24 +231,24 @@ class TacheResource extends Resource
 
                         Forms\Components\TextInput::make('ae')
                             ->label('AE (Autorisation d\'Engagement)')
-                            ->required(fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))
-                            ->disabled(fn(callable $get, $record) => !((fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))($get, $record)))
-                            ->dehydrated(fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))
+                            ->required(fn(callable $get, $record) => static::tacheDosee($get, $record))
+                            ->disabled(fn(callable $get, $record) => !static::tacheDosee($get, $record))
+                            ->dehydrated(fn(callable $get, $record) => static::tacheDosee($get, $record))
                             ->numeric()->default(0)->prefix('FCFA')
-                            ->placeholder(fn(callable $get, $record) => ((fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))($get, $record)) ? '0' : 'Calculé automatiquement')
-                            ->helperText(fn(callable $get, $record) => ((fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))($get, $record)) ? 'Montant de l\'autorisation d\'engagement' : 'Somme des AE des sous-tâches')
+                            ->placeholder(fn(callable $get, $record) => static::tacheDosee($get, $record) ? '0' : 'Calculé automatiquement')
+                            ->helperText(fn(callable $get, $record) => static::tacheDosee($get, $record) ? 'Montant de l\'autorisation d\'engagement' : 'Somme des AE des sous-tâches')
                             ->afterStateHydrated(function ($component, $state, $record) {
                                 if ($record && $record->estTachePrincipale() && $record->sousTaches()->exists()) $component->state($record->getTotalAe());
                             }),
 
                         Forms\Components\TextInput::make('cp')
                             ->label('CP (Crédit de Paiement)')
-                            ->required(fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))
-                            ->disabled(fn(callable $get, $record) => !((fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))($get, $record)))
-                            ->dehydrated(fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))
+                            ->required(fn(callable $get, $record) => static::tacheDosee($get, $record))
+                            ->disabled(fn(callable $get, $record) => !static::tacheDosee($get, $record))
+                            ->dehydrated(fn(callable $get, $record) => static::tacheDosee($get, $record))
                             ->numeric()->default(0)->prefix('FCFA')
-                            ->placeholder(fn(callable $get, $record) => ((fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))($get, $record)) ? '0' : 'Calculé automatiquement')
-                            ->helperText(fn(callable $get, $record) => ((fn(callable $get, $record) => $get('niveau') === 'sous_tache' || (filled($get('nomenclature_id')) && !($record?->sousTaches()->exists())))($get, $record)) ? 'Montant du crédit de paiement' : 'Somme des CP des sous-tâches')
+                            ->placeholder(fn(callable $get, $record) => static::tacheDosee($get, $record) ? '0' : 'Calculé automatiquement')
+                            ->helperText(fn(callable $get, $record) => static::tacheDosee($get, $record) ? 'Montant du crédit de paiement' : 'Somme des CP des sous-tâches')
                             ->afterStateHydrated(function ($component, $state, $record) {
                                 if ($record && $record->estTachePrincipale() && $record->sousTaches()->exists()) $component->state($record->getTotalCp());
                             }),

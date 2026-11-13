@@ -13,6 +13,10 @@ use Maatwebsite\Excel\Concerns\WithTitle;
  * est répété sur chaque ligne pour qu'un tri ou un tableau croisé reste juste, et les
  * montants sortent en nombres — pas en chaînes « 1 500 000 FCFA » — pour qu'Excel les somme.
  * Les neuf colonnes d'en-tête viennent de CadreLogiqueEtendu::COLONNES, comme le PDF.
+ *
+ * Une ligne par tâche imprimée, sans ligne de report : ce que la tâche n'a pas encore saisi
+ * (compte lié, montant) tient dans ses cellules vides, et la colonne « Note de rattachement »
+ * le dit ligne par ligne.
  */
 class CadreLogiqueEtenduExport implements FromCollection, WithHeadings, WithTitle, ShouldAutoSize
 {
@@ -68,13 +72,8 @@ class CadreLogiqueEtenduExport implements FromCollection, WithHeadings, WithTitl
                     $activite['responsable'],
                 ]);
 
-                if ($activite['lignes'] === []) {
-                    $lignes[] = array_merge($contexteActivite, $this->blancs(), [
-                        "Aucune tâche porteuse de crédit — AE : {$activite['ae']}, CP : {$activite['cp']}",
-                    ]);
-                    continue;
-                }
-
+                // Le service rend au moins une ligne par activité : celle-ci est vide quand
+                // l'activité n'a aucune tâche, et sa note le dit.
                 foreach ($activite['lignes'] as $ligne) {
                     $lignes[] = array_merge($contexteActivite, [
                         implode(' > ', $ligne['designation']),
@@ -127,17 +126,21 @@ class CadreLogiqueEtenduExport implements FromCollection, WithHeadings, WithTitl
     }
 
     /**
-     * Signale la sous-tâche dont le `activite_id` contredit celui de sa mère : l'état la
-     * compte dans l'activité de la mère, la fiche de saisie dans la sienne.
+     * Ce que la ligne n'a pas pu recevoir : activité sans tâche, tâche sans compte lié, ou
+     * sous-tâche dont le `activite_id` contredit celui de sa mère — l'état la compte dans
+     * l'activité de la mère, la fiche de saisie dans la sienne.
      */
     protected function note(array $ligne): ?string
     {
-        $mere = $ligne['mere'];
+        $reclassement = $ligne['mere'] !== null
+            && (int) $ligne['tache']->activite_id !== (int) $ligne['mere']->activite_id
+                ? "la tâche se déclare dans l'activité {$ligne['tache']->activite_id} en saisie"
+                : null;
 
-        if ($mere === null || (int) $ligne['tache']->activite_id === (int) $mere->activite_id) {
-            return null;
-        }
-
-        return "la tâche se déclare dans l'activité {$ligne['tache']->activite_id} en saisie";
+        return collect([
+            $ligne['tache'] === null ? 'aucune tâche saisie dans cette activité' : null,
+            CadreLogiqueEtendu::noteSansCompte($ligne),
+            $reclassement,
+        ])->filter()->implode(' — ') ?: null;
     }
 }

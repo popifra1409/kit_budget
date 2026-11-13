@@ -50,7 +50,7 @@
 
                     <div><span class="font-semibold">4. Stratégie du sous-programme :</span> {{ $sp->strategie ?? '—' }}</div>
                     <div><span class="font-semibold">5. Cadre institutionnel de mise en œuvre :</span> {{ $sp->cadre_institutionnel ?? '—' }}</div>
-                    <div><span class="font-semibold">6. Responsable de mise en œuvre :</span> {{ $sp->responsable?->name ?? '—' }}</div>
+                    <div><span class="font-semibold">6. Responsable de mise en œuvre :</span> {{ $sp->responsable?->nom_complet ?? '—' }}</div>
                 </div>
             @endforeach
         </div>

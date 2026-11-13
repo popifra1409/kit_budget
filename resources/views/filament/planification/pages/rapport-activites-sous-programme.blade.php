@@ -55,7 +55,7 @@
                             <td class="border p-2 text-center">{{ $act->indicateurs->pluck('valeur_reference')->filter()->implode(', ') ?: '—' }}</td>
                             <td class="border p-2 text-center">{{ $act->indicateurs->pluck('valeur_cible')->filter()->implode(', ') ?: '—' }}</td>
                             <td class="border p-2">{{ $act->zone_execution ?? '—' }}</td>
-                            <td class="border p-2">{{ $act->responsable?->name ?? '—' }}</td>
+                            <td class="border p-2">{{ $act->responsable?->nom_complet ?? '—' }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="8" class="border p-2 text-center text-gray-400">Aucune activité</td></tr>

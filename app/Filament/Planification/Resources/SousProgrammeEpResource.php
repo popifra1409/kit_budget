@@ -10,6 +10,7 @@ use App\Models\SousProgrammeEp;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -53,12 +54,10 @@ class SousProgrammeEpResource extends Resource
                         ->required()->unique(ignoreRecord: true)->maxLength(50),
                     Forms\Components\TextInput::make('libelle')
                         ->required()->maxLength(255),
-                    Forms\Components\Select::make('responsable_id')
-                        ->label('Responsable')
-                        ->options(fn() => User::orderBy('name')->pluck('name', 'id'))
-                        ->searchable()
+                    \App\Filament\Planification\Components\ResponsableSelect::make()
+                        ->label('Responsable (agent)')
                         ->required()
-                        ->helperText('Le responsable du sous-programme pilote la revue des libellés : sans lui, le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
+                        ->helperText('Agent de la table des personnels : la revue des libellés et la matrice d\'arrimage ne lui montrent que ses sous-programmes. Sans agent désigné — ou sans fiche reliée à un login — le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
                     Forms\Components\Textarea::make('description')->columnSpanFull(),
                 ])
                 ->columns(2),
@@ -104,7 +103,7 @@ class SousProgrammeEpResource extends Resource
                     ->color(fn(?string $state) => $state ? 'success' : 'danger')
                     ->placeholder('Non rattaché'),
 
-                Tables\Columns\TextColumn::make('responsable.name')
+                Tables\Columns\TextColumn::make('responsable.nom_complet')
                     ->label('Responsable')
                     ->placeholder('Non désigné'),
 
@@ -116,8 +115,99 @@ class SousProgrammeEpResource extends Resource
                     'danger' => 'cloture',
                 ]),
             ])
+
+            // Étape 4 — le filtre que le lien « Sous-programmes » de la fiche d'un programme
+            // ouvre déjà appliqué. Sans ce SelectFilter, le paramètre `tableFilters[…]` de
+            // l'URL est ignoré en silence et la liste entière s'affiche : le lien paraît
+            // fonctionner alors qu'il ne filtre rien.
+            // Options prises SANS le scope d'exercice, contrairement au champ du formulaire
+            // (`programmesExerciceActif()`) : un filtre doit savoir nommer la valeur que porte
+            // la ligne, y compris le programme d'un exercice clôturé consultable après coup.
+            ->filters([
+                Tables\Filters\SelectFilter::make('programme_budgetaire_id')
+                    ->label('Programme de rattachement')
+                    ->options(fn() => Programme::withoutGlobalScope('exercice')
+                        ->orderBy('code')->get()
+                        ->mapWithKeys(fn(Programme $p) => [$p->getKey() => "{$p->code} - {$p->libelle}"]))
+                    ->searchable()
+                    ->placeholder('Tous les programmes'),
+            ])
+
             ->actions([
                 Tables\Actions\EditAction::make(),
+
+                // Même règle que dans le sous-onglet du plan stratégique : le cycle
+                // ne se pilote pas depuis un seul écran.
+                Tables\Actions\Action::make('valider')
+                    ->label('Valider')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn() => auth()->user()->can('valider_sous_programme_ep'))
+                    ->requiresConfirmation()
+                    ->modalHeading(fn(SousProgrammeEp $record) => "Valider — {$record->code}")
+                    ->modalDescription('Le sous-programme passe à « Validé ». Transmettre reste le chemin tracé entre deux agents, ce n\'est plus une condition de la validation.')
+                    ->action(function (SousProgrammeEp $record) {
+                        if (!auth()->user()?->can('valider_sous_programme_ep')) {
+                            Notification::make()
+                                ->title('Action non autorisée')
+                                ->danger()
+                                ->body('Votre rôle ne donne pas le droit de valider un sous-programme.')
+                                ->persistent()
+                                ->send();
+                            return;
+                        }
+
+                        try {
+                            $record->valider();
+                            Notification::make()
+                                ->title("« {$record->code} » est validé")
+                                ->success()
+                                ->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Validation refusée')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('mettreEnVigueur')
+                    ->label('Mettre en vigueur')
+                    ->icon('heroicon-o-play-circle')
+                    ->color('success')
+                    ->visible(fn() => auth()->user()->can('mettre_en_vigueur_sous_programme_ep'))
+                    ->requiresConfirmation()
+                    ->modalHeading(fn(SousProgrammeEp $record) => "Mettre en vigueur — {$record->code}")
+                    ->modalDescription('Le sous-programme passe de « Validé » à « En vigueur » : son contenu devient la référence de l\'exercice.')
+                    ->action(function (SousProgrammeEp $record) {
+                        // « visible » ne protège pas l'appel : le droit est revérifié ici.
+                        if (!auth()->user()?->can('mettre_en_vigueur_sous_programme_ep')) {
+                            Notification::make()
+                                ->title('Action non autorisée')
+                                ->danger()
+                                ->body('Votre rôle ne donne pas le droit de mettre un sous-programme en vigueur.')
+                                ->persistent()
+                                ->send();
+                            return;
+                        }
+
+                        try {
+                            $record->mettreEnVigueur();
+                            Notification::make()
+                                ->title("« {$record->code} » est en vigueur")
+                                ->success()
+                                ->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Mise en vigueur refusée')
+                                ->danger()
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
                 Tables\Actions\Action::make('matrice')
                     ->label("Matrice d'arrimage")
                     ->icon('heroicon-o-squares-2x2')

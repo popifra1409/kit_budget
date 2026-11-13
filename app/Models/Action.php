@@ -26,7 +26,7 @@ class Action extends Model
         'description',
         'ordre',
         'actif',
-        'responsable_id',
+        'responsable_personnel_id',
     ];
 
     protected $casts = [
@@ -83,10 +83,15 @@ class Action extends Model
         return $this->hasMany(Activite::class);
     }
 
-    /** Responsable de mise en œuvre, comme pour les activités. */
+    /**
+     * L'agent qui met l'action en œuvre — `personnels`, pas `users` : le cadre logique
+     * étendu imprime ce nom sous « Responsable de l'action », et un agent sans compte doit
+     * pouvoir être désigné. `withTrashed()` pour qu'un retrait ne fasse pas disparaître un
+     * nom déjà diffusé ; la contrainte, elle, ne mord que sur une purge réelle.
+     */
     public function responsable(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'responsable_id');
+        return $this->belongsTo(Personnel::class, 'responsable_personnel_id')->withTrashed();
     }
 
     /** Indicateurs de l'action (matrice du cadre logique par sous-programme). */

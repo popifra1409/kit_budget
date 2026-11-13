@@ -29,7 +29,7 @@ class ActivitesSousProgrammeExport implements FromCollection, WithHeadings
             $act->indicateurs->pluck('valeur_reference')->filter()->implode(' | '),
             $act->indicateurs->pluck('valeur_cible')->filter()->implode(' | '),
             $act->zone_execution,
-            $act->responsable?->name,
+            $act->responsable?->nom_complet,
         ]);
     }
 }

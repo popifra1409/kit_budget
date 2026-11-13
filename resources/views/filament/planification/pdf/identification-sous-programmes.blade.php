@@ -37,7 +37,7 @@
 
             <p><strong>Stratégie :</strong> {{ $sp->strategie ?? '—' }}</p>
             <p><strong>Cadre institutionnel :</strong> {{ $sp->cadre_institutionnel ?? '—' }}</p>
-            <p><strong>Responsable :</strong> {{ $sp->responsable?->name ?? '—' }}</p>
+            <p><strong>Responsable :</strong> {{ $sp->responsable?->nom_complet ?? '—' }}</p>
         </div>
     @endforeach
 </body>

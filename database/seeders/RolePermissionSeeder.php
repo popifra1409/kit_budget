@@ -983,6 +983,9 @@ class RolePermissionSeeder extends Seeder
                 'transmettre_sous_programme_ep',
                 'valider_sous_programme_ep',
                 'retourner_sous_programme_ep',
+                // Le sous-programme se pilote du début à la fin par ce rôle : la mise
+                // en vigueur (dernière marche du cycle) ne pouvait être posée par personne.
+                'mettre_en_vigueur_sous_programme_ep',
 
                 // Action (classification budgetaire reutilisee, module Budget)
                 'view_any_action',
@@ -1177,6 +1180,27 @@ class RolePermissionSeeder extends Seeder
             ],
             'responsable_sous_programme'
         );
+
+        // ── RATTRAPAGE du cycle de validation du sous-programme ──────────
+        //    « valider » et « mettre en vigueur » sont au catalogue depuis l'écran du pilote
+        //    du plan stratégique : elles existaient donc déjà en base quand ces deux rôles
+        //    ont été créés. Or ajouterPermissionsRole() n'ajoute aux rôles existants que les
+        //    permissions créées lors de CETTE exécution — les lui listes ne suffit pas.
+        //    Attribution explicite, même idiome que le rattrapage des mouvements de crédits.
+        foreach (['responsable_programmation', 'responsable_sous_programme'] as $nomRole) {
+            $role = Role::findByName($nomRole);
+            $aDonner = array_values(array_diff(
+                Permission::whereIn('name', [
+                    'valider_sous_programme_ep',
+                    'mettre_en_vigueur_sous_programme_ep',
+                ])->pluck('name')->all(),
+                $role->permissions()->pluck('name')->all()
+            ));
+            if ($aDonner) {
+                $role->givePermissionTo($aDonner);
+                $this->command->line("  ✓ {$nomRole} — cycle du sous-programme : " . implode(', ', $aDonner));
+            }
+        }
 
         // ── RATTRAPAGE du workflow « mouvements de crédits » ────────────
         //    executer_virement_budgetaire et annuler_virement_budgetaire existaient déjà en base

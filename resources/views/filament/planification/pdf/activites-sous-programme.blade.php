@@ -30,7 +30,7 @@
                     <td>{{ $act->indicateurs->pluck('valeur_reference')->filter()->implode(', ') ?: '—' }}</td>
                     <td>{{ $act->indicateurs->pluck('valeur_cible')->filter()->implode(', ') ?: '—' }}</td>
                     <td>{{ $act->zone_execution ?? '—' }}</td>
-                    <td>{{ $act->responsable?->name ?? '—' }}</td>
+                    <td>{{ $act->responsable?->nom_complet ?? '—' }}</td>
                 </tr>
             @endforeach
         </tbody>

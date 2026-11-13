@@ -35,6 +35,43 @@ class Programme extends Model
     ];
 
     /**
+     * Étape 4 — un seul propriétaire du sous-programme.
+     *
+     * `niveau='sous_programme'` et `parent_id` ne s'écrivent plus depuis ici : le
+     * sous-programme de gestion interne est une ligne de `sous_programmes_ep`, reliée à ce
+     * programme par `programme_budgetaire_id`. Les deux colonnes restent LUES — six gabarits
+     * d'ordonnance et de certificat, `LigneBudgetaire::classification()`,
+     * `NomenclatureBudgetaire`, `DisponibilitesBudgetExport`, la reconduction — et ne
+     * rencontrent plus que des lignes à « programme », donc des branches éteintes, pas des
+     * erreurs.
+     *
+     * `isDirty()` et non la valeur seule : une ligne héritée qui porte déjà `sous_programme`
+     * doit rester consultable et modifiable telle quelle. Sinon la reconduction d'un exercice
+     * passerait son temps à refuser le passé plutôt qu'une nouveauté.
+     */
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::saving(function (self $model) {
+            if ($model->isDirty('niveau') && $model->niveau !== 'programme') {
+                throw new \InvalidArgumentException(
+                    "Un programme est toujours de niveau « programme ». Le sous-programme de gestion interne "
+                        . "n'est plus une ligne de cette table : créez-le dans Planification → Sous-programmes, "
+                        . "où son champ « Programme de rattachement (ministériel) » pointera « {$model->code} »."
+                );
+            }
+
+            if ($model->isDirty('parent_id') && filled($model->parent_id)) {
+                throw new \InvalidArgumentException(
+                    "Le « programme parent » n'a plus de sens : plus aucun sous-programme ne vit dans cette table. "
+                        . "Rattachez-le depuis Planification → Sous-programmes."
+                );
+            }
+        });
+    }
+
+    /**
      * Relation : Objectif principal du programme
      */
     public function objectifsPrincipaux(): HasMany
@@ -95,6 +132,19 @@ class Programme extends Model
     public function sousProgrammes(): HasMany
     {
         return $this->hasMany(Programme::class, 'parent_id')->where('niveau', 'sous_programme');
+    }
+
+    /**
+     * Relation : les sous-programmes de l'EP rattachés à ce programme (Étape 4).
+     *
+     * C'est la lecture qui remplace `sousProgrammes()` pour tout ce qui est nouveau : le lien
+     * vit dans `sous_programmes_ep.programme_budgetaire_id`, contrôlé par
+     * `SousProgrammeEp::boot()` côté enfant — seul un programme de niveau « programme » peut
+     * être désigné comme rattachement.
+     */
+    public function sousProgrammesEp(): HasMany
+    {
+        return $this->hasMany(SousProgrammeEp::class, 'programme_budgetaire_id');
     }
 
     /**

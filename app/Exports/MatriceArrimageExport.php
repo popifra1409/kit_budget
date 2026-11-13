@@ -17,7 +17,7 @@ class MatriceArrimageExport implements WithMultipleSheets
             $b['sp']->code,
             $b['sp']->libelle,
             $b['sp']->programmeBudgetaire?->code,
-            $b['sp']->responsable?->name,
+            $b['sp']->responsable?->nom_complet,
             $b['compteurs']['actions'],
             $b['compteurs']['activites'],
             $b['compteurs']['taches'],
@@ -39,7 +39,7 @@ class MatriceArrimageExport implements WithMultipleSheets
         $detail = $sps->flatMap(fn($b) => collect($b['lignes'])->map(fn($r) => [
             $b['sp']->code,
             $b['sp']->libelle,
-            $b['sp']->responsable?->name,
+            $b['sp']->responsable?->nom_complet,
             $b['sp']->programmeBudgetaire?->code,
             $r['ctx']['action'] ?? '',
             $r['ctx']['activite'] ?? '',
@@ -60,7 +60,7 @@ class MatriceArrimageExport implements WithMultipleSheets
         $anomalies = $sps->flatMap(fn($b) => $b['anomalies']->map(fn($a) => [
             $b['sp']->code,
             $b['sp']->libelle,
-            $b['sp']->responsable?->name,
+            $b['sp']->responsable?->nom_complet,
             ucfirst($a['gravite']),
             $a['message'],
         ]))->all();

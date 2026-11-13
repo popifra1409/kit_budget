@@ -32,7 +32,7 @@ class Activite extends Model
         'created_by',
         'objectif',
         'zone_execution',
-        'responsable_id',
+        'responsable_personnel_id',
     ];
 
     protected $casts = [
@@ -106,9 +106,10 @@ class Activite extends Model
         return $this->hasMany(Extrant::class);
     }
 
+    /** L'agent qui met l'activité en œuvre — voir Action::responsable() pour le pourquoi. */
     public function responsable(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(User::class, 'responsable_id');
+        return $this->belongsTo(Personnel::class, 'responsable_personnel_id')->withTrashed();
     }
     /**
      * Obtenir le budget total (AE) de l'activité

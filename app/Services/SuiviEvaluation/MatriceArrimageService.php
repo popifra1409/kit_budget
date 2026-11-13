@@ -41,13 +41,17 @@ class MatriceArrimageService
 
     /**
      * Sous-programmes que l'utilisateur a le droit de voir : tous, ou
-     * uniquement ceux dont il est responsable. Filtre applique cote serveur.
+     * uniquement ceux dont son agent est responsable. Filtre applique cote serveur.
+     *
+     * Même règle que la revue des libellés : le cloisonnement suit la fiche personnel reliée
+     * au compte, et un compte sans fiche agent ne voit rien (`0`, jamais la liste complète).
      */
     public function sousProgrammesVisibles(PlanStrategiqueEp $psp, User $user): Builder
     {
         return SousProgrammeEp::query()
             ->where('plan_strategique_ep_id', $psp->id)
-            ->when(!$user->can('view_all_matrice_arrimage'), fn($q) => $q->where('responsable_id', $user->id))
+            ->when(!$user->can('view_all_matrice_arrimage'),
+                fn($q) => $q->where('responsable_personnel_id', $user->personnel?->id ?? 0))
             ->orderBy('code');
     }
 
@@ -95,7 +99,7 @@ class MatriceArrimageService
         $actions = $sp->actionsPourExercice($exerciceId)->get();
 
         $this->verifier(filled($sp->objectif), 'majeure', 'Sous-programme sans objectif formulé');
-        $this->verifier((bool) $sp->responsable_id, 'majeure', 'Sous-programme sans responsable désigné');
+        $this->verifier((bool) $sp->responsable_personnel_id, 'majeure', 'Sous-programme sans responsable désigné');
         $this->verifier((bool) $sp->programme_budgetaire_id, 'critique', 'Sous-programme non rattaché à un programme budgétaire');
         $this->verifier(filled($sp->code_programme_ep), 'critique', "Aucun programme budgétaire de l'EP rattaché (actions introuvables)");
         $this->verifier($sp->indicateurs->isNotEmpty(), 'majeure', 'Aucun indicateur au niveau du sous-programme');
@@ -170,7 +174,7 @@ class MatriceArrimageService
         $this->verifier($activite->indicateurs->isNotEmpty(), 'majeure', "{$nom} : aucun indicateur");
         $this->verifier($activite->indicateurs->every(fn($i) => filled($i->valeur_cible)), 'majeure', "{$nom} : indicateur(s) sans valeur cible");
         $this->verifier($activite->extrants->isNotEmpty(), 'mineure', "{$nom} : aucun extrant défini");
-        $this->verifier((bool) $activite->responsable_id, 'mineure', "{$nom} : sans responsable de mise en œuvre");
+        $this->verifier((bool) $activite->responsable_personnel_id, 'mineure', "{$nom} : sans responsable de mise en œuvre");
         $this->verifier($activite->taches->isNotEmpty(), 'critique', "{$nom} : aucune tâche (activité non budgétisée)");
 
         $indicateurs = $activite->indicateurs->map(fn($i) => $this->formaterIndicateur($i))->all();
@@ -197,7 +201,7 @@ class MatriceArrimageService
         $ctx = [
             'action'               => $actionLibelle,
             'activite'             => $activite->libelle,
-            'responsable_activite' => $activite->responsable?->name,
+            'responsable_activite' => $activite->responsable?->nom_complet,
             'extrants'             => collect($extrants)->pluck('libelle')->implode(' | '),
             'indicateurs'          => collect($indicateurs)
                 ->map(fn($i) => "{$i['libelle']} (cible " . ($i['cible'] ?? '—') . ', réalisé ' . ($i['realise'] ?? '—') . ')')
@@ -246,7 +250,7 @@ class MatriceArrimageService
             'libelle'     => $activite->libelle,
             'objectif'    => $activite->objectif,
             'zone'        => $activite->zone_execution,
-            'responsable' => $activite->responsable?->name,
+            'responsable' => $activite->responsable?->nom_complet,
             'indicateurs' => $indicateurs,
             'extrants'    => $extrants,
             'rowspan'     => count($lignes),

@@ -71,8 +71,17 @@ class ActionsRelationManager extends RelationManager
 
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    // La fiche de l'action porte maintenant l'onglet « Activités » : c'est par
+                    // là que la chaîne continue (une activité se décline en tâches).
+                    Tables\Actions\Action::make('ouvrirFiche')
+                        ->label('Fiche de l\'action (créer ses activités)')
+                        ->icon('heroicon-o-document-text')
+                        ->url(fn(Action $record) => \App\Filament\Planification\Resources\ActionResource::getUrl('edit', [
+                            'record' => $record->getKey(),
+                        ])),
+
                     Tables\Actions\Action::make('gererActivites')
-                        ->label('Gérer les activités')
+                        ->label('Lister les activités de l\'action')
                         ->icon('heroicon-o-bolt')
                         ->url(
                             fn(Action $record) =>

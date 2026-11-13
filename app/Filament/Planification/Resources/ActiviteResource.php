@@ -103,10 +103,7 @@ class ActiviteResource extends Resource
                     ->columnSpanFull(),
                 Forms\Components\TextInput::make('zone_execution')
                     ->label('Zone ou lieu d\'exécution'),
-                Forms\Components\Select::make('responsable_id')
-                    ->label('Responsable de mise en œuvre')
-                    ->options(\App\Models\User::pluck('name', 'id'))
-                    ->searchable(),
+                \App\Filament\Planification\Components\ResponsableSelect::make(),
 
                 Forms\Components\Section::make('Informations de l\'Activité')
                     ->schema([

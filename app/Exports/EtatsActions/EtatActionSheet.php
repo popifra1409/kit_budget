@@ -77,15 +77,8 @@ class EtatActionSheet implements FromCollection, WithHeadings, WithTitle, Should
             ]);
             $details = [$this->extrants($activite), $this->indicateurs($activite)];
 
-            if ($activite['lignes'] === []) {
-                $lignes[] = $this->rangee(
-                    $contexte,
-                    $this->blancsTaches(),
-                    array_merge($details, ["Aucune tâche porteuse de crédit — AE : {$activite['ae']}, CP : {$activite['cp']}"]),
-                );
-                continue;
-            }
-
+            // Une ligne par tâche de l'état : le service en rend toujours au moins une, vide
+            // quand l'activité n'a aucune tâche, et la note le dit.
             foreach ($activite['lignes'] as $ligne) {
                 $lignes[] = $this->rangee($contexte, $this->tache($ligne), array_merge($details, [$this->note($ligne)]));
             }
@@ -179,15 +172,18 @@ class EtatActionSheet implements FromCollection, WithHeadings, WithTitle, Should
         ), $activite['indicateurs']));
     }
 
-    /** Signal de reclassement, identique à celui de la matrice étendue. */
+    /** Activité sans tâche, tâche sans compte lié, reclassement : les mêmes signaux que la matrice. */
     protected function note(array $ligne): ?string
     {
-        $mere = $ligne['mere'];
+        $reclassement = $ligne['mere'] !== null
+            && (int) $ligne['tache']->activite_id !== (int) $ligne['mere']->activite_id
+                ? "la tâche se déclare dans l'activité {$ligne['tache']->activite_id} en saisie"
+                : null;
 
-        if ($mere === null || (int) $ligne['tache']->activite_id === (int) $mere->activite_id) {
-            return null;
-        }
-
-        return "la tâche se déclare dans l'activité {$ligne['tache']->activite_id} en saisie";
+        return collect([
+            $ligne['tache'] === null ? 'aucune tâche saisie dans cette activité' : null,
+            CadreLogiqueEtendu::noteSansCompte($ligne),
+            $reclassement,
+        ])->filter()->implode(' — ') ?: null;
     }
 }

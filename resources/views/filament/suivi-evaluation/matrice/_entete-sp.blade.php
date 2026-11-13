@@ -10,7 +10,7 @@
         <th style="width:18%">Programme de rattachement</th>
         <td>{{ $sp->programmeBudgetaire?->code }} {{ $sp->programmeBudgetaire?->libelle ?? '—' }}</td>
         <th style="width:12%">Responsable</th>
-        <td>{{ $sp->responsable?->name ?? '—' }}</td>
+        <td>{{ $sp->responsable?->nom_complet ?? '—' }}</td>
     </tr>
     <tr><th>Objectif du sous-programme</th><td colspan="3">{{ $sp->objectif ?? '—' }}</td></tr>
     @if ($sp->strategie)

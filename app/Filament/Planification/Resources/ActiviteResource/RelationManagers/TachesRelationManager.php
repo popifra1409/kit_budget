@@ -2,6 +2,7 @@
 
 namespace App\Filament\Planification\Resources\ActiviteResource\RelationManagers;
 
+use App\Filament\Planification\Resources\Concerns\EmpecheTacheSansCredit;
 use App\Models\NomenclatureBudgetaire;
 use App\Models\Service;
 use App\Models\Tache;
@@ -13,6 +14,7 @@ use Filament\Tables\Table;
 
 class TachesRelationManager extends RelationManager
 {
+    use EmpecheTacheSansCredit;
     protected static string $relationship = 'taches';
 
     protected static ?string $title = 'Tâches';
@@ -51,12 +53,26 @@ class TachesRelationManager extends RelationManager
                 ->label('Nomenclature budgétaire')
                 ->relationship('nomenclature', 'libelle')
                 ->searchable()->preload()
-                ->visible(fn(Forms\Get $get) => $get('niveau') === 'sous_tache')
-                ->helperText("La nomenclature ne se renseigne que sur les sous-tâches (niveau d'imputation le plus fin)."),
+                // Une tâche principale SANS sous-tâche peut être liée directement à un compte :
+                // c'est le seul moyen pour elle de porter une case dans la matrice de crédits.
+                // Auparavant ce champ était caché dès que niveau = « tâche principale », et cet
+                // écran ne pouvait donc produire aucune tâche porteuse de crédit.
+                ->visible(fn(Forms\Get $get, ?Tache $record = null) => $get('niveau') === 'sous_tache'
+                    || static::sansSousTaches($record))
+                ->required(fn(Forms\Get $get) => $get('niveau') === 'sous_tache')
+                ->disabled(fn(Forms\Get $get, ?Tache $record = null) => $get('niveau') === 'tache'
+                    && !static::sansSousTaches($record))
+                ->helperText(fn(Forms\Get $get, ?Tache $record = null) => match (true) {
+                    $get('niveau') === 'sous_tache' => 'Obligatoire pour une sous-tâche.',
+                    !static::sansSousTaches($record) => 'Cette tâche a des sous-tâches : la nomenclature se renseigne sur chacune d\'elles.',
+                    default => 'Facultatif : liez la tâche à une nomenclature pour qu\'elle porte elle-même le crédit ; ses AE/CP se saisissent alors ci-dessous.',
+                }),
+
+            static::confirmationTacheSansCredit(),
 
             Forms\Components\Select::make('service_id')
                 ->label('Service responsable')
-                ->relationship('service', 'libelle')
+                ->relationship('service', 'nom')
                 ->searchable()->preload(),
 
             Forms\Components\Fieldset::make('Montants')
@@ -64,17 +80,19 @@ class TachesRelationManager extends RelationManager
                     Forms\Components\TextInput::make('ae')
                         ->label('AE (Autorisation d\'Engagement)')
                         ->numeric()
-                        ->disabled(fn(Forms\Get $get) => $get('niveau') === 'tache')
-                        ->helperText(fn(Forms\Get $get) => $get('niveau') === 'tache'
-                            ? "Calculé automatiquement (somme des sous-tâches)."
-                            : null),
+                        ->disabled(fn(Forms\Get $get, ?Tache $record = null) => !static::tacheDosee($get, $record))
+                        ->dehydrated(fn(Forms\Get $get, ?Tache $record = null) => static::tacheDosee($get, $record))
+                        ->helperText(fn(Forms\Get $get, ?Tache $record = null) => static::tacheDosee($get, $record)
+                            ? "Montant de l'autorisation d'engagement."
+                            : 'Calculé automatiquement (somme des sous-tâches).'),
                     Forms\Components\TextInput::make('cp')
                         ->label('CP (Crédit de Paiement)')
                         ->numeric()
-                        ->disabled(fn(Forms\Get $get) => $get('niveau') === 'tache')
-                        ->helperText(fn(Forms\Get $get) => $get('niveau') === 'tache'
-                            ? "Calculé automatiquement (somme des sous-tâches)."
-                            : null),
+                        ->disabled(fn(Forms\Get $get, ?Tache $record = null) => !static::tacheDosee($get, $record))
+                        ->dehydrated(fn(Forms\Get $get, ?Tache $record = null) => static::tacheDosee($get, $record))
+                        ->helperText(fn(Forms\Get $get, ?Tache $record = null) => static::tacheDosee($get, $record)
+                            ? "Montant du crédit de paiement."
+                            : 'Calculé automatiquement (somme des sous-tâches).'),
                 ])->columns(2),
 
             Forms\Components\Fieldset::make('Suivi')
@@ -106,7 +124,7 @@ class TachesRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('parent.libelle')
                     ->label('Tâche parente')
                     ->placeholder('—'),
-                Tables\Columns\TextColumn::make('service.libelle')->label('Service'),
+                Tables\Columns\TextColumn::make('service.nom')->label('Service'),
                 Tables\Columns\TextColumn::make('nomenclature.libelle')
                     ->label('Nomenclature')
                     ->placeholder('—')

@@ -23,7 +23,7 @@
     <table class="ident">
         <tr><td>Action</td><td>{{ $rapport->activite?->action?->libelle ?? '—' }}</td></tr>
         <tr><td>Activité</td><td>{{ $rapport->activite?->libelle ?? '—' }}</td></tr>
-        <tr><td>Responsable</td><td>{{ $rapport->activite?->responsable?->name ?? '—' }}</td></tr>
+        <tr><td>Responsable</td><td>{{ $rapport->activite?->responsable?->nom_complet ?? '—' }}</td></tr>
         <tr><td>Zone d'exécution</td><td>{{ $rapport->activite?->zone_execution ?? '—' }}</td></tr>
         <tr><td>Poids de l'activité / objectifs de l'action</td>
             <td>{{ $rapport->poids_activite !== null ? $rapport->poids_activite.' %' : '—' }}</td></tr>

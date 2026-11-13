@@ -120,10 +120,7 @@ class ActionResource extends Resource
                         Forms\Components\Textarea::make('description')
                             ->label('Description')->rows(3)->columnSpanFull(),
 
-                        Forms\Components\Select::make('responsable_id')
-                            ->label('Responsable de mise en œuvre')
-                            ->options(\App\Models\User::pluck('name', 'id'))
-                            ->searchable(),
+                        \App\Filament\Planification\Components\ResponsableSelect::make(),
 
                         Forms\Components\TextInput::make('ordre')
                             ->label('Ordre d\'affichage')->numeric()->default(0),
@@ -194,7 +191,7 @@ class ActionResource extends Resource
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')->searchable()->sortable()->wrap()->limit(50),
 
-                Tables\Columns\TextColumn::make('responsable.name')
+                Tables\Columns\TextColumn::make('responsable.nom_complet')
                     ->label('Responsable de mise en œuvre')->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('activites_count')
@@ -267,6 +264,9 @@ class ActionResource extends Resource
     public static function getRelations(): array
     {
         return [
+            // Le niveau suivant de la hiérarchie d'abord : une action se décline en activités,
+            // et c'est de là que la chaîne repart vers les tâches.
+            \App\Filament\Planification\Resources\ActionResource\RelationManagers\ActivitesRelationManager::class,
             \App\Filament\Planification\Resources\Concerns\IndicateursRelationManager::class,
         ];
     }

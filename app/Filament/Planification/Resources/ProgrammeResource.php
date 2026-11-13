@@ -101,51 +101,36 @@ class ProgrammeResource extends Resource
                     ->collapsible()
                     ->collapsed(fn($record) => $record !== null),
 
-                Forms\Components\Section::make('Hiérarchie')
-                    ->description('Définir si c\'est un programme principal ou un sous-programme')
+                // Étape 4 — « Hiérarchie » n'est plus un choix : depuis cet écran, un
+                // programme est toujours de niveau « programme ». L'ancienne option
+                // « sous_programme » fabriquait une deuxième famille de sous-programmes,
+                // sans actions ni budget, introuvable depuis les états — le seul
+                // propriétaire est désormais « Sous-programmes » (SousProgrammeEp), qui
+                // rattache ici par `programme_budgetaire_id`.
+                Forms\Components\Section::make('Sous-programmes')
+                    ->description('Un programme est toujours de niveau « programme » ; ses sous-programmes se gèrent dans leur propre écran.')
                     ->schema([
-                        Forms\Components\Select::make('niveau')
-                            ->label('Niveau')
-                            ->options([
-                                'programme'     => 'Programme (rattachement tutelle)',
-                                'sous_programme' => 'Sous-programme (subdivision de gestion interne)',
-                            ])
-                            ->required()->default('programme')->live()
-                            ->afterStateUpdated(function ($state, callable $set) {
-                                if ($state === 'programme') $set('parent_id', null);
-                            })
-                            ->helperText('Un sous-programme doit être rattaché à un programme principal'),
+                        // `Hidden`, pas d'absence du champ : sans lui, l'instance créée ne
+                        // porterait `niveau` qu'après relecture (la valeur vient du défaut de
+                        // colonne), et `estProgrammePrincipal()` la nierait sur l'objet frais.
+                        Forms\Components\Hidden::make('niveau')->default('programme'),
 
-                        Forms\Components\Select::make('parent_id')
-                            ->label('Programme parent')
-                            ->searchable()->preload()
-                            ->placeholder('Aucun (Programme principal)')
-                            ->disabled(fn(callable $get) => $get('niveau') === 'programme')
-                            ->required(fn(callable $get) => $get('niveau') === 'sous_programme')
-                            ->helperText('Sélectionner le programme principal pour ce sous-programme')
-                            ->getSearchResultsUsing(function (string $search) {
-                                return \App\Models\Programme::where('niveau', 'programme')
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('libelle', 'like', "%{$search}%")
-                                            ->orWhere('code', 'like', "%{$search}%");
-                                    })
-                                    ->limit(50)->get()
-                                    ->mapWithKeys(fn($item) => [$item->id => "{$item->code} - {$item->libelle}"]);
-                            })
-                            ->getOptionLabelUsing(
-                                fn($value): ?string =>
-                                \App\Models\Programme::find($value)?->code . ' - ' .
-                                    \App\Models\Programme::find($value)?->libelle
-                            ),
+                        Forms\Components\Placeholder::make('sous_programmes_rattaches')
+                            ->label('Sous-programmes rattachés')
+                            ->content(fn (?Programme $record): string => $record === null
+                                ? "Le rattachement se pose côté sous-programme : Planification → Sous-programmes, champ « Programme de rattachement (ministériel) »."
+                                : $record->sousProgrammesEp()->count()
+                                    . ' sous-programme(s) de l\'EP rattaché(s) à « ' . $record->code . ' ».'),
                     ])
-                    ->columns(2)->collapsible()
-                    ->collapsed(fn($record) => $record !== null && $record->niveau === 'programme'),
+                    ->collapsible(),
 
                 Forms\Components\Section::make('Informations du Programme')
                     ->schema([
                         Forms\Components\TextInput::make('code')
                             ->label('Code')->required()->unique(ignoreRecord: true)
-                            ->maxLength(50)->placeholder('Ex: P413 ou P413-01'),
+                            // Plus de « P413-01 » : l'exemple à suffixe était le gabarit des
+                            // sous-programmes de gestion interne, qui ne se créent plus ici.
+                            ->maxLength(50)->placeholder('Ex: 413'),
 
                         Forms\Components\TextInput::make('libelle')
                             ->label('Libellé')->required()->maxLength(255)->columnSpanFull()
@@ -154,24 +139,11 @@ class ProgrammeResource extends Resource
                         Forms\Components\Textarea::make('description')
                             ->label('Description')->rows(3)->columnSpanFull(),
 
-                        Forms\Components\Select::make('responsable_personnel_id')
-                            ->label('Responsable (agent)')
-                            ->searchable()->preload()
-                            ->placeholder('Aucun')
-                            // La liste vient des agents en poste. Un agent déjà posé sur ce
-                            // programme mais retiré entre-temps reste dans la liste, sinon le
-                            // champ afficherait un identifiant nu et un enregistrement sans
-                            // clic pourrait effacer le responsable. Le suffixe le signale :
-                            // ce n'est pas un choix à faire pour la première fois.
-                            ->options(fn ($record) => \App\Models\Personnel::withTrashed()
-                                ->where(fn ($q) => $q->whereNull('deleted_at')
-                                    ->orWhere('id', $record?->responsable_personnel_id))
-                                ->orderBy('nom')->orderBy('prenoms')->get()
-                                ->mapWithKeys(fn ($p) => [
-                                    $p->id => $p->nom_complet.' ('.($p->matricule ?: '—').')'
-                                        .($p->trashed() ? ' — agent retiré' : ''),
-                                ]))
-                            ->helperText('Table des personnels, et non des comptes : un agent sans accès peut être responsable. C\'est lui qu\'imprimera le cadre logique étendu.'),
+                        // La règle — les agents en poste, plus celui déjà posé même s'il est
+                        // retiré — est la même sur les quatre niveaux de la hiérarchie : elle
+                        // vit dans ResponsableSelect, pas ici.
+                        \App\Filament\Planification\Components\ResponsableSelect::make()
+                            ->label('Responsable (agent)'),
 
                         Forms\Components\TextInput::make('annee')
                             ->label('Année budgétaire')->required()->numeric()
@@ -239,25 +211,36 @@ class ProgrammeResource extends Resource
                 ])
                 ->columns(4),
 
-            Infolists\Components\Section::make('Hiérarchie')
+            // Étape 4 — le bloc affichait `niveau` et « Programme parent », deux valeurs qui
+            // n'existeront plus jamais ici. Il liste les sous-programmes de l'EP rattachés au
+            // programme et mène à leur écran : c'est la seule hiérarchie qui reste.
+            Infolists\Components\Section::make('Sous-programmes')
+                ->description('Le sous-programme de gestion interne se crée et se pilote dans l\'écran « Sous-programmes » ; son champ « Programme de rattachement (ministériel) » est ce programme.')
                 ->schema([
-                    Infolists\Components\TextEntry::make('niveau')
-                        ->label('Niveau')->badge()
-                        ->formatStateUsing(fn (?string $state): string => match ($state) {
-                            'programme' => 'Programme',
-                            'sous_programme' => 'Sous-programme',
-                            default => ucfirst((string) $state),
-                        })
-                        ->color(fn (?string $state): string => $state === 'sous_programme' ? 'success' : 'primary'),
+                    // Entrée multi-valeurs plutôt que `RepeatableEntry` : seule une entrée
+                    // connaît son `placeholder()`, donc seule elle sait dire le vide —
+                    // l'infolist n'a pas de `description()` sur ses entrées.
+                    Infolists\Components\TextEntry::make('sousProgrammesEp.code')
+                        ->label('Sous-programmes rattachés')
+                        ->badge()->color('primary')
+                        ->placeholder('Aucun sous-programme de l\'EP n\'a ce programme pour rattachement')
+                        ->helperText('Le libellé, le responsable et le statut de chaque sous-programme se lisent dans l\'écran « Sous-programmes ».'),
 
-                    Infolists\Components\TextEntry::make('parent')
-                        ->label('Programme parent')
-                        ->placeholder('Aucun (programme principal)')
-                        ->formatStateUsing(fn (?Programme $state): ?string => $state === null
-                            ? null
-                            : "{$state->code} — {$state->libelle}"),
-                ])
-                ->columns(2),
+                    Infolists\Components\Actions::make([
+                        Infolists\Components\Actions\Action::make('voir_sous_programmes')
+                            ->label('Ouvrir les sous-programmes de ce programme')
+                            ->icon('heroicon-o-square-2-stack')
+                            // Le lien n'est pas conditionné au droit : un bouton caché se
+                            // lirait comme « ce programme n'a pas de sous-programme ». C'est
+                            // l'écran cible qui répond, et il répond visiblement.
+                            ->url(fn (Programme $record): string => static::urlSousProgrammesRattaches($record)),
+                    ]),
+                    // Pas de `key()` ici : vendor `HasAction::isLivewireClickHandlerEnabled()`
+                    // coupe le gestionnaire d'événement dès qu'une URL est posée, et c'est
+                    // uniquement ce gestionnaire qui réclame une clé. Le contrôle par mutation l'a
+                    // vérifié en retirant la ligne : la fiche se rendait sans changement. La
+                    // première action de modal ajoutée dans ce bloc devra sa `key()`.
+                ]),
 
             Infolists\Components\Section::make('Informations du Programme')
                 ->schema([
@@ -327,6 +310,25 @@ class ProgrammeResource extends Resource
     }
 
     // ========================================
+    // LIEN VERS LES SOUS-PROGRAMMES (Étape 4)
+    // ========================================
+
+    /**
+     * La liste des sous-programmes de l'EP rattachés à ce programme, ouverte déjà filtrée.
+     *
+     * Le paramètre `tableFilters[…]` n'a d'effet que parce que
+     * `SousProgrammeEpResource::table()` déclare un `SelectFilter` de ce nom : renommer la
+     * clé d'un côté sans l'autre ne lève aucune erreur à l'exécution, cela rend seulement le
+     * lien muet — la liste entière s'affiche. C'est ce que contrôle le harnais.
+     */
+    public static function urlSousProgrammesRattaches(Programme $record): string
+    {
+        return SousProgrammeEpResource::getUrl('index', [
+            'tableFilters[programme_budgetaire_id][value]' => $record->getKey(),
+        ]);
+    }
+
+    // ========================================
     // REQUÊTE
     // ========================================
 
@@ -365,25 +367,10 @@ class ProgrammeResource extends Resource
                 Tables\Columns\TextColumn::make('libelle')
                     ->label('Libellé')->searchable()->sortable()->weight('bold')->wrap(),
 
-                Tables\Columns\BadgeColumn::make('niveau')
-                    ->label('Niveau')
-                    ->colors(['primary' => 'programme', 'success' => 'sous_programme'])
-                    ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'programme'      => 'Programme',
-                        'sous_programme' => 'Sous-programme',
-                        default          => ucfirst($state),
-                    })
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('parent.code')
-                    ->label('Programme parent')->searchable()->sortable()->toggleable()
-                    ->placeholder('—')
-                    ->formatStateUsing(
-                        fn($record) =>
-                        $record->parent
-                            ? "{$record->parent->code} - " . \Str::limit($record->parent->libelle, 30)
-                            : '—'
-                    ),
+                // Étape 4 : les colonnes « Niveau » et « Programme parent » rendaient une
+                // valeur constante (« Programme ») et un tiret pour toutes les lignes. Elles
+                // disparaissent avec l'option du formulaire ; la hiérarchie qui reste tient
+                // dans l'action « Sous-programmes » ci-dessous.
 
                 // `nom_complet` est un accesseur, pas une colonne : ni sortable ni
                 // searchable ici, le SQL n'a rien à trier. Le tri par responsable se fera
@@ -408,17 +395,8 @@ class ProgrammeResource extends Resource
                     ->placeholder('Tous les exercices')
                     ->default(fn() => Exercice::getActif()?->id),
 
-                Tables\Filters\SelectFilter::make('niveau')
-                    ->label('Niveau')
-                    ->options([
-                        'programme'      => 'Programme principal',
-                        'sous_programme' => 'Sous-programme',
-                    ]),
-
-                Tables\Filters\SelectFilter::make('parent_id')
-                    ->label('Programme parent')
-                    ->relationship('parent', 'libelle')->searchable()->preload(),
-
+                // Filtres « Niveau » et « Programme parent » retirés avec leurs colonnes :
+                // ils n'offraient que des valeurs que ce formulaire ne produit plus.
                 Tables\Filters\SelectFilter::make('annee')
                     ->label('Année')
                     ->options(fn() => range(2020, 2050)),
@@ -434,6 +412,15 @@ class ProgrammeResource extends Resource
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make(),
                     Tables\Actions\EditAction::make(),
+
+                    // Étape 4 — le programme ne porte plus ses sous-programmes, il y mène.
+                    // L'action reste visible même sans droit : le compte refusé tombe sur le
+                    // 403 de l'écran cible, ce qui se voit, plutôt que sur un bouton absent
+                    // qui ferait croire que le programme n'a pas de sous-programme.
+                    Tables\Actions\Action::make('sous_programmes')
+                        ->label('Sous-programmes')
+                        ->icon('heroicon-o-square-2-stack')
+                        ->url(fn (Programme $record): string => static::urlSousProgrammesRattaches($record)),
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')

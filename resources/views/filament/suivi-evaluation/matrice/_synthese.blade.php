@@ -12,7 +12,7 @@
             <tr>
                 <td><strong>{{ $b['sp']->code }}</strong> {{ $b['sp']->libelle }}</td>
                 <td>{{ $b['sp']->programmeBudgetaire?->code ?? '—' }}</td>
-                <td>{{ $b['sp']->responsable?->name ?? '—' }}</td>
+                <td>{{ $b['sp']->responsable?->nom_complet ?? '—' }}</td>
                 <td class="mx-num">{{ $b['compteurs']['actions'] }} / {{ $b['compteurs']['activites'] }} / {{ $b['compteurs']['taches'] }}</td>
                 <td class="mx-num">{{ number_format($b['cp'], 0, ',', ' ') }}</td>
                 <td class="mx-num">{{ number_format($b['engage'], 0, ',', ' ') }}</td>

@@ -36,10 +36,17 @@ use Illuminate\Support\Collection;
  *    `exercice` de HasExercice est neutralisé dans les eager-loads et remplacé par
  *    `exercice_id = ? OR NULL`, comme SousProgrammeEp::activitesPourExercice().
  *
- * Les lignes imprimées sont exactement l'ensemble `Tache::porteusesBudget()` : une tâche
- * qui a des sous-tâches est représentée par ses filles (les deux compteraient double),
- * une tâche sans fille n'est imprimée que si elle porte une nomenclature. La somme des
- * lignes d'une activité égale donc Activite::getTotalAe(), sans double comptage.
+ * Les lignes suivent la hiérarchie de saisie, tâche par tâche : une tâche qui a des
+ * sous-tâches est représentée par ses filles (les deux compteraient double), une tâche
+ * sans fille est imprimée pour elle-même avec ou sans nomenclature, et une activité sans
+ * tâche garde une ligne blanche. La somme des lignes d'une activité égale alors
+ * Activite::getTotalAe(), celle d'une action égale Action::getTotalAe() : n'imprimer que
+ * les tâches pourvues d'un compte perdait le montant saisi sous une tâche sans compte,
+ * alors que l'écran de saisie, lui, le comptait — l'état était auto-cohérent et faux.
+ *
+ * Ce qui reste à signaler n'est plus une ligne manquante mais une ligne sans compte :
+ * les tâches imprimées sans nomenclature remontent dans `anomalies()['sans_budget']`, et
+ * les états le disent au lecteur.
  *
  * « Indicateur de résultat » est la colonne texte de la tâche : les Indicateurs
  * structurés (table `indicateurs`, polymorphe action/activité) appartiennent au CDMT et
@@ -62,6 +69,13 @@ class CadreLogiqueEtendu
         'indicateur'     => 'Indicateur de résultat',
         'resultat'       => 'Résultat attendu',
     ];
+
+    /**
+     * L'en-tête de la colonne qui précède `COLONNES` à l'écran et dans le PDF : l'activité y
+     * occupe une cellule pour tout le groupe de ses tâches, ce qui laisse l'action hors du
+     * tableau. Le classeur répète le contexte colonne par colonne et n'a pas cette colonne.
+     */
+    public const ENTETE_ACTIVITE = 'Activité';
 
     /** @var Collection<int, Action>|null une seule descente en base par instance */
     private ?Collection $actions = null;
@@ -127,7 +141,8 @@ class CadreLogiqueEtendu
      *     action: Action, titre: string, objectif: ?string, responsable: ?string,
      *     programme: ?string, pilote: ?string, ae: float, cp: float,
      *     activites: array<int, array{activite: Activite, code: ?string, titre: ?string,
-     *         responsable: ?string, ae: float, cp: float, lignes: array<int, array>}>
+     *         responsable: ?string, ae: float, cp: float, lignes: array<int, array>,
+     *         sans_tache: bool}>
      * }>
      */
     public function blocs(): array
@@ -140,7 +155,7 @@ class CadreLogiqueEtendu
                     'action'      => $action,
                     'titre'       => trim("Action {$action->code} : {$action->libelle}"),
                     'objectif'    => $action->objectifPourCadreLogique(),
-                    'responsable' => $action->responsable?->name,
+                    'responsable' => $action->responsable?->nom_complet,
                     'programme'   => $action->programme
                         ? trim("{$action->programme->code} : {$action->programme->libelle}") : null,
                     // L'agent désigné sur le Programme porteur : le même que la fiche
@@ -154,7 +169,10 @@ class CadreLogiqueEtendu
             ->all();
     }
 
-    /** @return array<int, array{activite: Activite, code: ?string, titre: ?string, responsable: ?string, ae: float, cp: float, lignes: array<int, array>}> */
+    /**
+     * @return array{activite: Activite, code: ?string, titre: ?string, responsable: ?string,
+     *     ae: float, cp: float, lignes: array<int, array>, sans_tache: bool}
+     */
     protected function sousBloc(Activite $activite): array
     {
         $lignes = [];
@@ -168,21 +186,24 @@ class CadreLogiqueEtendu
                 continue;
             }
 
-            if ($mere->estPorteuseBudget()) {
-                $lignes[] = $this->ligne($mere, null);
-            }
-            // Ni fille ni nomenclature : la tâche ne finance rien, elle n'a pas de case
-            // dans une matrice de crédits. Elle resterait une ligne à 0 FCFA.
+            // La mère est sa propre ligne, qu'un compte lui soit lié ou non. L'écarter
+            // faute de nomenclature (ancien `estPorteuseBudget()`) enlevait une case de la
+            // matrice tout en laissant son montant dans Activite::getTotalAe() : les deux
+            // vues du même sous-programme ne tombaient plus d'accord.
+            $lignes[] = $this->ligne($mere, null);
         }
 
         return [
             'activite'    => $activite,
             'code'        => $activite->code,
             'titre'       => $activite->libelle,
-            'responsable' => $activite->responsable?->name,
+            'responsable' => $activite->responsable?->nom_complet,
             'ae'          => array_sum(array_column($lignes, 'ae')),
             'cp'          => array_sum(array_column($lignes, 'cp')),
-            'lignes'      => $lignes,
+            // Une activité sans tâche reste dans la matrice, sur une ligne vide : amputer
+            // la structure rend « rien à programmer » et « rien ici » identiques.
+            'lignes'      => $lignes === [] ? [$this->ligneVide()] : $lignes,
+            'sans_tache'  => $lignes === [],
         ];
     }
 
@@ -194,6 +215,7 @@ class CadreLogiqueEtendu
      * @return array{designation: string[], code: ?string, nomenclature: ?string,
      *     ae: float, cp: float, delai: ?string, guichet: ?string, service: ?string,
      *     indicateur: ?string, resultat: ?string, tache: Tache, mere: ?Tache}
+     * @see ligneVide() pour la même forme à l'état neutre
      */
     protected function ligne(Tache $tache, ?Tache $mere): array
     {
@@ -221,7 +243,31 @@ class CadreLogiqueEtendu
         ];
     }
 
-    /** @return array<int, array> Une ligne plate par tâche porteuse, contexte inclus — pour Excel. */
+    /**
+     * La ligne d'une activité qui n'a aucune tâche : mêmes clés que ligne(), valeurs vides.
+     * Les montants sont null et non 0 — un zéro se lit comme une saisie, ici rien ne l'est.
+     *
+     * @return array<string, mixed>
+     */
+    protected function ligneVide(): array
+    {
+        return [
+            'designation'  => [],
+            'code'         => null,
+            'nomenclature' => null,
+            'ae'           => null,
+            'cp'           => null,
+            'delai'        => null,
+            'guichet'      => null,
+            'service'      => null,
+            'indicateur'   => null,
+            'resultat'     => null,
+            'tache'        => null,
+            'mere'         => null,
+        ];
+    }
+
+    /** @return array<int, array> Une ligne plate par tâche imprimée, contexte inclus — pour Excel. */
     public function lignes(): array
     {
         $plates = [];
@@ -248,11 +294,18 @@ class CadreLogiqueEtendu
      * que l'état imprime alors que leur propre `activite_id` les donne à un autre
      * sous-programme. Une liste vide dit que les deux vues de la base concordent.
      *
-     * @return array{reclassees: array<int, array>, absentes: array<int, array>}
+     * La troisième liste nomme les lignes imprimées sans compte lié : leur case existe,
+     * son montant est saisi, mais rien en face dans le budget. Sans elle, une matrice
+     * entièrement vide de codes de nomenclature se lirait comme un sous-programme sans
+     * crédit.
+     *
+     * @return array{reclassees: array<int, array>, absentes: array<int, array>, sans_budget: array<int, array>}
      */
     public function anomalies(): array
     {
-        $imprimees = collect($this->lignes())->map(fn($l) => $l['tache']->id);
+        // La ligne blanche d'une activité sans tâche n'a pas de tâche : elle ne peut ni
+        // être « imprimée » au sens des porteuses, ni manquer — elle sort de la liste.
+        $imprimees = collect($this->lignes())->map(fn($l) => $l['tache']?->id)->filter();
 
         // La vue « propre activite_id », telle que la donnent les écrans de liste.
         $parActivite = Tache::withoutGlobalScopes()->porteusesBudget()
@@ -281,7 +334,25 @@ class CadreLogiqueEtendu
                 'ae'           => $l['ae'],
             ])->values()->all();
 
-        return ['reclassees' => $reclassees, 'absentes' => $absentes];
+        $sansBudget = [];
+
+        foreach ($this->lignes() as $ligne) {
+            if ($ligne['tache'] === null || $ligne['nomenclature'] !== null) {
+                continue;
+            }
+
+            $sansBudget[] = [
+                'tache'         => $ligne['tache']->id,
+                'code'          => $ligne['tache']->code,
+                'libelle'       => $ligne['tache']->libelle,
+                'ae'            => $ligne['ae'],
+                'action_code'   => $ligne['action_code'],
+                'activite_code' => $ligne['activite_code'],
+                'activite_id'   => $ligne['activite']->id,
+            ];
+        }
+
+        return ['reclassees' => $reclassees, 'absentes' => $absentes, 'sans_budget' => $sansBudget];
     }
 
     /** @return Collection<int, Activite> les activités du sous-programme pour l'exercice */
@@ -340,5 +411,20 @@ class CadreLogiqueEtendu
     public static function formatMontant(float $montant): string
     {
         return number_format($montant, 0, ',', ' ').' FCFA';
+    }
+
+    /**
+     * La phrase qui dit qu'une ligne imprimée n'a aucun compte en face : null quand la
+     * ligne est en règle, ou quand elle ne représente aucune tâche (activité vide).
+     *
+     * @param array<string, mixed> une ligne de `lignes()`
+     */
+    public static function noteSansCompte(array $ligne): ?string
+    {
+        if ($ligne['tache'] === null || $ligne['nomenclature'] !== null) {
+            return null;
+        }
+
+        return 'aucune nomenclature : la ligne ne correspond à aucun compte du budget';
     }
 }

@@ -557,6 +557,7 @@ return [
                             'transmettre_sous_programme_ep',
                             'valider_sous_programme_ep',
                             'retourner_sous_programme_ep',
+                            'mettre_en_vigueur_sous_programme_ep',
                         ],
                     ],
                     'Programmes, actions, activités, tâches' => [
