@@ -4,7 +4,6 @@ namespace App\Filament\Planification\Resources\SousProgrammeEpResource\RelationM
 
 use App\Models\Action;
 use App\Models\Exercice;
-use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
@@ -21,11 +20,10 @@ class ActionsRelationManager extends RelationManager
 
     public function form(Form $form): Form
     {
-        return $form->schema([
-            Forms\Components\TextInput::make('code')->required()->maxLength(50),
-            Forms\Components\TextInput::make('libelle')->required()->maxLength(255),
-            Forms\Components\Textarea::make('description')->columnSpanFull(),
-        ])->columns(2);
+        // Champs et rattachement partagés avec la ligne « Ajouter une action » de la liste des
+        // sous-programmes : un seul de ces deux écrans ne doit savoir ranger une action.
+        return $form->schema(\App\Filament\Planification\Resources\Concerns\CreationActionSousProgramme::champs())
+            ->columns(2);
     }
 
     public function table(Table $table): Table
@@ -41,7 +39,7 @@ class ActionsRelationManager extends RelationManager
                 $programme = $this->getOwnerRecord()->programmeEp();
 
                 return $programme
-                    ? "Programme budgétaire de l'EP : {$programme->code} - {$programme->libelle} (exercice " . Exercice::getActif()?->annee . ')'
+                    ? "Programme du MINSANTE de rattachement : {$programme->code} - {$programme->libelle} (exercice " . Exercice::getActif()?->annee . ')'
                     : null;
             })
 
@@ -57,16 +55,11 @@ class ActionsRelationManager extends RelationManager
                     ->label('Nouvelle action')
                     ->visible(fn() => auth()->user()->can('create_action')
                         && $this->getOwnerRecord()->programmeEp() !== null)
-                    // Relation "a travers" le programme : on indique explicitement
-                    // ou ranger l'action (programme EP de l'exercice actif)
-                    ->using(function (array $data): Action {
-                        $programme = $this->getOwnerRecord()->programmeEp();
-
-                        return Action::create($data + [
-                            'programme_id' => $programme->id,
-                            'exercice_id'  => $programme->exercice_id,
-                        ]);
-                    }),
+                    // Relation « à travers » le programme de la tutelle : on indique explicitement
+                    // où ranger l'action (le programme rattaché, sur l'exercice actif)
+                    ->using(fn(array $data): Action =>
+                        \App\Filament\Planification\Resources\Concerns\CreationActionSousProgramme::creer(
+                            $this->getOwnerRecord(), $data)),
             ])
 
             ->actions([
@@ -104,11 +97,13 @@ class ActionsRelationManager extends RelationManager
             // (et tout ce qui en depend) releve du module Budget, pas de la Planification.
             ->bulkActions([])
 
+            // Le rattachement est obligatoire à la saisie : ce texte ne s'affiche plus que sur
+            // une ligne antérieure à la règle, qu'il faut renvoyer à « Modifier ».
             ->emptyStateHeading(fn() => $this->getOwnerRecord()->code_programme_ep
                 ? 'Aucune action pour cet exercice'
-                : "Sous-programme non rattaché à un programme de l'EP")
+                : "Sous-programme non rattaché à un programme du MINSANTE")
             ->emptyStateDescription(fn() => $this->getOwnerRecord()->code_programme_ep
                 ? "Le programme {$this->getOwnerRecord()->code_programme_ep} n'a pas encore d'action sur l'exercice actif."
-                : "Modifiez le sous-programme et choisissez son « Programme budgétaire de l'EP » (ex : SP-1) pour afficher ses actions.");
+                : "Modifiez ce sous-programme et choisissez son « Programme budgétaire du MINSANTE » (ex : 412) pour afficher ses actions.");
     }
 }

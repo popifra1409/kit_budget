@@ -22,6 +22,10 @@ class PlanStrategiqueEpResource extends Resource
 
     protected static ?string $navigationLabel = 'Plans Stratégiques';
 
+    // B1b — le menu déroule la hiérarchie : plan (0) → programmes de la tutelle (1) →
+    // sous-programmes de l'EP (2) → actions (3) → activités (4) → tâches (5).
+    protected static ?int $navigationSort = 0;
+
     // Recherche globale (champ du bandeau), comme dans le panel Budget
     public static function getGloballySearchableAttributes(): array
     {
@@ -179,6 +183,10 @@ class PlanStrategiqueEpResource extends Resource
     {
         return [
             \App\Filament\Planification\Resources\PlanStrategiqueEpResource\RelationManagers\SousProgrammesRelationManager::class,
+            // B1b — la face tutelle du plan : les programmes budgétaires du MINSANTE que les
+            // sous-programmes de l'EP décomposent déjà. Les deux onglets se répondent, aucun
+            // ne remplace l'autre.
+            \App\Filament\Planification\Resources\PlanStrategiqueEpResource\RelationManagers\ProgrammesRattachementRelationManager::class,
         ];
     }
 

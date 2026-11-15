@@ -659,8 +659,8 @@ class Engagement extends Model
         return [
             'engage'          => (float) $this->montant_engage,
             'liquide'         => $liquide,
-            'ordonnance'      => (float) $ops->sum(fn($op) => (float) ($op->montant_brut ?: $op->montant_net)),
-            'paye'            => (float) $ops->where('statut', 'payee')->sum(fn($op) => (float) ($op->montant_brut ?: $op->montant_net)),
+            'ordonnance'      => (float) $ops->sum(fn($op) => $op->montantBrutOuNet()),
+            'paye'            => (float) $ops->where('statut', 'payee')->sum(fn($op) => $op->montantBrutOuNet()),
             'reste_a_liquider' => max(0, (float) $this->montant_engage - (float) $this->liquidations()->sum('montant_liquide')),
             'nb_op'           => $ops->count(),
         ];

@@ -26,8 +26,8 @@
                     @forelse ($sp->indicateurs as $ind)
                         <tr>
                             <td>{{ $ind->libelle }}</td>
-                            <td>{{ $ind->valeur_reference ?? '—' }} ({{ $ind->annee_reference ?? '—' }})</td>
-                            <td>{{ $ind->valeur_cible ?? '—' }} ({{ $ind->annee_cible ?? '—' }})</td>
+                            <td>{{ $ind->referenceFormatee() }}</td>
+                            <td>{{ $ind->cibleFormatee() }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="3">Aucun indicateur</td></tr>

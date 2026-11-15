@@ -72,8 +72,10 @@ class LibellesSousProgrammeSheet extends DefaultValueBinder implements
 
         $entete = [
             'Sous-programme'                  => $b['sp_texte'],
-            'Programme de rattachement'       => $b['programme'] ?? 'Non rattaché',
-            "Programme budgétaire de l'EP"    => $b['programme_ep'] ?? 'Non rattaché',
+            'Programme budgétaire du MINSANTE' => $b['programme'] ?? 'Non rattaché',
+            // Même programme, résolu pour l'exercice affiché : la ligne disparaît quand le
+            // sous-programme portera lui-même ses actions (étape B2).
+            'Programme portant les actions'    => $b['programme_ep'] ?? 'Non rattaché',
             'Responsable'                     => $b['responsable'] ?? 'Non désigné',
             'Objectif'                        => $b['sp']->objectif ?? '—',
             'Indicateur(s) du sous-programme' => $this->liste($b['indicateurs'] ?? [])['texte'],

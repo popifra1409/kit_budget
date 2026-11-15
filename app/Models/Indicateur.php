@@ -82,6 +82,34 @@ class Indicateur extends Model
         return round(($realise / $cible) * 100, 1);
     }
 
+    /**
+     * « valeur unité (année) », ou « — » quand la valeur manque.
+     *
+     * Une année sans valeur ne s'affiche pas : `— (2027)` ferait croire à une cible absente plutôt
+     * qu'à une cible non saisie. Source unique pour les trois lecteurs du rapport d'identification
+     * (page Filament, PDF, Excel).
+     */
+    public function referenceFormatee(): string
+    {
+        return $this->formaterCouple($this->valeur_reference, $this->annee_reference);
+    }
+
+    public function cibleFormatee(): string
+    {
+        return $this->formaterCouple($this->valeur_cible, $this->annee_cible);
+    }
+
+    private function formaterCouple(?string $valeur, ?int $annee): string
+    {
+        if ($valeur === null || $valeur === '') {
+            return '—';
+        }
+
+        return $valeur
+            . ($this->unite_mesure ? ' ' . $this->unite_mesure : '')
+            . ($annee ? ' (' . $annee . ')' : '');
+    }
+
     public function estABaisser(): bool
     {
         return ($this->sens ?? 'hausse') === 'baisse';

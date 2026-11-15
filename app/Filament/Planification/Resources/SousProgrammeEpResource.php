@@ -5,6 +5,7 @@ namespace App\Filament\Planification\Resources;
 use App\Filament\Planification\Resources\SousProgrammeEpResource\Pages;
 use App\Filament\Planification\Resources\SousProgrammeEpResource\RelationManagers\ActionsRelationManager;
 use App\Models\Exercice;
+use App\Models\PlanStrategiqueEp;
 use App\Models\Programme;
 use App\Models\SousProgrammeEp;
 use App\Models\User;
@@ -13,6 +14,7 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\ActionsPosition;
 use Filament\Tables\Table;
 
 class SousProgrammeEpResource extends Resource
@@ -23,8 +25,48 @@ class SousProgrammeEpResource extends Resource
 
     protected static ?string $navigationGroup = 'Plans Stratégiques EP';
 
-    // Accessible uniquement depuis la fiche du Plan Stratégique (pas dans le menu principal)
-    protected static bool $shouldRegisterNavigation = false;
+    // B1b — les sous-programmes de l'hôpital ont leur propre entrée : ce sont eux qui portent les
+    // actions, et chacun se rattache à un programme budgétaire du MINSANTE (menu précédent).
+    protected static ?string $navigationLabel = "Sous-programmes de l'EP";
+    protected static ?string $modelLabel = "Sous-programme de l'EP";
+    protected static ?string $pluralModelLabel = "Sous-programmes de l'EP";
+    protected static ?int $navigationSort = 2;
+
+    // ========================================
+    // PERMISSIONS — même catalogue que l'onglet du plan stratégique, pour que les deux entrées
+    // disent la même chose. Sans ces surcharges, `Resource::can*()` vaut « true » faute de
+    // policy : la page de création serait ouverte à tout compte connecté au panneau.
+    // ========================================
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('view_any_sous_programme_ep') ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view_sous_programme_ep') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create_sous_programme_ep') ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update_sous_programme_ep') ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete_sous_programme_ep') ?? false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->can('delete_sous_programme_ep') ?? false;
+    }
 
     /**
      * Programmes budgetaires de l'exercice actif, sans le scope global 'exercice'
@@ -62,26 +104,57 @@ class SousProgrammeEpResource extends Resource
                 ])
                 ->columns(2),
 
-            // ✅ AJOUTE : les deux rattachements, desormais distincts
-            Forms\Components\Section::make('Rattachements')
-                ->description("Le programme ministériel sert à l'affichage du rattachement ; le programme de l'EP porte les actions, activités, tâches et lignes budgétaires.")
+            // B1b — depuis le menu « Sous-programmes de l'EP », c'est ici que la ligne choisit le
+            // plan qu'elle décompose. L'onglet du plan stratégique n'a pas ce champ : il tient
+            // déjà le plan par son enregistrement parent.
+            Forms\Components\Section::make("Plan stratégique décomposé")
+                ->schema([
+                    Forms\Components\Select::make('plan_strategique_ep_id')
+                        ->label('Plan stratégique (PSP)')
+                        ->options(fn() => PlanStrategiqueEp::orderBy('code')->pluck('libelle', 'id')->all())
+                        ->searchable()
+                        ->required()
+                        ->helperText('Instruction du 22 janvier 2026 : quatre sous-programmes maximum par plan (3 opérationnels + 1 support).')
+                        ->columnSpanFull(),
+                ])
+                ->columns(1),
+
+            // Le sous-programme est une décomposition de l'hôpital ; il n'en existe qu'un par
+            // programme de la tutelle, et le code qui range les actions en découle.
+            Forms\Components\Section::make('Rattachement à la tutelle')
+                ->description("Le sous-programme décompose l'action de l'établissement public. Il est rattaché à un programme budgétaire du MINSANTE — celui-ci découle des objectifs de développement du pays (SND30) et de la stratégie sectorielle de santé —, et c'est sous ce programme que les actions, activités, tâches et lignes budgétaires sont rangées.")
                 ->schema([
                     Forms\Components\Select::make('programme_budgetaire_id')
-                        ->label('Programme de rattachement (ministériel)')
-                        ->helperText('Ex : P-410 Prévention de la maladie')
+                        ->label("Programme budgétaire du MINSANTE")
+                        ->helperText('Ex : 410 Prévention de la maladie en milieu hospitalier. Un seul sous-programme de l\'EP par programme de la tutelle.')
                         ->options(fn() => static::programmesExerciceActif()
+                            ->where('niveau', 'programme')
                             ->mapWithKeys(fn($p) => [$p->id => "{$p->code} - {$p->libelle}"]))
-                        ->searchable(),
-
-                    Forms\Components\Select::make('code_programme_ep')
-                        ->label("Programme budgétaire de l'EP (porte les actions)")
-                        ->helperText("Ex : SP-1 Prévention des pathologies. Lien par code : il reste valable d'un exercice à l'autre.")
-                        ->options(fn() => static::programmesExerciceActif()
-                            ->mapWithKeys(fn($p) => [$p->code => "{$p->code} - {$p->libelle}"]))
                         ->searchable()
-                        ->required(),
+                        ->required()
+                        // `rules()` et non `rule()` : Filament évalue la fermeture au montage, où
+                        // `$attribute`/`$value`/`$fail` n'existent pas encore — `rule()` fait
+                        // mourir la page. La fermeture reçoit donc `$get` et RETOURNE la règle.
+                        ->rules(function ($get) {
+                            return [function (string $attribute, $value, \Closure $fail) use ($get) {
+                                // Le refus se lit sous le champ : le modèle garde la même règle,
+                                // mais son exception arriverait en page d'erreur. Exclusion par
+                                // `code` (unique) et non par `$record` : la ligne peut être en
+                                // création, et dans un RelationManager `$record` est le plan
+                                // stratégique.
+                                $conflit = SousProgrammeEp::autreSousProgrammeDuMemeProgramme(
+                                    $value ? (int) $value : null,
+                                    saufCode: $get('code'),
+                                );
+
+                                if ($conflit) {
+                                    $fail("Ce programme du MINSANTE a déjà son sous-programme de l'EP :"
+                                        . " « {$conflit->code} » ({$conflit->libelle}).");
+                                }
+                            }];
+                        }),
                 ])
-                ->columns(2),
+                ->columns(1),
         ]);
     }
 
@@ -93,14 +166,12 @@ class SousProgrammeEpResource extends Resource
                 Tables\Columns\TextColumn::make('code'),
                 Tables\Columns\TextColumn::make('libelle')->searchable(),
 
-                // ✅ AJOUTE : visibilite immediate des deux rattachements
+                // Le sous-programme ne tient qu'à un seul programme de la tutelle : une colonne
+                // suffit. L'ancienne « Programme EP » répétait ce code, dont il découle.
                 Tables\Columns\TextColumn::make('programmeBudgetaire.code')
-                    ->label('Rattachement')
-                    ->placeholder('—'),
-                Tables\Columns\TextColumn::make('code_programme_ep')
-                    ->label('Programme EP')
+                    ->label('Programme du MINSANTE')
                     ->badge()
-                    ->color(fn(?string $state) => $state ? 'success' : 'danger')
+                    ->color(fn($state) => $state ? 'success' : 'danger')
                     ->placeholder('Non rattaché'),
 
                 Tables\Columns\TextColumn::make('responsable.nom_complet')
@@ -125,7 +196,7 @@ class SousProgrammeEpResource extends Resource
             // la ligne, y compris le programme d'un exercice clôturé consultable après coup.
             ->filters([
                 Tables\Filters\SelectFilter::make('programme_budgetaire_id')
-                    ->label('Programme de rattachement')
+                    ->label('Programme du MINSANTE')
                     ->options(fn() => Programme::withoutGlobalScope('exercice')
                         ->orderBy('code')->get()
                         ->mapWithKeys(fn(Programme $p) => [$p->getKey() => "{$p->code} - {$p->libelle}"]))
@@ -133,101 +204,155 @@ class SousProgrammeEpResource extends Resource
                     ->placeholder('Tous les programmes'),
             ])
 
+            // Les six gestes d'une ligne tiennent dans un menu, aligné à gauche comme dans la
+            // liste des BCR : les colonnes « Code / Libellé / Statut » ne se font plus décaler.
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\EditAction::make(),
 
-                // Même règle que dans le sous-onglet du plan stratégique : le cycle
-                // ne se pilote pas depuis un seul écran.
-                Tables\Actions\Action::make('valider')
-                    ->label('Valider')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn() => auth()->user()->can('valider_sous_programme_ep'))
-                    ->requiresConfirmation()
-                    ->modalHeading(fn(SousProgrammeEp $record) => "Valider — {$record->code}")
-                    ->modalDescription('Le sous-programme passe à « Validé ». Transmettre reste le chemin tracé entre deux agents, ce n\'est plus une condition de la validation.')
-                    ->action(function (SousProgrammeEp $record) {
-                        if (!auth()->user()?->can('valider_sous_programme_ep')) {
-                            Notification::make()
-                                ->title('Action non autorisée')
-                                ->danger()
-                                ->body('Votre rôle ne donne pas le droit de valider un sous-programme.')
-                                ->persistent()
-                                ->send();
-                            return;
-                        }
+                    // Étape 5 — le fil d'Ariane : le menu « Programmes » mène ici par l'action
+                    // « Sous-programmes » (liste déjà filtrée). L'action suivante se créait en
+                    // ouvrant la fiche du sous-programme puis son onglet « Actions » ; elle se
+                    // crée maintenant sur la ligne, sans quitter la liste.
+                    Tables\Actions\Action::make('ajouterAction')
+                        ->label('Ajouter une action')
+                        ->icon('heroicon-o-plus-circle')
+                        ->color('gray')
+                        ->visible(fn() => auth()->user()->can('create_action'))
+                        ->form(\App\Filament\Planification\Resources\Concerns\CreationActionSousProgramme::champs())
+                        ->modalHeading(fn(SousProgrammeEp $record) => "Nouvelle action sous « {$record->code} »")
+                        ->modalDescription("Elle sera rangée sous le programme du MINSANTE auquel ce sous-programme est rattaché, sur l'exercice de ce programme — ces deux valeurs ne se choisissent pas ici.")
+                        ->action(function (SousProgrammeEp $record, array $data) {
+                            // Le vendor coupe déjà l'appel d'une action cachée (`isDisabled()` inclut
+                            // `isHidden()`) : ce garde n'est pas le premier rempart mais le repli, si
+                            // le bouton redevient appelable (droit retiré en cours de route, refonte
+                            // d'écran). Le refus s'imprime au lieu de fermer le modal sans rien dire.
+                            if (!auth()->user()?->can('create_action')) {
+                                Notification::make()
+                                    ->title('Action non autorisée')
+                                    ->body('Votre rôle ne donne pas le droit de créer une action.')
+                                    ->danger()->persistent()
+                                    ->send();
 
-                        try {
-                            $record->valider();
-                            Notification::make()
-                                ->title("« {$record->code} » est validé")
-                                ->success()
-                                ->send();
-                        } catch (\Throwable $e) {
-                            Notification::make()
-                                ->title('Validation refusée')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->persistent()
-                                ->send();
-                        }
-                    }),
+                                return;
+                            }
 
-                Tables\Actions\Action::make('mettreEnVigueur')
-                    ->label('Mettre en vigueur')
-                    ->icon('heroicon-o-play-circle')
-                    ->color('success')
-                    ->visible(fn() => auth()->user()->can('mettre_en_vigueur_sous_programme_ep'))
-                    ->requiresConfirmation()
-                    ->modalHeading(fn(SousProgrammeEp $record) => "Mettre en vigueur — {$record->code}")
-                    ->modalDescription('Le sous-programme passe de « Validé » à « En vigueur » : son contenu devient la référence de l\'exercice.')
-                    ->action(function (SousProgrammeEp $record) {
-                        // « visible » ne protège pas l'appel : le droit est revérifié ici.
-                        if (!auth()->user()?->can('mettre_en_vigueur_sous_programme_ep')) {
-                            Notification::make()
-                                ->title('Action non autorisée')
-                                ->danger()
-                                ->body('Votre rôle ne donne pas le droit de mettre un sous-programme en vigueur.')
-                                ->persistent()
-                                ->send();
-                            return;
-                        }
+                            try {
+                                $action = \App\Filament\Planification\Resources\Concerns\CreationActionSousProgramme::creer(
+                                    $record, $data);
 
-                        try {
-                            $record->mettreEnVigueur();
-                            Notification::make()
-                                ->title("« {$record->code} » est en vigueur")
-                                ->success()
-                                ->send();
-                        } catch (\Throwable $e) {
-                            Notification::make()
-                                ->title('Mise en vigueur refusée')
-                                ->danger()
-                                ->body($e->getMessage())
-                                ->persistent()
-                                ->send();
-                        }
-                    }),
-                Tables\Actions\Action::make('matrice')
-                    ->label("Matrice d'arrimage")
-                    ->icon('heroicon-o-squares-2x2')
-                    ->visible(fn() => auth()->user()->can('view_matrice_arrimage'))
-                    ->url(fn(SousProgrammeEp $record) => \App\Filament\SuiviEvaluation\Pages\MatriceArrimage::getUrl(
-                        ['psp' => $record->plan_strategique_ep_id, 'sp' => $record->id],
-                        panel: 'suivi-evaluation'
-                    ))
-                    ->openUrlInNewTab(),
+                                Notification::make()
+                                    ->title("« {$action->code} » est créée sous « {$record->code} »")
+                                    ->body('La suite de la chaîne — les activités — se saisit dans sa fiche.')
+                                    ->success()
+                                    ->send();
+                            } catch (\Throwable $e) {
+                                Notification::make()
+                                    ->title('Action refusée')
+                                    ->body($e->getMessage())
+                                    ->danger()->persistent()
+                                    ->send();
+                            }
+                        }),
 
-                Tables\Actions\Action::make('libelles')
-                    ->label('Tableau des libellés')
-                    ->icon('heroicon-o-list-bullet')
-                    ->visible(fn() => auth()->user()->can('view_arborescence_libelles'))
-                    ->url(fn(SousProgrammeEp $record) => \App\Filament\Planification\Pages\ArborescenceLibelles::getUrl([
-                        'psp' => $record->plan_strategique_ep_id,
-                        'sp'  => $record->id,
-                    ]))
-                    ->openUrlInNewTab(),
-            ]);
+                    // Même règle que dans le sous-onglet du plan stratégique : le cycle
+                    // ne se pilote pas depuis un seul écran.
+                    Tables\Actions\Action::make('valider')
+                        ->label('Valider')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn() => auth()->user()->can('valider_sous_programme_ep'))
+                        ->requiresConfirmation()
+                        ->modalHeading(fn(SousProgrammeEp $record) => "Valider — {$record->code}")
+                        ->modalDescription('Le sous-programme passe à « Validé ». Transmettre reste le chemin tracé entre deux agents, ce n\'est plus une condition de la validation.')
+                        ->action(function (SousProgrammeEp $record) {
+                            if (!auth()->user()?->can('valider_sous_programme_ep')) {
+                                Notification::make()
+                                    ->title('Action non autorisée')
+                                    ->danger()
+                                    ->body('Votre rôle ne donne pas le droit de valider un sous-programme.')
+                                    ->persistent()
+                                    ->send();
+                                return;
+                            }
+
+                            try {
+                                $record->valider();
+                                Notification::make()
+                                    ->title("« {$record->code} » est validé")
+                                    ->success()
+                                    ->send();
+                            } catch (\Throwable $e) {
+                                Notification::make()
+                                    ->title('Validation refusée')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
+                                    ->send();
+                            }
+                        }),
+
+                    Tables\Actions\Action::make('mettreEnVigueur')
+                        ->label('Mettre en vigueur')
+                        ->icon('heroicon-o-play-circle')
+                        ->color('success')
+                        ->visible(fn() => auth()->user()->can('mettre_en_vigueur_sous_programme_ep'))
+                        ->requiresConfirmation()
+                        ->modalHeading(fn(SousProgrammeEp $record) => "Mettre en vigueur — {$record->code}")
+                        ->modalDescription('Le sous-programme passe de « Validé » à « En vigueur » : son contenu devient la référence de l\'exercice.')
+                        ->action(function (SousProgrammeEp $record) {
+                            // « visible » ne protège pas l'appel : le droit est revérifié ici.
+                            if (!auth()->user()?->can('mettre_en_vigueur_sous_programme_ep')) {
+                                Notification::make()
+                                    ->title('Action non autorisée')
+                                    ->danger()
+                                    ->body('Votre rôle ne donne pas le droit de mettre un sous-programme en vigueur.')
+                                    ->persistent()
+                                    ->send();
+                                return;
+                            }
+
+                            try {
+                                $record->mettreEnVigueur();
+                                Notification::make()
+                                    ->title("« {$record->code} » est en vigueur")
+                                    ->success()
+                                    ->send();
+                            } catch (\Throwable $e) {
+                                Notification::make()
+                                    ->title('Mise en vigueur refusée')
+                                    ->danger()
+                                    ->body($e->getMessage())
+                                    ->persistent()
+                                    ->send();
+                            }
+                        }),
+
+                    Tables\Actions\Action::make('matrice')
+                        ->label("Matrice d'arrimage")
+                        ->icon('heroicon-o-squares-2x2')
+                        ->visible(fn() => auth()->user()->can('view_matrice_arrimage'))
+                        ->url(fn(SousProgrammeEp $record) => \App\Filament\SuiviEvaluation\Pages\MatriceArrimage::getUrl(
+                            ['psp' => $record->plan_strategique_ep_id, 'sp' => $record->id],
+                            panel: 'suivi-evaluation'
+                        ))
+                        ->openUrlInNewTab(),
+
+                    Tables\Actions\Action::make('libelles')
+                        ->label('Tableau des libellés')
+                        ->icon('heroicon-o-list-bullet')
+                        ->visible(fn() => auth()->user()->can('view_arborescence_libelles'))
+                        ->url(fn(SousProgrammeEp $record) => \App\Filament\Planification\Pages\ArborescenceLibelles::getUrl([
+                            'psp' => $record->plan_strategique_ep_id,
+                            'sp'  => $record->id,
+                        ]))
+                        ->openUrlInNewTab(),
+                ])
+                    ->label('Actions')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->color('gray')
+                    ->button()->size('sm'),
+            ], position: ActionsPosition::BeforeColumns);
     }
 
     public static function getRelations(): array
@@ -242,6 +367,7 @@ class SousProgrammeEpResource extends Resource
     {
         return [
             'index' => Pages\ListSousProgrammeEps::route('/'),
+            'create' => Pages\CreateSousProgrammeEp::route('/create'),
             'edit' => Pages\EditSousProgrammeEp::route('/{record}/edit'),
         ];
     }

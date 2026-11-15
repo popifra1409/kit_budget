@@ -58,7 +58,7 @@ class Programme extends Model
                 throw new \InvalidArgumentException(
                     "Un programme est toujours de niveau « programme ». Le sous-programme de gestion interne "
                         . "n'est plus une ligne de cette table : créez-le dans Planification → Sous-programmes, "
-                        . "où son champ « Programme de rattachement (ministériel) » pointera « {$model->code} »."
+                        . "où son champ « Programme budgétaire du MINSANTE » pointera « {$model->code} »."
                 );
             }
 

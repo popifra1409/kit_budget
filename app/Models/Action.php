@@ -21,6 +21,10 @@ class Action extends Model
     protected $fillable = [
         'exercice_id',
         'programme_id',
+        // B2b — le lien qui remplace le rapprochement par code. Déclaré ici dès maintenant :
+        //       omis, `Action::create([... 'sous_programme_ep_id' => …])` l'aurait filtré en
+        //       silence et l'action serait apparue nulle part.
+        'sous_programme_ep_id',
         'code',
         'libelle',
         'description',
@@ -40,6 +44,52 @@ class Action extends Model
         static::creating(function (self $action) {
             if (blank($action->code)) {
                 $action->code = static::genererCode($action->exercice_id);
+            }
+        });
+
+        static::saving(function (self $action) {
+            // B2b — les deux colonnes disent chacune une chose différente, et il ne peut pas y
+            // avoir deux réponses à « sous quel sous-programme de l'hôpital rangera-t-on cette
+            // action ? ». `programme_id` reste la classification budgétaire (celle du MINSANTE) ;
+            // `sous_programme_ep_id` est la décomposition par l'hôpital, qui ne peut passer que
+            // par le sous-programme rattaché À CE PROGRAMME.
+            //
+            // Refuser, pas corriger : un `saving` qui réécrit l'autre colonne fait croire à
+            // l'écran que la saisie a été enregistrée, alors qu'elle a été changée. Ici la fiche
+            // reçoit le motif et la valeur choisie par l'utilisateur reste intacte.
+            if ($action->sous_programme_ep_id === null) {
+                return;
+            }
+
+            $sp = SousProgrammeEp::withTrashed()->find($action->sous_programme_ep_id);
+
+            if ($sp === null) {
+                throw new \InvalidArgumentException(
+                    "Le sous-programme de l'EP #$action->sous_programme_ep_id n'existe pas."
+                );
+            }
+
+            // Les codes sont lus en SQL direct, jamais par `programmeBudgetaire` : la BelongsTo
+            // subit le scope d'exercice de la session, et un refus qui nomme un programme vide
+            // est un refus illisible.
+            if ($sp->programme_budgetaire_id === null) {
+                throw new \InvalidArgumentException(
+                    "« {$sp->code} » n'a aucun programme de rattachement : il ne peut porter aucune action. "
+                        . "Rattachez-le d'abord à un programme budgétaire du MINSANTE."
+                );
+            }
+
+            $codeSp = (string) Programme::withTrashed()->whereKey($sp->programme_budgetaire_id)->value('code');
+
+            // Pas de branche « programme_id est nul » : la colonne est NOT NULL en base, et ce
+            // n'est pas le garde qui pourrait le savoir mieux que PostgreSQL.
+            if ((int) $sp->programme_budgetaire_id !== (int) $action->programme_id) {
+                $codeAction = (string) Programme::withTrashed()->whereKey($action->programme_id)->value('code');
+
+                throw new \InvalidArgumentException(
+                    "« {$sp->code} » décompose le programme « $codeSp », pas le programme « $codeAction » "
+                        . "de cette action. Une action se range sous le sous-programme de l'EP qui décompose son propre programme."
+                );
             }
         });
     }
@@ -65,6 +115,17 @@ class Action extends Model
     public function programme(): BelongsTo
     {
         return $this->belongsTo(Programme::class, 'programme_id');
+    }
+
+    /**
+     * Le sous-programme de l'EP (hôpital) qui décompose cette action — B2b.
+     *
+     * `withTrashed()` : un sous-programme clôturé ou retiré reste la réponse à « qui portait
+     * cette action ? », et l'impression d'un PPA d'exercice clos ne doit pas devenir muette.
+     */
+    public function sousProgrammeEp(): BelongsTo
+    {
+        return $this->belongsTo(SousProgrammeEp::class, 'sous_programme_ep_id')->withTrashed();
     }
 
     /**

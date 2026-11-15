@@ -167,6 +167,20 @@ class OrdonnancePaiement extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Le montant propre de l'OP : le brut quand il est saisi, sinon le net.
+     *
+     * `montant_brut` est castee `decimal:2` : une OP sans retenue y met "0.00", une chaine VRAIE.
+     * Le test `?:` rend alors 0 au lieu du net et efface 4 441 877 821,84 FCFA sur les 1333 OP sans
+     * brut du BUDGET PRIMITIF 2026 (constate 2026-11-15) — comparer numeriquement.
+     */
+    public function montantBrutOuNet(): float
+    {
+        $brut = (float) $this->montant_brut;
+
+        return $brut > 0 ? $brut : (float) $this->montant_net;
+    }
+
     public function getBonCommandeAttribute()
     {
         if (!$this->engagement) return null;

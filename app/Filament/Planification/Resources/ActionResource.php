@@ -3,6 +3,7 @@
 namespace App\Filament\Planification\Resources;
 
 use App\Filament\Planification\Resources\ActionResource\Pages;
+use App\Filament\Planification\Resources\Concerns\CreationActionSousProgramme;
 use App\Models\Action;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -12,6 +13,7 @@ use Filament\Tables\Table;
 use Filament\Tables\Enums\ActionsPosition;
 use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
+use App\Models\SousProgrammeEp;
 use Filament\Notifications\Notification;
 
 class ActionResource extends Resource
@@ -22,7 +24,9 @@ class ActionResource extends Resource
     protected static ?string $modelLabel = 'Action';
     protected static ?string $pluralModelLabel = 'Actions';
     protected static ?string $navigationGroup = 'Plans Stratégiques EP';
-    protected static ?int $navigationSort = 2;
+    // Le menu lit la hiérarchie : plan → programmes de la tutelle → sous-programmes de l'EP
+    // (B1b, rang 2) → actions.
+    protected static ?int $navigationSort = 3;
 
     // ========================================
     // PERMISSIONS
@@ -100,11 +104,98 @@ class ActionResource extends Resource
                             ->collapsible()
                             ->collapsed(fn($record) => $record !== null),
 
-                        Forms\Components\Select::make('programme_id')
-                            ->label('Programme')
-                            ->relationship('programme', 'libelle')
-                            ->required()->searchable()->preload()
-                            ->getOptionLabelFromRecordUsing(fn($record) => "{$record->code} - {$record->libelle}"),
+                        // B2c — on range une action sous un sous-programme de L'HÔPITAL, plus sous un
+                        // programme de la tutelle : `actions.programme_id` découle du rattachement choisi
+                        // sur ce sous-programme (règle validée en B), et le saisissant ne choisit plus
+                        // la classification budgétaire lui-même. La valeur dérivée se lit sous le menu,
+                        // en direct, et s'écrit dans `CreationActionSousProgramme::ranger()`.
+                        Forms\Components\Select::make('sous_programme_ep_id')
+                            ->label('Sous-programme de l\'EP')
+                            ->required()->searchable()->preload()->live()
+                            ->options(function (?Action $record): array {
+                                $liste = SousProgrammeEp::query()
+                                    ->whereNotNull('programme_budgetaire_id')
+                                    ->orderBy('code')
+                                    ->get()
+                                    ->mapWithKeys(fn (SousProgrammeEp $sp): array => [
+                                        $sp->id => "{$sp->code} — {$sp->libelle}",
+                                    ])
+                                    ->all();
+
+                                // Le sous-programme de la ligne en édition peut avoir été retiré, ou
+                                // avoir perdu son rattachement : absent des options, un champ requis se
+                                // rendrait vide alors qu'il est rempli en base — et l'enregistrement
+                                // suivant effacerait le lien. Il reste proposé, nommé pour ce qu'il est,
+                                // et la règle dessous le refuse si on le garde.
+                                $propre = $record?->sousProgrammeEp;
+
+                                if ($propre !== null && ! isset($liste[$propre->id])) {
+                                    $liste[$propre->id] = "{$propre->code} — {$propre->libelle}"
+                                        . ($propre->trashed() ? ' (sous-programme retiré)' : ' (sans programme de rattachement)');
+                                }
+
+                                return $liste;
+                            })
+                            ->helperText(function (callable $get): ?string {
+                                $sp = SousProgrammeEp::find((int) ($get('sous_programme_ep_id') ?? 0));
+
+                                if ($sp === null) {
+                                    return null;
+                                }
+
+                                try {
+                                    $programme = CreationActionSousProgramme::programmeDe($sp);
+                                } catch (\RuntimeException) {
+                                    // Le sous-programme n'a rien où ranger l'action : le refus se
+                                    // lit sous le menu par la règle, pas dans une promesse vide.
+                                    return null;
+                                }
+
+                                return "Programme portant les actions de ce sous-programme : "
+                                    . "« {$programme->code} — {$programme->libelle} » (exercice {$programme->annee}).";
+                            })
+                            ->rule(function (callable $get): \Closure {
+                                return function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    // `required()` fait le champ vide ; ici la valeur existe, reste à
+                                    // savoir si elle désigne encore quelque chose qui porte des actions.
+                                    if ($value === null || $value === '') {
+                                        return;
+                                    }
+
+                                    $sp = SousProgrammeEp::withTrashed()->find((int) $value);
+
+                                    if ($sp === null) {
+                                        $fail('Ce sous-programme de l\'EP n\'existe plus — choisissez-en un autre.');
+
+                                        return;
+                                    }
+
+                                    // Une seule règle pour les deux écrans, un seul message : ce que
+                                    // le modal des sous-programmes refuse à l'appel de `creer()`, la
+                                    // fiche le refuse ici, sous le champ.
+                                    try {
+                                        $programme = CreationActionSousProgramme::programmeDe($sp);
+                                    } catch (\RuntimeException $e) {
+                                        $fail($e->getMessage());
+
+                                        return;
+                                    }
+
+                                    // Le programme ne se choisit plus, l'exercice si : sans ce contrôle,
+                                    // l'écran écrirait une action rangée sur un exercice que son
+                                    // programme ne connaît pas. Refuser plutôt que réécrire l'exercice
+                                    // choisi — la valeur saisie disparaîtrait sans que rien le dise.
+                                    $exercice = (int) ($get('exercice_id') ?? 0);
+
+                                    if ($exercice > 0 && $exercice !== (int) $programme->exercice_id) {
+                                        $fail("« {$sp->code} » range ses actions sous le programme « {$programme->code} » de l'exercice "
+                                            . "{$programme->annee} : l'action ne peut pas être rangée sur l'exercice "
+                                            . Exercice::find($exercice)?->annee
+                                            . ". Reprenez l'exercice " . $programme->annee
+                                            . ", ou rattachez ce sous-programme à un programme de l'exercice visé.");
+                                    }
+                                };
+                            }),
 
                         // ✅ Code généré automatiquement à l'enregistrement
                         Forms\Components\TextInput::make('code')
@@ -156,6 +247,7 @@ class ActionResource extends Resource
         return parent::getEloquentQuery()
             ->with([
                 'exercice',
+                'sousProgrammeEp',
                 'responsable',
                 'activites.taches' => function ($query) {
                     $query->where('niveau', 'tache')->with('sousTaches');
@@ -182,6 +274,13 @@ class ActionResource extends Resource
                     ->tooltip(fn($record) => $record->exercice instanceof \App\Models\Exercice ? $record->exercice->libelle : null)
                     ->toggleable(),
 
+                Tables\Columns\TextColumn::make('sousProgrammeEp.code')
+                    ->label('Sous-programme de l\'EP')->searchable()->sortable()->badge()->color('gray')
+                    ->tooltip(fn(Action $record) => $record->sousProgrammeEp?->libelle)
+                    ->placeholder('—'),
+
+                // Lecture seule : la colonne est ce que le rattachement du sous-programme implique,
+                // plus une valeur saisie ici.
                 Tables\Columns\TextColumn::make('programme.code')
                     ->label('Programme')->searchable()->sortable()->badge()->color('primary'),
 
@@ -226,6 +325,14 @@ class ActionResource extends Resource
                     ->searchable()->preload()
                     ->placeholder('Tous les exercices')
                     ->default(fn() => Exercice::getActif()?->id),
+
+                Tables\Filters\SelectFilter::make('sous_programme_ep_id')
+                    ->label('Sous-programme de l\'EP')
+                    ->options(fn(): array => SousProgrammeEp::withTrashed()
+                        ->orderBy('code')->get()
+                        ->mapWithKeys(fn(SousProgrammeEp $sp): array => [$sp->id => "{$sp->code} — {$sp->libelle}"])
+                        ->all())
+                    ->searchable()->preload(),
 
                 Tables\Filters\SelectFilter::make('programme_id')
                     ->label('Programme')

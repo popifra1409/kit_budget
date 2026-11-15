@@ -24,7 +24,8 @@ class TacheResource extends Resource
     protected static ?string $modelLabel = 'Tâche';
     protected static ?string $pluralModelLabel = 'Tâches';
     protected static ?string $navigationGroup = 'Plans Stratégiques EP';
-    protected static ?int $navigationSort = 4;
+    // Rang 5 : dernier maillon du menu, comme de la hiérarchie.
+    protected static ?int $navigationSort = 5;
 
     // ========================================
     // PERMISSIONS

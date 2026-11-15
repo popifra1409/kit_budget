@@ -19,7 +19,11 @@ class ProgrammeResource extends Resource
 {
     protected static ?string $model = Programme::class;
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
-    protected static ?string $navigationLabel = 'Programmes';
+    // B1b — ce menu liste la classification budgétaire de la tutelle : les programmes 410, 412…
+    // que le MINSANTE reçoit du SND30 et de la stratégie sectorielle. Les lignes de l'hôpital
+    // (les sous-programmes de l'EP qui s'y rattachent) ont leur propre entrée, menu
+    // « Sous-programmes de l'EP ».
+    protected static ?string $navigationLabel = 'Programmes de la tutelle (MINSANTE)';
     protected static ?string $modelLabel = 'Programme';
     protected static ?string $pluralModelLabel = 'Programmes';
     protected static ?string $navigationGroup = 'Plans Stratégiques EP';

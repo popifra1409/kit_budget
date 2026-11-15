@@ -189,36 +189,118 @@ class LigneBudgetaire extends Model
      * 'programme' = niveau national (codes 412/413/414...)
      * 'sous_programme' = subdivision de gestion interne (niveau='sous_programme'),
      *                     null si le Programme rattache est deja de niveau 'programme'.
+     * 'action' = l'Action porteuse (null hors arbre), porteuse a son tour du
+     *            sous-programme EP (`$action->sousProgrammeEp`).
+     *
+     * Delegue a `classificationsStrategiques()` : une seule definition de la chaine,
+     * un seul ordre de preference quand une nomenclature a plusieurs sous-taches.
      */
     public function getClassificationStrategique(): array
     {
-        if (!$this->nomenclature_id) {
-            return ['programme' => null, 'sous_programme' => null];
+        return static::classificationsStrategiques(collect([$this]))->get((int) $this->id)
+            ?? ['programme' => null, 'sous_programme' => null, 'action' => null];
+    }
+
+    /**
+     * Meme resolution pour PLUSIEURS lignes, en six requetes quel que soit leur nombre
+     * (l'appel ligne par ligne coutait ~600 requetes sur les 157 lignes du BUDGET PRIMITIF 2026).
+     *
+     * Cle : id de ligne budgetaire. Valeur : ['programme', 'sous_programme', 'action'].
+     *
+     * Regles de rattachement :
+     *  - seule une tache de niveau « sous_tache » de l'EXERCICE de la ligne rattache ;
+     *  - taches, activites et actions supprimes ne rattachent pas ;
+     *  - plusieurs sous-taches pour une meme nomenclature : la plus ancienne (id) gagne, puis
+     *    en cas d'egalite la plus petite cle — `first()` sans ordre laissait le groupe changer
+     *    d'un cours a l'autre (constate 2026-11-15 : 2 nomenclatures du 2026 ont 2 sous-taches,
+     *    elles menent heureusement a la meme action).
+     *
+     * @param  iterable<LigneBudgetaire>  $lignes
+     * @return \Illuminate\Support\Collection<int, array{programme: ?Programme, sous_programme: ?Programme, action: ?Action}>
+     */
+    public static function classificationsStrategiques(iterable $lignes): \Illuminate\Support\Collection
+    {
+        $lignes = collect($lignes)->filter(fn($l) => $l && $l->nomenclature_id && $l->id);
+        if ($lignes->isEmpty()) {
+            return collect();
         }
 
-        $tache = \App\Models\Tache::where('nomenclature_id', $this->nomenclature_id)
+        // L'exercice vient du budget : une seule requete pour tous les budgets presents.
+        $exercices = Budget::withoutGlobalScopes()
+            ->whereIn('id', $lignes->pluck('budget_id')->unique()->filter()->all())
+            ->pluck('exercice_id', 'id');
+
+        $taches = Tache::withoutGlobalScopes()
             ->where('niveau', 'sous_tache')
-            ->where('exercice_id', $this->budget->exercice_id)
-            ->with('activite.action.programme.parent')
-            ->first();
+            ->whereNull('deleted_at')
+            ->whereIn('nomenclature_id', $lignes->pluck('nomenclature_id')->unique()->all())
+            ->whereNotNull('activite_id')
+            ->orderBy('nomenclature_id')->orderBy('exercice_id')->orderBy('id')
+            ->get(['id', 'nomenclature_id', 'exercice_id', 'activite_id']);
 
-        $programmeRattache = $tache?->activite?->action?->programme;
-
-        if (!$programmeRattache) {
-            return ['programme' => null, 'sous_programme' => null];
+        // nomenclature + exercice -> premiere tache au sens des regles ci-dessus
+        $tacheParCle = collect();
+        foreach ($taches as $tache) {
+            $cle = ((int) $tache->nomenclature_id) . ':' . ((int) $tache->exercice_id);
+            if (!$tacheParCle->has($cle)) {
+                $tacheParCle->put($cle, $tache);
+            }
         }
 
-        if ($programmeRattache->niveau === 'sous_programme') {
-            return [
-                'programme' => $programmeRattache->parent,
-                'sous_programme' => $programmeRattache,
-            ];
+        $activites = Activite::withoutGlobalScopes()
+            ->whereIn('id', $tacheParCle->pluck('activite_id')->unique()->filter()->all())
+            ->whereNull('deleted_at')
+            ->get(['id', 'action_id']);
+        $actionIdParActivite = $activites->mapWithKeys(fn($a) => [(int) $a->id => (int) $a->action_id]);
+
+        $actions = Action::withoutGlobalScopes()
+            ->whereIn('id', $actionIdParActivite->values()->unique()->filter(fn($v) => $v > 0)->all())
+            ->whereNull('deleted_at')
+            ->get();
+        $sousProgrammeEpParId = SousProgrammeEp::withoutGlobalScopes()
+            ->whereNull('deleted_at')
+            ->whereIn('id', $actions->pluck('sous_programme_ep_id')->unique()->filter()->all())
+            ->get()
+            ->keyBy('id');
+        foreach ($actions as $action) {
+            // charge ici pour que l'Etat des disponibilites lise l'action sans redemander la base
+            $action->setRelation('sousProgrammeEp', $sousProgrammeEpParId[$action->sous_programme_ep_id] ?? null);
+        }
+        $actionsParId = $actions->keyBy('id');
+
+        $programmesParId = Programme::withoutGlobalScopes()
+            ->whereNull('deleted_at')
+            ->whereIn('id', $actions->pluck('programme_id')->unique()->filter()->all())
+            ->get()
+            ->keyBy('id');
+        // le parent des programmes de niveau « sous_programme » (0 ligne de ce niveau en 2026)
+        $parentIds = $programmesParId->filter(fn($p) => $p->niveau === 'sous_programme' && $p->parent_id)
+            ->pluck('parent_id')->unique()->all();
+        if ($parentIds) {
+            foreach (Programme::withoutGlobalScopes()->whereIn('id', $parentIds)->get() as $parent) {
+                $programmesParId->put($parent->id, $parent);
+            }
         }
 
-        return [
-            'programme' => $programmeRattache,
-            'sous_programme' => null,
-        ];
+        return $lignes->mapWithKeys(function ($ligne) use ($exercices, $tacheParCle, $actionIdParActivite, $actionsParId, $programmesParId) {
+            $tache = $tacheParCle[((int) $ligne->nomenclature_id) . ':' . ((int) ($exercices[$ligne->budget_id] ?? 0))] ?? null;
+            $action = $tache ? ($actionsParId[(int) ($actionIdParActivite[(int) $tache->activite_id] ?? 0)] ?? null) : null;
+            $rattache = $action?->programme_id ? $programmesParId[$action->programme_id] : null;
+
+            if (!$rattache) {
+                return [(int) $ligne->id => ['programme' => null, 'sous_programme' => null, 'action' => $action]];
+            }
+
+            if ($rattache->niveau === 'sous_programme') {
+                return [(int) $ligne->id => [
+                    'programme'      => $programmesParId[$rattache->parent_id] ?? null,
+                    'sous_programme' => $rattache,
+                    'action'         => $action,
+                ]];
+            }
+
+            return [(int) $ligne->id => ['programme' => $rattache, 'sous_programme' => null, 'action' => $action]];
+        });
     }
 
     public function virementsSource(): HasMany

@@ -173,21 +173,51 @@ class SousProgrammeEp extends Model
         });
 
         static::saving(function (self $model) {
-            // 1. Rattachement ministériel : uniquement un programme de niveau 'programme'
+            // Le programme de la tutelle (MINSANTE) n'est résolu qu'une fois : il sert au
+            // contrôle du niveau, à la déduction du code porteur et au contrôle d'unicité.
+            $tutelle = $model->programme_budgetaire_id
+                ? Programme::withoutGlobalScope('exercice')->find($model->programme_budgetaire_id)
+                : null;
+
+            // 1. Rattachement à la tutelle : uniquement un programme de niveau 'programme'
             //    ✅ CORRIGÉ — sans le filtre d'exercice (sinon contrôle ignoré hors exercice actif)
-            if ($model->programme_budgetaire_id) {
-                $programme = Programme::withoutGlobalScope('exercice')->find($model->programme_budgetaire_id);
-                if ($programme && $programme->niveau !== 'programme') {
-                    throw new \InvalidArgumentException(
-                        "Le programme de rattachement doit être un programme de niveau 'programme' "
-                            . "(ex : P-410, 412), pas « {$programme->code} » de niveau '{$programme->niveau}'."
-                    );
-                }
+            if ($model->programme_budgetaire_id && $tutelle && $tutelle->niveau !== 'programme') {
+                throw new \InvalidArgumentException(
+                    "Le programme de rattachement doit être un programme budgétaire du MINSANTE "
+                        . "(ex : 410, 412), pas « {$tutelle->code} » de niveau '{$tutelle->niveau}'."
+                );
             }
 
-            // 2. ✅ AJOUT — Programme EP : le code doit exister dans la classification budgétaire
+            // 2. Le code qui range les actions n'est plus une saisie : il découle du
+            //    rattachement — mais seulement quand ce rattachement change. Une ligne héritée
+            //    dont les deux divergent reste consultable et modifiable telle quelle (un
+            //    simple `valider()` ne doit pas réécrire sa classification en silence).
+            //    Tant que `actions` n'a pas de clé vers le sous-programme, cette colonne EST le
+            //    lien : la laisser choisir à la main, c'est laisser deux sous-programmes porter
+            //    le même code et donc les mêmes actions.
+            if ($tutelle && $model->isDirty('programme_budgetaire_id')) {
+                $model->code_programme_ep = $tutelle->code;
+            }
+
+            // 3. Un seul sous-programme de l'EP par programme du MINSANTE, tant que le lien
+            //    aux actions passe par ce code : le second partagerait les actions du premier,
+            //    sans que rien ne le signale. Même restriction au changement : une base où le
+            //    doublon préexiste à la règle doit pouvoir corriger ses lignes une par une.
+            if ($model->isDirty('programme_budgetaire_id')
+                && $conflit = static::autreSousProgrammeDuMemeProgramme(
+                    $model->programme_budgetaire_id, $model->getKey())) {
+                throw new \InvalidArgumentException(
+                    "Le programme du MINSANTE « {$tutelle?->code} » a déjà son sous-programme de l'EP :"
+                        . " « {$conflit->code} » ({$conflit->libelle}). Un programme de la tutelle ne se"
+                        . " décompose qu'une fois par l'hôpital."
+                );
+            }
+
+            // 4. Le code porteur, quand il arrive sans rattachement (lignes antérieures, écritures
+            //    directes), doit tout de même exister dans la classification.
             if (
-                filled($model->code_programme_ep)
+                $tutelle === null
+                && filled($model->code_programme_ep)
                 && !Programme::withoutGlobalScope('exercice')->where('code', $model->code_programme_ep)->exists()
             ) {
                 throw new \InvalidArgumentException(
@@ -197,10 +227,38 @@ class SousProgrammeEp extends Model
         });
 
         static::updating(function (self $model) {
-            if ($model->isDirty('type')) {
+            // Le quota se compte par plan stratégique : changer de plan en est un pour le
+            // nouveau (et la fiche « Sous-programmes de l'EP » le permet depuis B1b).
+            if ($model->isDirty('type') || $model->isDirty('plan_strategique_ep_id')) {
                 static::validerLimiteSousProgrammes($model);
             }
         });
+    }
+
+    /**
+     * Le sous-programme de l'EP déjà rattaché à ce programme du MINSANTE, `null` s'il est seul.
+     *
+     * Une seule règle pour deux écrans (la fiche « Sous-programmes » et l'onglet du plan
+     * stratégique) et pour le garde du modèle : la formule de refus ne diverge pas selon l'entrée.
+     * Les lignes supprimées ne comptent pas — leurs actions, rangées sous le programme, ne sont
+     * pas emportées, mais rien n'interdit d'ouvrir un nouveau sous-programme sur ce programme.
+     *
+     * `$saufCode` plutôt que `$saufId` côté formulaire : la ligne en cours de saisie n'a pas
+     * encore d'identifiant, et `$record` désigne le plan stratégique dans un RelationManager.
+     */
+    public static function autreSousProgrammeDuMemeProgramme(
+        ?int $programmeBudgetaireId, mixed $saufId = null, ?string $saufCode = null): ?self
+    {
+        if (blank($programmeBudgetaireId)) {
+            return null;
+        }
+
+        return static::query()
+            ->where('programme_budgetaire_id', $programmeBudgetaireId)
+            ->when($saufId !== null, fn($q) => $q->whereKeyNot($saufId))
+            ->when(filled($saufCode), fn($q) => $q->where('code', '!=', $saufCode))
+            ->orderBy('code')
+            ->first();
     }
 
     public static function genererNumero(): string
@@ -232,8 +290,8 @@ class SousProgrammeEp extends Model
 
     /**
      * Relation conservée pour l'onglet « Actions » et le chargement groupé.
-     * ⚠️ Elle ne suit que le code du programme EP, SANS descendre dans les subdivisions.
-     *    Pour les rapports, utiliser actionsPourExercice() (règle générique complète).
+     * ⚠️ Elle ne suit que le code du programme de la tutelle (`code_programme_ep`), SANS descendre
+     *    dans les subdivisions. Pour les rapports, utiliser actionsPourExercice() (règle complète).
      */
     public function actions(): HasManyThrough
     {
@@ -259,7 +317,7 @@ class SousProgrammeEp extends Model
     }
 
     /**
-     * Programme MINISTERIEL de rattachement (ex: P-410 Prevention de la maladie).
+     * Programme budgétaire du MINSANTE (la tutelle) auquel ce sous-programme de l'EP est rattaché.
      * Sans scope d'exercice : le rattachement reste lisible quel que soit l'exercice actif.
      */
     public function programmeBudgetaire(): BelongsTo
@@ -275,16 +333,22 @@ class SousProgrammeEp extends Model
     }
 
     /**
-     * Programme budgetaire de l'EP (ex: SP-1) pour un exercice donne.
+     * Le programme de la tutelle dont les actions sont rangées sous ce sous-programme, pour un
+     * exercice donné. `actions.programme_id` pointe cette ligne : c'est le lien provisoire que
+     * l'étape B2 remplacera par une clé directe vers le sous-programme.
      */
     public function programmeEp(?int $exerciceId = null): ?Programme
     {
-        if (blank($this->code_programme_ep)) {
+        // Même repli que `programmesPourExercice()` : une ligne antérieure au rattachement
+        // obligatoire garde ses actions lisibles.
+        $code = $this->code_programme_ep ?: $this->programmeBudgetaire?->code;
+
+        if (blank($code)) {
             return null;
         }
 
         return Programme::withoutGlobalScope('exercice')
-            ->where('code', $this->code_programme_ep)
+            ->where('code', $code)
             ->where('exercice_id', $exerciceId ?? Exercice::getActif()?->id)
             ->first();
     }

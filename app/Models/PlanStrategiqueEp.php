@@ -6,6 +6,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasWorkflow;
 
@@ -70,6 +71,25 @@ class PlanStrategiqueEp extends Model
     public function sousProgrammes(): HasMany
     {
         return $this->hasMany(SousProgrammeEp::class, 'plan_strategique_ep_id');
+    }
+
+    /**
+     * Les programmes budgétaires de la tutelle (MINSANTE) que ce plan couvre, tels que les
+     * sous-programmes de l'EP les rattachent. `sous_programmes_ep` sert de table de liaison :
+     * il n'existe pas de lien direct plan → programme, et c'est voulu — un programme de la
+     * tutelle entre dans l'hôpital PAR un sous-programme qui le décompose.
+     *
+     * Sans le filtre d'exercice : le rattachement pointe une ligne précise de la classification,
+     * retrouvée même quand l'écran affiche un autre exercice. Les sous-programmes supprimés
+     * comptent pas (liaison morte).
+     */
+    public function programmesRattachement(): BelongsToMany
+    {
+        return $this->belongsToMany(Programme::class, 'sous_programmes_ep', 'plan_strategique_ep_id', 'programme_budgetaire_id')
+            ->withoutGlobalScope('exercice')
+            ->wherePivotNull('deleted_at')
+            ->withPivot(['id', 'code', 'libelle', 'type'])
+            ->orderBy('programmes.code');
     }
 
     public function ppaExercices(): HasMany

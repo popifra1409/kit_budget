@@ -17,7 +17,10 @@ class SousProgrammesRelationManager extends RelationManager
 {
     protected static string $relationship = 'sousProgrammes';
 
-    protected static ?string $title = 'Sous-Programmes';
+    // B1b — le mot « sous-programme » désigne ici la décomposition de l'hôpital, pas le
+    // programme du MINSANTE : l'onglet voisin les liste, les deux titres devaient cesser
+    // de se ressembler.
+    protected static ?string $title = "Sous-programmes de l'EP";
 
     protected static ?string $recordTitleAttribute = 'libelle';
 
@@ -64,37 +67,36 @@ class SousProgrammesRelationManager extends RelationManager
                 ->required()
                 ->helperText('Agent de la table des personnels : la revue des libellés et la matrice d\'arrimage ne lui montrent que ses sous-programmes. Sans agent désigné — ou sans fiche reliée à un login — le sous-programme n\'est visible que des comptes habilités « Tous les libellés ».'),
 
-            // ── Rattachements : deux champs distincts ──────────────────
+            // ── Rattachement à la tutelle ───────────────────────────────
+            // Une seule saisie : le code sous lequel les actions sont rangées en découle
+            // (`SousProgrammeEp::saving()`), et le lien direct action → sous-programme arrive
+            // à l'étape suivante de la correction.
             Forms\Components\Select::make('programme_budgetaire_id')
-                ->label('Programme de rattachement (ministériel)')
-                ->helperText('Programme national de niveau « programme » (ex : 412 Renforcement du système de santé).')
+                ->label('Programme budgétaire du MINSANTE')
+                ->helperText('Programme de la tutelle (ex : 412 Renforcement des capacités techniques), lui-même issu des objectifs de développement du pays (SND30) et de la stratégie sectorielle de santé. Un seul sous-programme de l\'EP par programme.')
                 ->options(fn() => static::programmesExerciceActif()
                     ->where('niveau', 'programme')
                     ->get()
                     ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"]))
                 ->searchable()
-                ->live()
-                // Si ce programme porte lui-meme les actions, on pre-remplit le programme EP
-                ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
-                    if (!$state || filled($get('code_programme_ep'))) {
-                        return;
-                    }
-                    $programme = Programme::withoutGlobalScope('exercice')->find($state);
-                    if ($programme && \App\Models\Action::withoutGlobalScope('exercice')->where('programme_id', $programme->id)->exists()) {
-                        $set('code_programme_ep', $programme->code);
-                    }
-                }),
+                ->required()
+                // `rules()` et non `rule()` : Filament évalue la fermeture au montage, où
+                // `$attribute`/`$value`/`$fail` ne sont pas résolus — `rule()` ferait mourir
+                // l'onglet. La fermeture reçoit `$get` et retourne la règle.
+                ->rules(function ($get) {
+                    return [function (string $attribute, $value, \Closure $fail) use ($get) {
+                        $conflit = SousProgrammeEp::autreSousProgrammeDuMemeProgramme(
+                            $value ? (int) $value : null,
+                            saufCode: $get('code'),
+                        );
 
-            Forms\Components\Select::make('code_programme_ep')
-                ->label('Programme qui porte les actions')
-                ->helperText("Souvent le même que le programme de rattachement. Lien par code : il reste valable d'un exercice à l'autre.")
-                ->options(fn() => static::programmesExerciceActif()
-                    // Uniquement les programmes qui ont effectivement des actions
-                    ->whereIn('id', \App\Models\Action::withoutGlobalScope('exercice')->select('programme_id'))
-                    ->get()
-                    ->mapWithKeys(fn($p) => [$p->code => "{$p->code} — {$p->libelle}"]))
-                ->searchable()
-                ->required(),
+                        if ($conflit) {
+                            $fail("Ce programme du MINSANTE a déjà son sous-programme de l'EP :"
+                                . " « {$conflit->code} » ({$conflit->libelle}).");
+                        }
+                    }];
+                })
+                ->columnSpanFull(),
         ])->columns(2);
     }
 
@@ -108,13 +110,11 @@ class SousProgrammesRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('code')->searchable(),
                 Tables\Columns\TextColumn::make('libelle')->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('responsable.nom_complet')->label('Responsable'),
+                // Une colonne pour le rattachement : le code porteur des actions en découle.
                 Tables\Columns\TextColumn::make('programmeBudgetaire.code')
-                    ->label('Rattachement')
-                    ->placeholder('—'),
-                Tables\Columns\TextColumn::make('code_programme_ep')
-                    ->label('Programme EP')
+                    ->label('Programme du MINSANTE')
                     ->badge()
-                    ->color(fn(?string $state) => $state ? 'success' : 'danger')
+                    ->color(fn($state) => $state ? 'success' : 'danger')
                     ->placeholder('Non rattaché'),
                 Tables\Columns\BadgeColumn::make('statut')->colors([
                     'gray' => 'brouillon',

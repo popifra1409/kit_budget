@@ -112,17 +112,17 @@ class ArborescenceLibellesService
             $this->observer('Sous-programme', $sp->libelle, 'Objectif du sous-programme non formulé');
         }
         if (!$sp->programmeBudgetaire) {
-            $this->observer('Sous-programme', $sp->libelle, 'Aucun programme de rattachement (ministériel)');
+            $this->observer('Sous-programme', $sp->libelle, 'Aucun programme budgétaire du MINSANTE rattaché');
         }
         // Le responsable est la clé du cloisonnement de la revue : sans lui, le sous-programme
         // n'est visible que pour les comptes habilités « view_all_arborescence_libelles ».
         if (!$sp->responsable_personnel_id) {
             $this->observer('Sous-programme', $sp->libelle, 'Responsable du sous-programme non désigné');
         }
-        // Le programme de rattachement sert de repli : on ne signale l'absence de programme EP
-        // que si aucune action n'a pu être retrouvée
+        // Le programme de rattachement porte les actions : on ne signale son absence que si
+        // aucune action n'a pu être retrouvée
         if (blank($sp->code_programme_ep) && $actions->isEmpty()) {
-            $this->observer('Sous-programme', $sp->libelle, "Aucun programme budgétaire de l'EP rattaché : actions introuvables");
+            $this->observer('Sous-programme', $sp->libelle, "Aucun programme du MINSANTE rattaché : actions introuvables");
         }
 
         $indicateursSp = $sp->indicateurs->map(fn($i) => $this->indicateur($i))->all();

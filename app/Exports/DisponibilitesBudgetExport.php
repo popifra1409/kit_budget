@@ -4,6 +4,7 @@ namespace App\Exports;
 
 use App\Models\Budget;
 use App\Services\Budget\EtatDisponibilitesService;
+use Illuminate\Support\Carbon;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
@@ -49,12 +50,13 @@ class DisponibilitesBudgetExport extends DefaultValueBinder implements
         protected bool $detaille = false,
         protected bool $engageesSeulement = false,
         protected ?int $programmeId = null,
+        protected ?Carbon $jusquAu = null,
     ) {}
 
     protected function etat(): array
     {
         return $this->etat ??= app(EtatDisponibilitesService::class)
-            ->construire($this->budget, $this->detaille, $this->engageesSeulement, $this->programmeId);
+            ->construire($this->budget, $this->detaille, $this->engageesSeulement, $this->programmeId, $this->jusquAu);
     }
 
     public function headings(): array
@@ -90,24 +92,34 @@ class DisponibilitesBudgetExport extends DefaultValueBinder implements
 
             foreach ($groupe['sous_groupes'] as $sousGroupe) {
                 if ($sousGroupe['libelle']) {
-                    $this->ajouterLigne($rows, $this->ligneTitre('   ↳ Sous-programme (gestion interne) : ' . $sousGroupe['libelle']), 'sous_programme');
+                    $this->ajouterLigne($rows, $this->ligneTitre('  ↳ Sous-programme de l\'EP : ' . $sousGroupe['libelle']), 'sous_programme');
                 }
 
-                foreach ($sousGroupe['lignes'] as $ligne) {
-                    $this->ajouterLigne($rows, array_merge([$ligne['code'], $ligne['libelle']], $this->montants($ligne['c'])), 'ligne');
+                foreach ($sousGroupe['actions'] as $groupeAction) {
+                    if ($groupeAction['libelle']) {
+                        $this->ajouterLigne($rows, $this->ligneTitre('      → Action : ' . $groupeAction['libelle']), 'action');
+                    }
 
-                    foreach ($ligne['engagements'] as $e) {
-                        $this->ajouterLigne($rows, $this->ligneEngagement($e), 'engagement');
+                    foreach ($groupeAction['lignes'] as $ligne) {
+                        $this->ajouterLigne($rows, array_merge([$ligne['code'], $ligne['libelle']], $this->montants($ligne['c'])), 'ligne');
+
+                        foreach ($ligne['engagements'] as $e) {
+                            $this->ajouterLigne($rows, $this->ligneEngagement($e), 'engagement');
+                        }
+                    }
+
+                    if ($groupeAction['afficher_total']) {
+                        $this->ajouterLigne($rows, array_merge(['        Sous-total action', ''], $this->montants($groupeAction['total'])), 'sous_total_action');
                     }
                 }
 
-                if ($sousGroupe['libelle']) {
-                    $this->ajouterLigne($rows, array_merge(['Sous-total sous-programme', ''], $this->montants($sousGroupe['total'])), 'sous_total');
+                if ($sousGroupe['afficher_total']) {
+                    $this->ajouterLigne($rows, array_merge(['    Sous-total sous-programme', ''], $this->montants($sousGroupe['total'])), 'sous_total_sous_programme');
                 }
             }
 
             if ($groupe['afficher_total']) {
-                $this->ajouterLigne($rows, array_merge(['Sous-total programme', ''], $this->montants($groupe['total'])), 'sous_total');
+                $this->ajouterLigne($rows, array_merge(['Sous-total programme', ''], $this->montants($groupe['total'])), 'sous_total_programme');
             }
         }
 
@@ -119,12 +131,15 @@ class DisponibilitesBudgetExport extends DefaultValueBinder implements
     // ────────────────────────────────────────────────────────────────
 
     protected const LIBELLES_NIVEAU = [
-        'programme'      => 'Programme',
-        'sous_programme' => 'Sous-programme',
-        'ligne'          => 'Ligne',
-        'engagement'     => 'Engagement',
-        'sous_total'     => 'Sous-total',
-        'total'          => 'Total',
+        'programme'               => 'Programme',
+        'sous_programme'          => 'Sous-programme EP',
+        'action'                  => 'Action',
+        'ligne'                   => 'Ligne',
+        'engagement'              => 'Engagement',
+        'sous_total_action'       => 'Sous-total action',
+        'sous_total_sous_programme' => 'Sous-total sous-programme',
+        'sous_total_programme'    => 'Sous-total programme',
+        'total'                   => 'Total',
     ];
 
     protected function ajouterLigne(array &$rows, array $valeurs, string $type): void
@@ -261,8 +276,12 @@ class DisponibilitesBudgetExport extends DefaultValueBinder implements
                 $sheet->setCellValue(
                     'A2',
                     "Budget : {$this->budget->libelle} - Exercice : {$this->budget->exercice}"
+                        . ' - Situation au : ' . $etat['jusquau']->format('d/m/Y')
                         . ' - Lignes : ' . $etat['nb_lignes_affichees'] . ' / ' . $etat['nb_lignes_budget']
+                        . ' - Sous-programmes EP : ' . $etat['nb_sous_programmes']
+                        . ' - Actions : ' . $etat['nb_actions']
                         . ($options ? ' - ' . implode(' - ', $options) : '')
+                        . ($etat['aucun_paiement'] ? ' - AUCUNE ORDONNANCE PAYÉE ENREGISTRÉE SUR L\'EXERCICE' : '')
                         . ' - Généré le : ' . now()->format('d/m/Y à H:i')
                 );
                 $sheet->mergeCells("A2:{$niv}2");
@@ -297,7 +316,13 @@ class DisponibilitesBudgetExport extends DefaultValueBinder implements
                             'font' => ['bold' => true, 'italic' => true, 'color' => ['rgb' => '1F4E78']],
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D9E2F3']],
                         ]),
-                        'sous_total' => $sheet->getStyle("A{$row}:{$fin}{$row}")->applyFromArray([
+                        'action' => $this->styleTitre($sheet, $row, $fin, [
+                            'font' => ['bold' => true, 'color' => ['rgb' => '2E5496']],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EDF2FA']],
+                        ]),
+                        'sous_total_action',
+                        'sous_total_sous_programme',
+                        'sous_total_programme' => $sheet->getStyle("A{$row}:{$fin}{$row}")->applyFromArray([
                             'font' => ['bold' => true, 'italic' => true],
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0F2F5']],
                             'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN], 'bottom' => ['borderStyle' => Border::BORDER_THIN]],
@@ -316,7 +341,7 @@ class DisponibilitesBudgetExport extends DefaultValueBinder implements
                     };
 
                     // Disponibles negatifs en rouge (K = Dispo. Eng., L = Dispo. Ord.)
-                    if (in_array($type, ['ligne', 'sous_total', 'total'], true)) {
+                    if (in_array($type, ['ligne', 'sous_total_action', 'sous_total_sous_programme', 'sous_total_programme', 'total'], true)) {
                         foreach (['K', 'L'] as $col) {
                             $valeur = $sheet->getCell("{$col}{$row}")->getValue();
                             if (is_numeric($valeur) && $valeur < 0) {

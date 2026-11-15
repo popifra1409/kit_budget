@@ -5,10 +5,12 @@
     $dateAdoption = filled($b->date_adoption ?? null)
         ? \Illuminate\Support\Carbon::parse($b->date_adoption)->format('d/m/Y')
         : '—';
+    $situationAu = $etat['jusquau']->format('d/m/Y');
     $filtres = array_filter([
         $etat['engagees_seulement'] ? 'Lignes engagées uniquement' : null,
         $etat['programme_filtre'] ? 'Programme ' . $etat['programme_filtre'] : null,
     ]);
+    $colonnes = 15;
 @endphp
 <!DOCTYPE html>
 <html>
@@ -20,7 +22,10 @@
         body { font-family: 'DejaVu Sans', sans-serif; font-size: 7px; color: #111; }
 
         h1 { font-size: 14px; text-align: center; color: #1F4E78; margin: 0 0 2px; }
+        .situation { text-align: center; font-size: 11px; font-weight: bold; color: #1F4E78; margin: 0 0 2px; }
         .sous-titre { text-align: center; font-size: 9px; margin-bottom: 6px; }
+        .mention { margin: 4px 0 0; padding: 3px 6px; font-size: 7.5px; font-weight: bold;
+                   color: #C00000; background: #FFC7CE; border: 1px solid #C00000; }
 
         table.infos { width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 7.5px; }
         table.infos td { padding: 2px 4px; }
@@ -41,12 +46,13 @@
 
         tr.prog td { background: #1F4E78; color: #fff; font-weight: bold; font-size: 8px; padding: 3px; }
         tr.sp td { background: #D9E2F3; color: #1F4E78; font-weight: bold; font-style: italic; }
+        tr.act td { background: #EDF2FA; color: #2E5496; font-weight: bold; }
         tr.stot td { background: #F0F2F5; font-weight: bold; font-style: italic; }
         tr.total td { background: #E7E6E6; font-weight: bold; font-size: 7.5px; border: 1.5px solid #000; }
 
         tr.eng td { background: #FAFAFA; color: #444; font-style: italic; font-size: 6.5px; }
         tr.eng td.lib { padding-left: 10px; }
-        tr.eng .meta { color: #7F7F7F; }
+        tr.eng td.meta { color: #7F7F7F; }
 
         .legende { margin-top: 6px; font-size: 6.5px; color: #555; }
         .pied { position: fixed; bottom: -22px; left: 0; right: 0; text-align: center; font-size: 6.5px; color: #7F7F7F; }
@@ -56,6 +62,7 @@
     <div class="pied">Document généré automatiquement - {{ now()->format('d/m/Y à H:i') }}</div>
 
     <h1>ÉTAT DES DISPONIBILITÉS BUDGÉTAIRES{{ $etat['detaille'] ? ' — DÉTAIL DES ENGAGEMENTS' : '' }}</h1>
+    <div class="situation">Situation au {{ $situationAu }}</div>
     <div class="sous-titre">{{ $b->libelle }} — Généré le {{ now()->format('d/m/Y à H:i') }}</div>
 
     <table class="infos">
@@ -67,11 +74,24 @@
         </tr>
         <tr>
             <td><span class="lib">Lignes :</span> {{ $etat['nb_lignes_affichees'] }} / {{ $etat['nb_lignes_budget'] }}</td>
-            <td><span class="lib">Budget total :</span> {{ $f($etat['budget_total']) }} FCFA</td>
+            <td><span class="lib">Sous-programmes EP :</span> {{ $etat['nb_sous_programmes'] }}</td>
+            <td><span class="lib">Actions :</span> {{ $etat['nb_actions'] }}</td>
+            <td><span class="lib">Budget rectifié :</span> {{ $f($etat['budget_total']) }} FCFA</td>
+        </tr>
+        <tr>
             <td><span class="lib">Engagements :</span> {{ $etat['nb_engagements'] }}</td>
+            <td><span class="lib">Ordonnances émises :</span> {{ $etat['nb_op_emises'] }}</td>
+            <td><span class="lib">Ordonnances payées :</span> {{ $etat['nb_op_payees'] }}</td>
             <td><span class="lib">Filtres :</span> {{ $filtres ? implode(' — ', $filtres) : 'aucun' }}</td>
         </tr>
     </table>
+
+    @if ($etat['aucun_paiement'])
+        <p class="mention">⚠ Aucune ordonnance payée enregistrée sur l'exercice à la date retenue :
+            les colonnes « Payé », « Taxes reversées » et « Tx Exec. » sont à 0 parce que rien n'a été
+            payé, pas parce que le calcul n'a rien trouvé. {{ $etat['nb_op_emises'] }} ordonnance(s)
+            émise(s) à ce jour, dont {{ $etat['nb_op_payees'] }} payée(s).</p>
+    @endif
 
     <table class="etat">
         <thead>
@@ -96,41 +116,56 @@
         <tbody>
             @forelse ($etat['groupes'] as $groupe)
                 <tr class="prog">
-                    <td colspan="15">■ {{ $groupe['programme'] ? 'PROGRAMME : ' : '' }}{{ $groupe['libelle'] }}</td>
+                    <td colspan="{{ $colonnes }}">■ {{ $groupe['programme'] ? 'PROGRAMME : ' : '' }}{{ $groupe['libelle'] }}</td>
                 </tr>
 
                 @foreach ($groupe['sous_groupes'] as $sousGroupe)
                     @if ($sousGroupe['libelle'])
                         <tr class="sp">
-                            <td colspan="15">↳ Sous-programme (gestion interne) : {{ $sousGroupe['libelle'] }}</td>
+                            <td colspan="{{ $colonnes }}">↳ Sous-programme de l'EP : {{ $sousGroupe['libelle'] }}</td>
                         </tr>
                     @endif
 
-                    @foreach ($sousGroupe['lignes'] as $ligne)
-                        <tr>
-                            <td>{{ $ligne['code'] }}</td>
-                            <td>{{ $ligne['libelle'] }}</td>
-                            @include('exports.partials.disponibilites-montants', ['c' => $ligne['c']])
-                        </tr>
-
-                        @foreach ($ligne['engagements'] as $e)
-                            <tr class="eng">
-                                <td>{{ $e['numero'] }}</td>
-                                <td class="lib">
-                                    ↳ <strong>{{ $e['beneficiaire'] }}</strong> — {{ $e['objet'] }}
-                                    <span class="meta">({{ $e['date'] }}@if ($e['numeros_op']), OP {{ $e['numeros_op'] }}@endif)</span>
-                                </td>
-                                <td colspan="4"></td>
-                                <td class="num">{{ $f($e['engage']) }}</td>
-                                <td class="num">{{ $f($e['ordonne']) }}</td>
-                                <td class="num">{{ $f($e['paye']) }}</td>
-                                <td class="num">{{ $f($e['taxesReversees']) }}</td>
-                                <td colspan="5"></td>
+                    @foreach ($sousGroupe['actions'] as $groupeAction)
+                        @if ($groupeAction['libelle'])
+                            <tr class="act">
+                                <td colspan="{{ $colonnes }}">→ Action : {{ $groupeAction['libelle'] }}</td>
                             </tr>
+                        @endif
+
+                        @foreach ($groupeAction['lignes'] as $ligne)
+                            <tr>
+                                <td>{{ $ligne['code'] }}</td>
+                                <td>{{ $ligne['libelle'] }}</td>
+                                @include('exports.partials.disponibilites-montants', ['c' => $ligne['c']])
+                            </tr>
+
+                            @foreach ($ligne['engagements'] as $e)
+                                <tr class="eng">
+                                    <td>{{ $e['numero'] }}</td>
+                                    <td class="lib">
+                                        ↳ <strong>{{ $e['beneficiaire'] }}</strong> — {{ $e['objet'] }}
+                                        <span class="meta">({{ $e['date'] }}@if ($e['numeros_op']), OP {{ $e['numeros_op'] }}@endif)</span>
+                                    </td>
+                                    <td colspan="4"></td>
+                                    <td class="num">{{ $f($e['engage']) }}</td>
+                                    <td class="num">{{ $f($e['ordonne']) }}</td>
+                                    <td class="num">{{ $f($e['paye']) }}</td>
+                                    <td class="num">{{ $f($e['taxesReversees']) }}</td>
+                                    <td colspan="5"></td>
+                                </tr>
+                            @endforeach
                         @endforeach
+
+                        @if ($groupeAction['afficher_total'])
+                            <tr class="stot">
+                                <td colspan="2">Sous-total action</td>
+                                @include('exports.partials.disponibilites-montants', ['c' => $groupeAction['total']])
+                            </tr>
+                        @endif
                     @endforeach
 
-                    @if ($sousGroupe['libelle'])
+                    @if ($sousGroupe['afficher_total'])
                         <tr class="stot">
                             <td colspan="2">Sous-total sous-programme</td>
                             @include('exports.partials.disponibilites-montants', ['c' => $sousGroupe['total']])
@@ -145,7 +180,7 @@
                     </tr>
                 @endif
             @empty
-                <tr><td colspan="15" style="text-align:center; color:#999">Aucune ligne ne correspond aux critères choisis.</td></tr>
+                <tr><td colspan="{{ $colonnes }}" style="text-align:center; color:#999">Aucune ligne ne correspond aux critères choisis.</td></tr>
             @endforelse
 
             <tr class="total">
@@ -159,7 +194,18 @@
         Légende : Dispo. Eng. = Disponible à l'engagement · Dispo. Ord. = Disponible à l'ordonnancement ·
         Tx Eng. = Engagé / Budget rectifié · Tx Ord. = Ordonné / Engagé · Tx Exec. = (Payé + Taxes reversées) / Budget rectifié ·
         Taxes reversées = retenues (TVA, IR, TSR...) reversées au Trésor via l'OPT liée ·
-        ■ = Programme (rattachement tutelle) · ↳ = Sous-programme (subdivision de gestion interne) ou engagement
+        Budget rectifié = initial + virements <em>exécutés</em> au plus tard le {{ $situationAu }}
+        + mouvements de collectifs <em>adoptés</em> au plus tard le {{ $situationAu }}, non annulés ·
+        Engagé = lignes d'engagement des actes datés au plus tard le {{ $situationAu }} ·
+        Ordonné = ordonnances émises au plus tard le {{ $situationAu }} (montant brut, net à défaut) ·
+        Payé = ordonnances au statut « payée » au plus tard le {{ $situationAu }} ·
+        ■ = Programme de rattachement · ↳ = Sous-programme de l'établissement (décomposition par l'EP) ·
+        → = Action · un sous-total n'est imprimé que s'il n'est pas la copie conforme de son unique enfant
+        @if ($etat['non_imputes']['nb'] > 0)
+            · HORS TOTAUX : {{ $etat['non_imputes']['nb'] }} engagement(s) d'un montant total de
+            {{ $f($etat['non_imputes']['engage']) }} FCFA ne sont imputés sur aucune ligne de ce budget
+            (ni répartition, ni nomenclature principale rattachée) — à rattacher.
+        @endif
         @if ($etat['detaille'])
             · Sous chaque ligne : engagements (bénéficiaire — objet, date, n° d'OP) ; leur somme est égale aux montants de la ligne.
         @endif

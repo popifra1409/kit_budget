@@ -7,7 +7,7 @@
         </td>
     </tr>
     <tr>
-        <th>Programme de rattachement</th>
+        <th>Programme budgétaire du MINSANTE</th>
         <td>
             @if ($bloc['programme'] ?? null)
                 {{ $bloc['programme'] }}
@@ -17,7 +17,9 @@
         </td>
     </tr>
     <tr>
-        <th>Programme budgétaire de l'EP</th>
+        {{-- Même programme, résolu pour l'exercice affiché : la ligne disparaît quand le
+             sous-programme portera lui-même ses actions (étape B2). --}}
+        <th>Programme portant les actions</th>
         <td>
             @if ($bloc['programme_ep'] ?? null)
                 {{ $bloc['programme_ep'] }}

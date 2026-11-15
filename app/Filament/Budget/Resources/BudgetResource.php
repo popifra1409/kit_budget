@@ -15,6 +15,8 @@ use App\Filament\Forms\Components\ExerciceSelect;
 use App\Models\Exercice;
 use Filament\Tables\Actions\Action;
 use App\Exports\DisponibilitesBudgetExport;
+use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 use PDF;
 use Filament\Notifications\Notification;
@@ -285,15 +287,18 @@ class BudgetResource extends Resource
                         ->form(static::formulaireEtatDisponibilites())
                         ->action(function (Budget $record, array $data) {
                             $detaille = $data['niveau'] === 'detaille';
+                            $situation = static::normaliserSituation($record, $data['jusqu_au'] ?? null);
 
                             $filename = 'disponibilites_' . ($detaille ? 'detaille_' : '')
-                                . $record->code . '_' . now()->format('Ymd_His') . '.xlsx';
+                                . $record->code . '_au_' . $situation->format('Ymd')
+                                . '_' . now()->format('Ymd_His') . '.xlsx';
 
                             return Excel::download(new DisponibilitesBudgetExport(
                                 $record,
                                 $detaille,
                                 (bool) $data['engagees_seulement'],
                                 $data['programme_id'] ? (int) $data['programme_id'] : null,
+                                $situation,
                             ), $filename);
                         }),
 
@@ -308,12 +313,14 @@ class BudgetResource extends Resource
                         ->form(static::formulaireEtatDisponibilites())
                         ->action(function (Budget $record, array $data) {
                             $detaille = $data['niveau'] === 'detaille';
+                            $situation = static::normaliserSituation($record, $data['jusqu_au'] ?? null);
 
                             $etat = app(\App\Services\Budget\EtatDisponibilitesService::class)->construire(
                                 $record,
                                 $detaille,
                                 (bool) $data['engagees_seulement'],
                                 $data['programme_id'] ? (int) $data['programme_id'] : null,
+                                $situation,
                             );
 
                             // Le detail (engagements) est long : A3 paysage pour rester lisible
@@ -321,7 +328,8 @@ class BudgetResource extends Resource
                                 ->setPaper($detaille ? 'a3' : 'a4', 'landscape');
 
                             $filename = 'disponibilites_' . ($detaille ? 'detaille_' : '')
-                                . $record->code . '_' . now()->format('Ymd_His') . '.pdf';
+                                . $record->code . '_au_' . $situation->format('Ymd')
+                                . '_' . now()->format('Ymd_His') . '.pdf';
 
                             return response()->streamDownload(fn() => print($pdf->output()), $filename);
                         }),
@@ -447,6 +455,19 @@ class BudgetResource extends Resource
     protected static function formulaireEtatDisponibilites(): array
     {
         return [
+            Forms\Components\DatePicker::make('jusqu_au')
+                ->label('Situation au (date limite)')
+                ->native(false)
+                ->displayFormat('d/m/Y')
+                ->format('Y-m-d')
+                ->default(fn(Budget $record) => static::situationParDefaut($record))
+                ->minDate(fn(Budget $record) => static::bornesSituation($record)[0])
+                ->maxDate(fn(Budget $record) => static::bornesSituation($record)[1])
+                ->helperText(fn(Budget $record) => 'Engagements, ordonnances, virements exécutés et '
+                    . 'mouvements de crédits adoptés sont arrêtés à ce jour, et le budget rectifié est '
+                    . 'recalculé pour ce jour — ' . (static::descriptionBornes($record)))
+                ->required(),
+
             Forms\Components\Radio::make('niveau')
                 ->label('Niveau de détail')
                 ->options([
@@ -469,5 +490,79 @@ class BudgetResource extends Resource
                     ->orderBy('code')->get()
                     ->mapWithKeys(fn($p) => [$p->id => "{$p->code} — {$p->libelle}"])),
         ];
+    }
+
+    /**
+     * Bornes acceptées pour la date limite d'un état des disponibilités : celles de l'exercice du
+     * budget. [début, fin] en Carbon, l'un ou l'autre à null si l'exercice ne les donne pas.
+     *
+     * @return array{0: ?Carbon, 1: ?Carbon}
+     */
+    protected static function bornesSituation(Budget $record): array
+    {
+        $exercice = $record->exercice_id ? Exercice::find($record->exercice_id) : null;
+
+        $debut = $exercice?->date_debut ? Carbon::parse($exercice->date_debut)->startOfDay() : null;
+        $fin = $exercice?->date_fin ? Carbon::parse($exercice->date_fin)->startOfDay() : null;
+
+        if ($exercice?->annee) {
+            $debut ??= Carbon::create($exercice->annee, 1, 1);
+            $fin ??= Carbon::create($exercice->annee, 12, 31);
+        }
+
+        return [$debut, $fin];
+    }
+
+    /** Le jour proposé par défaut : aujourd'hui, ramené dans l'exercice quand il en sort. */
+    protected static function situationParDefaut(Budget $record): string
+    {
+        [$debut, $fin] = static::bornesSituation($record);
+        $aujourdhui = Carbon::today();
+
+        if ($debut && $aujourdhui->lt($debut)) return $debut->toDateString();
+        if ($fin && $aujourdhui->gt($fin)) return $fin->toDateString();
+
+        return $aujourdhui->toDateString();
+    }
+
+    protected static function descriptionBornes(Budget $record): string
+    {
+        [$debut, $fin] = static::bornesSituation($record);
+
+        return $debut || $fin
+            ? 'du ' . ($debut?->format('d/m/Y') ?? '—') . ' au ' . ($fin?->format('d/m/Y') ?? '—') . '.'
+            : 'aucune borne connue pour cet exercice, la date reste libre.';
+    }
+
+    /**
+     * Date limite de l'état, refusée si elle sort de l'exercice. Le champ « jusqu_au » étant du
+     * formulaire de l'action, l'erreur s'affiche sous lui plutôt que de fermer le modal.
+     */
+    protected static function normaliserSituation(Budget $record, mixed $valeur): Carbon
+    {
+        if (blank($valeur)) {
+            throw ValidationException::withMessages([
+                'jusqu_au' => 'Choisissez la date à laquelle l\'état doit être arrêté.',
+            ]);
+        }
+
+        try {
+            $situation = Carbon::parse($valeur)->startOfDay();
+        } catch (\Throwable) {
+            throw ValidationException::withMessages([
+                'jusqu_au' => 'Date illisible : ' . (is_scalar($valeur) ? $valeur : gettype($valeur)) . '.',
+            ]);
+        }
+
+        [$debut, $fin] = static::bornesSituation($record);
+
+        if (($debut && $situation->lt($debut)) || ($fin && $situation->gt($fin))) {
+            throw ValidationException::withMessages([
+                'jusqu_au' => 'La situation au ' . $situation->format('d/m/Y') . ' est hors de l\'exercice '
+                    . 'du budget ' . $record->code . ' (' . static::descriptionBornes($record) . ')',
+            ]);
+        }
+
+        return $situation;
     }
 }

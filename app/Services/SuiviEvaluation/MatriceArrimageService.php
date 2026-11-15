@@ -100,8 +100,8 @@ class MatriceArrimageService
 
         $this->verifier(filled($sp->objectif), 'majeure', 'Sous-programme sans objectif formulé');
         $this->verifier((bool) $sp->responsable_personnel_id, 'majeure', 'Sous-programme sans responsable désigné');
-        $this->verifier((bool) $sp->programme_budgetaire_id, 'critique', 'Sous-programme non rattaché à un programme budgétaire');
-        $this->verifier(filled($sp->code_programme_ep), 'critique', "Aucun programme budgétaire de l'EP rattaché (actions introuvables)");
+        $this->verifier((bool) $sp->programme_budgetaire_id, 'critique', 'Sous-programme non rattaché à un programme budgétaire du MINSANTE');
+        $this->verifier(filled($sp->code_programme_ep), 'critique', 'Aucun programme de la tutelle ne porte ses actions (actions introuvables)');
         $this->verifier($sp->indicateurs->isNotEmpty(), 'majeure', 'Aucun indicateur au niveau du sous-programme');
         $this->verifier($actions->isNotEmpty(), 'critique', 'Aucune action rattachée au sous-programme');
 

@@ -22,7 +22,8 @@ class ActiviteResource extends Resource
     protected static ?string $modelLabel = 'Activité';
     protected static ?string $pluralModelLabel = 'Activités';
     protected static ?string $navigationGroup = 'Plans Stratégiques EP';
-    protected static ?int $navigationSort = 3;
+    // Rang 4 : après le nouveau menu « Sous-programmes de l'EP » (2) et « Actions » (3).
+    protected static ?int $navigationSort = 4;
 
     // ========================================
     // PERMISSIONS

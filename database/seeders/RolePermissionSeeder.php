@@ -1081,6 +1081,9 @@ class RolePermissionSeeder extends Seeder
                 'view_sous_programme_ep',
                 'view_any_action',
                 'view_action',
+                // Le fil d'Ariane part du sous-programme : la ligne de sa liste offre « Ajouter
+                // une action », et le bouton est conditionné à create_action.
+                'create_action',
                 'view_any_activite',
                 'view_activite',
                 'view_any_tache',
@@ -1177,15 +1180,20 @@ class RolePermissionSeeder extends Seeder
                 'access_module_planification',
                 'view_arborescence_libelles',
                 'exporter_arborescence_libelles',
+
+                // Il pilote ses sous-programmes : la ligne de la liste des sous-programmes crée
+                // l'action, classée sous le programme de l'EP du sous-programme.
+                'create_action',
             ],
             'responsable_sous_programme'
         );
 
-        // ── RATTRAPAGE du cycle de validation du sous-programme ──────────
+        // ── RATTRAPAGE du cycle de validation et de la création d'action ──────
         //    « valider » et « mettre en vigueur » sont au catalogue depuis l'écran du pilote
-        //    du plan stratégique : elles existaient donc déjà en base quand ces deux rôles
-        //    ont été créés. Or ajouterPermissionsRole() n'ajoute aux rôles existants que les
-        //    permissions créées lors de CETTE exécution — les lui listes ne suffit pas.
+        //    du plan stratégique, et create_action depuis la classification budgétaire du module
+        //    Budget : les trois existaient donc déjà en base quand ces deux rôles ont été créés.
+        //    Or ajouterPermissionsRole() n'ajoute aux rôles existants que les permissions créées
+        //    lors de CETTE exécution — les lui listes ne suffit pas.
         //    Attribution explicite, même idiome que le rattrapage des mouvements de crédits.
         foreach (['responsable_programmation', 'responsable_sous_programme'] as $nomRole) {
             $role = Role::findByName($nomRole);
@@ -1193,12 +1201,13 @@ class RolePermissionSeeder extends Seeder
                 Permission::whereIn('name', [
                     'valider_sous_programme_ep',
                     'mettre_en_vigueur_sous_programme_ep',
+                    'create_action',
                 ])->pluck('name')->all(),
                 $role->permissions()->pluck('name')->all()
             ));
             if ($aDonner) {
                 $role->givePermissionTo($aDonner);
-                $this->command->line("  ✓ {$nomRole} — cycle du sous-programme : " . implode(', ', $aDonner));
+                $this->command->line("  ✓ {$nomRole} — cycle du sous-programme et création d'action : " . implode(', ', $aDonner));
             }
         }
 

@@ -38,8 +38,8 @@
                                 @forelse ($sp->indicateurs as $ind)
                                     <tr>
                                         <td class="border p-2">{{ $ind->libelle }}</td>
-                                        <td class="border p-2 text-center">{{ $ind->valeur_reference ?? '—' }} ({{ $ind->annee_reference ?? '—' }})</td>
-                                        <td class="border p-2 text-center">{{ $ind->valeur_cible ?? '—' }} ({{ $ind->annee_cible ?? '—' }})</td>
+                                        <td class="border p-2 text-center">{{ $ind->referenceFormatee() }}</td>
+                                        <td class="border p-2 text-center">{{ $ind->cibleFormatee() }}</td>
                                     </tr>
                                 @empty
                                     <tr><td colspan="3" class="border p-2 text-center text-gray-400">Aucun indicateur défini</td></tr>
