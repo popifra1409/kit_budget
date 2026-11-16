@@ -25,6 +25,9 @@ class NomenclatureBudgetaire extends Model
         'libelle',
         'classe',
         'type',
+        // les quatre surfaces d'écriture de la clé (création, modal de liste, fiche, « Détacher » du
+        // groupe) passent par l'affectation de masse : absente d'ici, elle est jetée sans aucun bruit.
+        'groupe_id',
         'niveau',
         'parent_id',
         'date_mise_en_vigueur',

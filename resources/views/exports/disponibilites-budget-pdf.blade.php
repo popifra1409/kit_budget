@@ -192,13 +192,14 @@
 
     <p class="legende">
         Légende : Dispo. Eng. = Disponible à l'engagement · Dispo. Ord. = Disponible à l'ordonnancement ·
-        Tx Eng. = Engagé / Budget rectifié · Tx Ord. = Ordonné / Engagé · Tx Exec. = (Payé + Taxes reversées) / Budget rectifié ·
-        Taxes reversées = retenues (TVA, IR, TSR...) reversées au Trésor via l'OPT liée ·
+        Tx Eng. = Engagé / Budget rectifié · Tx Ord. = Ordonné / Engagé · Tx Exec. = Payé / Budget rectifié ·
+        Taxes reversées = retenues (TVA, IR, TSR...) reversées au Trésor via l'OPT liée, colonne d'information :
+        le montant brut d'une ordonnance contient déjà sa retenue, elles ne sont donc pas ajoutées au payé ·
         Budget rectifié = initial + virements <em>exécutés</em> au plus tard le {{ $situationAu }}
         + mouvements de collectifs <em>adoptés</em> au plus tard le {{ $situationAu }}, non annulés ·
         Engagé = lignes d'engagement des actes datés au plus tard le {{ $situationAu }} ·
         Ordonné = ordonnances émises au plus tard le {{ $situationAu }} (montant brut, net à défaut) ·
-        Payé = ordonnances au statut « payée » au plus tard le {{ $situationAu }} ·
+        Payé = ordonnances au statut « payée » au plus tard le {{ $situationAu }} (montant brut, net à défaut) ·
         ■ = Programme de rattachement · ↳ = Sous-programme de l'établissement (décomposition par l'EP) ·
         → = Action · un sous-total n'est imprimé que s'il n'est pas la copie conforme de son unique enfant
         @if ($etat['non_imputes']['nb'] > 0)

@@ -32,14 +32,17 @@ use Illuminate\Support\Facades\DB;
  *                      L'ancienne regle — le montant engage entier des qu'une OP existe —
  *                      sur-estimait l'ordonne de 177 693 381,83 FCFA sur 220 engagements du
  *                      BUDGET PRIMITIF 2026 (constate 2026-11-15).
- *  - Paye            = OP « standard » AU STATUT PAYEE, payees <= J, au NET.
- *  - Taxes reversees = OP « impot » payees <= J, au NET. Le net est garde ici, et pour les deux
- *                      colonnes : le brut d'une OP standard comprend la retenue, qui est comptee
- *                      une deuxieme fois par l'OP « impot » — les sommer au brut les compterait
- *                      deux fois.
+ *  - Paye            = OP « standard » AU STATUT PAYEE, payees <= J, meme regle que l'ordonne : le
+ *                      brut quand il est saisi, sinon le net. C'est ce que lit la maison de cloture
+ *                      (`EtatsClotureService`, qui somme l'ordonne et le paye sur `montant_brut`) ;
+ *                      l'etat des disponibilites etait le seul ecran a descendre au net.
+ *  - Taxes reversees = OP « impot » payees <= J, au NET : le net d'une OP d'impot EST l'impot
+ *                      reverse. Colonne d'information seulement : le brut d'une OP standard contient
+ *                      deja sa retenue, donc ajouter cette colonne au payé le compterait deux fois
+ *                      (d'ou l'ancien « Tx Execution = (Paye + Taxes) / rectifie »).
  *  - Tx Engagement   = Engage / Budget rectifie
  *  - Tx Ordonnanct.  = Ordonne / Engage
- *  - Tx Execution    = (Paye + Taxes reversees) / Budget rectifie
+ *  - Tx Execution    = Paye / Budget rectifie
  *
  * Les statuts des virements et des collectifs sont lus tels qu'ils sont aujourd'hui : le
  * SIGB ne garde pas l'historique des statuts, un virement execute en octobre n'a donc pas
@@ -350,7 +353,7 @@ class EtatDisponibilitesService
             : 1.0;
 
         $ordonne = $part * (float) $standard->sum(fn($op) => $op->montantBrutOuNet());
-        $paye = $part * (float) $payeesStandard->sum(fn($op) => (float) $op->montant_net);
+        $paye = $part * (float) $payeesStandard->sum(fn($op) => $op->montantBrutOuNet());
         $taxes = $part * (float) $impotsPayes->sum(fn($op) => (float) $op->montant_net);
 
         return [
@@ -472,7 +475,9 @@ class EtatDisponibilitesService
 
         $t['tauxEngagement']     = $br > 0 ? ($t['engage'] / $br) * 100 : 0;
         $t['tauxOrdonnancement'] = $t['engage'] > 0 ? ($t['ordonne'] / $t['engage']) * 100 : 0;
-        $t['tauxExecution']      = $br > 0 ? (($t['paye'] + $t['taxesReversees']) / $br) * 100 : 0;
+        // Le paye etant desormais au brut, la retenue est DEJA dedans : y ajouter les OP « impot »
+        // la compterait deux fois. `taxesReversees` reste une colonne lue seule.
+        $t['tauxExecution']      = $br > 0 ? ($t['paye'] / $br) * 100 : 0;
 
         return $t;
     }
