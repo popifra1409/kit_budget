@@ -10,10 +10,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasCorbeille;
 
 class Tache extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['enfants'];
+    }
+
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasCorbeille;
 
     protected $table = 'taches';
 
@@ -157,6 +165,115 @@ class Tache extends Model
     public function scopeSousTaches($query)
     {
         return $query->where('niveau', 'sous_tache');
+    }
+
+    /** Scope : ce qu'un nouveau document a le droit de choisir. */
+    public function scopeActives($query)
+    {
+        return $query->where('actif', true);
+    }
+
+    /**
+     * Lignes de budget portées par la nomenclature de la tâche, dans SON exercice.
+     *
+     * `nomenclature_id` null est traité à part : comparée telle quelle, la clause devient
+     * `nomenclature_id IS NULL` et ramène toutes les lignes sans nomenclature.
+     *
+     * Lu en DB::select brut : `budgets` porte un scope exercice global, qui masquerait la ligne
+     * d'un autre exercice — celle-là même qu'il faut compter pour refuser.
+     *
+     * @return array<int, object> id, budget_rectifie, engage, paye
+     */
+    public function lignesBudgetPortees(): array
+    {
+        if (!$this->nomenclature_id) {
+            return [];
+        }
+
+        return \Illuminate\Support\Facades\DB::select(
+            'select lb.id, lb.budget_rectifie, lb.engage, lb.paye
+               from lignes_budgetaires lb
+               join budgets b on b.id = lb.budget_id
+              where lb.nomenclature_id = ?
+                and b.exercice_id = ?
+                and lb.deleted_at is null',
+            [(int) $this->nomenclature_id, (int) $this->exercice_id]
+        );
+    }
+
+    /**
+     * Motifs qui EMPÊCHENT de désactiver la tâche — liste vide = désactivable.
+     *
+     * « Utilisée » se juge sur l'exercice de la tâche : la planification est répliquée chaque année,
+     * une tâche de l'année close peut être vide pendant que sa copie porte le budget.
+     *
+     * Une tâche principale n'est pas bloquée par le seul fait d'AVOIR des sous-tâches : elle est
+     * bloquée si l'une d'elles est utilisée ; sinon la désactivation descend dessus (cascade).
+     *
+     * @return string[] motifs libellés, prêts à mettre dans le refus affiché
+     */
+    public function motifsDesactivation(): array
+    {
+        if (!$this->exists) {
+            return [];
+        }
+
+        $motifs = [];
+        $fr = fn($v): string => number_format((float) $v, 0, ',', ' ') . ' FCFA';
+
+        foreach (static::withoutGlobalScope('exercice')->where('parent_id', $this->id)->get() as $sousTache) {
+            $motifsSousTache = $sousTache->motifsDesactivation();
+            if ($motifsSousTache !== []) {
+                $motifs[] = "sa sous-tâche {$sousTache->code} : " . implode(' ; ', $motifsSousTache);
+            }
+        }
+
+        if ((float) $this->ae != 0 || (float) $this->cp != 0) {
+            $motifs[] = 'ses AE/CP chiffrés (AE ' . $fr($this->ae) . ', CP ' . $fr($this->cp) . ')';
+        }
+
+        $lignes = $this->lignesBudgetPortees();
+        $engage = 0.0;
+        $paye = 0.0;
+        foreach ($lignes as $lb) {
+            $engage += (float) $lb->engage;
+            $paye += (float) $lb->paye;
+        }
+        if ($engage != 0.0) {
+            $motifs[] = 'sa ligne de budget est engagée à hauteur de ' . $fr($engage)
+                . ($paye != 0.0 ? ' (dont ' . $fr($paye) . ' payé)' : '');
+        } elseif ($lignes !== []) {
+            $motifs[] = 'sa nomenclature porte ' . count($lignes) . ' ligne(s) de budget de l\'exercice '
+                . $this->exercice_id;
+        }
+
+        $cdmt = (int) \Illuminate\Support\Facades\DB::table('cdmt_lignes')->where('tache_id', $this->id)->count();
+        if ($cdmt > 0) {
+            $motifs[] = "$cdmt ligne(s) de CDMT la citent";
+        }
+
+        $rapports = (int) \Illuminate\Support\Facades\DB::table('rapport_activite_lignes')
+            ->where('tache_id', $this->id)->count();
+        if ($rapports > 0) {
+            $motifs[] = "$rapports ligne(s) de rapport d'activité la citent";
+        }
+
+        return $motifs;
+    }
+
+    /** Se désactive sans rien casser ? */
+    public function estDesactivable(): bool
+    {
+        return $this->motifsDesactivation() === [];
+    }
+
+    /**
+     * Sur quoi la désactivation de cette tâche se propage : ses sous-tâches. Une sous-tâche n'a
+     * pas d'enfant (le `creating` du modèle le refuse), la liste est donc vide dans ce cas-là.
+     */
+    public function tachesADesactiver(): \Illuminate\Support\Collection
+    {
+        return static::withoutGlobalScope('exercice')->where('parent_id', $this->id)->get();
     }
 
     /**

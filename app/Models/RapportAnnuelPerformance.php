@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use App\Traits\HasWorkflow;
 
 class RapportAnnuelPerformance extends Model
 {
-    use SoftDeletes, HasWorkflow;
+    use SoftDeletes, HasWorkflow, HasCorbeille;
 
     protected $table = 'rapports_annuels_performance';
 

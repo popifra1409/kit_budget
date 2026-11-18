@@ -7,10 +7,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\HasCorbeille;
 
 class FactureProforma extends Model
 {
-    use HasFactory, SoftDeletes;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignes'];
+    }
+
+    use HasFactory, SoftDeletes, HasCorbeille;
 
     protected $table = 'factures_proforma';
 

@@ -11,10 +11,18 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasCorbeille;
 
 class Action extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['activites', 'objectifsSpecifiques'];
+    }
+
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasCorbeille;
 
     protected $table = 'actions';
 

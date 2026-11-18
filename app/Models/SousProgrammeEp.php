@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +13,13 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class SousProgrammeEp extends Model
 {
-    use SoftDeletes, HasWorkflow;
+    use SoftDeletes, HasWorkflow, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['indicateurs'];
+    }
 
     protected $table = 'sous_programmes_ep';
 

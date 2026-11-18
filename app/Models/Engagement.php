@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -19,7 +20,13 @@ use Illuminate\Validation\ValidationException;
 
 class Engagement extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, HasWorkflow, LogsActivity, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignes'];
+    }
 
     use HasWorkflow, HasExercice {
         HasWorkflow::estModifiable insteadof HasExercice;

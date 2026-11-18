@@ -393,6 +393,11 @@ return [
                             'enregistrer_avis_ca',
                             'operer_hors_periode_execution',
                             'view_compte_administratif',
+                            // Corbeille (#74) : « voir » et « faire » sont deux portes séparées, pas
+                            // une seule. L'écran refuse en affichant pourquoi ; il ne cache pas son
+                            // bouton, donc la deuxième permission doit pouvoir manquer seule.
+                            'view_corbeille',
+                            'restaurer_corbeille',
                         ],
                     ],
                 ],

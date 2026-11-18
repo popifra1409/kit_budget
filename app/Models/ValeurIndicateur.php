@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\HasCorbeille;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ValeurIndicateur extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'valeurs_indicateurs';
 
     protected $fillable = [

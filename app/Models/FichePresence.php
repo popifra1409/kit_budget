@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -35,7 +36,13 @@ use Illuminate\Support\Facades\DB;
  */
 class FichePresence extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['membres'];
+    }
 
     protected $table = 'fiches_presence';
 
@@ -282,6 +289,12 @@ class FichePresence extends Model
          * possible. Le marché clos ferme aussi le retrait : la fiche a servi.
          */
         static::deleting(function (FichePresence $fiche) {
+            // C2b — Visa et marché clos protègent une fiche qu'on retire seule ; emportée par la
+            // corbeille du marché, elle revient avec lui, visa compris.
+            if ($fiche->entraineParUnAscendant()) {
+                return;
+            }
+
             if ($fiche->aUnVisa()) {
                 throw new \Exception(sprintf(
                     '« %s » porte %d visa(s) : une fiche visée ne se retire pas. Levez d\'abord les visas '

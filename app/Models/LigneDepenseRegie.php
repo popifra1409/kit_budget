@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\HasCorbeille;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LigneDepenseRegie extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'lignes_depenses_regies';
 
     protected $fillable = [

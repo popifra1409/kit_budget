@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\HasCorbeille;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Trace combien un BonCommandeRegie a consommé sur chaque ProvisionLigneRegie.
@@ -13,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ProvisionConsommation extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'provision_consommations';
 
     protected $fillable = [

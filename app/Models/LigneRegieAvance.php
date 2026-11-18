@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use App\Traits\HasCorbeille;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Ligne de mini-budget d'une régie = UN ENCAISSE (une tranche de décaissement)
@@ -14,6 +16,7 @@ use Illuminate\Support\Collection;
  */
 class LigneRegieAvance extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'lignes_regies_avances';
 
     protected $fillable = [

@@ -94,29 +94,32 @@ class MemoireDepenseResource extends Resource
         $tauxIr  = floatval($get('../../taux_ir_global')      ?? 5.5);
 
         if ($napUnit > 0 && $qte > 0 && $tauxIr < 100) {
-            $napTotal = $napUnit * $qte;
-            $mht      = $napTotal / (1 - ($tauxIr / 100));
-            $set('prix_unitaire', round($mht / $qte, 4));
+            // Même PU que celui que le modèle stockera : MHT arrêté au franc / quantité.
+            $napTotal = (int) round($napUnit * $qte);
+            $mht      = (int) round($napTotal / (1 - ($tauxIr / 100)));
+            $set('prix_unitaire', round($mht / $qte, 2));
         } else {
             $set('prix_unitaire', 0);
         }
     }
 
     // =========================================================================
-    // CALCULS — Source de vérité unique
+    // PREVIEW EN DIRECT — mêmes formules, au franc entier, que
+    // LigneMemoireDepense::calculerMontants() : ce qui s'affiche avant
+    // enregistrement est exactement ce qui sera stocké.
     //
-    // Mode NAP unitaire :
-    //   NAP total = NAP unitaire × Qté
-    //   MHT       = NAP total / (1 - IR%)   ex: / 0,945 si IR=5,5%
-    //   IR        = MHT × IR%
-    //   TVA       = MHT × TVA%
+    // Mode NAP :
+    //   NAP total = round(NAP unitaire × Qté)
+    //   MHT       = round(NAP total / (1 - IR%))     ex: / 0,945 si IR=5,5%
+    //   IR        = MHT - NAP total                  → le NAP saisi est restitué exactement
+    //   TVA       = round(MHT × TVA%)
     //   TTC       = MHT + TVA
     //
     // Mode Prix Unitaire HT :
-    //   MHT = PU × Qté
-    //   TVA = MHT × TVA%
+    //   MHT = round(Qté × PU)
+    //   TVA = round(MHT × TVA%)
     //   TTC = MHT + TVA
-    //   IR  = MHT × IR%
+    //   IR  = round(MHT × IR%)
     //   NAP = MHT - IR
     // =========================================================================
     protected static function calculerMontants(Get $get): array
@@ -134,18 +137,17 @@ class MemoireDepenseResource extends Resource
             $napUnit = floatval($get('montant_nap_input') ?? 0);
             if ($napUnit <= 0) return $zero;
 
-            $napTotal = $napUnit * $qte;
-            $mht      = $napTotal / (1 - ($tauxIr / 100));
-            $ir       = $mht * ($tauxIr  / 100);
-            $tva      = $mht * ($tauxTva / 100);
-            $ttc      = $mht + $tva;
+            $napTotal = (int) round($napUnit * $qte);
+            $mht      = (int) round($napTotal / (1 - ($tauxIr / 100)));
+            $ir       = $mht - $napTotal;
+            $tva      = (int) round($mht * ($tauxTva / 100));
 
             return [
-                'mht' => round($mht,      2),
-                'ir'  => round($ir,       2),
-                'tva' => round($tva,      2),
-                'ttc' => round($ttc,      2),
-                'nap' => round($napTotal, 2),
+                'mht' => $mht,
+                'ir'  => $ir,
+                'tva' => $tva,
+                'ttc' => $mht + $tva,
+                'nap' => $napTotal,
             ];
         }
 
@@ -153,23 +155,25 @@ class MemoireDepenseResource extends Resource
         $pu = floatval($get('prix_unitaire') ?? 0);
         if ($pu <= 0) return $zero;
 
-        $mht = $qte * $pu;
-        $ir  = $mht * ($tauxIr  / 100);
-        $tva = $mht * ($tauxTva / 100);
-        $ttc = $mht + $tva;
-        $nap = $mht - $ir;
+        $mht = (int) round($qte * $pu);
+        $ir  = (int) round($mht * ($tauxIr  / 100));
+        $tva = (int) round($mht * ($tauxTva / 100));
 
         return [
-            'mht' => round($mht, 2),
-            'ir'  => round($ir,  2),
-            'tva' => round($tva, 2),
-            'ttc' => round($ttc, 2),
-            'nap' => round($nap, 2),
+            'mht' => $mht,
+            'ir'  => $ir,
+            'tva' => $tva,
+            'ttc' => $mht + $tva,
+            'nap' => $mht - $ir,
         ];
     }
 
     // =========================================================================
-    // PERSISTENCE — calcul direct depuis NAP (sans passer par PU arrondi)
+    // PERSISTENCE — ce que la saisie apporte au modèle
+    //
+    // Le modèle (LigneMemoireDepense::calculerMontants()) est l'unique auteur des montants
+    // stockés. Ici on ne transmet que ce qu'il ne peut pas deviner : le NAP saisi, arrêté au
+    // franc, qui devient la source de vérité de la ligne, et le prix unitaire dérivé.
     // =========================================================================
     protected static function preparerDonneesLigne(array $data, Get $get): array
     {
@@ -181,47 +185,23 @@ class MemoireDepenseResource extends Resource
 
         $qte     = floatval($data['quantite']          ?? 1);
         $napUnit = floatval($data['montant_nap_input'] ?? 0);
-        $pu      = floatval($data['prix_unitaire']     ?? 0);
 
         if ($qte <= 0) {
-            $data['montant_ht'] = $data['montant_tva'] = $data['montant_ttc']
-                = $data['montant_ir'] = $data['montant_net'] = 0;
+            $data['prix_unitaire'] = 0;
+            $data['net_a_payer']   = 0;
             unset($data['montant_nap_input']);
             return $data;
         }
 
         if ($napUnit > 0 && $tauxIr < 100) {
-            // ✅ Calcul direct depuis NAP — pas depuis PU arrondi
-            $napTotal = $napUnit * $qte;
-            $mht      = $napTotal / (1 - ($tauxIr / 100));
-            $ir       = $mht * ($tauxIr  / 100);
-            $tva      = $mht * ($tauxTva / 100);
-            $ttc      = $mht + $tva;
+            // Mode NAP : le net saisi est imposé, le MHT et le PU en découlent.
+            $napTotal  = (int) round($napUnit * $qte);
+            $montantHt = (int) round($napTotal / (1 - ($tauxIr / 100)));
 
-            $data['prix_unitaire'] = round($mht / $qte, 4);
-            $data['montant_ht']    = round($mht,      2);
-            $data['montant_ir']    = round($ir,       2);
-            $data['montant_tva']   = round($tva,      2);
-            $data['montant_ttc']   = round($ttc,      2);
-            $data['montant_net']   = round($napTotal,  2);
-        } elseif ($pu > 0) {
-            $mht = $qte * $pu;
-            $ir  = $mht * ($tauxIr  / 100);
-            $tva = $mht * ($tauxTva / 100);
-            $ttc = $mht + $tva;
-            $nap = $mht - $ir;
-
-            $data['prix_unitaire'] = $pu;
-            $data['montant_ht']    = round($mht, 2);
-            $data['montant_ir']    = round($ir,  2);
-            $data['montant_tva']   = round($tva, 2);
-            $data['montant_ttc']   = round($ttc, 2);
-            $data['montant_net']   = round($nap, 2);
-        } else {
-            $data['prix_unitaire'] = 0;
-            $data['montant_ht'] = $data['montant_tva'] = $data['montant_ttc']
-                = $data['montant_ir'] = $data['montant_net'] = 0;
+            $data['net_a_payer']   = $napTotal;
+            $data['prix_unitaire'] = round($montantHt / $qte, 2);
         }
+        // Mode PU : rien à imposer, le modèle part du prix unitaire et calcule le NAP.
 
         unset($data['montant_nap_input']);
         return $data;
@@ -446,7 +426,7 @@ class MemoireDepenseResource extends Resource
                                 ['label' => 'Total TVA',       'value' => $lignes->sum('montant_tva'), 'color' => 'color:#854d0e;'],
                                 ['label' => 'Total TTC',       'value' => $lignes->sum('montant_ttc'), 'color' => 'color:#1e40af;font-weight:bold;'],
                                 ['label' => 'Total IR (retenue)', 'value' => $lignes->sum('montant_ir'), 'color' => 'color:#9f1239;'],
-                                ['label' => 'Total NAP',       'value' => $lignes->sum('montant_net'), 'color' => 'color:#166534;font-weight:bold;'],
+                                ['label' => 'Total NAP',       'value' => $lignes->sum('net_a_payer'), 'color' => 'color:#166534;font-weight:bold;'],
                             ];
                             $html = '<table style="border-collapse:collapse;width:auto;font-size:.85rem;">';
                             foreach ($rows as $row) {

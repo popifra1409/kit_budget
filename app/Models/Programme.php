@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,13 @@ use Spatie\Activitylog\LogOptions;
 
 class Programme extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['objectifsPrincipaux', 'actions', 'enfants'];
+    }
 
     protected $fillable = [
         'exercice_id',

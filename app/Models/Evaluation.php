@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -26,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Evaluation extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'evaluations';
 
     protected $fillable = [
@@ -215,6 +218,13 @@ class Evaluation extends Model
          * possible — il y a une attribution à lever.
          */
         static::deleting(function (Evaluation $evaluation) {
+            // C2b — la fenêtre protège la preuve tant qu'un humain agit sur un dossier vivant.
+            // Quand c'est la corbeille du marché qui emporte la note, l'ascendant est déjà jeté,
+            // la relation ne le voit plus, et la note revient avec lui d'un seul geste.
+            if ($evaluation->entraineParUnAscendant()) {
+                return;
+            }
+
             $evaluation->verifierFenetre();
         });
 

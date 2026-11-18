@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
@@ -12,7 +13,7 @@ use App\Traits\HasExercice;
 
 class VirementBudgetaire extends Model
 {
-    use HasFactory, LogsActivity, SoftDeletes, HasExercice;
+    use HasFactory, LogsActivity, SoftDeletes, HasExercice, HasCorbeille;
 
     protected $table = 'virements_budgetaires';
 

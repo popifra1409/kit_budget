@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\HasCorbeille;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LigneMemoireDepense extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'lignes_memoire_depense';
 
     protected $fillable = [
@@ -74,62 +77,71 @@ class LigneMemoireDepense extends Model
     }
 
     /**
-     * Calculer tous les montants de la ligne
-     * 
-     * Formules (conformes au fichier Excel) :
-     * - MHT = Quantité × Prix Unitaire
-     * - TVA = MHT × (Taux TVA / 100)
-     * - TTC = MHT + TVA
-     * - IR = MHT × (Taux IR / 100)
-     * - NAP = MHT - IR  ← IMPORTANT : NAP = MHT - IR (et NON TTC - IR)
+     * Calculer tous les montants de la ligne, au FRANC ENTIER.
+     *
+     * Deux sources de vérité, selon le champ réellement saisi :
+     * - NAP imposé ($napImpose, ou net_a_payer modifié par la saisie) :
+     *     MHT = round(NAP / (1 - Taux IR/100))
+     *     IR  = MHT - NAP      → le NAP affiché/Imprimé est exactement celui qui a été saisi ;
+     *                             l'IR peut s'écarter du taux strict de ±1 F, c'est voulu.
+     * - Prix unitaire :
+     *     MHT = round(Qté × PU)
+     *     IR  = round(MHT × Taux IR/100)
+     *     NAP = MHT - IR       ← NAP = MHT - IR (et NON TTC - IR)
+     *
+     * TVA = round(MHT × Taux TVA/100) et TTC = MHT + TVA. Tous les montants stockés étant des
+     * entiers de francs, la ligne, la ligne de total et le montant en toutes lettres concordent.
      */
-    public function calculerMontants(): void
+    public function calculerMontants(bool $napImpose = false): void
     {
-        // S'assurer que les valeurs existent
         $this->quantite = $this->quantite ?? 0;
         $this->prix_unitaire = $this->prix_unitaire ?? 0;
         $this->taux_tva = $this->taux_tva ?? 19.25;
         $this->taux_ir = $this->taux_ir ?? 5.5;
 
-        // Calcul du Montant HT
-        $this->montant_ht = round($this->quantite * $this->prix_unitaire, 2);
+        // Locaux : les casts decimal:2 rendent les attributs en chaînes, le calcul reste en entiers.
+        $quantite = (float) $this->quantite;
+        $tauxTva  = (float) $this->taux_tva;
+        $tauxIr   = (float) $this->taux_ir;
+        $napSaisi = (int) round((float) ($this->net_a_payer ?? 0));
 
-        // Calcul de la TVA
-        $this->montant_tva = round($this->montant_ht * ($this->taux_tva / 100), 2);
+        if (($napImpose || $this->isDirty('net_a_payer')) && $napSaisi > 0 && $tauxIr < 100) {
+            $mht = (int) round($napSaisi / (1 - ($tauxIr / 100)));
+            $ir  = $mht - $napSaisi;
+            $pu  = $quantite > 0 ? round($mht / $quantite, 2) : 0;
+        } else {
+            $mht = (int) round($quantite * (float) $this->prix_unitaire);
+            $ir  = (int) round($mht * ($tauxIr / 100));
+            $pu  = null;
+        }
 
-        // Calcul du TTC
-        $this->montant_ttc = round($this->montant_ht + $this->montant_tva, 2);
+        $tva = (int) round($mht * ($tauxTva / 100));
 
-        // Calcul de l'IR
-        $this->montant_ir = round($this->montant_ht * ($this->taux_ir / 100), 2);
+        if ($pu !== null) {
+            $this->prix_unitaire = $pu;
+        }
 
-        // ✅ IMPORTANT : NAP = MHT - IR (formule conforme au fichier Excel)
-        $this->net_a_payer = round($this->montant_ht - $this->montant_ir, 2);
+        $this->montant_ht    = $mht;
+        $this->montant_tva   = $tva;
+        $this->montant_ttc   = $mht + $tva;
+        $this->montant_ir    = $ir;
+        $this->net_a_payer   = $mht - $ir;
     }
 
     /**
-     * Calculer le prix unitaire depuis le NAP (calcul inversé)
+     * Calculer la ligne depuis le NAP saisi (calcul inversé), en imposant ce NAP.
      * 
      * Formules inversées :
      * - NAP = MHT - IR
      * - IR = MHT × (Taux IR / 100)
      * - Donc : NAP = MHT × (1 - Taux IR / 100)
-     * - Donc : MHT = NAP / (1 - Taux IR / 100)
-     * - PU = MHT / Quantité
+     * - Donc : MHT = NAP / (1 - Taux IR / 100), arrêté au franc
+     * - PU = MHT / Quantité (valeur dérivée, pour l'affichage et la reprise en mode PU)
      */
     public function calculerPrixUnitaireDepuisNAP(float $nap): void
     {
-        if ($this->quantite <= 0) {
-            $this->prix_unitaire = 0;
-            return;
-        }
-
-        // Calcul inversé : NAP → MHT → PU
-        $mht = $nap / (1 - ($this->taux_ir / 100));
-        $this->prix_unitaire = round($mht / $this->quantite, 2);
-
-        // Recalculer tous les montants avec le nouveau PU
-        $this->calculerMontants();
+        $this->net_a_payer = (int) round($nap);
+        $this->calculerMontants(napImpose: true);
     }
 
     /**

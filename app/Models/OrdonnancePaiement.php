@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 
 class OrdonnancePaiement extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, HasExercice, GereTransmissions;
+    use HasFactory, SoftDeletes, LogsActivity, HasExercice, GereTransmissions, HasCorbeille;
 
     protected $table = 'ordonnances_paiement';
 

@@ -8,10 +8,17 @@ use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\HasCorbeille;
 
 class BonCommandeRegie extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasCorbeille;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignes', 'provisions'];
+    }
 
     protected $table = 'bons_commande_regies';
 
@@ -116,6 +123,14 @@ class BonCommandeRegie extends Model
     public function fournisseur(): BelongsTo
     {
         return $this->belongsTo(Fournisseur::class);
+    }
+
+    /** Les consommations imputees sur ce BCR : elles partent avec lui.
+     *  Pas de relation declaree avant C2b — le balayage de la corbeille en avait besoin.
+     */
+    public function provisions(): HasMany
+    {
+        return $this->hasMany(ProvisionConsommation::class, 'bon_commande_regie_id');
     }
 
     public function lignes(): HasMany

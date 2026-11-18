@@ -11,10 +11,18 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use App\Traits\HasExercice;
 use App\Models\Engagement;
 use App\Models\BonCommande;
+use App\Traits\HasCorbeille;
 
 class DossierFournisseur extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['pieces'];
+    }
+
+    use HasFactory, SoftDeletes, HasExercice, HasCorbeille;
 
     protected $table = 'dossiers_fournisseurs';
 

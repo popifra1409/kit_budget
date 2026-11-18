@@ -11,11 +11,19 @@ use App\Helpers\NombreEnLettres;
 use App\Traits\GereTransmissions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasCorbeille;
 
 class MemoireDepense extends Model
 {
     // ✅ Ajouter GereTransmissions dans le use
-    use HasFactory, SoftDeletes, LogsActivity, GereTransmissions;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignes'];
+    }
+
+    use HasFactory, SoftDeletes, LogsActivity, GereTransmissions, HasCorbeille;
 
     protected $table = 'memoires_depense';
 

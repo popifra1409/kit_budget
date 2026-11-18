@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -29,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class FichePresenceMembre extends Model
 {
+    use SoftDeletes, HasCorbeille;
     protected $table = 'fiche_presence_membres';
 
     protected $fillable = [
@@ -248,6 +251,12 @@ class FichePresenceMembre extends Model
          * suppression. Le visa se lève d'abord — c'est l'acte qui dit qui défait quoi.
          */
         static::deleting(function (FichePresenceMembre $ligne) {
+            // C2b — la ligne d'un membre visé ne se retire pas d'une fiche vivante ; elle suit
+            // seulement la fiche quand la corbeille emporte toute la séance.
+            if ($ligne->entraineParUnAscendant()) {
+                return;
+            }
+
             if ($ligne->visa) {
                 throw new \Exception(sprintf(
                     '« %s » a visé la fiche : sa ligne ne se retire pas. Levez le visa, puis retirez la ligne '

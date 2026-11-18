@@ -12,10 +12,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasCorbeille;
 
 class Activite extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasWorkflow;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['extrants', 'taches'];
+    }
+
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasWorkflow, HasCorbeille;
 
     protected $table = 'activites';
 
@@ -247,6 +255,83 @@ class Activite extends Model
     public function estLectureSeule(): bool
     {
         return $this->exercice && !$this->exercice->estModifiable();
+    }
+
+    /** Scope : ce qu'un nouveau document a le droit de choisir (CDMT, budgets, états de saisie). */
+    public function scopeActives($query)
+    {
+        return $query->where('actif', true);
+    }
+
+    /**
+     * Motifs qui EMPÊCHENT de désactiver l'activité — liste vide = désactivable.
+     *
+     * AVOIR des tâches ne bloque pas : ce sont les tâches UTILISÉES qui bloquent. Sans cela,
+     * aucune activité ne serait jamais désactivable (30 des 31 activités portent des tâches) et la
+     * cascade demandée n'aurait jamais lieu d'être.
+     *
+     * @return string[] motifs libellés, prêts à mettre dans le refus affiché
+     */
+    public function motifsDesactivation(): array
+    {
+        if (!$this->exists) {
+            return [];
+        }
+
+        $motifs = [];
+
+        foreach ($this->tachesDeLActivite() as $tache) {
+            $motifsTache = $tache->motifsDesactivation();
+            if ($motifsTache !== []) {
+                $motifs[] = "sa tâche {$tache->code} : " . implode(' ; ', $motifsTache);
+            }
+        }
+
+        foreach ([
+            ['cdmt_lignes', 'activite_id', 'ligne(s) de CDMT la citent'],
+            ['extrants', 'activite_id', 'extrant(s) rattaché(s)'],
+            ['rapports_activites_periodiques', 'activite_id', 'rapport(s) d\'activité périodique(s) la citent'],
+        ] as [$table, $colonne, $libelle]) {
+            $n = (int) \Illuminate\Support\Facades\DB::table($table)->where($colonne, $this->id)->count();
+            if ($n > 0) {
+                $motifs[] = "$n $libelle";
+            }
+        }
+
+        return $motifs;
+    }
+
+    /** Se désactive sans rien casser ? */
+    public function estDesactivable(): bool
+    {
+        return $this->motifsDesactivation() === [];
+    }
+
+    /**
+     * Ses tâches, hors scope exercice : une tâche d'un autre exercice rattachée à cette activité
+     * doit être vue et entraînée aussi, sinon l'activité serait inactive avec une branche active.
+     *
+     * `unique('id')` n'est pas décoratif : une sous-tâche porte déjà `activite_id`, donc la seconde
+     * requête (les enfants des tâches trouvées) la ramène une deuxième fois — elle bloquerait deux
+     * fois et se désactiverait deux fois.
+     */
+    public function tachesDeLActivite(): \Illuminate\Support\Collection
+    {
+        $taches = Tache::withoutGlobalScope('exercice')->where('activite_id', $this->id)->get();
+
+        return $taches
+            ->concat(
+                Tache::withoutGlobalScope('exercice')
+                    ->whereIn('parent_id', $taches->pluck('id')->all())->get()
+            )
+            ->unique('id')
+            ->values();
+    }
+
+    /** Sur quoi la désactivation de l'activité se propage. */
+    public function tachesADesactiver(): \Illuminate\Support\Collection
+    {
+        return $this->tachesDeLActivite();
     }
 
     public function getActivitylogOptions(): LogOptions

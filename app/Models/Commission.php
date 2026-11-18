@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,6 +15,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  */
 class Commission extends Model
 {
+    use SoftDeletes, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['membres'];
+    }
+
     protected $table = 'commissions';
 
     protected $fillable = ['code', 'libelle', 'service_id', 'description', 'actif'];

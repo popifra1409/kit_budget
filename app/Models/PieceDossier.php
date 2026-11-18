@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Facades\Storage;
+use App\Traits\HasCorbeille;
 
 class PieceDossier extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasCorbeille;
 
     protected $table = 'pieces_dossier';
 
@@ -219,7 +220,10 @@ class PieceDossier extends Model
     {
         parent::boot();
 
-        static::deleting(function ($piece) {
+        // C2b — le fichier ne se detache qu'a la suppression DEFINITIVE : une piece partie en
+        // corbeille doit pouvoir revenir avec sa piece jointe, ce que le `deleting` d'avant
+        // rendait impossible (le fichier mourait au premier geste, la ligne surviyait vide).
+        static::forceDeleting(function ($piece) {
             $piece->supprimerFichier();
         });
     }

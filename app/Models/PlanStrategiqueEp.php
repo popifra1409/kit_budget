@@ -3,6 +3,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +13,13 @@ use App\Traits\HasWorkflow;
 
 class PlanStrategiqueEp extends Model
 {
-    use SoftDeletes, HasWorkflow;
+    use SoftDeletes, HasWorkflow, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['sousProgrammes', 'ppaExercices'];
+    }
 
     protected $table = 'plans_strategiques_ep';
 

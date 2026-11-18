@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,7 +20,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DecisionAdministrative extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions, HasWorkflow;
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, GereTransmissions, HasWorkflow, HasCorbeille;
+
+    /** Lignes emportées par la corbeille du parent. Câblage C2b — batch 2. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['decisionsPrevisionnelles'];
+    }
 
     protected $table = 'decisions_administratives';
 

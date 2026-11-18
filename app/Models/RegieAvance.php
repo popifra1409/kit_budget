@@ -9,10 +9,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasCorbeille;
 
 class RegieAvance extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use SoftDeletes, LogsActivity, HasCorbeille;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['bonsCommande', 'decaissements', 'depenses', 'lignes', 'decisionsSource'];
+    }
 
     protected $table = 'regies_avances';
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -31,7 +32,7 @@ use Illuminate\Support\Facades\DB;
  */
 class OrdreService extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasCorbeille;
 
     protected $table = 'ordres_service';
 
@@ -210,6 +211,12 @@ class OrdreService extends Model
          * (date, objet, pièce jointe) tant que le marché n'est pas clos.
          */
         static::deleting(function (OrdreService $os) {
+            // C2b — l'OS qui a ouvert l'exécution ne se retire pas du marché ; emporté par la
+            // corbeille du marché, il ne quitte le dossier que provisoirement.
+            if ($os->entraineParUnAscendant()) {
+                return;
+            }
+
             if ($os->demarreLexecution()) {
                 throw new \Exception(sprintf(
                     '« %s » est l\'ordre de service qui a ouvert l\'exécution du marché %s : il ne se '

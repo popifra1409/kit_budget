@@ -7,10 +7,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasWorkflow;
+use App\Traits\HasCorbeille;
 
 class CbmtExercice extends Model
 {
-    use SoftDeletes, HasWorkflow;
+    use SoftDeletes, HasWorkflow, HasCorbeille;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignes'];
+    }
 
     protected $table = 'cbmt_exercices';
 

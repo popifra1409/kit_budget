@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,7 +16,7 @@ use Illuminate\Support\Carbon;
  */
 class Liquidation extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasCorbeille;
 
     public const STATUTS = [
         'brouillon'             => 'Brouillon',

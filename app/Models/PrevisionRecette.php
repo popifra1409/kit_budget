@@ -10,10 +10,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\HasExercice;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Schema;
+use App\Traits\HasCorbeille;
 
 class PrevisionRecette extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignesPrevisions'];
+    }
+
+    use HasFactory, SoftDeletes, HasExercice, HasCorbeille;
 
     protected $table = 'previsions_recettes';
 

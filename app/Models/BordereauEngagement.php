@@ -12,10 +12,18 @@ use Spatie\Permission\Models\Role;
 use App\Traits\HasExercice;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Traits\HasCorbeille;
 
 class BordereauEngagement extends Model
 {
-    use HasFactory, SoftDeletes, HasExercice, LogsActivity;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['lignes'];
+    }
+
+    use HasFactory, SoftDeletes, HasExercice, LogsActivity, HasCorbeille;
 
     protected $table = 'bordereaux_engagement';
 

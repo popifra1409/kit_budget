@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasCorbeille;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Débiteur / payeur des recettes (caisse, État, assureur, société, donateur…). */
 class TiersRecette extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasCorbeille;
 
     protected $table = 'tiers_recettes';
 

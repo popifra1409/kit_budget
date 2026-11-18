@@ -6,10 +6,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\HasCorbeille;
 
 class Indicateur extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasCorbeille;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return ['valeurs'];
+    }
 
     protected $table = 'indicateurs';
 

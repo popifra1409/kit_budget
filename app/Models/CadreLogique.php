@@ -8,10 +8,18 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use App\Traits\HasCorbeille;
 
 class CadreLogique extends Model
 {
-    use HasFactory, SoftDeletes;
+
+    /** Relations dont les lignes partent avec ce document dans la corbeille. */
+    public static function corbeilleEnfants(): array
+    {
+        return [];
+    }
+
+    use HasFactory, SoftDeletes, HasCorbeille;
 
     protected $table = 'cadre_logique';
 
