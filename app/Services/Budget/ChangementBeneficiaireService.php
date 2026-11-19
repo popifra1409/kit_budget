@@ -401,7 +401,7 @@ class ChangementBeneficiaireService
                     'nouveau_beneficiaire' => $this->libelleBeneficiaire($nouveau),
                     'date'                => now()->toDateString(),
                 ];
-                // M11 : aucune mention posée
+                $ancienDossier->updateQuietly(['metadata' => $metadata]);
             }
         }
 
