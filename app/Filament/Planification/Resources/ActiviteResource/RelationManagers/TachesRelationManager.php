@@ -31,7 +31,14 @@ class TachesRelationManager extends RelationManager
                 ])
                 ->default('tache')
                 ->required()
-                ->live(),
+                ->live()
+                // Le parent doit être vidé dans l'état du formulaire au même moment où le champ
+                // se cache : sinon « passé à tâche principale » n'écrit rien (voir parent_id).
+                ->afterStateUpdated(function (?string $state, callable $set) {
+                    if ($state === 'tache') {
+                        $set('parent_id', null);
+                    }
+                }),
 
             Forms\Components\Select::make('parent_id')
                 ->label('Tâche parente')
@@ -40,6 +47,11 @@ class TachesRelationManager extends RelationManager
                     ->pluck('libelle', 'id'))
                 ->searchable()
                 ->visible(fn(Forms\Get $get) => $get('niveau') === 'sous_tache')
+                // Un champ masqué est retiré du formulaire à l'enregistrement (Arr::forget dans
+                // HasState.php) : sans ceci, parent_id resterait absent de la payload et
+                // `$record->update()` laisserait la colonne telle quelle — la sous-tâche
+                // convertie en tâche garderait silencieusement sa tâche parente.
+                ->dehydratedWhenHidden()
                 ->required(fn(Forms\Get $get) => $get('niveau') === 'sous_tache'),
 
             Forms\Components\TextInput::make('code')

@@ -421,12 +421,28 @@ class MemoireDepenseResource extends Resource
                                 return 'Les totaux seront calculés automatiquement après sauvegarde.';
                             }
                             $lignes = $record->lignes;
+                            // Même règle que MemoireDepense::calculerTotaux() (#71) et que l'aperçu,
+                            // l'état PDF et la liste : chaque colonne se somme AU FRANC ligne par
+                            // ligne et le TTC se déduit de round(MHT) + round(TVA). Sommer les
+                            // `montant_ttc` stockés avant le #71 imprimait ici 151 429 alors que
+                            // l'aperçu du même mémoire imprimait 151 428.
+                            $somme = fn(string $colonne) => (int) $lignes->reduce(
+                                fn($c, $l) => $c + (int) round((float) ($l->{$colonne} ?? 0)),
+                                0
+                            );
+                            $totalNap = (int) $lignes->reduce(function ($c, $l) {
+                                $nap = (float) ($l->montant_net ?? $l->net_a_payer ?? 0);
+                                if ($nap <= 0 && (float) ($l->montant_ht ?? 0) > 0) {
+                                    $nap = (float) $l->montant_ht - (float) ($l->montant_ir ?? 0);
+                                }
+                                return $c + (int) round($nap);
+                            }, 0);
                             $rows = [
-                                ['label' => 'Total MHT',       'value' => $lignes->sum('montant_ht'),  'color' => ''],
-                                ['label' => 'Total TVA',       'value' => $lignes->sum('montant_tva'), 'color' => 'color:#854d0e;'],
-                                ['label' => 'Total TTC',       'value' => $lignes->sum('montant_ttc'), 'color' => 'color:#1e40af;font-weight:bold;'],
-                                ['label' => 'Total IR (retenue)', 'value' => $lignes->sum('montant_ir'), 'color' => 'color:#9f1239;'],
-                                ['label' => 'Total NAP',       'value' => $lignes->sum('net_a_payer'), 'color' => 'color:#166534;font-weight:bold;'],
+                                ['label' => 'Total MHT',       'value' => $somme('montant_ht'),  'color' => ''],
+                                ['label' => 'Total TVA',       'value' => $somme('montant_tva'), 'color' => 'color:#854d0e;'],
+                                ['label' => 'Total TTC',       'value' => $somme('montant_ht') + $somme('montant_tva'), 'color' => 'color:#1e40af;font-weight:bold;'],
+                                ['label' => 'Total IR (retenue)', 'value' => $somme('montant_ir'), 'color' => 'color:#9f1239;'],
+                                ['label' => 'Total NAP',       'value' => $totalNap, 'color' => 'color:#166534;font-weight:bold;'],
                             ];
                             $html = '<table style="border-collapse:collapse;width:auto;font-size:.85rem;">';
                             foreach ($rows as $row) {
@@ -487,24 +503,31 @@ class MemoireDepenseResource extends Resource
                     ->label('Date')->date('d/m/Y')->sortable(),
                 Tables\Columns\TextColumn::make('objet')
                     ->label('Objet')->limit(40)->searchable()->tooltip(fn($record) => $record->objet),
+                // Les cinq colonnes de la liste lisaient les montants bruts des lignes : un mémoire
+                // antérieur au #71 y affichait « 126 984,12 » et un TTC de somme des montant_ttc, que
+                // ni l'aperçu ni le PDF n'impriment. Même règle qu'eux : arrondir chaque ligne, et le
+                // TTC se déduit de round(MHT) + round(TVA) — jamais de round(montant_ttc).
                 Tables\Columns\TextColumn::make('total_mht')
                     ->label('MHT')->money('XAF')->alignEnd()
-                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_ht'))
+                    ->getStateUsing(fn($record) => $record->lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_ht ?? 0)), 0))
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('total_tva')
                     ->label('TVA')->money('XAF')->alignEnd()->color('warning')
-                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_tva'))
+                    ->getStateUsing(fn($record) => $record->lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_tva ?? 0)), 0))
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('total_ir')
                     ->label('IR')->money('XAF')->alignEnd()->color('danger')
-                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_ir'))
+                    ->getStateUsing(fn($record) => $record->lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_ir ?? 0)), 0))
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('total_ttc')
                     ->label('Total TTC')->money('XAF')->sortable()->alignEnd()
-                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_ttc') ?: $record->montant_ttc ?: 0),
+                    ->getStateUsing(fn($record) => $record->lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_ht ?? 0)), 0)
+                        + $record->lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_tva ?? 0)), 0)
+                        ?: (int) round((float) $record->montant_ttc)),
                 Tables\Columns\TextColumn::make('total_nap')
                     ->label('Total NAP')->money('XAF')->sortable()->weight('bold')->alignEnd()->color('success')
-                    ->getStateUsing(fn($record) => $record->lignes->sum('montant_net') ?: $record->montant_net ?: 0),
+                    ->getStateUsing(fn($record) => $record->lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->net_a_payer ?? 0)), 0)
+                        ?: (int) round((float) $record->montant_net)),
                 Tables\Columns\TextColumn::make('lignes_count')
                     ->label('Lignes')->counts('lignes')->badge()->color('info'),
                 Tables\Columns\BadgeColumn::make('statut')
@@ -631,17 +654,36 @@ class MemoireDepenseResource extends Resource
                         ->requiresConfirmation()
                         ->visible(fn($record) => $record->statut === 'brouillon' && static::canValider($record))
                         ->action(function ($record) {
+                            $lignes = $record->lignes;
+                            // #71 : les totaux se somment au franc, ligne par ligne, et le TTC se
+                            // déduit de round(MHT) + round(TVA). Le `sum('montant_net')` d'avant
+                            // additionnait une colonne que les lignes n'ont pas (NAP = 0) et le
+                            // `sum('montant_ttc')` rapportait les centimes des mémoires anciens :
+                            // le hook `saving` les écrasait, mais only parce que la relation était
+                            // chargée ici — une coïncidence, pas une règle.
+                            $totalHt  = (int) $lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_ht ?? 0)), 0);
+                            $totalTva = (int) $lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_tva ?? 0)), 0);
+                            $totalIr  = (int) $lignes->reduce(fn($c, $l) => $c + (int) round((float) ($l->montant_ir ?? 0)), 0);
+                            $totalNap = (int) $lignes->reduce(function ($c, $l) {
+                                $nap = (float) ($l->montant_net ?? $l->net_a_payer ?? 0);
+                                if ($nap <= 0 && (float) ($l->montant_ht ?? 0) > 0) {
+                                    $nap = (float) $l->montant_ht - (float) ($l->montant_ir ?? 0);
+                                }
+                                return $c + (int) round($nap);
+                            }, 0);
+                            $totalTtc = $totalHt + $totalTva;
+
                             $record->update([
                                 'statut'      => 'valide',
-                                'montant_ht'  => $record->lignes->sum('montant_ht'),
-                                'montant_tva' => $record->lignes->sum('montant_tva'),
-                                'montant_ir'  => $record->lignes->sum('montant_ir'),
-                                'montant_ttc' => $record->lignes->sum('montant_ttc'),
-                                'montant_net' => $record->lignes->sum('montant_net'),
+                                'montant_ht'  => $totalHt,
+                                'montant_tva' => $totalTva,
+                                'montant_ir'  => $totalIr,
+                                'montant_ttc' => $totalTtc,
+                                'montant_net' => $totalNap,
                             ]);
                             Notification::make()->success()->title('Mémoire validé')
                                 ->body("Mémoire {$record->numero} validé — TTC : "
-                                    . number_format($record->lignes->sum('montant_ttc'), 0, ',', ' ') . " FCFA")
+                                    . number_format($totalTtc, 0, ',', ' ') . " FCFA")
                                 ->send();
                         }),
 

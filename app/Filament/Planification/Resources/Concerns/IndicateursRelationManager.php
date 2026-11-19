@@ -34,11 +34,11 @@ class IndicateursRelationManager extends RelationManager
                 ->placeholder('Ex: Registres, rapports d\'activités, RAP…')
                 ->columnSpanFull(),
             Forms\Components\Select::make('periodicite_mesure')
-                ->options([
-                    'annuelle' => 'Annuelle',
-                    'semestrielle' => 'Semestrielle',
-                    'trimestrielle' => 'Trimestrielle',
-                ])
+                ->options(Indicateur::PERIODICITES)
+                // La colonne est une chaîne libre, sans contrainte en base : la liste à l'écran
+                // est donc SEULE à faire la loi. Elle valide sur ses propres options — pas sur une
+                // seconde copie — pour qu'un état importé ou une requête manipulée soit refusée.
+                ->in(fn (Forms\Components\Select $component) => array_keys($component->getOptions()))
                 ->default('annuelle')->required(),
             Forms\Components\TextInput::make('mode_calcul')
                 ->columnSpanFull(),
@@ -102,6 +102,11 @@ class IndicateursRelationManager extends RelationManager
                             fn(Indicateur $record) =>
                             \App\Filament\Planification\Resources\IndicateurResource::getUrl('edit', ['record' => $record])
                         ),
+
+                    Tables\Actions\DeleteAction::make()
+                        ->visible(fn() => auth()->user()?->can('delete_indicateur') ?? false)
+                        ->modalDescription('Ses valeurs déjà saisies partent en corbeille avec lui, sous le même jeton, et reviennent par le même geste.')
+                        ->successNotificationTitle('Indicateur mis en corbeille'),
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -110,7 +115,12 @@ class IndicateursRelationManager extends RelationManager
                     ->size('sm'),
             ], position: \Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
+                Tables\Actions\BulkActionGroup::make([
+                    // La même permission que la ligne : sans elle, cocher puis jeter ne doit
+                    // pas ouvrir une porte que le bouton de ligne refuse.
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn() => auth()->user()?->can('delete_indicateur') ?? false),
+                ]),
             ]);
     }
 }

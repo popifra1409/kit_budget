@@ -1013,6 +1013,8 @@ class RolePermissionSeeder extends Seeder
                 'view_indicateur',
                 'create_indicateur',
                 'update_indicateur',
+                // celui qui remplit les indicateurs doit aussi pouvoir retirer celui qu'il a saisi en trop
+                'delete_indicateur',
                 'saisir_valeur_indicateur',
                 'valider_valeur_indicateur',
 

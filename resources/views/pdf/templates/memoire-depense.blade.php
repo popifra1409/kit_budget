@@ -429,7 +429,9 @@ $dateCreation = \Carbon\Carbon::parse($memoire->created_at)
     $mht = (float)($ligne->montant_ht  ?? 0);
     $ir  = (float)($ligne->montant_ir  ?? 0);
     $tva = (float)($ligne->montant_tva ?? 0);
-   $ttc = (float)($ligne->montant_ttc ?? 0);
+    // idem total : round(MHT) + round(TVA), jamais round(montant_ttc) — sinon la colonne
+    // MONTANT TTC imprime 151 429 pendant que la ligne TOTAL imprime 151 428.
+    $ttc = (int) round($mht) + (int) round($tva);
 @endphp
         <tr>
             <td>{{ $ligne->nature_depense }}</td>
@@ -452,7 +454,7 @@ $dateCreation = \Carbon\Carbon::parse($memoire->created_at)
                 {{ number_format($ligne->montant_ir,  0, ',', ' ') }}
             </td>
             <td class="num" style="font-weight:600;">
-                {{ number_format($ligne->montant_ttc, 0, ',', ' ') }}
+                {{ number_format($ttc, 0, ',', ' ') }}
             </td>
         </tr>
         @empty

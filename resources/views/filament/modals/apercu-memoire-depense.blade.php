@@ -332,7 +332,11 @@
                                 $mht = (float) ($ligne->montant_ht ?? 0);
                                 $tva = (float) ($ligne->montant_tva ?? 0);
                                 $ir = (float) ($ligne->montant_ir ?? 0);
-                                $ttc = (float) ($ligne->montant_ttc ?? 0);
+                                // Le TTC d'une ligne se lit round(MHT) + round(TVA), jamais
+                                // round(montant_ttc) : la règle #71 et la ligne de TOTAL calculent
+                                // ainsi, et un montant_ttc stocké avec des centimes (les mémoires
+                                // antérieurs au #71) contredit le total d'un franc à l'écran.
+                                $ttc = (int) round($mht) + (int) round($tva);
 
                                 // ✅ NAP — avec fallback si montant_net absent/nul
                                 $napTotal = (float) ($ligne->montant_net ?? $ligne->net_a_payer ?? 0);

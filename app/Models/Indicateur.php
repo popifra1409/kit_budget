@@ -56,6 +56,19 @@ class Indicateur extends Model
     ];
 
     /**
+     * Fréquence de mesure de l'indicateur. La colonne est une chaîne libre : ajouter une
+     * périodicité n'exige aucune migration, mais la liste vit ICI — le formulaire des
+     * indicateurs (sous-programmes, actions, activités) la lit, comme les états.
+     */
+    public const PERIODICITES = [
+        'hebdomadaire' => 'Hebdomadaire',
+        'mensuelle' => 'Mensuelle',
+        'trimestrielle' => 'Trimestrielle',
+        'semestrielle' => 'Semestrielle',
+        'annuelle' => 'Annuelle',
+    ];
+
+    /**
      * Taux d'atteinte de la cible (%), selon le sens de l'indicateur.
      * Source UNIQUE du calcul : utilisee par le RAP, la matrice d'arrimage et les tableaux.
      *
