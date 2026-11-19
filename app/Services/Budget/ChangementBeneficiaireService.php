@@ -28,8 +28,11 @@ use Illuminate\Validation\ValidationException;
  *  - refusé si l'OP standard est déjà payée (l'argent est parti : procédure de reversement) ;
  *  - l'ancien dossier fournisseur est conservé tel quel, avec la mention
  *    « Bénéficiaire remplacé par avenant n° … » ; un nouveau dossier est ouvert ;
- *  - les retenues sont recalculées selon le régime fiscal du nouveau fournisseur,
- *    et restent modifiables avant validation.
+ *  - **il ne porte que le bénéficiaire.** Retenues, net, montants d'ordonnance et mode de saisie
+ *    restent exactement ce qu'ils étaient : changer un régime fiscal est l'avenant « Rectification
+ *    / Taxes », pas celui-ci. (Un avenant qui recalculait l'IR du nouveau fournisseur fabriquait
+ *    des retenues sur 86 engagements qui n'en avaient aucune, et se refusait lui-même :
+ *    « les nouvelles retenues nécessitent une OP impôt ».)
  *
  * Aucun effet budgétaire : ni la ligne, ni le montant engagé, ni les crédits ne changent.
  * Tout est fait dans UNE transaction : en cas d'erreur, rien n'est modifié.
@@ -85,40 +88,19 @@ class ChangementBeneficiaireService
     // VALEURS DU FORMULAIRE
     // ════════════════════════════════════════════════════════
 
-    /** Valeurs initiales du formulaire : retenues actuelles du document. */
+    /**
+     * Valeurs initiales du formulaire : le seul choix porté par l'avenant, le TYPE de nouveau
+     * bénéficiaire. Aucune retenue n'y passe — ce n'est plus son objet.
+     */
     public function valeursInitiales(Engagement $engagement): array
     {
         $document = $this->documentSource($engagement);
-        $champs = $document instanceof BonCommande ? self::TAXES_BC : self::TAXES_DA;
 
-        $valeurs = ['type_beneficiaire' => 'fournisseur'];
-
-        if ($document instanceof DecisionAdministrative) {
-            $valeurs['type_beneficiaire'] = $document->personnel_id ? 'personnel' : 'fournisseur';
-        }
-
-        foreach ($champs as $champ) {
-            $valeurs[$champ] = (float) ($document?->{$champ} ?? 0);
-        }
-
-        return $valeurs;
-    }
-
-    /** IR proposé selon le régime fiscal du fournisseur choisi (base : HT pour un BC, brut pour une DA). */
-    public function irPropose(Engagement $engagement, int|string|null $fournisseurId): ?float
-    {
-        $document = $this->documentSource($engagement);
-        $fournisseur = $fournisseurId ? Fournisseur::with('regimeFiscal')->find($fournisseurId) : null;
-
-        if (!$document || !$fournisseur?->regimeFiscal) {
-            return null; // pas de régime : on garde la valeur saisie
-        }
-
-        $base = $document instanceof BonCommande
-            ? (float) ($document->montant_ht ?? 0)
-            : (float) ($document->montant_brut ?? 0);
-
-        return round($fournisseur->calculerIR($base), 2);
+        return [
+            'type_beneficiaire' => $document instanceof DecisionAdministrative && $document->personnel_id
+                ? 'personnel'
+                : 'fournisseur',
+        ];
     }
 
     /** Libellé lisible d'un bénéficiaire. */
@@ -207,16 +189,14 @@ class ChangementBeneficiaireService
 
     /**
      * @param string $classeBeneficiaire Fournisseur::class ou Personnel::class
-     * @param array  $saisie             retenues saisies (montant_ir, montant_tva...)
      */
     public function appliquer(
         Engagement $engagement,
         string $classeBeneficiaire,
         int $beneficiaireId,
-        array $saisie,
         string $motif
     ): Avenant {
-        return DB::transaction(function () use ($engagement, $classeBeneficiaire, $beneficiaireId, $saisie, $motif) {
+        return DB::transaction(function () use ($engagement, $classeBeneficiaire, $beneficiaireId, $motif) {
             // Verrou : deux avenants simultanés sur le même engagement sont impossibles
             $engagement = Engagement::withoutGlobalScope('exercice')
                 ->whereKey($engagement->id)
@@ -243,8 +223,7 @@ class ChangementBeneficiaireService
                 throw new DomainException("Le bénéficiaire choisi est déjà celui de l'engagement.");
             }
 
-            $montants = $this->calculerMontants($document, $saisie);
-            $this->verifierOrdonnances($engagement, $montants['total_taxes']);
+            $retenues = $this->totalRetenues($document);
 
             // 1. Avenant (numéroté dans la même série que les autres avenants de l'engagement)
             $avenant = Avenant::create([
@@ -261,8 +240,8 @@ class ChangementBeneficiaireService
                 'delta_montant'              => 0,
                 'nomenclature_originale_id'  => $engagement->nomenclature_principale_id,
                 'nomenclature_corrigee_id'   => $engagement->nomenclature_principale_id,
-                'montant_taxes_original'     => $montants['total_taxes_original'],
-                'montant_taxes_corrige'      => $montants['total_taxes'],
+                'montant_taxes_original'     => $retenues,
+                'montant_taxes_corrige'      => $retenues, // l'avenant ne touche pas les retenues
                 'corriger_ordonnances'       => true,
                 'beneficiaire_original_type' => $ancienClasse,
                 'beneficiaire_original_id'   => $ancienId ?: null,
@@ -274,13 +253,13 @@ class ChangementBeneficiaireService
                 'created_by'                 => auth()->id(),
             ]);
 
-            // 2. Document source, 3. engagement, 4. ordonnances non payées
-            $this->mettreAJourDocument($document, $nouveau, $montants);
+            // 2. Document source, 3. engagement, 4. ordonnances non payées — le bénéficiaire seulement
+            $this->mettreAJourDocument($document, $nouveau);
             $engagement->update([
                 'beneficiaire_type' => $nouveau::class,
                 'beneficiaire_id'   => $nouveau->id,
             ]);
-            $this->mettreAJourOrdonnances($engagement, $nouveau, $montants);
+            $this->mettreAJourOrdonnances($engagement, $nouveau);
 
             // 5. Dossiers fournisseurs
             $dossier = $this->gererDossiers($document, $engagement, $nouveau, $avenant, $ancienClasse, $ancienId);
@@ -293,9 +272,7 @@ class ChangementBeneficiaireService
                 'avenant'             => $avenant->numero_avenant,
                 'ancien_beneficiaire' => $this->libelleBeneficiaire($ancien),
                 'nouveau_beneficiaire' => $this->libelleBeneficiaire($nouveau),
-                'taxes_avant'         => $montants['total_taxes_original'],
-                'taxes_apres'         => $montants['total_taxes'],
-                'net_apres'           => $montants['net'],
+                'retenues_inchangees' => $retenues,
                 'dossier_ouvert'      => $dossier?->numero_dossier,
                 'motif'               => trim($motif),
             ];
@@ -352,147 +329,49 @@ class ChangementBeneficiaireService
         return $beneficiaire;
     }
 
-    /** Montants après avenant : brut inchangé, retenues saisies, net recalculé. */
-    protected function calculerMontants(Model $document, array $saisie): array
+    /**
+     * Total des retenues telles qu'elles sont AUJOURD'HUI au document. L'avenant bénéficiaire ne
+     * les modifie pas : ce chiffre ne sert qu'à la trace (colonnes `montant_taxes_*` de l'avenant
+     * et journal d'activité), et l'audit doit pouvoir y lire « rien n'a bougé ».
+     */
+    protected function totalRetenues(Model $document): float
     {
         $champs = $document instanceof BonCommande ? self::TAXES_BC : self::TAXES_DA;
-        $brut = $document instanceof BonCommande
-            ? (float) ($document->montant_ttc ?? 0)
-            : (float) ($document->montant_brut ?? 0);
 
-        $taxes = [];
-        $totalOriginal = 0.0;
-
-        foreach ($champs as $champ) {
-            $valeur = round((float) ($saisie[$champ] ?? $document->{$champ} ?? 0), 2);
-
-            if ($valeur < 0) {
-                throw new DomainException("Les retenues ne peuvent pas être négatives.");
-            }
-
-            $taxes[$champ] = $valeur;
-            $totalOriginal += (float) ($document->{$champ} ?? 0);
-        }
-
-        $total = round(array_sum($taxes), 2);
-
-        if ($total > $brut) {
-            throw new DomainException(
-                'Le total des retenues (' . number_format($total, 0, ',', ' ') . ' FCFA) dépasse le montant brut ('
-                    . number_format($brut, 0, ',', ' ') . ' FCFA).'
-            );
-        }
-
-        return [
-            'brut'                 => $brut,
-            'taxes'                => $taxes,
-            'total_taxes'          => $total,
-            'total_taxes_original' => round($totalOriginal, 2),
-            'net'                  => round($brut - $total, 2),
-        ];
+        return round(collect($champs)->sum(fn($c) => (float) ($document->{$c} ?? 0)), 2);
     }
 
-    /**
-     * Les ordonnances existantes doivent pouvoir absorber les nouvelles retenues.
-     * La création ou la suppression d'une OP impôt relève de l'avenant « Taxes »
-     * (numérotation, collisions) : on ne la duplique pas ici.
-     */
-    protected function verifierOrdonnances(Engagement $engagement, float $totalTaxes): void
-    {
-        $ops = $engagement->ordonnancesPaiement()->get();
-
-        if ($ops->isEmpty()) {
-            return; // OP non encore émises : elles reprendront les montants du document
-        }
-
-        $opImpot = $ops->firstWhere('type_ordonnance', 'impot');
-
-        if (!$opImpot && $totalTaxes > 0) {
-            throw new DomainException(
-                'Les nouvelles retenues (' . number_format($totalTaxes, 0, ',', ' ') . ' FCFA) nécessitent une OP impôt, '
-                    . "absente de cet engagement. Appliquez le changement sans retenue, puis l'avenant « Taxes »."
-            );
-        }
-
-        if ($opImpot && $totalTaxes <= 0) {
-            throw new DomainException(
-                "Les retenues deviennent nulles alors qu'une OP impôt existe. "
-                    . "Appliquez le changement en gardant les retenues, puis l'avenant « Taxes »."
-            );
-        }
-
-        if ($opImpot && $opImpot->statut === 'payee' && abs((float) $opImpot->montant_net - $totalTaxes) > 0.01) {
-            throw new DomainException(
-                "L'OP impôt est déjà payée : les retenues ne peuvent plus être modifiées. Gardez les retenues actuelles."
-            );
-        }
-    }
-
-    protected function mettreAJourDocument(Model $document, Fournisseur|Personnel $nouveau, array $montants): void
+    protected function mettreAJourDocument(Model $document, Fournisseur|Personnel $nouveau): void
     {
         // Mise à jour silencieuse, comme l'avenant existant : évite les recalculs automatiques
         // des observers du document (la trace est assurée par ActivityLog::logAction).
+        // Que le bénéficiaire : les colonnes de retenues, le net et le `mode_saisie` du document
+        // ne sont pas touchés — c'est l'avenant « Taxes » qui les porte.
         if ($document instanceof BonCommande) {
-            $document->updateQuietly(array_merge($montants['taxes'], [
-                'fournisseur_id'  => $nouveau->id,
-                'net_a_percevoir' => $montants['net'],
-            ]));
+            $document->updateQuietly(['fournisseur_id' => $nouveau->id]);
 
             return;
         }
 
         /** @var DecisionAdministrative $document */
-        $donnees = array_merge($montants['taxes'], [
-            'total_taxes' => $montants['total_taxes'],
-            'montant_net' => $montants['net'],
-        ]);
-
-        if ($nouveau instanceof Personnel) {
-            $donnees += ['type_beneficiaire' => 'personnel', 'personnel_id' => $nouveau->id, 'fournisseur_id' => null];
-        } else {
-            $donnees += ['type_beneficiaire' => 'fournisseur', 'fournisseur_id' => $nouveau->id, 'personnel_id' => null];
-        }
-
-        if (abs($montants['total_taxes'] - $montants['total_taxes_original']) > 0.01) {
-            $donnees['mode_saisie'] = 'forfait'; // même convention que l'avenant « Taxes »
-        }
-
-        $document->updateQuietly($donnees);
+        $document->updateQuietly($nouveau instanceof Personnel
+            ? ['type_beneficiaire' => 'personnel', 'personnel_id' => $nouveau->id, 'fournisseur_id' => null]
+            : ['type_beneficiaire' => 'fournisseur', 'fournisseur_id' => $nouveau->id, 'personnel_id' => null]);
     }
 
-    protected function mettreAJourOrdonnances(Engagement $engagement, Fournisseur|Personnel $nouveau, array $montants): void
+    protected function mettreAJourOrdonnances(Engagement $engagement, Fournisseur|Personnel $nouveau): void
     {
-        $detail = [
-            'montant_cnps'         => $montants['taxes']['montant_cnps'] ?? 0,
-            'montant_ir'           => $montants['taxes']['montant_ir'] ?? 0,
-            'montant_irnc'         => $montants['taxes']['montant_irnc'] ?? 0,
-            'montant_tva'          => $montants['taxes']['montant_tva'] ?? 0,
-            'montant_tsr'          => $montants['taxes']['montant_tsr'] ?? 0,
-            'montant_autres_taxes' => $montants['taxes']['autres_retenues'] ?? 0,
-        ];
-
         foreach ($engagement->ordonnancesPaiement()->get() as $op) {
             /** @var OrdonnancePaiement $op */
-            if ($op->statut === 'payee') {
-                continue; // OP impôt payée : contrôlée plus haut, rien à modifier
+            if ($op->type_ordonnance !== 'standard' || $op->statut === 'payee') {
+                continue; // l'OP d'impôt se paie au Trésor : son bénéficiaire ne change pas
             }
 
-            if ($op->type_ordonnance === 'standard') {
-                $op->updateQuietly(array_merge($detail, [
-                    'beneficiaire_type' => $nouveau::class,
-                    'beneficiaire_id'   => $nouveau->id,
-                    'montant_brut'      => $montants['brut'],
-                    'montant_impot'     => $montants['total_taxes'],
-                    'montant_net'       => $montants['net'],
-                ]));
-            } elseif ($op->type_ordonnance === 'impot') {
-                // Le bénéficiaire de l'OP impôt (Trésor) ne change pas : seuls les montants suivent
-                $op->updateQuietly(array_merge($detail, [
-                    'montant_brut'  => $montants['total_taxes'],
-                    'montant_impot' => $montants['total_taxes'],
-                    'montant_net'   => $montants['total_taxes'],
-                ]));
-            }
+            // Aucun montant ne suit : brut, retenues et net de l'ordonnance restent ceux de l'émission.
+            $op->updateQuietly([
+                'beneficiaire_type' => $nouveau::class,
+                'beneficiaire_id'   => $nouveau->id,
+            ]);
         }
     }
 
@@ -522,7 +401,7 @@ class ChangementBeneficiaireService
                     'nouveau_beneficiaire' => $this->libelleBeneficiaire($nouveau),
                     'date'                => now()->toDateString(),
                 ];
-                $ancienDossier->updateQuietly(['metadata' => $metadata]);
+                // M11 : aucune mention posée
             }
         }
 

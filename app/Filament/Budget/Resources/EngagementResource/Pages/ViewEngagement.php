@@ -710,9 +710,10 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                 }),
 
             // ══════════════════════════════════════════════════════════
-            // ✅ AJOUT — AVENANT « CHANGEMENT DE BÉNÉFICIAIRE »
+            // ✅ AVENANT « CHANGEMENT DE BÉNÉFICIAIRE »
             //    BC : nouveau fournisseur (existant ou créé). DA : agent ou fournisseur.
-            //    Action distincte de l'avenant « Rectification » ci-dessus, qui reste inchangé.
+            //    Il ne porte QUE le bénéficiaire : aucune retenue n'est saisie ni recalculée ici,
+            //    c'est l'avenant « Rectification » qui change les montants.
             //    Logique métier : App\Services\Budget\ChangementBeneficiaireService
             // ══════════════════════════════════════════════════════════
             Actions\Action::make('changer_beneficiaire')
@@ -725,7 +726,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         && app(ChangementBeneficiaireService::class)->estPossible($record)
                 )
                 ->modalHeading('Avenant — changement de bénéficiaire')
-                ->modalDescription('Aucun effet budgétaire : la ligne, le montant engagé et les crédits ne changent pas.')
+                ->modalDescription('Aucun effet budgétaire : la ligne, le montant engagé, les crédits et les montants déjà ordonnancés ne bougent pas. Seul le bénéficiaire change.')
                 ->modalWidth('3xl')
                 ->modalSubmitActionLabel('Appliquer l\'avenant')
                 ->fillForm(fn($record) => app(ChangementBeneficiaireService::class)->valeursInitiales($record))
@@ -762,13 +763,6 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->visible(fn(Get $get) => $this->record->estBonCommande() || $get('type_beneficiaire') === 'fournisseur')
                         ->required(fn(Get $get) => $this->record->estBonCommande() || $get('type_beneficiaire') === 'fournisseur')
                         ->helperText('Fournisseurs actifs et non blacklistés uniquement.')
-                        // IR recalculé selon le régime fiscal du fournisseur choisi (reste modifiable)
-                        ->afterStateUpdated(function ($state, Forms\Set $set) {
-                            $ir = app(ChangementBeneficiaireService::class)->irPropose($this->record, $state);
-                            if ($ir !== null) {
-                                $set('montant_ir', $ir);
-                            }
-                        })
                         // Création d'un fournisseur : uniquement avec le droit create_fournisseur
                         ->createOptionForm(auth()->user()?->can('create_fournisseur') ? [
                             Forms\Components\TextInput::make('raison_sociale')->label('Raison sociale')->required()->maxLength(255)->columnSpanFull(),
@@ -822,33 +816,8 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                         ->createOptionUsing(fn(array $data): int => app(ChangementBeneficiaireService::class)->creerPersonnel($data))
                         ->createOptionModalHeading('Nouvel agent'),
 
-                    Forms\Components\Section::make('Retenues après changement')
-                        ->description('Pré-remplies avec les retenues actuelles ; l\'IR est recalculé selon le régime du fournisseur choisi. Modifiables.')
-                        ->schema([
-                            Forms\Components\TextInput::make('montant_cnps')->label('CNPS')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
-                                ->visible(fn() => $this->record->estDecision()),
-                            Forms\Components\TextInput::make('montant_ir')->label('IR')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true),
-                            Forms\Components\TextInput::make('montant_irnc')->label('IRNC')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
-                                ->visible(fn() => $this->record->estDecision()),
-                            Forms\Components\TextInput::make('montant_tva')->label('TVA')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true),
-                            Forms\Components\TextInput::make('montant_tsr')->label('TSR')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
-                                ->visible(fn() => $this->record->estBonCommande()),
-                            Forms\Components\TextInput::make('autres_retenues')->label('Autres retenues')->numeric()->minValue(0)->suffix('FCFA')->live(onBlur: true)
-                                ->visible(fn() => $this->record->estDecision()),
-
-                            Forms\Components\Placeholder::make('net_apres')
-                                ->label('Net à payer au nouveau bénéficiaire')
-                                ->content(function (Get $get) {
-                                    $doc = $this->record->engageable;
-                                    $brut = $this->record->estBonCommande() ? (float) ($doc?->montant_ttc ?? 0) : (float) ($doc?->montant_brut ?? 0);
-                                    $taxes = collect(['montant_cnps', 'montant_ir', 'montant_irnc', 'montant_tva', 'montant_tsr', 'autres_retenues'])
-                                        ->sum(fn($c) => (float) ($get($c) ?? 0));
-                                    return number_format($brut - $taxes, 0, ',', ' ') . ' FCFA  (brut ' . number_format($brut, 0, ',', ' ') . ' − retenues ' . number_format($taxes, 0, ',', ' ') . ')';
-                                })
-                                ->columnSpanFull(),
-                        ])
-                        ->columns(3),
-
+                    // Pas de champ de retenue ici : l'avenant ne change ni les taxes, ni le net, ni
+                    // les montants déjà ordonnancés. C'est l'avenant « Rectification » qui les porte.
                     Forms\Components\Textarea::make('motif')
                         ->label('Motif du changement de bénéficiaire')
                         ->required()->rows(3)->maxLength(1000)
@@ -862,7 +831,7 @@ Les champs sont pré-remplis avec les valeurs actuelles — modifiez uniquement 
                     $id = (int) ($estAgent ? $data['personnel_id'] : $data['fournisseur_id']);
 
                     try {
-                        $avenant = $service->appliquer($this->record, $classe, $id, $data, (string) $data['motif']);
+                        $avenant = $service->appliquer($this->record, $classe, $id, (string) $data['motif']);
                         $avenant->load(['beneficiaireCorrige', 'dossierFournisseurCree']);
 
                         $message = "Avenant n° {$avenant->numero_avenant} appliqué.\n\n"
