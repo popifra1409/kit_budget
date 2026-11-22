@@ -18,6 +18,7 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Models\ParametresStructure;
 use App\Models\ParametresFournisseur;
+use App\Support\DocumentsRecents;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\Schema;
@@ -71,18 +72,24 @@ class BudgetPanelProvider extends PanelProvider
 
             ->sidebarCollapsibleOnDesktop()
 
+            // « Règlages » était affiché mais mort : ->url('') rend un href vide, donc le
+            // clic recharge la page courante. Le seul écran de réglages du panneau est
+            // celui des thèmes, déjà réservé aux administrateurs dans la navigation
+            // latérale — l'item pointe dessus et n'apparaît plus qu'eux.
+            // (Rappel : ->userMenuItems() fusionne, les deux appels successifs ne
+            // s'écrasaient pas — c'est l'url qui était en cause.)
             ->userMenuItems([
-                MenuItem::make()
-                    ->label('Règlages')
-                    ->url('')
-                    ->icon('heroicon-o-cog-6-tooth')
-            ])
-
-            ->userMenuItems([
-                'langue' => \Filament\Navigation\MenuItem::make()
+                'langue' => MenuItem::make()
                     ->label(fn() => app()->getLocale() === 'fr' ? '🇫🇷 Français' : '🇬🇧 English')
                     ->icon('heroicon-o-language')
                     ->url(fn() => route('locale.set', auth()->user()?->locale === 'en' ? 'fr' : 'en')),
+
+                'reglages' => MenuItem::make()
+                    ->label('Règlages')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->url(fn() => route('filament.budget.pages.themes'))
+                    ->visible(fn() => auth()->check()
+                        && auth()->user()->hasRole(['super_admin', 'admin'])),
             ])
 
             // ── Navigation du module Budget ──────────────────────────────
@@ -202,9 +209,15 @@ class BudgetPanelProvider extends PanelProvider
         $panel = $this->navbarUniforme($panel, 'budget', 'Budget');
 
         // Actions rapides après le sélecteur de modules dans le bandeau
-        return $panel->renderHook(
+        $panel = $panel->renderHook(
             PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
             fn(): HtmlString => $this->renderActionsRapides()
+        );
+
+        // Raccourci « Récents » : les documents que l'agent connecté a dernièrement traités
+        return $panel->renderHook(
+            PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
+            fn(): HtmlString => $this->renderMenuRecents()
         );
     }
 
@@ -291,6 +304,107 @@ class BudgetPanelProvider extends PanelProvider
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    // =========================================================================
+    // DOCUMENTS RÉCENTS — menu déroulant du bandeau
+    // =========================================================================
+
+    /**
+     * Les documents que l'agent connecté a dernièrement traités, tels que le bandeau
+     * peut les rouvrir.
+     *
+     * La liste vient du journal d'audit et chaque ligne a été re-validée contre sa
+     * ressource (visibilité, droit de consultation, écran existant), donc une ligne
+     * affichée est une ligne qui s'ouvre.
+     *
+     * Le bouton reste posé même vide : c'est le seul endroit où l'agent voit que le
+     * raccourci existe et qu'il n'a rien à rouvrir. Un bouton qui disparaît faute de
+     * contenu ne se fait pas connaître du nouvel agent.
+     *
+     * Le panneau se masque par `:style`, pas par `x-show` : aucun feuillage servi ne
+     * définit la règle CSS `[x-cloak]` (vérifié dans public/js et public/css), et Alpine
+     * mémorise la valeur d'affichage inline au premier masquage — un `style="display:none"`
+     * de départ combiné à `x-show` laisserait le panneau fermé pour toujours.
+     */
+    private function renderMenuRecents(): HtmlString
+    {
+        if (!auth()->check()) {
+            return new HtmlString('');
+        }
+
+        try {
+            $documents = DocumentsRecents::lister();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Documents récents : bandeau interrompu', [
+                'erreur' => $e->getMessage(),
+            ]);
+
+            $documents = [];
+        }
+
+        $lignes = '';
+
+        foreach ($documents as $document) {
+            $lignes .= '<li>'
+                . '<a href="' . e($document['url']) . '"'
+                . ' class="flex flex-col gap-0.5 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700/60">'
+                . '<span class="flex items-baseline justify-between gap-3">'
+                . '<span class="truncate text-sm font-medium text-gray-900 dark:text-white">'
+                . e($document['document']) . '</span>'
+                . '<span class="shrink-0 text-xs text-gray-400 dark:text-gray-500">'
+                . e($document['date']) . '</span>'
+                . '</span>'
+                . '<span class="truncate text-xs text-gray-500 dark:text-gray-400">'
+                . e($document['type']) . ' · ' . e($document['evenement'])
+                . '</span>'
+                . '</a></li>';
+        }
+
+        if ($lignes === '') {
+            $lignes = '<li class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">'
+                . 'Aucun document récent pour ce compte.</li>';
+        }
+
+        return new HtmlString('
+        <div x-data="{ ouvert: false }"
+             @click.outside="ouvert = false"
+             @keydown.escape.window="ouvert = false"
+             class="relative flex items-center me-4">
+
+            <button type="button"
+                    @click="ouvert = !ouvert"
+                    :aria-expanded="ouvert"
+                    aria-haspopup="true"
+                    title="Documents récemment traités"
+                    class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition
+                           text-gray-700 dark:text-gray-200
+                           bg-gray-100 dark:bg-gray-800
+                           hover:bg-gray-200 dark:hover:bg-gray-700
+                           border border-gray-200 dark:border-gray-700">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="hidden lg:inline">Récents</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+
+            <div :style="ouvert ? \'display:block\' : \'display:none\'" style="display: none"
+                 class="absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-xl
+                        bg-white dark:bg-gray-800 shadow-lg
+                        border border-gray-200 dark:border-gray-700">
+                <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400
+                            border-b border-gray-200 dark:border-gray-700">
+                    Documents récemment traités
+                </div>
+                <ul class="max-h-96 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/60">
+                    ' . $lignes . '
+                </ul>
+            </div>
+        </div>');
     }
 
     // =========================================================================
