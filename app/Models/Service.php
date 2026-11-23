@@ -108,4 +108,40 @@ class Service extends Model
 
         return $enfants;
     }
+
+    /**
+     * Générer le code du service : « SRV-052 », à la suite du plus grand numéro déjà posé.
+     *
+     * Seuls les codes au format « SRV-NNN » sont comptés : le parc garde des legs
+     * (« SVR-36 », « SRV-002-01 ») qui ne doivent pas faire redémarrer la séquence à 1.
+     * La corbeille est lue elle aussi — l'index unique, lui, voit les lignes effacées.
+     */
+    public static function genererCode(): string
+    {
+        return \DB::transaction(function (): string {
+            $dernierNumero = static::withTrashed()
+                ->where('code', 'like', 'SRV-___')
+                ->lockForUpdate()
+                ->pluck('code')
+                ->map(fn ($code) => (int) substr((string) $code, 4))
+                ->max() ?? 0;
+
+            $code = sprintf('SRV-%03d', $dernierNumero + 1);
+
+            if (static::withTrashed()->where('code', $code)->exists()) {
+                throw new \Exception("Le code {$code} est déjà utilisé (condition de course détectée)");
+            }
+
+            return $code;
+        });
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Service $service) {
+            if (empty($service->code)) {
+                $service->code = static::genererCode();
+            }
+        });
+    }
 }

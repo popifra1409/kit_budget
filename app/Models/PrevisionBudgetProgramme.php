@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Budget\ControlePlafondCbmt;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -64,37 +65,70 @@ class PrevisionBudgetProgramme extends Model
     }
 
     /**
-     * Reconduire les prévisions N vers N+1
-     * (montant N+1 = montant N * taux de progression)
+     * Reconduire le plan triennal vers l'exercice suivant (montant × taux de progression).
+     *
+     * Chaque projection porte sa propre année visée (N+1 → N+2, N+2 → N+3) sous l'exercice cible,
+     * donc le lot est regroupé PAR ANNÉE VISÉE : le plafond CBMT s'oppose titre par titre ET année
+     * par année, et une reconduction qui déborderait 2029 ne doit pas empêcher 2028 de passer.
+     *
+     * @return array{ecrits: int, refus: array<int, array>, source: int, cible: int}
      */
     public static function reconduireExercice(
         int   $exerciceSourceId,
         int   $exerciceCibleId,
         float $tauxProgression = 1.05  // +5% par défaut
-    ): int {
-        $previsions = static::where('exercice_id', $exerciceSourceId)
+    ): array {
+        $controlle = app(ControlePlafondCbmt::class);
+
+        $previsions = static::with('nomenclature')
+            ->where('exercice_id', $exerciceSourceId)
             ->where('type', 'prevision')
             ->get();
 
-        $count = 0;
+        // Lot par année visée et par nature, la nature étant portée par la nomenclature.
+        $lots = [];
         foreach ($previsions as $prev) {
-            static::updateOrCreate(
-                [
-                    'exercice_id'     => $exerciceCibleId,
-                    'nomenclature_id' => $prev->nomenclature_id,
-                    'annee'           => $prev->annee + 1,
-                    'type'            => 'prevision',
-                ],
-                [
-                    'montant'                => $prev->montant * $tauxProgression,
-                    'categorie'              => $prev->categorie,
-                    'est_saisi_manuellement' => false,
-                    'observations'           => "Reconduit depuis {$prev->annee} (×{$tauxProgression})",
-                ]
-            );
-            $count++;
+            $nature = $prev->nomenclature->type ?? null;
+            $lots[(int) $prev->annee + 1][($nature === 'recette' ? 'recette' : 'depense')][] = [
+                'nomenclature_id' => (int) $prev->nomenclature_id,
+                'montant' => round((float) $prev->montant * $tauxProgression, 2),
+                'categorie' => (string) $prev->categorie,
+                'annee_source' => (int) $prev->annee,
+            ];
         }
 
-        return $count;
+        $ecrits = 0;
+        $refus = [];
+
+        foreach ($lots as $annee => $parNature) {
+            foreach ($parNature as $nature => $lot) {
+                $decision = $controlle->decider($nature, $annee, $lot, $exerciceCibleId);
+
+                foreach ($decision['acceptees'] as $ligne) {
+                    static::updateOrCreate(
+                        [
+                            'exercice_id'     => $exerciceCibleId,
+                            'nomenclature_id' => $ligne['nomenclature_id'],
+                            'annee'           => $annee,
+                            'type'            => 'prevision',
+                        ],
+                        [
+                            'montant'                => $ligne['montant'],
+                            'categorie'              => $ligne['categorie'],
+                            'est_saisi_manuellement' => false,
+                            'observations'           => "Reconduit depuis {$ligne['annee_source']} (×{$tauxProgression})",
+                        ]
+                    );
+                    $ecrits++;
+                }
+
+                foreach ($decision['refus'] as $r) {
+                    $refus[] = $r + ['nature' => $nature];
+                }
+            }
+        }
+
+        return ['ecrits' => $ecrits, 'refus' => $refus,
+            'source' => $exerciceSourceId, 'cible' => $exerciceCibleId];
     }
 }

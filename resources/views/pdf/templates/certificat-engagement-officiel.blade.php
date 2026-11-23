@@ -167,8 +167,18 @@ if ($engagement->estBonCommande() && $engagement->engageable) {
     );
 }
 
-// ── Référence du document source (champ 'reference' du BC/DA) ──
-$referenceDocument = $engagement->engageable?->reference ?? null;
+// ── Référence du document source ────────────────────────────
+// Le BC la porte dans `reference` ; la DA dans `reference_decision` (libellé « Référence de
+// la décision »), lue via referenceImprimable() pour écarter le pointeur mémoire (« MD-… »)
+// que la transformation depuis un Mémoire de Dépense écrit dans ce champ.
+// Les tirets de la case sont PERMANENTS : la référence, quand elle est renseignée, les suit ;
+// quand elle ne l'est pas (null, '', DA issue d'un mémoire), seuls les tirets sortent.
+$sourceDocument = $engagement->engageable;
+$referenceDocument = $sourceDocument
+    ? ($engagement->estDecision()
+        ? $sourceDocument->referenceImprimable()
+        : $sourceDocument->reference)
+    : null;
 
 // ── Référence chemin hiérarchique selon type d'engagement ─
 $sigle = $parametres->sigle ?? 'CHUY';
@@ -396,19 +406,23 @@ if ($createdAt) {
         &nbsp;
 
         @if(in_array($codeTypeEngagement, ['LC', 'DL', 'DM', 'MA']))
-            {{-- LC / DL / DM / MA : chemin CIPM + référence du document obligatoire --}}
+            {{-- LC / DL / DM / MA : chemin CIPM. Les 32 tirets sont la case, ils DEMEURENT ;
+                 la référence du document, quand elle est renseignée, s'écrit après. --}}
             {{ $refChemin }}
             <span style="font-weight:bold;">
-                {{ $referenceDocument ?? '________________________________' }}
+                ________________________________
+                @if(filled($referenceDocument))
+                    {{ $referenceDocument }}
+                @endif
             </span>
         @else
-            {{-- BC : chemin BBE + date de signature (champ reference) ou tirets --}}
+            {{-- BC / DA : chemin BBE + « du ». Même règle : les 28 tirets demeurent toujours,
+                 la référence saisie les suit ; rien après = la case est à remplir. --}}
             {{ $refChemin }} du
             <span>
-                @if($referenceDocument)
+                ____________________________
+                @if(filled($referenceDocument))
                     <strong>{{ $referenceDocument }}</strong>
-                @else
-                    ____________________________
                 @endif
             </span>
         @endif

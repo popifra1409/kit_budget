@@ -247,6 +247,13 @@ class BonCommandeResource extends Resource
                                 }
                                 return 'Sélectionnez un fournisseur';
                             })
+                            // Le « + » écrit une ligne Fournisseur sans jamais passer par
+                            // FournisseurResource::canCreate() (`create_fournisseur`). `authorize()`
+                            // masque le bouton ET refuse la requête Livewire forgée, au montage comme à
+                            // la soumission. Le type hint importe : c'est une action de COMPOSANT de
+                            // formulaire, pas Filament\Actions\Action.
+                            ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                                ->authorize('create_fournisseur'))
                             ->createOptionForm([
                                 Forms\Components\Section::make('Identification')
                                     ->schema([

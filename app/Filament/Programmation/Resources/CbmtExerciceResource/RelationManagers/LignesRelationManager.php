@@ -171,12 +171,11 @@ class LignesRelationManager extends RelationManager
                     ])
                     ->action(function (array $data) {
                         try {
-                            $bilan = app(GenerationCbmtService::class)->generer($this->getOwnerRecord(), (bool) ($data['reinitialiser'] ?? false));
+                            $service = app(GenerationCbmtService::class);
+                            $bilan = $service->generer($this->getOwnerRecord(), (bool) ($data['reinitialiser'] ?? false));
 
                             Notification::make()->success()->title('CBMT généré')
-                                ->body("{$bilan['creees']} ligne(s) créée(s), {$bilan['mises_a_jour']} mise(s) à jour."
-                                    . ($bilan['sans_titre'] ? "\n⚠️ {$bilan['sans_titre']} ligne(s) sans titre : classez leur compte dans la nomenclature." : ''))
-                                ->send();
+                                ->body($service->resumeBilan($bilan))->send();
                         } catch (\DomainException $e) {
                             Notification::make()->warning()->title('Génération impossible')->body($e->getMessage())->send();
                         }

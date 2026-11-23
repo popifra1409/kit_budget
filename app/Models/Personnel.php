@@ -209,8 +209,9 @@ class Personnel extends Model
             $prefixe = "MAT-{$annee}-";
 
             // ✅ LOCK pour éviter les conditions de course
-            // Pendant cette transaction, aucun autre utilisateur ne peut lire ces lignes
-            $personnels = static::where('matricule', 'like', "{$prefixe}%")
+            // `withTrashed()` : l'index UNIQUE matricule voit aussi les lignes de la corbeille — sans
+            // lui, un matricule effacé serait redistribué et l'INSERT mourrait sur la contrainte.
+            $personnels = static::withTrashed()->where('matricule', 'like', "{$prefixe}%")
                 ->lockForUpdate()
                 ->get();
 
@@ -228,7 +229,7 @@ class Personnel extends Model
             $matricule = sprintf('MAT-%s-%04d', $annee, $sequence);
 
             // Double vérification (normalement pas nécessaire avec le lock)
-            if (static::where('matricule', $matricule)->exists()) {
+            if (static::withTrashed()->where('matricule', $matricule)->exists()) {
                 throw new \Exception("Matricule {$matricule} existe déjà (condition de course détectée)");
             }
 
@@ -258,7 +259,10 @@ class Personnel extends Model
                 $personnel->matricule = static::genererMatricule();
             } else {
                 // ✅ Si un matricule est fourni, vérifier l'unicité
-                if (static::where('matricule', $personnel->matricule)->exists()) {
+                // `withTrashed()` : l'index UNIQUE `personnels_matricule_unique` porte aussi sur les
+                // lignes de la corbeille. Sans lui, ce garde disait « libre » sur un matricule effacé et
+                // c'est la contrainte Postgres qui parlait — en avortant la transaction, pas en prévenant.
+                if (static::withTrashed()->where('matricule', $personnel->matricule)->exists()) {
                     throw new \Exception("Le matricule {$personnel->matricule} existe déjà");
                 }
             }
@@ -272,8 +276,8 @@ class Personnel extends Model
                 $ancienMatricule = $personnel->getOriginal('matricule');
                 $nouveauMatricule = $personnel->matricule;
 
-                // Vérifier l'unicité du nouveau matricule
-                if (static::where('matricule', $nouveauMatricule)
+                // Vérifier l'unicité du nouveau matricule — corbeille comprise, même raison qu'au creating
+                if (static::withTrashed()->where('matricule', $nouveauMatricule)
                     ->where('id', '!=', $personnel->id)
                     ->exists()
                 ) {

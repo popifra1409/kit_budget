@@ -371,6 +371,26 @@ class DecisionAdministrative extends Model
         return $this->regiesAvances()->first();
     }
 
+    /**
+     * Référence d'acte à imprimer, ou null quand il n'y en a pas.
+     *
+     * Une DA transformée depuis un Mémoire de Dépense n'est pas un acte : la transformation
+     * écrit le numéro du mémoire dans `reference_decision` (« MD-… »), le champ de la saisie
+     * libre. Le réimprimer sur un document qui cite déjà le mémoire double la référence et
+     * volerait la case vide. Le tri par préfixe est celui du badge « Créée depuis le Mémoire »
+     * de l'écran de la DA — les deux surfaces doivent classer la décision pareillement.
+     */
+    public function referenceImprimable(): ?string
+    {
+        $reference = trim((string) ($this->reference_decision ?? ''));
+
+        if ($reference === '' || str_starts_with($reference, 'MD-')) {
+            return null;
+        }
+
+        return $reference;
+    }
+
     // =========================================================
     // SCOPES
     // =========================================================

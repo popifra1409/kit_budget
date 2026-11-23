@@ -1,7 +1,7 @@
 <?php
-// app/Filament/Budget/Pages/Corbeille.php
+// app/Filament/Admin/Pages/Corbeille.php
 
-namespace App\Filament\Budget\Pages;
+namespace App\Filament\Admin\Pages;
 
 use App\Console\Commands\CorbeilleEtat;
 use App\Console\Commands\CorbeilleRestaurer;
@@ -41,6 +41,10 @@ use Symfony\Component\Console\Input\ArrayInput;
  * Purger définitivement n'est pas ici : c'est #73, et le trait refuse aujourd'hui la purge d'une
  * famille attribuée ligne à ligne (gardes `deleting`) — ce serait un bouton qui ne sait pas ce
  * qu'il fait.
+ *
+ * Panel : elle était dans « Contrôle & clôture » du module Budget, qui est replié par défaut — d'où
+ * le « je ne vois pas le lien ». Elle vit désormais dans « Sécurité et audit » (/admin), groupe
+ * jamais replié, parce que la corbeille parle des 70 tables câblées du SIGB et non du Budget seul.
  */
 class Corbeille extends Page implements HasForms, HasTable
 {
@@ -48,13 +52,12 @@ class Corbeille extends Page implements HasForms, HasTable
     use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-archive-box-x-mark';
-    protected static ?string $navigationGroup = 'Contrôle & clôture';
+    protected static ?string $navigationGroup = 'Sécurité et audit';
     protected static ?string $navigationLabel = 'Corbeille';
     protected static ?string $title = 'Corbeille';
-    // 5 et non 4 : `ReinitialisationCollectifsPage` porte déjà le 4 dans ce groupe — à égalité
-    // Filament départage par le libellé, et le lien changerait de place tout seul.
-    protected static ?int $navigationSort = 5;
-    protected static string $view = 'filament.budget.pages.corbeille';
+    // 2 : `ActivityResource` (le journal d'audit) porte le 1 dans ce groupe.
+    protected static ?int $navigationSort = 2;
+    protected static string $view = 'filament.admin.pages.corbeille';
 
     /** Le nom de table choisi. JAMAIS `$table` : `{{ $this->table }}` rend le Filament\Tables\Table. */
     public ?string $choix = null;

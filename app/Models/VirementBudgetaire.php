@@ -101,6 +101,31 @@ class VirementBudgetaire extends Model
                 $virement->sous_programme_destination_id = $q['sp_destination']?->id;
             }
         });
+
+        // Un changement de statut fait entrer ou sortir le montant de l'enveloppe : les formules de la
+        // ligne rectifiée ne comptent que les virements 'execute'. Le CBMT de l'exercice suit, sinon sa
+        // prévision actualisée reste celle d'avant le virement — et le plafond CBMT oppose un chiffre
+        // périmé. Les créations issues d'un collectif passent par CollectifBudgetaire::appliquer(),
+        // qui actualise déjà le document.
+        static::updated(function ($virement) {
+            if (!$virement->wasChanged('statut')) {
+                return;
+            }
+
+            $comptes = array_filter(array_unique(array_filter([
+                $virement->ligneSource()->first()?->nomenclature_id,
+                $virement->ligneDestination()->first()?->nomenclature_id,
+            ])));
+
+            if ($comptes === []) {
+                return;
+            }
+
+            app(\App\Services\Programmation\GenerationCbmtService::class)->actualiser(
+                (int) ($virement->exercice_id ?: $virement->budget()->first()?->exercice_id),
+                array_values($comptes)
+            );
+        });
     }
 
     public function sousProgrammeSource(): BelongsTo

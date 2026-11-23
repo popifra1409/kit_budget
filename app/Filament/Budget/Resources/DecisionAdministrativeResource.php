@@ -221,10 +221,45 @@ class DecisionAdministrativeResource extends Resource
 
                     Forms\Components\Select::make('service_emetteur_id')
                         ->label('Service émetteur')
-                        ->options(
-                            \App\Models\Service::where('actif', true)->pluck('nom', 'id')
-                        )
-                        ->searchable()->preload(),
+                        // Closure obligatoire : `options(Service::…->pluck())` est évalué à la
+                        // construction du formulaire, donc AVANT que le « + » n'insère la ligne. Le
+                        // Select garderait en mémoire un id qu'il ne connaît pas — champ affiché vide.
+                        ->options(fn () => \App\Models\Service::where('actif', true)
+                            ->orderBy('nom')->pluck('nom', 'id'))
+                        ->searchable()->preload()
+                        // Le « + » écrit une ligne Service : la porte est celle que réclame déjà
+                        // ServiceResource::canCreate() (`create_service`). `authorize()` ferme les deux
+                        // voies d'un coup : l'action devenue masquée est aussi refusée à l'exécution,
+                        // Filament testant isDisabled() avant de monter puis de soumettre le modal.
+                        // Attention à l'import : le « + » est une action de COMPOSANT de formulaire
+                        // (Filament\Forms\Components\Actions\Action), pas Filament\Actions\Action.
+                        ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                            ->authorize('create_service'))
+                        ->createOptionForm([
+                            Forms\Components\TextInput::make('code')
+                                ->label('Code')
+                                ->default(fn () => \App\Models\Service::genererCode())
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->helperText('Généré automatiquement'),
+
+                            Forms\Components\TextInput::make('nom')
+                                ->label('Nom du service')
+                                ->required()
+                                ->maxLength(255)
+                                ->placeholder('Ex: Service Informatique'),
+                        ])
+                        ->createOptionUsing(function (array $data): int {
+                            $service = \App\Models\Service::create($data);
+
+                            Notification::make()
+                                ->title('Service créé')
+                                ->success()
+                                ->body("« {$service->nom} » a été ajouté avec le code {$service->code}.")
+                                ->send();
+
+                            return $service->id;
+                        }),
 
                     Forms\Components\ToggleButtons::make('type_beneficiaire')
                         ->label('Type de bénéficiaire')
@@ -248,7 +283,61 @@ class DecisionAdministrativeResource extends Resource
                         ->searchable()->preload()
                         ->required(fn(Get $get) => $get('type_beneficiaire') === 'personnel')
                         ->visible(fn(Get $get)   => $get('type_beneficiaire') === 'personnel')
-                        ->live()->columnSpanFull(),
+                        ->live()->columnSpanFull()
+                        // Même règle pour la fiche agent : `create_personnel`, la porte de
+                        // PersonnelResource::canCreate(). Sans elle, un compte qui sait saisir une DA mais
+                        // n'a pas droit aux fiches agents en créait malgré tout par le « + ».
+                        ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                            ->authorize('create_personnel'))
+                        ->createOptionForm([
+                            Forms\Components\TextInput::make('matricule')
+                                ->label('Matricule')
+                                ->default(fn () => \App\Models\Personnel::genererMatricule())
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->helperText('Généré automatiquement'),
+
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\TextInput::make('nom')
+                                    ->label('Nom')
+                                    ->required()->maxLength(255),
+
+                                Forms\Components\TextInput::make('prenoms')
+                                    ->label('Prénoms')
+                                    ->required()->maxLength(255),
+                            ]),
+
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\Select::make('sexe')
+                                    ->label('Sexe')
+                                    ->options(['M' => 'Masculin', 'F' => 'Féminin'])
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('fonction')
+                                    ->label('Fonction')
+                                    ->required()->maxLength(255)
+                                    ->placeholder('Ex: Chef de Service'),
+                            ]),
+
+                            Forms\Components\Select::make('service_id')
+                                ->label('Service')
+                                ->options(fn () => \App\Models\Service::where('actif', true)
+                                    ->orderBy('nom')->pluck('nom', 'id'))
+                                ->searchable()->preload()->required()
+                                ->helperText('Service manquant ? Fermez cette fenêtre et créez-le avec le « + » du service émetteur.')
+                                ->columnSpanFull(),
+                        ])
+                        ->createOptionUsing(function (array $data): int {
+                            $personnel = \App\Models\Personnel::create($data);
+
+                            Notification::make()
+                                ->title('Agent créé')
+                                ->success()
+                                ->body("{$personnel->nom} {$personnel->prenoms} a été ajouté sous le matricule {$personnel->matricule}.")
+                                ->send();
+
+                            return $personnel->id;
+                        }),
 
                     Forms\Components\Select::make('fournisseur_id')
                         ->label('Fournisseur concerné')

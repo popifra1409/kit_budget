@@ -263,6 +263,14 @@ class RecetteReelleResource extends Resource
                         ->options(fn() => \App\Models\TiersRecette::optionsGroupees())
                         ->searchable()
                         ->required()
+                        // Le « + » écrit une ligne TiersRecette sans jamais passer par
+                        // TiersRecetteResource::canCreate(). Ce référentiel n'a pas de capacité propre :
+                        // c'est `create_recette_reelle`, celle de la ressource, qu'il faut exiger ici.
+                        // `authorize()` masque le bouton ET refuse la requête Livewire forgée (isDisabled()
+                        // testé au montage puis à la soumission). Type hint : action de COMPOSANT de
+                        // formulaire, pas Filament\Actions\Action.
+                        ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                            ->authorize('create_recette_reelle'))
                         ->createOptionForm([
                             Forms\Components\TextInput::make('nom')->label('Nom')->required()->maxLength(255)
                                 ->unique('tiers_recettes', 'nom', modifyRuleUsing: fn($rule) => $rule->whereNull('deleted_at')),
@@ -663,6 +671,11 @@ class RecetteReelleResource extends Resource
                                 ->label('Débiteur / Payeur')
                                 ->options(fn() => \App\Models\TiersRecette::optionsGroupees())
                                 ->searchable()->required()
+                                // Même porte que le « + » débiteur/payeur du formulaire principal : ici
+                                // le Select est dans un item de repeater, mais `createOptionUsing` écrit
+                                // la même table sans jamais consulter TiersRecetteResource::canCreate().
+                                ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                                    ->authorize('create_recette_reelle'))
                                 ->createOptionForm([
                                     Forms\Components\TextInput::make('nom')->label('Nom')->required()->maxLength(255)
                                         ->unique('tiers_recettes', 'nom', modifyRuleUsing: fn($rule) => $rule->whereNull('deleted_at')),

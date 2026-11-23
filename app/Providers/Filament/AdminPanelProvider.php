@@ -103,6 +103,7 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Pages\Dashboard::class,
                 \App\Filament\Admin\Pages\ParametresExecutionPage::class,
+                \App\Filament\Admin\Pages\Corbeille::class,
             ])
             ->widgets([
                 Widgets\AccountWidget::class,

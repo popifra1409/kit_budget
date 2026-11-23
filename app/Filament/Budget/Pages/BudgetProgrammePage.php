@@ -5,6 +5,7 @@ namespace App\Filament\Budget\Pages;
 use App\Models\Exercice;
 use App\Models\NomenclatureBudgetaire;
 use App\Models\PrevisionBudgetProgramme;
+use App\Services\Budget\ControlePlafondCbmt;
 use App\Services\BudgetProgrammeService;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -91,8 +92,8 @@ class BudgetProgrammePage extends Page
                 ->modalHeading('Reconduire les prévisions')
                 ->modalDescription(
                     fn() =>
-                    "Les prévisions de {$this->anneeRef} seront reconduites vers "
-                        . ($this->anneeRef + 1) . " avec une progression de 5%. "
+                    "Les projections saisies sous l'exercice {$this->anneeRef} sont recopiées un an plus loin"
+                        . " (×1,05) sous l'exercice " . ($this->anneeRef + 1) . ", dans la limite des plafonds du CBMT. "
                         . "Vous pourrez les ajuster ensuite."
                 )
                 ->action(function () {
@@ -107,14 +108,37 @@ class BudgetProgrammePage extends Page
                         return;
                     }
 
-                    $count = PrevisionBudgetProgramme::reconduireExercice(
+                    $resultat = PrevisionBudgetProgramme::reconduireExercice(
                         $exerciceSource->id,
                         $exerciceCible->id
                     );
 
+                    $controlle = app(ControlePlafondCbmt::class);
+                    $refusees = 0;
+                    foreach ($resultat['refus'] as $refus) {
+                        $refusees += (int) $refus['nb_lignes'];
+                        Notification::make()->danger()
+                            ->title('Plafond CBMT — ' . ($refus['libelle'] ?? 'titre indéterminé')
+                                . " · {$refus['annee']}")
+                            ->body($controlle->messageRefus($refus))
+                            ->send();
+                    }
+
+                    if ($resultat['ecrits'] === 0) {
+                        Notification::make()->danger()
+                            ->title('Aucune ligne reconduite')
+                            ->body($refusees === 0
+                                ? "Aucune prévision à reconduire depuis {$this->anneeRef}."
+                                : "{$refusees} ligne(s) refusée(s) par le plafond du CBMT.")
+                            ->send();
+                        return;
+                    }
+
                     Notification::make()->success()
                         ->title('✅ Reconduction effectuée')
-                        ->body("{$count} lignes reconduites vers " . ($this->anneeRef + 1))
+                        ->body("{$resultat['ecrits']} ligne(s) reconduite(s) vers "
+                            . ($this->anneeRef + 1)
+                            . ($refusees === 0 ? '' : ", {$refusees} refusée(s) — voir les notices ci-dessus."))
                         ->send();
                 }),
         ];

@@ -189,6 +189,63 @@ class CollectifBudgetaire extends Model
         // Recalcul des totaux — null-safe
         $this->exercice->budgets?->each(fn($b) => method_exists($b, 'recalculerTotaux') ? $b->recalculerTotaux() : null);
         $this->exercice->previsionRecettes?->each(fn($p) => method_exists($p, 'recalculerTotaux') ? $p->recalculerTotaux() : null);
+
+        $this->actualiserCbmt();
+    }
+
+    /**
+     * Le collectif vient de déplacer des enveloppes : la prévision N actualisée du CBMT doit suivre,
+     * sinon le document reste figé à sa date de génération et le plafond CBMT oppose des chiffres
+     * d'avant-collectif. Le refus (CBMT sorti du brouillon) est renvoyé par le service.
+     *
+     * @return array{creees: int, mises_a_jour: int, sans_titre: int, refuses: array}
+     */
+    protected function actualiserCbmt(): array
+    {
+        return app(\App\Services\Programmation\GenerationCbmtService::class)
+            ->actualiser((int) $this->exercice_id, $this->comptesTouches());
+    }
+
+    /**
+     * Comptes (nomenclatures) touchés par les mouvements du collectif : lignes modifiées, lignes créées,
+     * et les deux bouts de chaque virement — un collectif peut ne contenir QUE des virements.
+     *
+     * Les relations de lignes sont lues par-dessus la portée `exercice` : un mouvement d'un collectif
+     * adopté en octobre ne doit pas disparaître de la liste selon l'exercice courant de la session.
+     *
+     * @return int[]
+     */
+    public function comptesTouches(): array
+    {
+        $m = $this->mouvements;
+
+        $depenses = array_merge(
+            $m->pluck('ligne_depense_id')->filter()->all(),
+            $m->pluck('nouvelle_ligne_depense_id')->filter()->all(),
+            $m->pluck('ligne_source_id')->filter()->all(),
+            $m->pluck('ligne_destination_id')->filter()->all(),
+        );
+
+        $recettes = array_merge(
+            $m->pluck('ligne_recette_id')->filter()->all(),
+            $m->pluck('nouvelle_ligne_recette_id')->filter()->all(),
+        );
+
+        $idsVirement = $m->pluck('virement_budgetaire_id')->filter()->all();
+        if ($idsVirement !== []) {
+            $virements = \App\Models\VirementBudgetaire::withoutGlobalScopes()->whereIn('id', $idsVirement)->get();
+            $depenses = array_merge(
+                $depenses,
+                $virements->pluck('ligne_source_id')->filter()->all(),
+                $virements->pluck('ligne_destination_id')->filter()->all(),
+            );
+        }
+
+        $idsDepense = LigneBudgetaire::withoutGlobalScope('exercice')
+            ->whereIn('id', $depenses ?: [0])->pluck('nomenclature_id')->all();
+        $idsRecette = LignePrevisionRecette::whereIn('id', $recettes ?: [0])->pluck('nomenclature_id')->all();
+
+        return array_values(array_unique(array_filter(array_map('intval', array_merge($idsDepense, $idsRecette)))));
     }
 
 
@@ -221,6 +278,10 @@ class CollectifBudgetaire extends Model
                     }
                 }
             }
+
+            // Contre-passé : le CBMT doit redescendre aussi, sinon l'enveloppe votée resterait grossie
+            // d'un collectif qui n'existe plus.
+            $this->actualiserCbmt();
         } else {
             throw new \Exception('Impossible d\'annuler ce collectif.');
         }

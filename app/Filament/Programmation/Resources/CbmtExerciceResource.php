@@ -59,6 +59,20 @@ class CbmtExerciceResource extends Resource
                         ->label('Commentaire sur la soutenabilité du cadrage')
                         ->columnSpanFull(),
                 ]),
+
+            // Le CBMT ne fait que reproduire le chemin de crédits : il n'en est pas la source. Le dire sur
+            // la fiche, en nommant les documents qui ont bougé, vaut mieux qu'un chiffre périmé présenté
+            // comme acquis.
+            Forms\Components\Section::make('Chemin de crédits (collectifs, virements)')
+                ->description(fn (CbmtExercice $record) => $record->alerteCheminCredits()['message'])
+                ->icon(fn (CbmtExercice $record) => match ($record->alerteCheminCredits()['niveau']) {
+                    'danger' => 'heroicon-o-x-circle',
+                    'warning' => 'heroicon-o-exclamation-triangle',
+                    default => 'heroicon-o-check-circle',
+                })
+                ->iconColor(fn (CbmtExercice $record) => $record->alerteCheminCredits()['niveau'])
+                ->collapsible()
+                ->visible(fn (?CbmtExercice $record) => $record?->exists),
         ]);
     }
 

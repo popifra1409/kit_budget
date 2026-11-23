@@ -108,14 +108,14 @@ class BudgetProgrammeService
 
     /**
      * Prévision DÉPENSE (depuis PrevisionBudgetProgramme ou LigneBudgetaire)
+     *
+     * La nature est portée par la nomenclature (`nomenclature_budgetaire.type`) : la colonne
+     * `categorie` de `previsions_budget_programme` est contrainte à 'fonctionnement'|'investissement'
+     * par la migration, donc y filtrer 'depense' ne pouvait jamais rien faire correspondre.
      */
     private function getPrevision(int $nomenclatureId, int $annee, ?int $exerciceId): float
     {
-        $prevision = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
-            ->where('annee', $annee)
-            ->where('type', 'prevision')
-            ->where('categorie', 'depense')
-            ->value('montant');
+        $prevision = $this->retrouverPrevision($nomenclatureId, $annee, $exerciceId, 'depense');
 
         if ($prevision !== null) return (float) $prevision;
 
@@ -128,6 +128,30 @@ class BudgetProgrammeService
         }
 
         return 0.0;
+    }
+
+    /**
+     * Prévision saisie pour une ligne de nomenclature et une année.
+     *
+     * Sans exercice fourni (l'année visée n'a pas encore son exercice), on garde la prévision du
+     * dernier exercice qui l'a planifiée ; avec exercice, on ne retient que celui-ci, sinon la clé
+     * unique (exercice_id, nomenclature_id, annee, type) rend deux lignes pour la même année et
+     * `value()` en choisirait une au hasard.
+     */
+    private function retrouverPrevision(int $nomenclatureId, int $annee, ?int $exerciceId, string $type): ?float
+    {
+        $query = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
+            ->where('annee', $annee)
+            ->where('type', 'prevision')
+            ->whereHas('nomenclature', fn($q) => $q->where('type', $type));
+
+        if ($exerciceId) {
+            $query->where('exercice_id', $exerciceId);
+        }
+
+        $montant = $query->orderByDesc('exercice_id')->value('montant');
+
+        return $montant === null ? null : (float) $montant;
     }
 
     /**
@@ -161,11 +185,7 @@ class BudgetProgrammeService
      */
     private function getPrevisionRecette(int $nomenclatureId, int $annee, ?int $exerciceId): float
     {
-        $prevision = PrevisionBudgetProgramme::where('nomenclature_id', $nomenclatureId)
-            ->where('annee', $annee)
-            ->where('type', 'prevision')
-            ->where('categorie', 'recette')
-            ->value('montant');
+        $prevision = $this->retrouverPrevision($nomenclatureId, $annee, $exerciceId, 'recette');
 
         if ($prevision !== null) return (float) $prevision;
 

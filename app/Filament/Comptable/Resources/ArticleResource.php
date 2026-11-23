@@ -92,6 +92,15 @@ class ArticleResource extends Resource
                             ->searchable()
                             ->preload()
                             ->required()
+                            // Le « + » écrit une UniteMesure sans jamais passer par
+                            // UniteMesureResource::canCreate() : sans cette porte, un compte qui sait
+                            // saisir un article crée des unités de mesure alors que la page
+                            // d'unité lui est fermée. `authorize()` masque le bouton ET refuse la
+                            // requête Livewire forgée (Filament teste isDisabled() au montage et à la
+                            // soumission). Attention à l'import : c'est une action de COMPOSANT de
+                            // formulaire, pas Filament\Actions\Action.
+                            ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                                ->authorize('create_unite_mesure'))
                             ->createOptionForm([
                                 Forms\Components\TextInput::make('libelle')
                                     ->label('Libellé')->required()
@@ -109,6 +118,10 @@ class ArticleResource extends Resource
                             ->searchable()
                             ->preload()
                             ->live()
+                            // Voir le commentaire du « + » unité de mesure : même trou, même porte,
+                            // capacité `create_categorie_article` (CategorieArticleResource::canCreate()).
+                            ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                                ->authorize('create_categorie_article'))
                             ->createOptionForm([
                                 Forms\Components\TextInput::make('libelle')
                                     ->label('Libellé')->required(),
@@ -139,6 +152,10 @@ class ArticleResource extends Resource
                         ->searchable()
                         ->visible(fn(Get $get) => static::categorieRequiertConditionnement($get('categorie_id')))
                         ->required(fn(Get $get) => static::categorieRequiertConditionnement($get('categorie_id')))
+                        // Voir le commentaire du « + » unité de mesure : même trou, même porte,
+                        // capacité `create_conditionnement` (ConditionnementResource::canCreate()).
+                        ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                            ->authorize('create_conditionnement'))
                         ->createOptionForm([
                             Forms\Components\TextInput::make('libelle')
                                 ->label('Libellé')->required()

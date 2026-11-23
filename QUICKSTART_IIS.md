@@ -34,6 +34,7 @@ php artisan key:generate
 php artisan migrate
 php artisan db:seed --class=ExerciceSeeder
 php artisan optimize
+php artisan filament:cache-components
 
 # Site IIS
 New-WebAppPool -Name "GestionBudgetPool"

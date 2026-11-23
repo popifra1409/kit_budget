@@ -486,6 +486,9 @@ php artisan route:cache
 php artisan view:cache
 php artisan event:cache
 
+# Listes des pages/ressources de chaque panneau Filament (optimize:clear ne les vide pas)
+php artisan filament:cache-components
+
 # Créer le lien symbolique
 php artisan storage:link
 
@@ -919,6 +922,8 @@ php artisan cache:clear
 php artisan config:clear
 php artisan route:clear
 php artisan view:clear
+# Les listes de pages/ressources par panneau ne se vident pas avec optimize:clear
+php artisan filament:clear-cached-components
 ```
 
 ### Problème : FastCGI ne répond pas

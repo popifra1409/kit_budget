@@ -324,6 +324,9 @@ php artisan db:seed --class=ExerciceSeeder
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
+
+# Listes des pages/ressources de chaque panneau Filament (optimize:clear ne les vide pas)
+php artisan filament:cache-components
 ```
 
 ### Étape 5.5 : Permissions

@@ -1,4 +1,4 @@
-{{-- resources/views/filament/budget/pages/corbeille.blade.php --}}
+{{-- resources/views/filament/admin/pages/corbeille.blade.php --}}
 <x-filament-panels::page>
     {{ $this->form }}
 

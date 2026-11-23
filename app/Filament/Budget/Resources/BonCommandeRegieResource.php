@@ -229,6 +229,13 @@ class BonCommandeRegieResource extends Resource
                         ->label('Fournisseur')
                         ->relationship('fournisseur', 'raison_sociale')
                         ->searchable()->preload()->required()
+                        // Le « + » écrit une ligne Fournisseur sans jamais passer par
+                        // FournisseurResource::canCreate() : `create_fournisseur` est la capacité que
+                        // la fiche fournisseur exige déjà. `authorize()` masque le bouton ET refuse la
+                        // requête forgée (isDisabled() testé au montage puis à la soumission). Le type
+                        // hint importe : action de COMPOSANT de formulaire, pas Filament\Actions\Action.
+                        ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                            ->authorize('create_fournisseur'))
                         ->createOptionForm([
                             Forms\Components\Grid::make(2)->schema([
                                 Forms\Components\TextInput::make('raison_sociale')
